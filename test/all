@@ -80,28 +80,17 @@ esac
 EOF
 cat >"$TMP/bin/tailscale" <<'EOF'
 #!/usr/bin/env bash
-# serve is refused until the user is the operator when $SHIM/deny exists (the real daemon's answer
-# to a plain user); `set --operator=<user>` lifts it, as it does for root
-deny() { echo "Access denied: serve config denied. Use 'sudo tailscale set --operator=\$USER' to not require root." >&2; exit 1; }
 case "$*" in
-  "serve status") [[ -f $SHIM/deny ]] && deny; [[ -f $SHIM/serving ]] && echo "https://box.tail.ts.net -> http://127.0.0.1:12434" ;;
+  "serve status") [[ -f $SHIM/serving ]] && echo "https://box.tail.ts.net -> http://127.0.0.1:12434" ;;
   "status --json") echo '{"Self":{"DNSName":"box.tail.ts.net."}}' ;;
-  set\ --operator=*) [[ $EUID == 0 || ${SHIM_ROOT:-} == 1 ]] || deny; rm -f "$SHIM/deny"; echo "operator ${*#set --operator=}" >>"$SHIM/tailscale.log" ;;
-  serve*off*) [[ -f $SHIM/deny ]] && deny; rm -f "$SHIM/serving" ;;
-  serve*) [[ -f $SHIM/deny ]] && deny; touch "$SHIM/serving" ;;
+  serve*off*) rm -f "$SHIM/serving" ;;
+  serve*) touch "$SHIM/serving" ;;
 esac
-EOF
-cat >"$TMP/bin/pkexec" <<'EOF'
-#!/usr/bin/env bash
-# polkit: the user cancelled or has no agent when SHIM_PKEXEC_FAIL=1, else runs the command as root
-echo "pkexec $*" >>"$SHIM/pkexec.log"
-[[ ${SHIM_PKEXEC_FAIL:-} == 1 ]] && { echo "Error executing command as another user: Request dismissed" >&2; exit 126; }
-SHIM_ROOT=1 exec "$@"
 EOF
 for a in pi claude codex; do printf '#!/usr/bin/env bash\necho "$0 $*"\n' >"$TMP/bin/$a"; done
 printf '#!/usr/bin/env bash\necho "launch $*"\n' >"$TMP/bin/omarchy-launch-tui"
 printf '#!/usr/bin/env bash\necho pi\n' >"$TMP/bin/omarchy-default-agent"
-find "$TMP/bin" -type f -exec chmod +x {} +   # not the jq symlink: its target is not ours to chmod on CI
+chmod +x "$TMP"/bin/*
 
 # ---------------------------------------------------------------- fixture recipes.json
 digest=$(printf 'a%.0s' {1..64}); rev=$(printf 'b%.0s' {1..40})
@@ -150,18 +139,6 @@ out=$("$CLI" open-agent codex); [[ $out == *wire_api=responses* && $out == *mode
 [[ $(snap .share.active) == true && $(snap .share.url) == https://box.tail.ts.net ]] || fail "share on" "$(snap .share)"; pass "share: tailscale serve on, URL and key shown"
 "$CLI" share --key "0123456789abcdef0123"; [[ $(cat "$OMARCHY_AI_STATE/gateway.key") == 0123456789abcdef0123 ]] || fail "key replaced"; pass "share --key replaces the key"
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share off"; pass "share toggles off"
-
-# a plain user on a fresh install: tailscaled refuses serve until root names the operator once
-touch "$SHIM/deny"; "$CLI" snapshot >/dev/null
-[[ $(snap .share.operator) == false && $(snap .share.available) == true ]] || fail "operator missing" "$(snap .share)"; pass "share: a missing tailscale operator shows in the snapshot"
-SHIM_PKEXEC_FAIL=1 "$CLI" share 2>/dev/null && fail "share should refuse without operator"
-[[ $(snap .share.error) == *"sudo tailscale set --operator"* && $(snap .state) == ready ]] || fail "operator hint" "$(snap .share.error) $(snap .state)"; pass "share: refused with the sudo command under the toggle when polkit is dismissed; model stays ready"
-[[ $(snap .share.active) == false && -f $SHIM/deny ]] || fail "still denied"; pass "share: nothing served and nothing changed on refusal"
-"$CLI" share; "$CLI" snapshot >/dev/null
-grep -q "pkexec .*tailscale set --operator=$USER" "$SHIM/pkexec.log" || fail "pkexec grant" "$(cat "$SHIM/pkexec.log")"; pass "share: asks polkit for tailscale set --operator once"
-[[ $(snap .share.active) == true && $(snap .share.operator) == true && $(snap .share.error) == "" ]] || fail "share after grant" "$(snap .share)"; pass "share: on after the grant, error cleared"
-: >"$SHIM/pkexec.log"; "$CLI" share; "$CLI" share; [[ ! -s $SHIM/pkexec.log ]] || fail "pkexec again"; pass "share: no polkit prompt once the user is the operator"
-"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share off after grant"
 
 # a second load with the same recipe: no download, previous pair set aside then dropped
 : >"$SHIM/docker.log"; "$CLI" load

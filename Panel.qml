@@ -129,42 +129,28 @@ Panel {
         anchors.left: parent.left
         anchors.right: parent.right
         spacing: Style.space(10)
-        // A circle of pixels, the bar icon at card size, drawn on one canvas so the card carries
-        // one item, not a grid of them. Faint while idle; fills row by row as the download lands;
-        // pulses (radius breathing in and out) while working and, slower, once the model is ready.
-        Canvas {
+        // A sliced sphere, the icon's shape at panel size: faint while idle, ripples while working
+        // and fills row by row as the download lands, whole and breathing once the model is ready.
+        Item {
           id: orb
           width: parent.width; height: Style.space(48)
-          readonly property int cells: 15                 // odd, so one pixel sits at the centre
+          readonly property int rows: 9
           readonly property real fill: root.loaded ? 1 : (root.operation.percent || 0) / 100
-          readonly property bool pulsing: root.opened && (root.busy || root.loaded)
-          readonly property color ink: root.state === "error" && root.bar ? root.bar.urgent : root.foreground
           property real phase: 0
-          NumberAnimation on phase { running: orb.pulsing; loops: Animation.Infinite; from: 0; to: 1; duration: root.busy ? 1200 : 2600 }
-          onPhaseChanged: requestPaint()
-          onFillChanged: requestPaint()
-          onPulsingChanged: requestPaint()
-          onInkChanged: requestPaint()
-          onWidthChanged: requestPaint()
-          readonly property bool working: root.busy
-          onWorkingChanged: requestPaint()
-          onPaint: {
-            var ctx = getContext("2d"); ctx.clearRect(0, 0, width, height)
-            var px = height / cells, gap = Math.max(1, px * 0.18), half = cells / 2
-            var breath = pulsing ? 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI) : 0        // 0..1, eased
-            var radius = half * (pulsing ? 0.78 + 0.22 * breath : 0.9)                // in cells
-            var base = root.loaded ? 0.75 + 0.25 * breath : (root.busy ? 0.5 : 0.28)
-            var x0 = (width - height) / 2
-            for (var row = 0; row < cells; row++) {
-              var lit = (cells - row) / cells <= fill
-              for (var col = 0; col < cells; col++) {
-                var dx = col + 0.5 - half, dy = row + 0.5 - half, d = Math.sqrt(dx * dx + dy * dy)
-                if (d > radius) continue
-                var a = lit ? base : base * 0.5
-                if (d > radius - 1) a *= 0.55                                           // soft rim
-                ctx.fillStyle = Qt.rgba(ink.r, ink.g, ink.b, a)
-                ctx.fillRect(x0 + col * px + gap / 2, row * px + gap / 2, px - gap, px - gap)
-              }
+          NumberAnimation on phase { running: root.opened && (root.busy || root.loaded); loops: Animation.Infinite; from: 0; to: 1; duration: 2400 }
+          Repeater {
+            model: orb.rows
+            Rectangle {
+              required property int index
+              readonly property real chord: Math.sqrt(1 - Math.pow((index + 0.5) / orb.rows * 2 - 1, 2))
+              readonly property bool lit: (orb.rows - index) / orb.rows <= orb.fill
+              readonly property real ripple: root.busy && !lit ? 0.4 + 0.6 * Math.abs(Math.sin((orb.phase + index / orb.rows) * Math.PI)) : 1
+              x: (orb.width - width) / 2 + (index % 2 ? Style.space(3) : -Style.space(3))
+              y: index * orb.height / orb.rows
+              width: orb.width * 0.62 * chord * ripple
+              height: orb.height / orb.rows * 0.55
+              color: root.state === "error" && root.bar ? root.bar.urgent : root.foreground
+              opacity: lit ? 0.85 + 0.15 * Math.sin(orb.phase * 2 * Math.PI) : (root.busy ? 0.55 : 0.28)
             }
           }
         }
@@ -181,8 +167,6 @@ Panel {
           }
         }
         Link { visible: root.loaded && !!root.share.available; enabled: !root.busy; text: root.share.active ? "Stop sharing" : "Share on Tailscale"; onTriggered: root.act(["share"]) }
-        Text { visible: root.loaded && !!root.share.error; width: parent.width; textFormat: Text.PlainText; text: root.share.error || ""; color: root.bar ? root.bar.urgent : root.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap; maximumLineCount: 3 }
-        Text { visible: root.loaded && !!root.share.available && !root.share.active && root.share.operator === false && !root.share.error; width: parent.width; textFormat: Text.PlainText; text: "asks for your password once (tailscale operator)"; color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap }
         Text { visible: root.loaded && !!root.share.active; width: parent.width; textFormat: Text.PlainText; text: (root.share.url || "") + "\nkey " + (root.share.key || ""); color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAnywhere }
         Link { visible: root.loaded || root.hasRunning || root.state === "starting"; enabled: !root.busy; text: "Stop"; onTriggered: root.act(["unload"]) }
       }

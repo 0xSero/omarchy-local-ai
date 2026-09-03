@@ -55,10 +55,7 @@ launched from the panel; typed in a terminal they keep their own provider.
   acceptance is hidden.
 - **Share**: `tailscale serve` to the gateway. A key is generated on first
   start and shown with the URL; `omarchy-local-ai share --key <value>`
-  replaces it. `tailscale serve` refuses a plain user until root names them
-  the operator once; the first Share asks polkit for that one command, and
-  if the prompt is dismissed the card shows the `sudo tailscale set
-  --operator=$USER` line instead of a button that did nothing.
+  replaces it.
 
 ## Commands
 
