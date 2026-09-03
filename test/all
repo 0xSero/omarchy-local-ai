@@ -101,7 +101,7 @@ EOF
 for a in pi claude codex; do printf '#!/usr/bin/env bash\necho "$0 $*"\n' >"$TMP/bin/$a"; done
 printf '#!/usr/bin/env bash\necho "launch $*"\n' >"$TMP/bin/omarchy-launch-tui"
 printf '#!/usr/bin/env bash\necho pi\n' >"$TMP/bin/omarchy-default-agent"
-chmod +x "$TMP"/bin/*
+find "$TMP/bin" -type f -exec chmod +x {} +   # not the jq symlink: its target is not ours to chmod on CI
 
 # ---------------------------------------------------------------- fixture recipes.json
 digest=$(printf 'a%.0s' {1..64}); rev=$(printf 'b%.0s' {1..40})
