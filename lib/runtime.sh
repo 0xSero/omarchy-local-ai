@@ -73,8 +73,11 @@ start_gateway() { # start_gateway <recipe>; remembers the recipe so the gateway 
   run_child "${argv[@]}" >>"$LOGFILE" 2>&1
 }
 restart_gateway() { # same recipe, fresh publish list (share on/off); the engine is untouched
-  local r; r=$(cat "$STATE/gateway.recipe.json" 2>/dev/null) || { fail "no gateway to restart"; return 1; }
-  [[ -n $r ]] || { fail "no gateway to restart"; return 1; }
+  local r; r=$(cat "$STATE/gateway.recipe.json" 2>/dev/null || true)
+  if [[ -z $r ]]; then # started before this file existed: the machine's recipe, if it is the one running
+    r=$(current_recipe 2>/dev/null) || r=""
+    [[ -n $r && $(jq -r .id <<<"$r") == "$(container_recipe "$GATEWAY")" ]] || { fail "no gateway to restart"; return 1; }
+  fi
   exists "$GATEWAY" && owned "$GATEWAY" && docker rm -f "$GATEWAY" >/dev/null 2>&1
   start_gateway "$r" || return 1
   local i; for ((i=0; i<15; i++)); do api models 2 >/dev/null 2>&1 && return 0; sleep "${POLL:-1}"; done

@@ -220,7 +220,8 @@ wait $holder; "$CLI" unload
 "$CLI" load; [[ $(snap .state) == ready && $(snap .error) == "" ]] || fail "op clears refusal"; pass "a finished operation clears an earlier refusal"
 "$CLI" open-agent nope >/dev/null 2>&1 || true; [[ $(snap .state) == ready && $(snap .error) != "" ]] || fail "refusal beside ready" "$(snap .state) $(snap .error)"; pass "a refused agent launch keeps a running model ready and shows the reason"
 OMARCHY_AI_FOREGROUND=0 "$CLI" open-agent pi >/dev/null; [[ $(snap .error) == "" ]] || fail "launch clears refusal"; pass "a launch that works clears the earlier refusal"
-"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 && $(snap .state) == ready ]] || fail "share after refusal" "$(snap .share) $(snap .state)"; pass "share works after an earlier refusal, and is not an error"
+rm -f "$OMARCHY_AI_STATE/gateway.recipe.json"   # a gateway started by an older plugin: the recipe is recovered from the running container
+"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 && $(snap .state) == ready ]] || fail "share after refusal" "$(snap .share) $(snap .state)"; pass "share works after an earlier refusal and for a gateway started by an older plugin"
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false && $(snap .state) == ready ]] || fail "share off after refusal"; pass "share off leaves the model ready"
 [[ $(snap .lastStartSeconds) =~ ^[0-9]+$ ]] || fail "lastStartSeconds in snapshot"; pass "snapshot carries the last Start duration for the Start label"
 "$CLI" unload
