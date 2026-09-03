@@ -83,7 +83,13 @@ cat >"$TMP/bin/tailscale" <<'EOF'
 #!/usr/bin/env bash
 # status needs no operator; serve is never called (it would refuse a plain user)
 case "$*" in
-  "status --json") echo '{"Self":{"DNSName":"box.tail.ts.net.","TailscaleIPs":["100.64.0.7","fd7a:115c:a1e0::7"]}}' ;;
+  "status --json") # SHIM_TS: default connected with both families; v6 = IPv6-only tailnet; off = logged in but down; newip = address changed
+    case "${SHIM_TS:-}" in
+      v6) echo '{"BackendState":"Running","Self":{"DNSName":"","Online":true,"TailscaleIPs":["fd7a:115c:a1e0::7"]}}' ;;
+      off) echo '{"BackendState":"Stopped","Self":{"DNSName":"box.tail.ts.net.","Online":false,"TailscaleIPs":["100.64.0.7"]}}' ;;
+      newip) echo '{"BackendState":"Running","Self":{"DNSName":"box.tail.ts.net.","Online":true,"TailscaleIPs":["100.64.0.9"]}}' ;;
+      *) echo '{"BackendState":"Running","Self":{"DNSName":"box.tail.ts.net.","Online":true,"TailscaleIPs":["100.64.0.7","fd7a:115c:a1e0::7"]}}' ;;
+    esac ;;
   serve*) echo "Access denied: serve config denied. Use 'sudo tailscale set --operator=\$USER' to not require root." >&2; exit 1 ;;
 esac
 EOF
@@ -143,6 +149,20 @@ grep -c "^docker run .*omarchy-local-ai-engine" "$SHIM/docker.log" | grep -qx 1 
 "$CLI" share --key "0123456789abcdef0123"; [[ $(cat "$OMARCHY_AI_STATE/gateway.key") == 0123456789abcdef0123 ]] || fail "key replaced"; pass "share --key replaces the key"
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share off"
 tail -1 <(grep "^docker run .*gateway" "$SHIM/docker.log") | grep -q "100.64.0.7" && fail "still published after off"; pass "share toggles off: gateway republished on loopback only"
+
+# other tailnets: down, IPv6-only, no MagicDNS, an address that changed under a live share
+SHIM_TS=off "$CLI" share 2>/dev/null && fail "share while tailscale is down"
+[[ $(snap .share.error) == "tailscale is not connected" && $(snap .share.active) == false && $(snap .state) == ready ]] || fail "down refused" "$(snap .share)"; pass "share: refused, under the toggle, while tailscale is down; model still ready"
+SHIM_TS=v6 "$CLI" share; SHIM_TS=v6 "$CLI" snapshot >/dev/null
+[[ $(snap .share.active) == true && $(snap .share.url) == "http://[fd7a:115c:a1e0::7]:12434" && $(snap .share.error) == "" ]] || fail "v6 share" "$(snap .share)"; pass "share: IPv6-only tailnet without MagicDNS publishes on the bracketed address"
+grep -q -- "--publish \[fd7a:115c:a1e0::7\]:12434:12434" "$SHIM/docker.log" || fail "v6 publish" "$(grep gateway "$SHIM/docker.log" | tail -1)"; pass "share: docker gets the bracketed IPv6 bind"
+SHIM_TS=v6 "$CLI" share; "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == true ]] || fail "share on again"
+SHIM_TS=newip "$CLI" snapshot >/dev/null
+[[ $(snap .share.active) == false && $(snap .share.error) == *"address changed"* ]] || fail "stale address" "$(snap .share)"; pass "share: a tailnet address change shows as not shared, with why"
+SHIM_TS=newip "$CLI" share; SHIM_TS=newip "$CLI" snapshot >/dev/null
+[[ $(snap .share.active) == true && $(snap .share.error) == "" ]] || fail "reshare on new address" "$(snap .share)"; pass "share: sharing again binds the new address"
+grep -q -- "--publish 100.64.0.9:12434:12434" "$SHIM/docker.log" || fail "new ip publish"; pass "share: docker gets the new address"
+SHIM_TS=newip "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share off after newip"
 
 # a second load with the same recipe: no download, previous pair set aside then dropped
 : >"$SHIM/docker.log"; "$CLI" load

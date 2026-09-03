@@ -29,44 +29,60 @@ set_key() {
   mkdir -p "$STATE"; (umask 077; printf '%s\n' "$1" >"$KEY_FILE"); lwrite '.share.key=$k' --arg k "$1"; snapshot_write
 }
 
-tailnet_self() { # -> {ip,dns}; empty fields when tailscale is off
-  local b; b=$(ts_bin) || { printf '{"ip":"","dns":""}'; return; }
-  "$b" status --json 2>/dev/null | jq -c '{ip:((.Self.TailscaleIPs//[])|map(select(test("^[0-9.]+$")))|.[0]//""), dns:((.Self.DNSName//"")|rtrimstr("."))}' 2>/dev/null \
-    || printf '{"ip":"","dns":""}'
+tailnet_self() { # -> {ip,dns,online}; empty ip when tailscale is off. IPv4 first, IPv6 when that is all there is.
+  local b; b=$(ts_bin) || { printf '{"ip":"","dns":"","online":false}'; return; }
+  "$b" status --json 2>/dev/null | jq -c '
+    (.Self.TailscaleIPs // []) as $ips
+    | {ip: (($ips | map(select(test("^[0-9.]+$"))) | .[0]) // ($ips | map(select(test(":"))) | .[0]) // ""),
+       dns: ((.Self.DNSName // "") | rtrimstr(".")),
+       online: ((.Self.Online // false) and ((.BackendState // "Running") == "Running"))}' 2>/dev/null \
+    || printf '{"ip":"","dns":"","online":false}'
 }
 share_wanted() { [[ -f $SHARE_MARK ]]; }
+bind_addr() { [[ $1 == *:* ]] && printf '[%s]' "$1" || printf '%s' "$1"; }   # IPv6 literals need brackets
 share_publish_argv() { # extra `docker run` words for the gateway while sharing is on; nothing otherwise
   share_wanted || return 0
   local ip; ip=$(tailnet_self | jq -r .ip); [[ -n $ip ]] || return 0
-  printf '%s\0' --publish "$ip:$PORT:12434"
+  printf '%s' "$ip" >"$SHARE_MARK"   # the address the gateway was published on, for share_state
+  printf '%s\0' --publish "$(bind_addr "$ip"):$PORT:12434"
 }
 
 share_state() { # -> {available,active,url,key,error}; read from tailscale and docker each time, never cached
-  local self ip dns active=false url="" err; err=$(cat "$SHARE_ERROR" 2>/dev/null || true)
-  self=$(tailnet_self); ip=$(jq -r .ip <<<"$self"); dns=$(jq -r .dns <<<"$self")
+  local self ip dns online active=false url="" err bound; err=$(cat "$SHARE_ERROR" 2>/dev/null || true)
+  self=$(tailnet_self); ip=$(jq -r .ip <<<"$self"); dns=$(jq -r .dns <<<"$self"); online=$(jq -r .online <<<"$self")
   if [[ -z $ip ]]; then jq -nc --arg k "$(cat "$KEY_FILE" 2>/dev/null)" --arg e "$err" '{available:false,active:false,url:"",key:$k,error:$e}'; return; fi
-  share_wanted && owned "$GATEWAY" && running "$GATEWAY" && active=true
-  url="http://${dns:-$ip}:$PORT"
+  if share_wanted && owned "$GATEWAY" && running "$GATEWAY"; then
+    bound=$(cat "$SHARE_MARK" 2>/dev/null || true)
+    if [[ -z $bound || $bound == "$ip" ]]; then active=true
+    elif [[ -z $err ]]; then err="tailnet address changed; share again"; fi   # the gateway still binds the old one
+  fi
+  [[ $online == true || -n $err ]] || err="tailscale is not connected"
+  url="http://$(bind_addr "${dns:-$ip}"):$PORT"
   jq -nc --argjson a "$active" --arg u "$url" --arg k "$(cat "$KEY_FILE" 2>/dev/null)" --arg e "$err" '{available:true,active:$a,url:$u,key:$k,error:$e}'
 }
 
 share_on() { mkdir -p "$STATE"; : >"$SHARE_MARK"; restart_gateway; }
 share_off() { rm -f "$SHARE_MARK"; owned "$GATEWAY" && running "$GATEWAY" && restart_gateway; return 0; }
-share_forget() { rm -f "$SHARE_MARK"; }   # for unload: the gateway is about to go, no restart
+share_forget() { rm -f "$SHARE_MARK"; }
+docker_last_error() { # the last line docker wrote to the log, trimmed to what a card can show
+  local l; l=$(grep -i "error\|cannot\|denied\|address" "$LOGFILE" 2>/dev/null | tail -1 | sed 's/^.*Error response from daemon: //; s/^docker: //' | cut -c1-140)
+  printf '%s' "${l:-see $LOGFILE}"
+}   # for unload: the gateway is about to go, no restart
 share_refuse() { # the model is still fine, so this goes under the toggle, not into the ledger's error
   log "share: $1"; mkdir -p "$STATE"; printf '%s\n' "$1" >"$SHARE_ERROR"; op_done; fail "$1"
 }
 
 share_toggle() { # share [--key value]
   if [[ ${1:-} == --key ]]; then set_key "${2:-}"; return; fi
-  jq -e '.available' >/dev/null <<<"$(share_state)" || { share_refuse "tailscale is not connected"; return; }
+  jq -e '.available' >/dev/null <<<"$(share_state)" || { share_refuse "tailscale is not installed or not logged in"; return; }
+  jq -e '.online' >/dev/null <<<"$(tailnet_self)" || { share_refuse "tailscale is not connected"; return; }
   [[ $(jq -r .state "$SNAPSHOT" 2>/dev/null) == ready ]] || { share_refuse "load a model first"; return; }
   if jq -e '.active' >/dev/null <<<"$(share_state)"; then
     op share "" "stopping the tailnet route" 0   # an op, so the card shows the toggle in progress
     share_off || { share_refuse "could not restart the gateway (see $LOGFILE)"; return; }; log "share off"
   else
     op share "" "publishing on the tailnet" 0
-    share_on || { rm -f "$SHARE_MARK"; restart_gateway || true; share_refuse "could not publish on the tailnet (see $LOGFILE)"; return; }; log "share on"
+    share_on || { rm -f "$SHARE_MARK"; restart_gateway || true; share_refuse "could not publish on the tailnet: $(docker_last_error)"; return; }; log "share on"
   fi
   rm -f "$SHARE_ERROR"; op_done
 }
