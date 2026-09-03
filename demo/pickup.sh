@@ -2,7 +2,10 @@
 # pickup.sh "<step line>": re-record one chapter of story.sh at the current repo state, same mechanics
 # as the take (real clicks, typed prompt). Marks are recorder time: <agent>, end, rec-start, rec-stop.
 set -u
+# story.sh truncates its marks file where it is defined; sourcing that would erase the take's marks
+KEEP=$(cat /tmp/story-marks.txt 2>/dev/null)
 source <(sed -n '1,/^# fresh repo state/p' "$HOME/story.sh" | grep -v '^# fresh repo state')
+[[ -n $KEEP ]] && printf '%s\n' "$KEEP" >/tmp/story-marks.txt
 OUT=/tmp/pickup-raw.mp4; MARKS=/tmp/pickup-marks.txt; : >"$MARKS"
 [[ $(state) == ready ]] || { $CLI load >/dev/null; while [[ $(state) != ready ]]; do sleep 5; [[ $(state) == error ]] && exit 1; done; }
 timeout 5 qs -p /usr/share/omarchy/shell ipc call notifications dismissAll >/dev/null 2>&1; ipc close

@@ -87,7 +87,7 @@ while [[ $(state) != ready ]]; do sleep 3; [[ $(state) == error ]] && { echo "lo
 echo "loaded: $(state)" >&2
 sleep 5; ipc close; sleep 1
 
-step pi       9  40 "Run lspci | grep -i arc and curl -s http://127.0.0.1:12434/v1/models. Then tell me in two lines what hardware and which model you are running on."
+step pi       9  40 "Run lspci | grep -i arc and curl -s -H \"Authorization: Bearer \$(cat ~/.local/state/omarchy/local-ai/gateway.key)\" http://127.0.0.1:12434/v1/models. Then tell me in two lines what hardware and which model you are running on."
 step opencode 12 50 "Run python3 -m unittest discover -s tests -t . and tell me which function has the bug and why. Do not fix it yet."
 step codex    12 60 "Fix the off-by-one in ledger/core.py statement() so every entry is included. Change only that line."
 step claude   10 95 "Review git diff and answer in one sentence: is the fix correct?"
