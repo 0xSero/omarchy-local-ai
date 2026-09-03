@@ -172,28 +172,50 @@ Panel {
         anchors.left: parent.left
         anchors.right: parent.right
         spacing: Style.space(10)
-        // A sliced sphere, the icon's shape at panel size: faint while idle, ripples while working
-        // and fills row by row as the download lands, whole and breathing once the model is ready.
-        Item {
+        // The top of the card is a field of pixels, edge to edge, with a circle lit inside it: the
+        // bar icon at card size. Idle, the circle is a faint disc in a fainter grid. Working, it
+        // pulses fast and fills row by row as the download lands. Ready, it breathes slowly.
+        // One Canvas, repainted only while the card is open and something is moving.
+        Canvas {
           id: orb
-          width: parent.width; height: Style.space(48)
-          readonly property int rows: 9
+          width: parent.width; height: Math.round(cell * rows)
+          readonly property int cols: 28
+          readonly property int rows: 9                                              // odd: a centre row
+          readonly property real cell: width / cols
           readonly property real fill: root.loaded ? 1 : root.progress / 100
+          readonly property bool pulsing: root.opened && (root.busy || root.loaded)
+          readonly property bool working: root.busy
+          readonly property color ink: root.state === "error" && root.bar ? root.bar.urgent : root.foreground
           property real phase: 0
-          NumberAnimation on phase { running: root.opened && (root.busy || root.loaded); loops: Animation.Infinite; from: 0; to: 1; duration: 2400 }
-          Repeater {
-            model: orb.rows
-            Rectangle {
-              required property int index
-              readonly property real chord: Math.sqrt(1 - Math.pow((index + 0.5) / orb.rows * 2 - 1, 2))
-              readonly property bool lit: (orb.rows - index) / orb.rows <= orb.fill
-              readonly property real ripple: root.busy && !lit ? 0.4 + 0.6 * Math.abs(Math.sin((orb.phase + index / orb.rows) * Math.PI)) : 1
-              x: (orb.width - width) / 2 + (index % 2 ? Style.space(3) : -Style.space(3))
-              y: index * orb.height / orb.rows
-              width: orb.width * 0.62 * chord * ripple
-              height: orb.height / orb.rows * 0.55
-              color: root.state === "error" && root.bar ? root.bar.urgent : root.foreground
-              opacity: lit ? 0.85 + 0.15 * Math.sin(orb.phase * 2 * Math.PI) : (root.busy ? 0.55 : 0.28)
+          NumberAnimation on phase { running: orb.pulsing; loops: Animation.Infinite; from: 0; to: 1; duration: root.busy ? 1100 : 3000 }
+          onPhaseChanged: requestPaint()
+          onFillChanged: requestPaint()
+          onPulsingChanged: requestPaint()
+          onWorkingChanged: requestPaint()
+          onInkChanged: requestPaint()
+          onWidthChanged: requestPaint()
+          onPaint: {
+            var ctx = getContext("2d"); ctx.clearRect(0, 0, width, height)
+            var px = cell, gap = Math.max(1, px * 0.28), side = px - gap, corner = side * 0.28
+            var cx = cols / 2, cy = rows / 2
+            var breath = pulsing ? 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI) : 0        // 0..1, eased both ways
+            var radius = (rows / 2) * (pulsing ? 0.72 + 0.28 * breath : 0.86)         // in cells
+            var peak = root.loaded ? 0.7 + 0.3 * breath : (root.busy ? 0.55 + 0.25 * breath : 0.34)
+            function dot(col, row, a) {
+              var x = col * px + gap / 2, y = row * px + gap / 2
+              ctx.fillStyle = Qt.rgba(ink.r, ink.g, ink.b, a)
+              ctx.beginPath(); ctx.roundedRect(x, y, side, side, corner, corner); ctx.fill()
+            }
+            for (var row = 0; row < rows; row++) {
+              var lit = (rows - row) / rows <= fill
+              for (var col = 0; col < cols; col++) {
+                var dx = col + 0.5 - cx, dy = row + 0.5 - cy, d = Math.sqrt(dx * dx + dy * dy)
+                if (d > radius + 0.5) { dot(col, row, 0.07); continue }                  // the field
+                var glow = 1 - Math.pow(d / (radius + 0.5), 2) * 0.55                    // brightest at the centre
+                var a = peak * glow * (lit ? 1 : 0.4)
+                if (d > radius - 0.5) a *= 0.5 + 0.5 * (radius + 0.5 - d)              // soft rim
+                dot(col, row, Math.max(a, 0.07))
+              }
             }
           }
         }
@@ -210,6 +232,7 @@ Panel {
           }
         }
         Link { visible: root.loaded && !!root.share.available; enabled: !root.busy; text: root.share.active ? "Stop sharing" : "Share on Tailscale"; onTriggered: root.act(["share"]) }
+        Text { visible: root.loaded && !!root.share.error; width: parent.width; textFormat: Text.PlainText; text: root.share.error || ""; color: root.bar ? root.bar.urgent : root.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap; maximumLineCount: 3 }
         Text { visible: root.loaded && !!root.share.active; width: parent.width; textFormat: Text.PlainText; text: (root.share.url || "") + "\nkey " + (root.share.key || ""); color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAnywhere }
         Link { visible: root.loaded || root.hasRunning || root.state === "starting"; enabled: !root.busy; text: "Stop"; onTriggered: root.act(["unload"]) }
       }

@@ -78,7 +78,7 @@ w_load() {
 w_unload() {
   guard || oops "another operation is running"
   op unload "" "stopping" 0
-  share_off
+  share_forget
   stop_all
   lwrite '.accepted={recipeId:"",servedModel:"",registry:"",apis:[]}'
   op_done; log "unloaded"

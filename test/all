@@ -80,11 +80,10 @@ esac
 EOF
 cat >"$TMP/bin/tailscale" <<'EOF'
 #!/usr/bin/env bash
+# status needs no operator; serve is never called (it would refuse a plain user)
 case "$*" in
-  "serve status") [[ -f $SHIM/serving ]] && echo "https://box.tail.ts.net -> http://127.0.0.1:12434" ;;
-  "status --json") echo '{"Self":{"DNSName":"box.tail.ts.net."}}' ;;
-  serve*off*) rm -f "$SHIM/serving" ;;
-  serve*) [[ "$*" == *--https=8443* ]] || { echo "shim: serve without --https=8443: $*" >&2; exit 1; }; touch "$SHIM/serving" ;;
+  "status --json") echo '{"Self":{"DNSName":"box.tail.ts.net.","TailscaleIPs":["100.64.0.7","fd7a:115c:a1e0::7"]}}' ;;
+  serve*) echo "Access denied: serve config denied. Use 'sudo tailscale set --operator=\$USER' to not require root." >&2; exit 1 ;;
 esac
 EOF
 for a in pi claude codex; do printf '#!/usr/bin/env bash\necho "$0 $*"\n' >"$TMP/bin/$a"; done
@@ -136,9 +135,13 @@ out=$("$CLI" open-agent codex); [[ $out == *wire_api=responses* && $out == *mode
 [[ ! -e $OMARCHY_AI_USER_HOME/.claude.json && ! -e $OMARCHY_AI_USER_HOME/.codex ]] || fail "no user files touched"; pass "no user config files were created or edited"
 
 "$CLI" share; "$CLI" snapshot >/dev/null
-[[ $(snap .share.active) == true && $(snap .share.url) == https://box.tail.ts.net:8443 ]] || fail "share on" "$(snap .share)"; pass "share: tailscale serve on its own port, URL and key shown"
+[[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 ]] || fail "share on" "$(snap .share)"; pass "share: on, tailnet URL and key shown"
+grep -q -- "--publish 127.0.0.1:12434:12434 .*--publish 100.64.0.7:12434:12434" "$SHIM/docker.log" || fail "gateway published on the tailnet" "$(grep gateway "$SHIM/docker.log" | tail -1)"; pass "share: the gateway is republished on the tailnet address, loopback kept"
+grep -q "tailscale serve" "$OMARCHY_AI_STATE/log" && fail "tailscale serve used"; [[ $(snap .state) == ready && $(snap .share.error) == "" ]] || fail "ready after share" "$(snap .state) $(snap .share.error)"; pass "share: no tailscale serve, no password, model still ready"
+grep -c "^docker run .*omarchy-local-ai-engine" "$SHIM/docker.log" | grep -qx 1 || fail "engine restarted on share"; pass "share: the engine was not touched"
 "$CLI" share --key "0123456789abcdef0123"; [[ $(cat "$OMARCHY_AI_STATE/gateway.key") == 0123456789abcdef0123 ]] || fail "key replaced"; pass "share --key replaces the key"
-"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share off"; pass "share toggles off"
+"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share off"
+tail -1 <(grep "^docker run .*gateway" "$SHIM/docker.log") | grep -q "100.64.0.7" && fail "still published after off"; pass "share toggles off: gateway republished on loopback only"
 
 # a second load with the same recipe: no download, previous pair set aside then dropped
 : >"$SHIM/docker.log"; "$CLI" load
@@ -163,7 +166,7 @@ SHIM_APIS=chat "$CLI" load; [[ $(snap '.agents.launchable|join(",")') == "pi" ]]
 # unload
 "$CLI" unload; [[ $(snap .state) == idle && ! -d $SHIM/containers/omarchy-local-ai-engine ]] || fail "unload" "$(snap .state)"; pass "unload: containers gone, state idle"
 [[ $(snap .model.downloaded) == true ]] || fail "downloads kept"; pass "unload keeps downloads"
-[[ -f $SHIM/serving ]] && fail "share off on unload"; pass "unload turns sharing off"
+[[ -f $OMARCHY_AI_STATE/share.on ]] && fail "share off on unload"; pass "unload turns sharing off"
 
 # adoption: a running owned pair with no ledger is reported ready, not restarted
 "$CLI" load; rm -f "$OMARCHY_AI_STATE/ledger.json"; "$CLI" snapshot >/dev/null
@@ -217,8 +220,8 @@ wait $holder; "$CLI" unload
 "$CLI" load; [[ $(snap .state) == ready && $(snap .error) == "" ]] || fail "op clears refusal"; pass "a finished operation clears an earlier refusal"
 "$CLI" open-agent nope >/dev/null 2>&1 || true; [[ $(snap .state) == ready && $(snap .error) != "" ]] || fail "refusal beside ready" "$(snap .state) $(snap .error)"; pass "a refused agent launch keeps a running model ready and shows the reason"
 OMARCHY_AI_FOREGROUND=0 "$CLI" open-agent pi >/dev/null; [[ $(snap .error) == "" ]] || fail "launch clears refusal"; pass "a launch that works clears the earlier refusal"
-"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.url) == https://box.tail.ts.net:8443 ]] || fail "share port" "$(snap .share)"; pass "share claims its own tailnet port"
-"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share port off"; pass "share off releases only its own port"
+"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 && $(snap .state) == ready ]] || fail "share after refusal" "$(snap .share) $(snap .state)"; pass "share works after an earlier refusal, and is not an error"
+"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false && $(snap .state) == ready ]] || fail "share off after refusal"; pass "share off leaves the model ready"
 [[ $(snap .lastStartSeconds) =~ ^[0-9]+$ ]] || fail "lastStartSeconds in snapshot"; pass "snapshot carries the last Start duration for the Start label"
 "$CLI" unload
 

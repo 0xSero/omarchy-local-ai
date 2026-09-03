@@ -34,7 +34,7 @@ snapshot_write() {
   [[ -n $rec && -z $gate ]] && ! driver_ok "$driver_have" "$driver_min" && gate="needs NVIDIA driver $driver_min or newer (have ${driver_have:-none})"
   jq -nc --argjson l "$ledger" --argjson rec "${rec:-null}" --arg state "$state" --arg reason "$reason" --arg gate "$gate" \
     --arg hw "$hw_id" --arg served "$served" --arg rr "$running_recipe" --argjson known "$running_known" --argjson dl "$downloaded" \
-    --argjson agents "$(agents_json)" --argjson share "$(share_state_cached)" --arg reg "$(registry_commit)" --arg t "$(now)" '
+    --argjson agents "$(agents_json)" --argjson share "$(share_state)" --arg reg "$(registry_commit)" --arg t "$(now)" '
     {schemaVersion:"omarchy-local-ai/snapshot/7", updatedAt:$t, state:$state, error:$l.error, lastStartSeconds:($l.lastStartSeconds//0),
      operation:{name:$l.op.name, detail:$l.op.detail, percent:$l.op.percent, startedAt:$l.op.startedAt,
        expectedSeconds:(if $l.op.name=="starting" then ($l.lastStartSeconds//0) else 0 end)},

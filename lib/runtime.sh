@@ -59,9 +59,26 @@ gateway_argv() { # gateway_argv <recipe>
   local r=$1 img; img=$(gateway_image); [[ -n $img ]] || { fail "recipes.json has no gateway image"; return 1; }
   printf '%s\0' docker run --detach --name "$GATEWAY" --restart unless-stopped --network "$NET" \
     --publish "127.0.0.1:$PORT:12434" --label "$LABEL=1" --label "$LABEL.recipe=$(jq -r .id <<<"$r")" \
-    --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=gateway" \
-    --env "UPSTREAM=http://engine:$(jq -r .launch.containerPort <<<"$r")" --env "MODEL=$(jq -r .model.servedName <<<"$r")" \
+    --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=gateway"
+  share_publish_argv   # the tailnet address too, while sharing is on
+  printf '%s\0' --env "UPSTREAM=http://engine:$(jq -r .launch.containerPort <<<"$r")" --env "MODEL=$(jq -r .model.servedName <<<"$r")" \
     --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY_FILE:/run/gateway.key:ro" "$img"
+}
+start_gateway() { # start_gateway <recipe>; remembers the recipe so the gateway can be restarted alone
+  local r=$1 v; local -a argv=()
+  while IFS= read -r -d '' v; do argv+=("$v"); done < <(gateway_argv "$r") || return 1
+  ((${#argv[@]})) || return 1
+  printf '%s\n' "$r" >"$STATE/gateway.recipe.json"
+  log "gateway: ${argv[*]}"
+  run_child "${argv[@]}" >>"$LOGFILE" 2>&1
+}
+restart_gateway() { # same recipe, fresh publish list (share on/off); the engine is untouched
+  local r; r=$(cat "$STATE/gateway.recipe.json" 2>/dev/null) || { fail "no gateway to restart"; return 1; }
+  [[ -n $r ]] || { fail "no gateway to restart"; return 1; }
+  exists "$GATEWAY" && owned "$GATEWAY" && docker rm -f "$GATEWAY" >/dev/null 2>&1
+  start_gateway "$r" || return 1
+  local i; for ((i=0; i<15; i++)); do api models 2 >/dev/null 2>&1 && return 0; sleep "${POLL:-1}"; done
+  api models 2 >/dev/null 2>&1
 }
 
 api() { curl -fsS --max-time "${2:-30}" --max-filesize 1048576 -H "Authorization: Bearer $(cat "$KEY_FILE")" "http://127.0.0.1:$PORT/v1/$1"; }
@@ -146,7 +163,5 @@ start_pair() { # start_pair <recipe>: engine then gateway; returns non-zero on a
   ((${#argv[@]})) || return 1
   log "engine: ${argv[*]}"
   run_child "${argv[@]}" >>"$LOGFILE" 2>&1 || return 1
-  argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(gateway_argv "$r") || return 1
-  log "gateway: ${argv[*]}"
-  run_child "${argv[@]}" >>"$LOGFILE" 2>&1 || return 1
+  start_gateway "$r" || return 1
 }

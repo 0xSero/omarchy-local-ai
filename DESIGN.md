@@ -174,7 +174,13 @@ plugin's state directory (mode 600), and the gateway, which reads the key
 file on each request, requires it as `Authorization: Bearer` or `x-api-key`
 for any non-loopback request. The share dialog shows the URL and the key;
 `share --key <value>` (and a panel field) replaces it without a restart.
-Stop sharing turns `tailscale serve` off; the key stays for next time.
+The route is the gateway's port published on the machine's tailnet address
+(`docker run --publish 100.x.y.z:12434:12434`), never `tailscale serve`: serve
+refuses a plain user until root names them the operator, and the panel cannot
+escalate (no polkit agent runs on Omarchy). WireGuard already encrypts the
+tailnet, so plain http there is as private as serve's https. Toggling restarts
+the stateless gateway with or without the second publish. Stop sharing drops
+it; the key stays for next time. (revised 2026-09-03 evening)
 
 ### 6. Commands
 Exactly `snapshot`, `load`, `unload`, `open-agent [name]`, `share`. Drop
