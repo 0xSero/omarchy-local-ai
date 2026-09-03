@@ -57,8 +57,10 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
 
 gateway_argv() { # gateway_argv <recipe>
   local r=$1 img; img=$(gateway_image); [[ -n $img ]] || { fail "recipes.json has no gateway image"; return 1; }
+  # as this user: the image's own uid (10001) cannot read the 0600 key file, and a gateway that
+  # cannot read its key silently serves keyless. Port 12434 needs no root.
   printf '%s\0' docker run --detach --name "$GATEWAY" --restart unless-stopped --network "$NET" \
-    --publish "127.0.0.1:$PORT:12434" --label "$LABEL=1" --label "$LABEL.recipe=$(jq -r .id <<<"$r")" \
+    --user "$(id -u):$(id -g)" --publish "127.0.0.1:$PORT:12434" --label "$LABEL=1" --label "$LABEL.recipe=$(jq -r .id <<<"$r")" \
     --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=gateway"
   share_publish_argv   # the tailnet address too, while sharing is on
   printf '%s\0' --env "UPSTREAM=http://engine:$(jq -r .launch.containerPort <<<"$r")" --env "MODEL=$(jq -r .model.servedName <<<"$r")" \
@@ -100,6 +102,11 @@ accept() {
     op starting "$id" "loading the model" "$(start_percent)"; sleep "$POLL"
   done
   [[ $served == "$want" || $want == */* && $served == *"${want##*/}"* ]] || { fail "served model $served is not $want"; return 1; }
+  # a gateway that cannot read its key file serves keyless without a word; sharing that on a
+  # tailnet is the one thing this plugin must never do, so an unkeyed request has to be refused
+  if curl -fsS --max-time 10 --max-filesize 1048576 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
+    fail "gateway answers without the key (docker logs $GATEWAY)"; return 1
+  fi
   op starting "$id" "chat acceptance" 0
   t0=$(date +%s%N)
   reply=$(post chat/completions "$(jq -nc --arg m "$served" '{model:$m,stream:false,messages:[{role:"user",content:"Reply with exactly: LOCAL_AI_READY"}]}')") || { fail "chat completion failed"; return 1; }

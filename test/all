@@ -67,6 +67,7 @@ cat >"$TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 # the gateway: healthy when the engine and gateway "containers" run; dialects from SHIM_APIS
 url=${@: -1}; data=""; for ((i=1;i<=$#;i++)); do [[ ${!i} == -d ]] && { j=$((i+1)); data=${!j}; }; done
+[[ "$*" == *"Authorization: Bearer "* || ${SHIM_KEYLESS_GATEWAY:-} == 1 ]] || exit 22   # the gateway refuses unkeyed requests; -f makes that exit 22
 [[ $(cat "$SHIM/containers/omarchy-local-ai-engine/state" 2>/dev/null) == running && $(cat "$SHIM/containers/omarchy-local-ai-gateway/state" 2>/dev/null) == running ]] || exit 7
 apis=${SHIM_APIS:-chat,messages,responses}
 case $url in
@@ -89,7 +90,7 @@ EOF
 for a in pi claude codex; do printf '#!/usr/bin/env bash\necho "$0 $*"\n' >"$TMP/bin/$a"; done
 printf '#!/usr/bin/env bash\necho "launch $*"\n' >"$TMP/bin/omarchy-launch-tui"
 printf '#!/usr/bin/env bash\necho pi\n' >"$TMP/bin/omarchy-default-agent"
-chmod +x "$TMP"/bin/*
+find "$TMP/bin" -type f -exec chmod +x {} +   # not the jq symlink: its target is not ours to chmod on CI
 
 # ---------------------------------------------------------------- fixture recipes.json
 digest=$(printf 'a%.0s' {1..64}); rev=$(printf 'b%.0s' {1..40})
@@ -136,7 +137,7 @@ out=$("$CLI" open-agent codex); [[ $out == *wire_api=responses* && $out == *mode
 
 "$CLI" share; "$CLI" snapshot >/dev/null
 [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 ]] || fail "share on" "$(snap .share)"; pass "share: on, tailnet URL and key shown"
-grep -q -- "--publish 127.0.0.1:12434:12434 .*--publish 100.64.0.7:12434:12434" "$SHIM/docker.log" || fail "gateway published on the tailnet" "$(grep gateway "$SHIM/docker.log" | tail -1)"; pass "share: the gateway is republished on the tailnet address, loopback kept"
+grep -q -- "--user $(id -u):$(id -g) --publish 127.0.0.1:12434:12434 .*--publish 100.64.0.7:12434:12434" "$SHIM/docker.log" || fail "gateway published on the tailnet" "$(grep gateway "$SHIM/docker.log" | tail -1)"; pass "share: the gateway is republished on the tailnet address, loopback kept, as this user so it can read the key"
 grep -q "tailscale serve" "$OMARCHY_AI_STATE/log" && fail "tailscale serve used"; [[ $(snap .state) == ready && $(snap .share.error) == "" ]] || fail "ready after share" "$(snap .state) $(snap .share.error)"; pass "share: no tailscale serve, no password, model still ready"
 grep -c "^docker run .*omarchy-local-ai-engine" "$SHIM/docker.log" | grep -qx 1 || fail "engine restarted on share"; pass "share: the engine was not touched"
 "$CLI" share --key "0123456789abcdef0123"; [[ $(cat "$OMARCHY_AI_STATE/gateway.key") == 0123456789abcdef0123 ]] || fail "key replaced"; pass "share --key replaces the key"
@@ -225,6 +226,10 @@ rm -f "$OMARCHY_AI_STATE/gateway.recipe.json"   # a gateway started by an older 
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false && $(snap .state) == ready ]] || fail "share off after refusal"; pass "share off leaves the model ready"
 [[ $(snap .lastStartSeconds) =~ ^[0-9]+$ ]] || fail "lastStartSeconds in snapshot"; pass "snapshot carries the last Start duration for the Start label"
 "$CLI" unload
+
+# a gateway that serves without the key never becomes ready
+SHIM_KEYLESS_GATEWAY=1 "$CLI" load
+[[ $(snap .state) == error && $(snap .error) == *"without the key"* ]] || fail "keyless gateway refused" "$(snap .state) $(snap .error)"; pass "a gateway that answers without the key is refused at acceptance"
 
 # failures during start are logged and rolled back
 SHIM_RUN_FAIL=omarchy-local-ai-engine "$CLI" load
