@@ -83,7 +83,7 @@ open_agent() { # open_agent [name]: default agent when omitted; refuses out loud
   [[ -n $name ]] || { name=$(jq -r '.agents.default // ""' <<<"$snap"); name=${name:-pi}; }
   jq -e --arg a "$name" '.agents.launchable|index($a)!=null' <<<"$snap" >/dev/null \
     || { fail "$name cannot use this model: its API dialect did not pass acceptance"; return; }
-  model=$(jq -r '.model.servedName' <<<"$snap"); key=$(lread | jq -r '.share.key')
+  model=$(jq -r '.model.servedName' <<<"$snap"); key=$(cat "$KEY_FILE")
   local -a argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(agent_command "$name" "$model" "$key") || return 1
   # the person's own flags for this agent (`omarchy-local-ai agent-args <name> -- <flags>`), e.g. a yolo mode
   if [[ -s $STATE/agents/args/$name ]]; then while IFS= read -r -d '' v; do argv+=("$v"); done <"$STATE/agents/args/$name"; fi

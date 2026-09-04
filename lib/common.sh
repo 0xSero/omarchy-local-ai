@@ -2,7 +2,8 @@
 # Paths, the ledger, the lock, and logging. Sourced by omarchy-local-ai; do not run.
 #
 # Everything the plugin persists lives in $STATE:
-#   ledger.json    the only authoritative state: current op, last error, last accepted recipe, share key
+#   ledger.json    the only authoritative state: current op, last error, last accepted recipe
+#   gateway.key    the one secret; it lives in this file only, never in the ledger, the snapshot, or the log
 #   snapshot.json  the derived read model the panel watches (rewritten, never edited)
 #   log            every worker step, for "refusal out loud" beyond the one-line error
 #   op.lock        flock target; the fd is closed in every child so a killed worker cannot orphan it
@@ -23,7 +24,15 @@ CTR="${OMARCHY_AI_CONTAINER:-omarchy-local-ai}"     # engine: $CTR-engine, gatew
 LEDGER="$STATE/ledger.json"
 SNAPSHOT="$STATE/snapshot.json"
 LOGFILE="$STATE/log"
-LEDGER_EMPTY='{"schemaVersion":"omarchy-local-ai/ledger/1","op":{"name":"","recipeId":"","pid":0,"startedAt":"","detail":"","percent":0},"error":"","accepted":{"recipeId":"","servedModel":"","registry":"","apis":[]},"share":{"key":""},"lastStartSeconds":0}'
+LEDGER_EMPTY='{"schemaVersion":"omarchy-local-ai/ledger/1","op":{"name":"","recipeId":"","pid":0,"startedAt":"","detail":"","percent":0},"error":"","accepted":{"recipeId":"","servedModel":"","registry":"","apis":[]},"lastStartSeconds":0}'
+
+# Everything under $STATE is private to this user: the directory is 0700 and every file the plugin
+# writes there is 0600, because the state carries agent launch configs that embed the gateway key.
+# Directories other users' containers must traverse (weights, caches, mounted assets) are made
+# with mkdir_shared under the ordinary umask.
+umask 077
+state_dir() { mkdir -p "$STATE" && chmod 700 "$STATE"; chmod 600 "$LEDGER" "$SNAPSHOT" "$LOGFILE" 2>/dev/null || true; }   # older installs wrote them 0644
+mkdir_shared() { (umask 022; mkdir -p "$@"); }
 
 fail() { printf 'local-ai: %s\n' "$*" >&2; return 1; }
 # refuse is fail for CLI verbs the panel invokes: the message must also land in the ledger,
@@ -31,7 +40,7 @@ fail() { printf 'local-ai: %s\n' "$*" >&2; return 1; }
 # live worker whose op record is authoritative.
 refuse() { printf 'local-ai: %s\n' "$*" >&2; log "error: $*"; lwrite '.error=$e' --arg e "$*"; snapshot_write; return 1; }
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
-log() { mkdir -p "$STATE"; printf '%s %s\n' "$(now)" "$*" >>"$LOGFILE"; }
+log() { state_dir; printf '%s %s\n' "$(now)" "$*" >>"$LOGFILE"; }
 bin_of() { [[ -x $HOME_DIR/.local/bin/$1 ]] && printf '%s\n' "$HOME_DIR/.local/bin/$1" || command -v "$1"; }
 canon() { # canonicalize, resolving symlinks even for not-yet-existing leaf paths
   local p=$1 rest=""
@@ -44,7 +53,7 @@ canon() { # canonicalize, resolving symlinks even for not-yet-existing leaf path
 lread() { [[ -f $LEDGER ]] && cat "$LEDGER" || printf '%s\n' "$LEDGER_EMPTY"; }
 HAVE_FLOCK=0; command -v flock >/dev/null 2>&1 && HAVE_FLOCK=1   # Omarchy has util-linux; the mkdir path is for tests elsewhere
 lwrite() { # lwrite <jq-filter> [jq-args...]: atomic read-modify-write under a short file lock
-  local f=$1; shift; mkdir -p "$STATE"
+  local f=$1; shift; state_dir
   if ((HAVE_FLOCK)); then
     { flock 9; jq -c "$@" "$f" <<<"$(lread)" >"$LEDGER.tmp.$$" && mv "$LEDGER.tmp.$$" "$LEDGER"; } 9>"$STATE/ledger.lock"
   else
@@ -66,7 +75,7 @@ oops() { log "error: $1"; lwrite '.error=$e | .op={name:"",recipeId:"",pid:0,sta
 # spawn below closes 8, so a worker killed mid-download does not leave `hf`
 # holding the lock (the old plugin's orphaned-lock bug).
 guard() {
-  mkdir -p "$STATE"
+  state_dir
   if ((HAVE_FLOCK)); then
     exec 8>"$STATE/op.lock"
     flock -n 8 || { fail "another operation is running"; return 1; }

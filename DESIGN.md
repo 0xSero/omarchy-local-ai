@@ -171,8 +171,11 @@ rollback. The registry validates engine plus gateway as one recipe.
 ### 5b. Tailscale share is keyed, auto-configured, user-changeable (agreed 2026-09-03)
 Loopback is keyless. The first Share generates a random key, stores it in the
 plugin's state directory (mode 600), and the gateway, which reads the key
-file on each request, requires it as `Authorization: Bearer` or `x-api-key`
-for any non-loopback request. The share dialog shows the URL and the key;
+file on each request, requires it as `Authorization: Bearer` or `x-api-key`.
+The key lives in that file only: not in the ledger, not in the snapshot the
+panel reads, not in the log (revised 2026-09-04 after marketplace review).
+The state directory is 0700 and every file in it 0600, since agent launch
+configs there embed the key. The share dialog shows the URL and the key file;
 `share --key <value>` (and a panel field) replaces it without a restart.
 The route is the gateway's port published on the machine's tailnet address
 (`docker run --publish 100.x.y.z:12434:12434`), never `tailscale serve`: serve

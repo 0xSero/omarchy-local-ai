@@ -21,12 +21,11 @@ ts_bin() { command -v tailscale 2>/dev/null; }
 
 ensure_key() {
   [[ -s $KEY_FILE ]] && return 0
-  mkdir -p "$STATE"; (umask 077; head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-32 >"$KEY_FILE")
-  lwrite '.share.key=$k' --arg k "$(cat "$KEY_FILE")"
+  state_dir; head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-32 >"$KEY_FILE"
 }
 set_key() {
   [[ ${#1} -ge 16 ]] || { fail "key must be at least 16 characters"; return; }
-  mkdir -p "$STATE"; (umask 077; printf '%s\n' "$1" >"$KEY_FILE"); lwrite '.share.key=$k' --arg k "$1"; snapshot_write
+  state_dir; printf '%s\n' "$1" >"$KEY_FILE"; snapshot_write
 }
 
 tailnet_self() { # -> {ip,dns,online}; empty ip when tailscale is off. IPv4 first, IPv6 when that is all there is.
@@ -47,10 +46,12 @@ share_publish_argv() { # extra `docker run` words for the gateway while sharing 
   printf '%s\0' --publish "$(bind_addr "$ip"):$PORT:12434"
 }
 
-share_state() { # -> {available,active,url,key,error}; read from tailscale and docker each time, never cached
+# The key is never part of share_state: the snapshot is the panel's read model and the panel shows
+# only non-secret state. The card names the key file; agents read it at launch.
+share_state() { # -> {available,active,url,keyFile,error}; read from tailscale and docker each time, never cached
   local self ip dns online active=false url="" err bound; err=$(cat "$SHARE_ERROR" 2>/dev/null || true)
   self=$(tailnet_self); ip=$(jq -r .ip <<<"$self"); dns=$(jq -r .dns <<<"$self"); online=$(jq -r .online <<<"$self")
-  if [[ -z $ip ]]; then jq -nc --arg k "$(cat "$KEY_FILE" 2>/dev/null)" --arg e "$err" '{available:false,active:false,url:"",key:$k,error:$e}'; return; fi
+  if [[ -z $ip ]]; then jq -nc --arg k "$KEY_FILE" --arg e "$err" '{available:false,active:false,url:"",keyFile:$k,error:$e}'; return; fi
   if share_wanted && owned "$GATEWAY" && running "$GATEWAY"; then
     bound=$(cat "$SHARE_MARK" 2>/dev/null || true)
     if [[ -z $bound || $bound == "$ip" ]]; then active=true
@@ -58,10 +59,10 @@ share_state() { # -> {available,active,url,key,error}; read from tailscale and d
   fi
   [[ $online == true || -n $err ]] || err="tailscale is not connected"
   url="http://$(bind_addr "${dns:-$ip}"):$PORT"
-  jq -nc --argjson a "$active" --arg u "$url" --arg k "$(cat "$KEY_FILE" 2>/dev/null)" --arg e "$err" '{available:true,active:$a,url:$u,key:$k,error:$e}'
+  jq -nc --argjson a "$active" --arg u "$url" --arg k "$KEY_FILE" --arg e "$err" '{available:true,active:$a,url:$u,keyFile:$k,error:$e}'
 }
 
-share_on() { mkdir -p "$STATE"; : >"$SHARE_MARK"; restart_gateway; }
+share_on() { state_dir; : >"$SHARE_MARK"; restart_gateway; }
 share_off() { rm -f "$SHARE_MARK"; owned "$GATEWAY" && running "$GATEWAY" && restart_gateway; return 0; }
 share_forget() { rm -f "$SHARE_MARK"; }
 docker_last_error() { # the last line docker wrote to the log, trimmed to what a card can show
@@ -69,7 +70,7 @@ docker_last_error() { # the last line docker wrote to the log, trimmed to what a
   printf '%s' "${l:-see $LOGFILE}"
 }   # for unload: the gateway is about to go, no restart
 share_refuse() { # the model is still fine, so this goes under the toggle, not into the ledger's error
-  log "share: $1"; mkdir -p "$STATE"; printf '%s\n' "$1" >"$SHARE_ERROR"; op_done; fail "$1"
+  log "share: $1"; state_dir; printf '%s\n' "$1" >"$SHARE_ERROR"; op_done; fail "$1"
 }
 
 share_toggle() { # share [--key value]

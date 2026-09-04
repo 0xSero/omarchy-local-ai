@@ -12,7 +12,9 @@
 # when the last verb was refused (the error text still shows beside it).
 
 snapshot_write() {
-  mkdir -p "$STATE"
+  state_dir
+  # a ledger written by an older plugin carries the key under .share: scrub it once, here, where every path passes
+  [[ -f $LEDGER ]] && jq -e 'has("share")' "$LEDGER" >/dev/null 2>&1 && lwrite 'del(.share)'
   local ledger match rec hw_id gpu reason state="" pid running_recipe="" served="" busy=false answering=false engine_up=false
   ledger=$(lread); match=$(match_hardware); hw_id=$(jq -r .hardwareId <<<"$match"); reason=$(jq -r .reason <<<"$match")
   rec=$(recipe_for "$hw_id"); [[ -n $rec ]] && rec=$(jq -c --argjson m "$match" '. + {gpuIndex:$m.gpu.index, match:{backend:$m.gpu.backend}}' <<<"$rec")

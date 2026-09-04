@@ -31,7 +31,7 @@ download_weights() {
   id=$(jq -r .id <<<"$r"); repo=$(jq -r .model.repository <<<"$r"); rev=$(jq -r .model.revision <<<"$r")
   exp=$(jq -r '((.model.sizeGb//0)*1073741824)|floor' <<<"$r"); img=$(jq -r .launch.image <<<"$r")
   read -r kind base < <(weights_dest "$r")
-  mkdir -p "$base" "$(dirname "$(marker_path "$id")")"
+  mkdir_shared "$base"; state_dir; mkdir -p "$(dirname "$(marker_path "$id")")"
   free=$(df -Pk "$base" 2>/dev/null | awk 'NR==2{print $4*1024}')
   bytes=$(dir_bytes "$base")
   if (( exp > 0 && ${free:-0} > 0 && free < exp - bytes )); then
@@ -51,7 +51,8 @@ download_weights() {
     if [[ $kind == dir ]]; then py+=", local_dir='/weights')"; else py+=")"; fi
     # HF_HOME must be writable for the hub cache and xet chunks: the mounted /hf in hub mode, /tmp in dir mode
     cmd=(docker run --rm --user "$(id -u):$(id -g)" --label "$LABEL.download=1" --network bridge
-         --env HF_HOME="$([[ $kind == dir ]] && echo /tmp/hf || echo /hf)" --env HOME=/tmp --env HF_TOKEN="${HF_TOKEN:-}"
+         --env HF_HOME="$([[ $kind == dir ]] && echo /tmp/hf || echo /hf)" --env HOME=/tmp
+         ${HF_TOKEN:+--env HF_TOKEN}   # by name only: docker takes the value from this environment; it is never in argv or the log
          --volume "$base:$([[ $kind == dir ]] && echo /weights || echo /hf)"
          --entrypoint python3 "$img" -c "$py")
   fi

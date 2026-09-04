@@ -16,10 +16,10 @@ ensure_network() { docker network inspect "$NET" >/dev/null 2>&1 || docker netwo
 
 # write_assets <recipe>: config files the recipe mounts, from recipes.json, into a plugin-owned dir
 write_assets() {
-  local r=$1 f; mkdir -p "$STATE/assets"
+  local r=$1 f; state_dir; mkdir_shared "$STATE/assets"   # the engine container reads these as its own uid
   while IFS= read -r f; do
     [[ -n $f ]] || continue
-    jq -r --arg f "$f" '.assets[$f]' "$RECIPES" >"$STATE/assets/$f"
+    (umask 022; jq -r --arg f "$f" '.assets[$f]' "$RECIPES" >"$STATE/assets/$f")
   done < <(jq -r '.launch.mounts[]?|.source|select(startswith("asset/"))|ltrimstr("asset/")' <<<"$r")
 }
 
@@ -40,8 +40,8 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
   while IFS=$'\t' read -r src tgt mode; do
     [[ -n $src && -n $tgt ]] || continue
     case $src in
-      '${MODEL_ROOT}/'*|'${CACHE_ROOT}/'*) real=$(canon "$(expand_mount "$src")"); mkdir -p "$real" ;;
-      '~/.cache/huggingface'*) real=$(canon "$HOME_DIR/${src#\~/}"); mkdir -p "$real" ;;
+      '${MODEL_ROOT}/'*|'${CACHE_ROOT}/'*) real=$(canon "$(expand_mount "$src")"); mkdir_shared "$real" ;;
+      '~/.cache/huggingface'*) real=$(canon "$HOME_DIR/${src#\~/}"); mkdir_shared "$real" ;;
       asset/*) real="$STATE/assets/${src#asset/}"; mode=":ro" ;;
       /dev/dri/by-path) real=$src ;;
       *) fail "mount outside boundary: $src"; return 1 ;;

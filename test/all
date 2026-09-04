@@ -137,9 +137,16 @@ grep -q -- "--volume $OMARCHY_AI_STATE/assets/cfg.yml:/app/config.yml:ro" "$SHIM
 [[ $(snap '.apis|join(",")') == "chat,messages,responses" ]] || fail "all dialects accepted" "$(snap .apis)"; pass "acceptance probes chat, messages, and responses"
 [[ $(snap '.agents.launchable|join(",")') == "pi,claude,codex" ]] || fail "launchable agents" "$(snap .agents.launchable)"; pass "every installed agent is launchable when every dialect passed"
 [[ -s $OMARCHY_AI_STATE/gateway.key ]] || fail "key generated"; pass "gateway key generated on first start"
+k=$(cat "$OMARCHY_AI_STATE/gateway.key")
+grep -rq -- "$k" "$OMARCHY_AI_STATE/ledger.json" "$OMARCHY_AI_STATE/snapshot.json" "$OMARCHY_AI_STATE/log" && fail "key leaked into ledger, snapshot, or log"; pass "the key is in gateway.key only: not in the ledger, the snapshot, or the log"
+[[ $(snap .share.keyFile) == "$OMARCHY_AI_STATE/gateway.key" && $(snap '.share|has("key")') == false ]] || fail "snapshot names the key file" "$(snap .share)"; pass "the snapshot carries the key file's path, never the key"
+[[ $(stat -f %Lp "$OMARCHY_AI_STATE" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE") == 700 ]] || fail "state dir mode" "$(ls -ld "$OMARCHY_AI_STATE")"; pass "the state directory is 0700"
+for f in ledger.json snapshot.json log gateway.key; do m=$(stat -f %Lp "$OMARCHY_AI_STATE/$f" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE/$f"); [[ $m == 600 ]] || fail "mode of $f" "$m"; done; pass "ledger, snapshot, log, and key are 0600"
+[[ $(stat -f %Lp "$OMARCHY_AI_STATE/assets/cfg.yml" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE/assets/cfg.yml") == 644 ]] || fail "asset mode"; pass "mounted assets stay world-readable for the engine's uid"
 out=$("$CLI" open-agent claude); [[ $out == *ANTHROPIC_BASE_URL=http://127.0.0.1:12434* && $out == *ANTHROPIC_API_KEY=$(cat "$OMARCHY_AI_STATE/gateway.key")* ]] || fail "claude launch env" "$out"; pass "open-agent claude: endpoint and key in the environment, nothing on disk"
 out=$("$CLI" open-agent codex); [[ $out == *wire_api=responses* && $out == *model=Test-Model* ]] || fail "codex launch" "$out"; pass "open-agent codex: responses provider by flags"
 [[ ! -e $OMARCHY_AI_USER_HOME/.claude.json && ! -e $OMARCHY_AI_USER_HOME/.codex ]] || fail "no user files touched"; pass "no user config files were created or edited"
+"$CLI" open-agent pi >/dev/null; m=$(stat -f %Lp "$OMARCHY_AI_STATE/agents/pi/models.json" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE/agents/pi/models.json"); [[ $m == 600 ]] || fail "agent config mode" "$m"; pass "agent launch configs that embed the key are 0600"
 
 "$CLI" share; "$CLI" snapshot >/dev/null
 [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 ]] || fail "share on" "$(snap .share)"; pass "share: on, tailnet URL and key shown"
@@ -216,9 +223,10 @@ write_recipes "$(recipe good true asset)" rtx-3090-24gb; "$CLI" snapshot >/dev/n
 [[ $(snap .model) == null && $(snap .reason) == *"no validated recipe for NVIDIA GeForce RTX 4090"* ]] || fail "unmatched" "$(snap .reason)"; pass "unsupported card: no model, and the reason says which card"
 
 # hf-cache recipes download into the cache, not a local dir
-write_recipes "$(recipe hfcache false hf)"; "$CLI" load
+write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI" load
 [[ $(snap .state) == ready ]] || fail "hf recipe" "$(snap .error)"; pass "hf-cache recipe: downloaded into the shared cache and started"
 grep -q -- "--volume $(cd "$OMARCHY_AI_HF_HOME" && pwd -P):/root/.cache/huggingface" "$SHIM/docker.log" || fail "hf mount"; pass "hf cache mounted at the recipe's target"
+grep -q "HF_TOKEN" "$OMARCHY_AI_STATE/log" && ! grep -q "hf_secret_token_value" "$OMARCHY_AI_STATE/log" "$SHIM/docker.log" || fail "token in log" "$(grep -h HF_TOKEN "$OMARCHY_AI_STATE/log" "$SHIM/docker.log" | head -2)"; pass "HF_TOKEN reaches the downloader by name; its value is never logged"
 "$CLI" unload
 
 # lock: a second load while busy is refused without touching the running op
@@ -241,6 +249,10 @@ wait $holder; "$CLI" unload
 "$CLI" load; [[ $(snap .state) == ready && $(snap .error) == "" ]] || fail "op clears refusal"; pass "a finished operation clears an earlier refusal"
 "$CLI" open-agent nope >/dev/null 2>&1 || true; [[ $(snap .state) == ready && $(snap .error) != "" ]] || fail "refusal beside ready" "$(snap .state) $(snap .error)"; pass "a refused agent launch keeps a running model ready and shows the reason"
 OMARCHY_AI_FOREGROUND=0 "$CLI" open-agent pi >/dev/null; [[ $(snap .error) == "" ]] || fail "launch clears refusal"; pass "a launch that works clears the earlier refusal"
+# an older install: key copied into the ledger, files world-readable; the next snapshot scrubs and tightens
+jq '.share={key:"leaked-old-key"}' "$OMARCHY_AI_STATE/ledger.json" >"$TMP/l.json" && mv "$TMP/l.json" "$OMARCHY_AI_STATE/ledger.json"; chmod 644 "$OMARCHY_AI_STATE/ledger.json" "$OMARCHY_AI_STATE/snapshot.json"
+"$CLI" snapshot >/dev/null; grep -q leaked-old-key "$OMARCHY_AI_STATE/ledger.json" && fail "old key not scrubbed"
+[[ $(stat -f %Lp "$OMARCHY_AI_STATE/ledger.json" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE/ledger.json") == 600 ]] || fail "old ledger mode"; pass "an older install's ledger is scrubbed of the key and made 0600 on the next snapshot"
 rm -f "$OMARCHY_AI_STATE/gateway.recipe.json"   # a gateway started by an older plugin: the recipe is recovered from the running container
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 && $(snap .state) == ready ]] || fail "share after refusal" "$(snap .share) $(snap .state)"; pass "share works after an earlier refusal and for a gateway started by an older plugin"
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false && $(snap .state) == ready ]] || fail "share off after refusal"; pass "share off leaves the model ready"

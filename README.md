@@ -56,8 +56,12 @@ launched from the panel; typed in a terminal they keep their own provider.
 - **Share**: the gateway's port published on this machine's tailnet address
   (`http://<host>.<tailnet>.ts.net:12434`), keyed. One click, no `tailscale
   serve`, no password: the stateless gateway restarts with the extra port
-  binding. The key is generated on first start and shown with the URL;
-  `omarchy-local-ai share --key <value>` replaces it.
+  binding. The key is generated on first start into
+  `~/.local/state/omarchy/local-ai/gateway.key` (mode 0600) and lives only
+  there: never in the ledger, the snapshot, or the log. The card shows the
+  URL and the key file's path; `omarchy-local-ai share --key <value>`
+  replaces it. A `HF_TOKEN` in the environment reaches the downloader by
+  name only and is never written anywhere.
 
 ## Commands
 
