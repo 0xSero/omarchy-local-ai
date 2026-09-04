@@ -31,7 +31,7 @@ LEDGER_EMPTY='{"schemaVersion":"omarchy-local-ai/ledger/1","op":{"name":"","reci
 # Directories other users' containers must traverse (weights, caches, mounted assets) are made
 # with mkdir_shared under the ordinary umask.
 umask 077
-state_dir() { mkdir -p "$STATE" && chmod 700 "$STATE"; chmod 600 "$LEDGER" "$SNAPSHOT" "$LOGFILE" 2>/dev/null || true; }   # older installs wrote them 0644
+state_dir() { mkdir -p "$STATE" && chmod 700 "$STATE"; chmod 600 "$LEDGER" "$SNAPSHOT" "$LOGFILE" 2>/dev/null || true; chmod -R go-rwx "$STATE/agents" 2>/dev/null || true; }   # older installs wrote them 0644
 mkdir_shared() { (umask 022; mkdir -p "$@"); }
 
 fail() { printf 'local-ai: %s\n' "$*" >&2; return 1; }

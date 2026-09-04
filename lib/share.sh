@@ -25,7 +25,11 @@ ensure_key() {
 }
 set_key() {
   [[ ${#1} -ge 16 ]] || { fail "key must be at least 16 characters"; return; }
-  state_dir; printf '%s\n' "$1" >"$KEY_FILE"; snapshot_write
+  state_dir; printf '%s\n' "$1" >"$KEY_FILE"
+  # every copy of the old key goes with it: agent launch configs are regenerated at the next launch
+  local d; for d in "$STATE"/agents/*/; do [[ ${d%/} == "$STATE/agents/args" ]] || rm -rf "$d"; done
+  rm -f "$STATE/share.cache"
+  snapshot_write
 }
 
 tailnet_self() { # -> {ip,dns,online}; empty ip when tailscale is off. IPv4 first, IPv6 when that is all there is.

@@ -154,7 +154,9 @@ out=$("$CLI" open-agent codex); [[ $out == *wire_api=responses* && $out == *mode
 grep -q -- "--user $(id -u):$(id -g) --publish 127.0.0.1:12434:12434 .*--publish 100.64.0.7:12434:12434" "$SHIM/docker.log" || fail "gateway published on the tailnet" "$(grep gateway "$SHIM/docker.log" | tail -1)"; pass "share: the gateway is republished on the tailnet address, loopback kept, as this user so it can read the key"
 grep -q "tailscale serve" "$OMARCHY_AI_STATE/log" && fail "tailscale serve used"; [[ $(snap .state) == ready && $(snap .share.error) == "" ]] || fail "ready after share" "$(snap .state) $(snap .share.error)"; pass "share: no tailscale serve, no password, model still ready"
 grep -c "^docker run .*omarchy-local-ai-engine" "$SHIM/docker.log" | grep -qx 1 || fail "engine restarted on share"; pass "share: the engine was not touched"
+"$CLI" open-agent pi >/dev/null; oldkey=$(cat "$OMARCHY_AI_STATE/gateway.key")
 "$CLI" share --key "0123456789abcdef0123"; [[ $(cat "$OMARCHY_AI_STATE/gateway.key") == 0123456789abcdef0123 ]] || fail "key replaced"; pass "share --key replaces the key"
+grep -rl -- "$oldkey" "$OMARCHY_AI_STATE" && fail "old key still on disk"; pass "share --key leaves no copy of the old key anywhere in the state"
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share off"
 tail -1 <(grep "^docker run .*gateway" "$SHIM/docker.log") | grep -q "100.64.0.7" && fail "still published after off"; pass "share toggles off: gateway republished on loopback only"
 
