@@ -17,6 +17,7 @@ n=0
 pass() { n=$((n+1)); echo "ok $n - $1"; }
 fail() { echo "not ok - $1${2:+: $2}" >&2; exit 1; }
 snap() { jq -r "$1" "$OMARCHY_AI_STATE/snapshot.json"; }
+mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }   # GNU first; BSD stat has no -c (and GNU stat -f prints instead of failing)
 
 # ---------------------------------------------------------------- shims
 cat >"$TMP/bin/nvidia-smi" <<'EOF'
@@ -140,13 +141,13 @@ grep -q -- "--volume $OMARCHY_AI_STATE/assets/cfg.yml:/app/config.yml:ro" "$SHIM
 k=$(cat "$OMARCHY_AI_STATE/gateway.key")
 grep -rq -- "$k" "$OMARCHY_AI_STATE/ledger.json" "$OMARCHY_AI_STATE/snapshot.json" "$OMARCHY_AI_STATE/log" && fail "key leaked into ledger, snapshot, or log"; pass "the key is in gateway.key only: not in the ledger, the snapshot, or the log"
 [[ $(snap .share.keyFile) == "$OMARCHY_AI_STATE/gateway.key" && $(snap '.share|has("key")') == false ]] || fail "snapshot names the key file" "$(snap .share)"; pass "the snapshot carries the key file's path, never the key"
-[[ $(stat -f %Lp "$OMARCHY_AI_STATE" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE") == 700 ]] || fail "state dir mode" "$(ls -ld "$OMARCHY_AI_STATE")"; pass "the state directory is 0700"
-for f in ledger.json snapshot.json log gateway.key; do m=$(stat -f %Lp "$OMARCHY_AI_STATE/$f" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE/$f"); [[ $m == 600 ]] || fail "mode of $f" "$m"; done; pass "ledger, snapshot, log, and key are 0600"
-[[ $(stat -f %Lp "$OMARCHY_AI_STATE/assets/cfg.yml" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE/assets/cfg.yml") == 644 ]] || fail "asset mode"; pass "mounted assets stay world-readable for the engine's uid"
+[[ $(mode "$OMARCHY_AI_STATE") == 700 ]] || fail "state dir mode" "$(ls -ld "$OMARCHY_AI_STATE")"; pass "the state directory is 0700"
+for f in ledger.json snapshot.json log gateway.key; do m=$(mode "$OMARCHY_AI_STATE/$f"); [[ $m == 600 ]] || fail "mode of $f" "$m"; done; pass "ledger, snapshot, log, and key are 0600"
+[[ $(mode "$OMARCHY_AI_STATE/assets/cfg.yml") == 644 ]] || fail "asset mode"; pass "mounted assets stay world-readable for the engine's uid"
 out=$("$CLI" open-agent claude); [[ $out == *ANTHROPIC_BASE_URL=http://127.0.0.1:12434* && $out == *ANTHROPIC_API_KEY=$(cat "$OMARCHY_AI_STATE/gateway.key")* ]] || fail "claude launch env" "$out"; pass "open-agent claude: endpoint and key in the environment, nothing on disk"
 out=$("$CLI" open-agent codex); [[ $out == *wire_api=responses* && $out == *model=Test-Model* ]] || fail "codex launch" "$out"; pass "open-agent codex: responses provider by flags"
 [[ ! -e $OMARCHY_AI_USER_HOME/.claude.json && ! -e $OMARCHY_AI_USER_HOME/.codex ]] || fail "no user files touched"; pass "no user config files were created or edited"
-"$CLI" open-agent pi >/dev/null; m=$(stat -f %Lp "$OMARCHY_AI_STATE/agents/pi/models.json" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE/agents/pi/models.json"); [[ $m == 600 ]] || fail "agent config mode" "$m"; pass "agent launch configs that embed the key are 0600"
+"$CLI" open-agent pi >/dev/null; m=$(mode "$OMARCHY_AI_STATE/agents/pi/models.json"); [[ $m == 600 ]] || fail "agent config mode" "$m"; pass "agent launch configs that embed the key are 0600"
 
 "$CLI" share; "$CLI" snapshot >/dev/null
 [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 ]] || fail "share on" "$(snap .share)"; pass "share: on, tailnet URL and key shown"
@@ -252,7 +253,7 @@ OMARCHY_AI_FOREGROUND=0 "$CLI" open-agent pi >/dev/null; [[ $(snap .error) == ""
 # an older install: key copied into the ledger, files world-readable; the next snapshot scrubs and tightens
 jq '.share={key:"leaked-old-key"}' "$OMARCHY_AI_STATE/ledger.json" >"$TMP/l.json" && mv "$TMP/l.json" "$OMARCHY_AI_STATE/ledger.json"; chmod 644 "$OMARCHY_AI_STATE/ledger.json" "$OMARCHY_AI_STATE/snapshot.json"
 "$CLI" snapshot >/dev/null; grep -q leaked-old-key "$OMARCHY_AI_STATE/ledger.json" && fail "old key not scrubbed"
-[[ $(stat -f %Lp "$OMARCHY_AI_STATE/ledger.json" 2>/dev/null || stat -c %a "$OMARCHY_AI_STATE/ledger.json") == 600 ]] || fail "old ledger mode"; pass "an older install's ledger is scrubbed of the key and made 0600 on the next snapshot"
+[[ $(mode "$OMARCHY_AI_STATE/ledger.json") == 600 ]] || fail "old ledger mode"; pass "an older install's ledger is scrubbed of the key and made 0600 on the next snapshot"
 rm -f "$OMARCHY_AI_STATE/gateway.recipe.json"   # a gateway started by an older plugin: the recipe is recovered from the running container
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 && $(snap .state) == ready ]] || fail "share after refusal" "$(snap .share) $(snap .state)"; pass "share works after an earlier refusal and for a gateway started by an older plugin"
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false && $(snap .state) == ready ]] || fail "share off after refusal"; pass "share off leaves the model ready"
