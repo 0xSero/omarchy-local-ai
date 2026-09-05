@@ -38,11 +38,13 @@ Panel {
   readonly property var gpus: snap.gpus || []
   readonly property var gpuSel: gpus.filter(function(g) { return g.chosen })[0] || null
   property bool gpusOpen: false
-  function gpuLabel(g) { return g.product + (g.vramGb ? " · " + g.vramGb + " GB" : "") }
+  function gpuLabel(g) { return g.product.replace(/^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )/, "") + (g.vramGb ? " " + g.vramGb + " GB" : "") }
   function gpuLine() {
-    if (!gpuSel) return gpus.length === 0 ? "No GPU detected" : "No GPU chosen"
-    return gpuLabel(gpuSel) + (gpus.length > 1 ? "  (" + (gpus.indexOf(gpuSel) + 1) + " of " + gpus.length + ")" : "")
+    if (!gpuSel) return gpus.length === 0 ? "none detected" : gpus.length + " detected, none chosen"
+    return (gpus.length > 1 ? (gpus.indexOf(gpuSel) + 1) + "/" + gpus.length + " · " : "") + gpuLabel(gpuSel)
   }
+  readonly property string homeDir: Quickshell.env("HOME") || ""
+  function tilde(p) { return homeDir && p.indexOf(homeDir) === 0 ? "~" + p.slice(homeDir.length) : p }
   property string agentPick: ""
   property bool agentsOpen: false
   readonly property string agentSel: agentPick !== "" ? agentPick
@@ -253,7 +255,7 @@ Panel {
         }
         Link { visible: root.loaded && !!root.share.available; enabled: !root.busy; text: root.share.active ? "Stop sharing" : "Share on Tailscale"; onTriggered: root.act(["share"]) }
         Text { visible: root.loaded && !!root.share.error; width: parent.width; textFormat: Text.PlainText; text: root.share.error || ""; color: root.bar ? root.bar.urgent : root.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap; maximumLineCount: 3 }
-        Text { visible: root.loaded && !!root.share.active; width: parent.width; textFormat: Text.PlainText; text: (root.share.url || "") + "\nkey in " + (root.share.keyFile || ""); color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAnywhere }
+        Text { visible: root.loaded && !!root.share.active; width: parent.width; textFormat: Text.PlainText; text: (root.share.url || "") + "\nkey in " + root.tilde(root.share.keyFile || ""); color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAnywhere }
         Link { visible: root.loaded || root.hasRunning || root.state === "starting"; enabled: !root.busy; text: "Stop"; onTriggered: root.act(["unload"]) }
       }
     }
