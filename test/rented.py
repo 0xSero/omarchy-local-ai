@@ -47,6 +47,15 @@ def plugin_recipes():
 
 
 def run_one(hw_id, args, vr):
+    try:
+        return run_one_inner(hw_id, args, vr)
+    except SystemExit as e:   # a provider refusal (no offers, create failed) is this card's result, not the sweep's
+        r = {"hardwareId": hw_id, "status": "no-offers", "detail": str(e)[:200]}
+        OUT.mkdir(exist_ok=True); (OUT / f"{hw_id}.json").write_text(json.dumps(r, indent=1) + "\n")
+        return r
+
+
+def run_one_inner(hw_id, args, vr):
     recipes = plugin_recipes()
     entry = recipes["hardware"].get(hw_id)
     if not entry:
@@ -67,7 +76,7 @@ def run_one(hw_id, args, vr):
                 "PLUGIN_COMMIT": args.commit,
                 "GATEWAY_URL": f"https://raw.githubusercontent.com/{GATEWAY_REPO}/{args.gateway_commit}/gateway/gateway.py",
                 "HW_ID": hw_id, "RECIPE_ID": recipe_id, "RESULT_PORT": str(RESULT_PORT),
-                "ENGINE_ENTRYPOINT": self.entrypoint or "", "ENGINE_TIMEOUT": str(args.timeout - 600),
+                "ENGINE_ENTRYPOINT": contract.get("entrypoint") or "", "ENGINE_TIMEOUT": str(args.timeout - 600),
                 "MODEL_REPO": entry["recipe"]["model"]["repository"], "MODEL_REV": entry["recipe"]["model"]["revision"],
             }
             inside = base64.b64encode((HERE / "rented-inside.sh").read_bytes()).decode()
@@ -77,6 +86,15 @@ def run_one(hw_id, args, vr):
 
     spec = PluginSpec(recipe, contract, args)
     spec.port = RESULT_PORT   # the mapped port serves the result; the engine's own port stays inside
+    # the harness must run even when nothing needs materializing (hub-cache recipes): the Vast path
+    # only uses the onstart script when there are provisioning steps, so give it a harmless one, and
+    # the RunPod path runs entrypoint+arguments directly, so make those the harness itself
+    if not spec.provision:
+        spec.provision = [("asset", "/work/.harness", "plugin harness\n")]
+    if not spec.entrypoint:
+        spec.entrypoint = "/bin/sh"
+    if args.provider == "runpod":
+        spec.entrypoint, spec.arguments = "/bin/sh", ["-c", spec.onstart_script()]
     spec.name = f"local-ai-plugin-{hw_id}"[:191]
     if args.dry_run:
         return {"hardwareId": hw_id, "recipeId": recipe_id, "status": "dry-run", "spec": spec.shown(), "onstart": spec.onstart_script()[:600]}
