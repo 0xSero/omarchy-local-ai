@@ -108,6 +108,14 @@ def run_one(hw_id, args, vr):
                     result.update({"status": "timeout", "detail": f"no result within {args.timeout}s"}); return result
                 up_now, note = provider.poll(handle); up = up or up_now
                 el = int(time.monotonic() - t0)
+                # some hosts never expose the mapped port; the harness also prints its verdict to the
+                # container log, so a running container that stays unreachable is read from there
+                if up_now and el > args.reach_timeout and (el - (result.get("_lastLogPeek") or 0)) >= 60:
+                    result["_lastLogPeek"] = el
+                    verdict = provider_log_verdict(provider, handle)
+                    if verdict:
+                        result.update(verdict); result["wallSeconds"] = el; result["collectedFrom"] = "container log (port unreachable)"
+                        result.pop("_lastLogPeek", None); return result
                 if not up_now and el > args.start_timeout:   # current status, not latched: a host stuck on the pull stays "loading"
                     exclude.update({handle.get("offer"), handle.get("machine")})
                     log(f"{hw_id}: container not started after {el}s ({note}); trying another host")
@@ -137,6 +145,27 @@ def run_one(hw_id, args, vr):
         (OUT / f"{hw_id}.json").write_text(json.dumps(result, indent=1) + "\n")
 
 
+def provider_log_verdict(provider, handle):
+    """The harness's final 'result: <status> (<detail>)' line from the container log, or None."""
+    if provider.name != "vast":
+        return None
+    try:
+        out = subprocess.run(["vastai", "logs", str(handle["id"]), "--tail", "400"], capture_output=True, text=True, timeout=90).stdout
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    m = None
+    for line in out.splitlines():
+        mm = re.search(r"result: (\S+) \((.*)\); serving on", line)
+        if mm: m = mm
+    if not m:
+        return None
+    verdict = {"status": m.group(1), "detail": m.group(2)}
+    g = re.search(r"gpu: (NVIDIA[^\n]*)", out)
+    if g: verdict["nvidiaSmi"] = g.group(1).strip()
+    verdict["harnessLog"] = "\n".join(l for l in out.splitlines() if re.match(r"\d\d:\d\d:\d\d ", l))[-3000:]
+    return verdict
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("hardware_ids", nargs="*")
@@ -148,6 +177,7 @@ def main():
     p.add_argument("--gpu", default=None); p.add_argument("--cloud", default="COMMUNITY"); p.add_argument("--vast-min-inet", type=int, default=500)
     p.add_argument("--disk", type=int, default=60); p.add_argument("--timeout", type=int, default=3600)
     p.add_argument("--start-timeout", type=int, default=900); p.add_argument("--retries", type=int, default=1)
+    p.add_argument("--reach-timeout", type=int, default=300, help="seconds a running container may stay unreachable before its logs are read for the result")
     p.add_argument("--keep", action="store_true"); p.add_argument("--dry-run", action="store_true")
     p.add_argument("--parallel", type=int, default=1)
     args = p.parse_args()

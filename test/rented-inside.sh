@@ -46,6 +46,7 @@ PY
 trap 'finish harness-error "line $LINENO"' ERR
 
 # ---------------------------------------------------------------- tools the plugin needs
+export PATH="$W/bin:$PATH"
 fetch() { python3 -c 'import sys,urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' "$1" "$2"; }
 command -v jq >/dev/null || { fetch https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64 $W/bin/jq
   echo "b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f  $W/bin/jq" | sha256sum -c --quiet || finish harness-error "jq checksum"; chmod +x $W/bin/jq; }
@@ -137,7 +138,7 @@ esac
 exit 0
 SH
 chmod +x $W/bin/docker
-export PATH="$W/bin:$PATH" ENGINE_ENTRYPOINT="${ENGINE_ENTRYPOINT:-}"
+export ENGINE_ENTRYPOINT="${ENGINE_ENTRYPOINT:-}"
 
 # ---------------------------------------------------------------- the plugin's state for this run
 export OMARCHY_AI_STATE=$W/state OMARCHY_AI_USER_HOME="${HOME:-/root}" OMARCHY_AI_MODEL_ROOT=$W/models OMARCHY_AI_CACHE_ROOT=$W/cache OMARCHY_AI_FOREGROUND=1 OMARCHY_AI_POLL=5 \
