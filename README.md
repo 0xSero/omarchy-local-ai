@@ -53,6 +53,11 @@ launched from the panel; typed in a terminal they keep their own provider.
   copilot, crush, launched through `omarchy-launch-tui` with the endpoint,
   key, and model in the environment. An agent whose dialect failed
   acceptance is hidden.
+- **GPU**: the card shows what was detected. One card is a line; more than
+  one is a picker. The default is the largest card that has a validated
+  recipe; `omarchy-local-ai gpu <backend:index>` (or the picker) pins another,
+  and a pinned card with no recipe says so rather than silently using a
+  different one. `gpu auto` returns to the default.
 - **Share**: the gateway's port published on this machine's tailnet address
   (`http://<host>.<tailnet>.ts.net:12434`), keyed. One click, no `tailscale
   serve`, no password: the stateless gateway restarts with the extra port

@@ -7,21 +7,37 @@ recipes_ok() { jq -e '.schemaVersion=="omarchy-local-ai/recipes/1" and (.hardwar
 registry_commit() { jq -r '.registryCommit' "$RECIPES"; }
 gateway_image() { jq -r '.gateway.image // empty' "$RECIPES"; }
 
-# match_hardware -> {"hardwareId":..,"gpu":{..},"reason":".."}  Among GPUs that match an entry, the largest
-# card wins (the tier map gives it the biggest model), ties by device order. An unmatched machine
-# reports why, which is what the panel shows instead of a dead button.
+# match_hardware -> {"hardwareId":..,"gpu":{..},"reason":"..","gpus":[..]}
+# gpus lists every card seen, each with its recipe's hardware id (or "") and whether it is the one
+# in use, so the card can say what was detected and let the person choose. The default is the
+# largest card that has a recipe (the tier map gives it the biggest model), ties by device order.
+# `omarchy-local-ai gpu <backend:index>` pins a card; a pinned card without a recipe is still
+# honoured, and the reason says so, because that is what the person asked to see.
+GPU_PICK="$STATE/gpu"
+gpu_pick() { printf '%s' "${OMARCHY_AI_GPU:-$(cat "$GPU_PICK" 2>/dev/null || true)}"; }
 match_hardware() {
   local hw; hw=$(hardware_json)
-  jq -c --argjson hw "$hw" '
+  jq -c --argjson hw "$hw" --arg pick "$(gpu_pick)" '
     def norm: ascii_downcase|gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]";"");
-    . as $file | [$hw.gpus | to_entries[] as $gi | $gi.value as $g | $file.hardware|to_entries[] as $e
-      | select($g.backend==$e.value.match.backend)
-      | select(($e.value.match.names|index($g.product|norm))!=null)
-      | select(((($e.value.match.vramGb*1024)-$g.totalMiB)|fabs)<=1024)
-      | {hardwareId:$e.key,gpu:$g,order:$gi.key}] | sort_by(-.gpu.totalMiB, .order) | map(del(.order)) as $m
-    | if ($m|length)>0 then ($m[0]+{reason:""})
-      elif ($hw.gpus|length)==0 then {hardwareId:"",gpu:null,reason:"no supported GPU detected"}
-      else {hardwareId:"",gpu:$hw.gpus[0],reason:("no validated recipe for "+$hw.gpus[0].product+" yet")} end' "$RECIPES"
+    . as $file
+    | [$hw.gpus | to_entries[] as $gi | $gi.value as $g
+        | ([$file.hardware|to_entries[] as $e
+            | select($g.backend==$e.value.match.backend)
+            | select(($e.value.match.names|index($g.product|norm))!=null)
+            | select(((($e.value.match.vramGb*1024)-$g.totalMiB)|fabs)<=1024)
+            | $e.key] | .[0] // "") as $id
+        | $g + {hardwareId:$id, key:($g.backend+":"+($g.index|tostring)), order:$gi.key,
+                vramGb:(if $g.totalMiB==null then null else (($g.totalMiB/1024)+0.5|floor) end)}] as $gpus
+    | ([$gpus[]|select(.key==$pick)]|.[0]) as $pinned
+    | ([$gpus[]|select(.hardwareId!="")] | sort_by(-.totalMiB, .order) | .[0]) as $auto
+    | ($pinned // $auto) as $use
+    | {hardwareId:($use.hardwareId // ""),
+       gpu:(if $use==null then null else ($use|del(.hardwareId,.key,.order,.vramGb,.chosen)) end),
+       reason:(if $use!=null and $use.hardwareId!="" then ""
+               elif ($gpus|length)==0 then "no supported GPU detected"
+               else ("no validated recipe for "+(($use // $gpus[0]).product)+" yet") end),
+       pinned:($pinned!=null),
+       gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // ""))}]}' "$RECIPES"
 }
 
 recipe_for() { jq -c --arg h "$1" '.hardware[$h].recipe // empty' "$RECIPES"; }

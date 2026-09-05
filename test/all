@@ -24,7 +24,7 @@ cat >"$TMP/bin/nvidia-smi" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
   *driver_version*) echo "${SHIM_DRIVER:-580.65.06}" ;;
-  *) echo "0, NVIDIA GeForce RTX 4090, 24564, 300, 24264" ;;
+  *) if [[ -n ${SHIM_GPUS:-} ]]; then printf '%s\n' "$SHIM_GPUS"; else echo "0, NVIDIA GeForce RTX 4090, 24564, 300, 24264"; fi ;;
 esac
 EOF
 cat >"$TMP/bin/docker" <<'EOF'
@@ -227,6 +227,17 @@ SHIM_DRIVER=580.65.06 "$CLI" snapshot >/dev/null; [[ $(snap .reason) == "" ]] ||
 # unmatched hardware says why
 write_recipes "$(recipe good true asset)" rtx-3090-24gb; "$CLI" snapshot >/dev/null
 [[ $(snap .model) == null && $(snap .reason) == *"no validated recipe for NVIDIA GeForce RTX 4090"* ]] || fail "unmatched" "$(snap .reason)"; pass "unsupported card: no model, and the reason says which card"
+
+# what was detected, and choosing a card: two cards, one with a recipe; the largest with a recipe is the default
+write_recipes "$(recipe good true asset)"
+"$CLI" snapshot >/dev/null; [[ $(snap '.gpus|length') == 1 && $(snap '.gpus[0].chosen') == true && $(snap '.gpus[0].vramGb') == 24 && $(snap '.gpus[0].key') == nvidia:0 ]] || fail "single gpu listed" "$(snap .gpus)"; pass "snapshot lists the one detected card, chosen, with its VRAM"
+export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n1, NVIDIA GeForce RTX 4090, 24564, 300, 24264'
+"$CLI" snapshot >/dev/null
+[[ $(snap '.gpus|length') == 2 && $(snap '.gpus[1].chosen') == true && $(snap '.gpus[0].hardwareId') == "" && $(snap .hardwareId) == rtx-4090-24gb ]] || fail "two gpus" "$(snap .gpus)"; pass "two cards: both listed, the 4090 with a recipe is chosen, the 3060 shows it has none"
+"$CLI" gpu nvidia:0 >/dev/null; [[ $(snap '.gpus[0].chosen') == true && $(snap .model) == null && $(snap .reason) == *"no validated recipe for NVIDIA GeForce RTX 3060"* && $(snap .gpuPinned) == true ]] || fail "pin unsupported card" "$(snap .reason)"; pass "gpu <key> pins a card; a pinned card without a recipe says so instead of silently using another"
+"$CLI" gpu auto >/dev/null; [[ $(snap '.gpus[1].chosen') == true && $(snap .hardwareId) == rtx-4090-24gb && $(snap .gpuPinned) == false ]] || fail "gpu auto"; pass "gpu auto returns to the largest card with a recipe"
+"$CLI" gpu bogus >/dev/null 2>&1 && fail "bad gpu key accepted"; pass "gpu refuses a malformed key"
+unset SHIM_GPUS
 
 # hf-cache recipes download into the cache, not a local dir
 write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI" load

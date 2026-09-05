@@ -92,7 +92,8 @@ usage() {
   open-agent [name]      open an installed coding agent on the running model
   share [--key <value>]  toggle sharing on your tailnet, or replace the key
   agent-dir <path>       directory agents open in (default: where the shell started)
-  agent-args <name> [-- flags]  extra flags for one agent when opened from the panel (none to clear)'
+  agent-args <name> [-- flags]  extra flags for one agent when opened from the panel (none to clear)
+  gpu [auto|<backend:index>]  which detected card to use (snapshot lists them); auto = largest card with a recipe'
 }
 
 cmd=${1:-help}; shift || true
@@ -103,6 +104,11 @@ case $cmd in
   open-agent) snapshot_write; open_agent "${1:-}" 2>"$STATE/agent.err" || { m=$(sed -n '$s/^local-ai: //p' "$STATE/agent.err"); refuse "${m:-agent launch failed (see $LOGFILE)}"; exit 1; } ;;
   share) share_toggle "$@" ;;
   agent-args) [[ -n ${1:-} ]] || { fail "agent-args <name> [-- flags...]"; exit 1; }; n=$1; shift; [[ ${1:-} == -- ]] && shift; mkdir -p "$STATE/agents/args"; if (( $# )); then printf '%s\0' "$@" >"$STATE/agents/args/$n"; else rm -f "$STATE/agents/args/$n"; fi; log "agent-args $n: $*" ;;
+  gpu) case ${1:-} in
+         ""|auto) rm -f "$STATE/gpu"; log "gpu auto" ;;
+         *) [[ $1 =~ ^[a-z-]+:[0-9]+$ ]] || { fail "gpu <backend:index>, as listed in the snapshot"; exit 1; }
+            state_dir; printf '%s' "$1" >"$STATE/gpu"; log "gpu $1" ;;
+       esac; snapshot_write; jq -c '.gpus' "$SNAPSHOT" ;;
   agent-dir) [[ -d ${1:-} ]] && { (cd "$1" && pwd) >"$STATE/agent-dir"; log "agent-dir $1"; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;
   _worker-load) w_load ;;
   _worker-unload) w_unload ;;

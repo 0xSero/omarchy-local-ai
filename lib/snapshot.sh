@@ -34,13 +34,13 @@ snapshot_write() {
   local gate=""; [[ -n $rec ]] && gate=$(gate_reason "$rec")
   local driver_min driver_have; driver_have=$(hardware_json | jq -r .driver); driver_min=$(jq -r '.minDriver // ""' <<<"${rec:-null}")
   [[ -n $rec && -z $gate ]] && ! driver_ok "$driver_have" "$driver_min" && gate="needs NVIDIA driver $driver_min or newer (have ${driver_have:-none})"
-  jq -nc --argjson l "$ledger" --argjson rec "${rec:-null}" --arg state "$state" --arg reason "$reason" --arg gate "$gate" \
+  jq -nc --argjson l "$ledger" --argjson rec "${rec:-null}" --argjson match "$match" --arg state "$state" --arg reason "$reason" --arg gate "$gate" \
     --arg hw "$hw_id" --arg served "$served" --arg rr "$running_recipe" --argjson known "$running_known" --argjson dl "$downloaded" \
     --argjson agents "$(agents_json)" --argjson share "$(share_state)" --arg reg "$(registry_commit)" --arg t "$(now)" '
     {schemaVersion:"omarchy-local-ai/snapshot/7", updatedAt:$t, state:$state, error:$l.error, lastStartSeconds:($l.lastStartSeconds//0),
      operation:{name:$l.op.name, detail:$l.op.detail, percent:$l.op.percent, startedAt:$l.op.startedAt,
        expectedSeconds:(if $l.op.name=="starting" then ($l.lastStartSeconds//0) else 0 end)},
-     hardwareId:$hw, registry:$reg,
+     hardwareId:$hw, registry:$reg, gpus:$match.gpus, gpuPinned:$match.pinned,
      model:(if $rec==null then null else
        {recipeId:$rec.id, name:$rec.model.name, servedName:(if $served!="" then $served else $rec.model.servedName end),
         engine:$rec.engine, ctxTokens:$rec.serving.ctxTokens, tps:$rec.speed.tps, sizeGb:$rec.model.sizeGb, downloaded:$dl,

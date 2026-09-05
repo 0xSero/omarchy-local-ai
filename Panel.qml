@@ -35,6 +35,14 @@ Panel {
   readonly property bool loaded: state === "ready"
   readonly property bool hasRunning: !!snap.running
   readonly property string defaultAgent: (snap.agents && snap.agents.default) || ""
+  readonly property var gpus: snap.gpus || []
+  readonly property var gpuSel: gpus.filter(function(g) { return g.chosen })[0] || null
+  property bool gpusOpen: false
+  function gpuLabel(g) { return g.product + (g.vramGb ? " · " + g.vramGb + " GB" : "") }
+  function gpuLine() {
+    if (!gpuSel) return gpus.length === 0 ? "No GPU detected" : "No GPU chosen"
+    return gpuLabel(gpuSel) + (gpus.length > 1 ? "  (" + (gpus.indexOf(gpuSel) + 1) + " of " + gpus.length + ")" : "")
+  }
   property string agentPick: ""
   property bool agentsOpen: false
   readonly property string agentSel: agentPick !== "" ? agentPick
@@ -221,6 +229,18 @@ Panel {
         }
         Text { width: parent.width; textFormat: Text.PlainText; text: root.title(); color: root.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.heading; font.weight: Font.Medium; elide: Text.ElideRight }
         Text { width: parent.width; textFormat: Text.PlainText; visible: root.status() !== ""; text: root.status(); color: root.snap.error ? (root.bar ? root.bar.urgent : root.foreground) : root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap; maximumLineCount: 3 }
+        // What was detected, and which card the recipe is for. One card is a plain line; more than
+        // one is a picker, since the person may want the smaller card left free or a different one tried.
+        Text { visible: root.gpus.length <= 1; width: parent.width; textFormat: Text.PlainText; text: "GPU · " + root.gpuLine(); color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
+        Link { visible: root.gpus.length > 1; enabled: !root.busy; text: "GPU · " + root.gpuLine() + (root.gpusOpen ? "  ^" : "  v"); onTriggered: root.gpusOpen = !root.gpusOpen }
+        Column {
+          visible: root.gpusOpen && root.gpus.length > 1; width: parent.width; spacing: Style.space(6)
+          Repeater {
+            model: root.gpus
+            Link { required property var modelData; width: content.width; text: "  " + root.gpuLabel(modelData) + (modelData.hardwareId ? "" : " · no validated recipe"); opacity: modelData.chosen ? 1 : 0.7; onTriggered: { root.gpusOpen = false; root.act(["gpu", modelData.key]) } }
+          }
+          Link { visible: !!root.snap.gpuPinned; width: content.width; text: "  auto (largest card with a recipe)"; onTriggered: { root.gpusOpen = false; root.act(["gpu", "auto"]) } }
+        }
         Link { visible: !root.loaded || (!!root.snap.error && !root.busy); enabled: !root.busy && !!root.model && root.snap.reason === ""; text: root.loaded ? "Restart" : root.startLabel(); onTriggered: root.act(["load"]) }
         Link { visible: root.loaded && root.agentList.length > 0; text: "Open agent · " + root.agentSel + (root.agentsOpen ? "  ^" : "  v"); onTriggered: root.agentsOpen = !root.agentsOpen }
         Text { visible: root.loaded && root.agentList.length === 0; width: parent.width; textFormat: Text.PlainText; text: "No installed agent can use this model"; color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall }
