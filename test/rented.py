@@ -108,7 +108,7 @@ def run_one(hw_id, args, vr):
                     result.update({"status": "timeout", "detail": f"no result within {args.timeout}s"}); return result
                 up_now, note = provider.poll(handle); up = up or up_now
                 el = int(time.monotonic() - t0)
-                if not up and el > args.start_timeout:
+                if not up_now and el > args.start_timeout:   # current status, not latched: a host stuck on the pull stays "loading"
                     exclude.update({handle.get("offer"), handle.get("machine")})
                     log(f"{hw_id}: container not started after {el}s ({note}); trying another host")
                     provider.destroy(handle); handle = None

@@ -1,0 +1,56 @@
+{
+ "hardwareId": "rtx-4080-super-16gb",
+ "recipeId": "qwen359b-exl3-4bpw-rtx4080super-tabbyapi-tp1",
+ "provider": "vast",
+ "status": "ready",
+ "instance": 49977499,
+ "gpu": "RTX 4080S",
+ "costPerHour": 0.16092592592592592,
+ "host": "France, FR",
+ "detail": "tps=0 apis=[\"chat\",\"messages\",\"responses\"]",
+ "pluginCommit": "b7531f3",
+ "nvidiaSmi": "NVIDIA GeForce RTX 4080 SUPER, 16376 MiB, 595.84",
+ "elapsedSeconds": 68,
+ "snapshot": {
+  "state": "ready",
+  "error": "",
+  "reason": "",
+  "hardwareId": "rtx-4080-super-16gb",
+  "apis": [
+   "chat",
+   "messages",
+   "responses"
+  ],
+  "model": {
+   "recipeId": "qwen359b-exl3-4bpw-rtx4080super-tabbyapi-tp1",
+   "name": "Qwen3.5-9B",
+   "servedName": "Qwen3.5-9B-EXL3-4bpw",
+   "engine": "tabbyapi",
+   "ctxTokens": 262144,
+   "tps": 100,
+   "sizeGb": 6.71,
+   "downloaded": true,
+   "endpoint": "http://127.0.0.1:12434/v1"
+  },
+  "gpus": [
+   {
+    "key": "nvidia:0",
+    "backend": "nvidia",
+    "index": 0,
+    "product": "NVIDIA GeForce RTX 4080 SUPER",
+    "vramGb": 16,
+    "hardwareId": "rtx-4080-super-16gb",
+    "chosen": true
+   }
+  ]
+ },
+ "engineArgv": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448 main.py --config /app/config.yml ",
+ "gatewayArgv": "ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478 ",
+ "keyInCurlArgv": false,
+ "pluginLog": "2026-09-05T16:16:39Z op download checking the GPU and recipe\n2026-09-05T16:16:39Z op download checking\n2026-09-05T16:16:40Z op starting setting aside the previous model\n2026-09-05T16:16:40Z op starting starting\n2026-09-05T16:16:40Z engine: docker run --detach --name omarchy-local-ai-engine --restart unless-stopped --network omarchy-local-ai --network-alias engine --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=qwen359b-exl3-4bpw-rtx4080super-tabbyapi-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=engine --gpus device=0 --shm-size 8g --volume /work/models/qwen3-5-9b-exl3-4bpw:/workspace/models:ro --volume /work/state/assets/qwen359b-exl3-4bpw-256k-q4-tabbyapi-config.yml:/app/config.yml:ro --env NVIDIA_VISIBLE_DEVICES=all --entrypoint /opt/venv/bin/python3 ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448 main.py --config /app/config.yml\nomarchy-local-ai-engine\n2026-09-05T16:16:40Z gateway: docker run --detach --name omarchy-local-ai-gateway --restart unless-stopped --network omarchy-local-ai --user 0:0 --publish 127.0.0.1:12434:12434 --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=qwen359b-exl3-4bpw-rtx4080super-tabbyapi-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=gateway --env UPSTREAM=http://engine:5000 --env MODEL=Qwen3.5-9B-EXL3-4bpw --env GATEWAY_KEY_FILE=/run/gateway.key --volume /work/state/gateway.key:/run/gateway.key:ro ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478\nomarchy-local-ai-gateway\n2026-09-05T16:16:40Z op starting loading the model\n2026-09-05T16:16:46Z op starting loading the model\n2026-09-05T16:16:51Z op starting loading the model\n2026-09-05T16:16:57Z op starting loading the model\n2026-09-05T16:17:02Z op starting loading the model\n2026-09-05T16:17:08Z op starting loading the model\n2026-09-05T16:17:13Z op starting loading the model\n2026-09-05T16:17:19Z op starting loading the model\n2026-09-05T16:17:24Z op starting loading the model\n2026-09-05T16:17:30Z op starting chat acceptance\n2026-09-05T16:17:36Z op starting messages acceptance\n2026-09-05T16:17:41Z op starting responses acceptance\n2026-09-05T16:17:43Z accepted qwen359b-exl3-4bpw-rtx4080super-tabbyapi-tp1 served=Qwen3.5-9B-EXL3-4bpw tps=0 apis=[\"chat\",\"messages\",\"responses\"]\n2026-09-05T16:17:44Z ready qwen359b-exl3-4bpw-rtx4080super-tabbyapi-tp1\n",
+ "engineLogTail": "\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 100% 35/35 0:00:00\n2026-09-05 16:17:29.236 WARNING:  Disabling authentication makes your instance \nvulnerable. Set the `disable_auth` flag to False in config.yml if you want to \nshare this instance with others.\n2026-09-05 16:17:29.237 INFO:     Generation logging is disabled\n2026-09-05 16:17:29.238 INFO:     Developer documentation: \nhttp://0.0.0.0:5000/redoc\n2026-09-05 16:17:29.239 INFO:     Starting OAI API\n2026-09-05 16:17:29.239 INFO:     Completions: \nhttp://0.0.0.0:5000/v1/completions\n2026-09-05 16:17:29.240 INFO:     Chat completions: \nhttp://0.0.0.0:5000/v1/chat/completions\n2026-09-05 16:17:29.248 INFO:     Started server process [1027]\n2026-09-05 16:17:29.249 INFO:     Waiting for application startup.\n2026-09-05 16:17:29.250 INFO:     Application startup complete.\n2026-09-05 16:17:29.251 INFO:     Uvicorn running on http://0.0.0.0:5000 (Press \nCTRL+C to quit)\n2026-09-05 16:17:30.445 INFO:     127.0.0.1:54356 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:17:30.765 INFO:     127.0.0.1:54358 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:17:30.977 INFO:     Received chat completion request \n208eaba8435a45c28cc76c7f08fcfbab\n2026-09-05 16:17:36.289 INFO:     Finished chat completion request \n208eaba8435a45c28cc76c7f08fcfbab\n2026-09-05 16:17:36.290 INFO:     127.0.0.1:54370 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 16:17:36.291 INFO:     Metrics (ID: \n208eaba8435a45c28cc76c7f08fcfbab): 228 tokens generated in 5.3 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 17 new tokens at 10.24 T/s, Generate: 62.74 \nT/s, Context: 17 tokens) \n2026-09-05 16:17:36.619 INFO:     127.0.0.1:54374 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:17:36.862 INFO:     Received chat completion request \nd0df7042c6b54bfcbec7979f42a7bf3a\n2026-09-05 16:17:41.330 INFO:     Finished chat completion request \nd0df7042c6b54bfcbec7979f42a7bf3a\n2026-09-05 16:17:41.331 INFO:     127.0.0.1:54388 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 16:17:41.332 INFO:     Metrics (ID: \nd0df7042c6b54bfcbec7979f42a7bf3a): 173 tokens generated in 4.46 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 40 new tokens at 13.61 T/s, Generate: 114.11\nT/s, Context: 40 tokens) \n2026-09-05 16:17:41.682 INFO:     127.0.0.1:41726 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:17:41.909 INFO:     Received chat completion request \n90fe1124be9b4c82b02aae99be1929be\n2026-09-05 16:17:43.828 INFO:     Finished chat completion request \n90fe1124be9b4c82b02aae99be1929be\n2026-09-05 16:17:43.828 INFO:     127.0.0.1:41728 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 16:17:43.829 INFO:     Metrics (ID: \n90fe1124be9b4c82b02aae99be1929be): 214 tokens generated in 1.91 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 36 new tokens at 720.0 T/s, Generate: 114.97\nT/s, Context: 36 tokens) \n2026-09-05 16:17:44.239 INFO:     127.0.0.1:41732 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:17:44.732 INFO:     127.0.0.1:41738 - \"GET /v1/models HTTP/1.1\" \n200\n",
+ "gatewayLogTail": "est()\n  File \"/usr/lib/python3.12/http/server.py\", line 424, in handle_one_request\n    method()\n  File \"/work/gateway.py\", line 473, in do_GET\n    return self.passthrough(\"GET\", \"/v1/models\", None)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 508, in passthrough\n    up = Upstream(method, path, body)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 60, in __init__\n    self.conn.request(method, path, body=data, headers=headers)\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n----------------------------------------\n",
+ "harnessLog": "16:16:38 plugin b7531f3, gateway.py 28645 bytes, jq \n16:16:38 gpu: NVIDIA GeForce RTX 4080 SUPER, 16376 MiB, 595.84\n16:16:39 match: hardwareId=rtx-4080-super-16gb reason='' gpus=[{\"product\":\"NVIDIA GeForce RTX 4080 SUPER\",\"vramGb\":16,\"hardwareId\":\"rtx-4080-super-16gb\"}]\n16:16:39 load\n16:16:40 docker: engine: /opt/venv/bin/python3 main.py --config /app/config.yml\n16:16:40 docker: gateway: gateway.py upstream from env, key file /work/state/gateway.key\n16:17:44 load exit 0, state ready, error '', apis [\"chat\",\"messages\",\"responses\"]\n16:17:44 2026-09-05T16:17:43Z accepted qwen359b-exl3-4bpw-rtx4080super-tabbyapi-tp1 served=Qwen3.5-9B-EXL3-4bpw tps=0 apis=[\"chat\",\"messages\",\"responses\"]\n",
+ "wallSeconds": 304,
+ "approxCost": 0.014
+}

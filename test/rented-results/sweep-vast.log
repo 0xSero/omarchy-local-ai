@@ -1,0 +1,158 @@
+12:00:00 rtx-4070-12gb: attempt 1: renting RTX 4070 (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:00:00 rtx-4070-ti-12gb: attempt 1: renting RTX 4070 Ti (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:00:00 rtx-4070-super-12gb: attempt 1: renting RTX 4070S (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:00:00 rtx-3080-ti-12gb: attempt 1: renting RTX 3080 Ti (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:00:03 rtx-4070-12gb: vast 49976687 at 0.08138888888888889/h on RTX 4070
+12:00:03 rtx-4070-super-12gb: vast 49976688 at 0.08138888888888889/h on RTX 4070S
+12:00:03 rtx-4070-ti-12gb: vast 49976686 at 0.1613888888888889/h on RTX 4070 Ti
+12:00:04 rtx-3080-ti-12gb: vast 49976689 at 0.1613888888888889/h on RTX 3080 Ti
+[16:00:38] vast status: 52a3782a2183: Pull complete
+[16:00:39] vast status: a218804ad31a: Download complete
+[16:00:53] vast status: b40150c1c271: Pulling fs layer
+04e172183bde: Pulling fs layer
+79ef1842466c: Pulling fs layer
+90a4717e6b72: Pulling fs layer
+4f4fb700ef54: Pulling fs layer
+[16:00:54] vast status: b6e227b4a875: Pull complete
+[16:00:54] vast status: b40150c1c271: Already exists
+[16:01:10] vast status: 04e172183bde: Download complete
+[16:01:26] vast status: 58822d06ab87: Verifying Checksum
+[16:01:26] vast status: 9267a8ce8264: Verifying Checksum
+9267a8ce8264: Download complete
+[16:01:26] vast status: 9267a8ce8264: Download complete
+[16:01:42] vast status: 52a3782a2183: Download complete
+[16:01:58] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+[16:01:58] vast status: b6e227b4a875: Pull complete
+12:02:13 rtx-4070-super-12gb: waiting (130s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:02:14 rtx-4070-12gb: waiting (130s, vast loading 52a3782a2183: Download complete, container up)
+12:02:14 rtx-4070-ti-12gb: waiting (130s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:02:14 rtx-3080-ti-12gb: waiting (129s, vast loading b6e227b4a875: Pull complete, container up)
+[16:02:30] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+12:03:19 rtx-4070-ti-12gb: destroyed 49976686
+12:03:19 rtx-4070-ti-12gb: approx cost 0.01 (3 min at 0.161/h)
+12:03:19 rtx-5070-12gb: attempt 1: renting RTX 5070 (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:03:21 rtx-5070-12gb: vast 49976937 at 0.16231481481481483/h on RTX 5070
+[16:03:54] vast status: 33de30af56ae: Verifying Checksum
+[16:04:10] vast status: f96c5878f2c1: Verifying Checksum
+12:04:22 rtx-4070-super-12gb: waiting (258s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:04:22 rtx-4070-12gb: waiting (258s, vast loading 52a3782a2183: Download complete, container up)
+12:04:25 rtx-3080-ti-12gb: destroyed 49976689
+12:04:25 rtx-3080-ti-12gb: approx cost 0.01 (4 min at 0.161/h)
+12:04:25 RESULT rtx-3080-ti-12gb: ready | tps=0 apis=["chat","messages","responses"] | gpu RTX 3080 Ti | NVIDIA GeForce RTX 3080 Ti, 12288 MiB, 595.84 | cost 0.012
+12:04:25 rtx-4060-ti-16gb: attempt 1: renting RTX 4060 Ti (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:04:27 rtx-4060-ti-16gb: vast 49976999 at 0.1320555555555556/h on RTX 4060 Ti
+[16:05:00] vast status: b6e227b4a875: Verifying Checksum
+[16:05:13] vast status: b6e227b4a875: Pull complete
+[16:05:16] vast status: bcaab74f3853: Pull complete
+12:05:29 rtx-5070-12gb: waiting (128s, vast loading b6e227b4a875: Pull complete, container up)
+[16:05:32] vast status: a218804ad31a: Pull complete
+[16:05:57] vast status: 3810503cd7ef: Verifying Checksum
+3810503cd7ef: Download complete
+[16:06:04] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+12:06:29 rtx-4070-super-12gb: waiting (386s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:06:29 rtx-4070-12gb: waiting (386s, vast loading 3810503cd7ef: Download complete, container up)
+12:06:37 rtx-4060-ti-16gb: waiting (129s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+[16:07:05] vast status: 9267a8ce8264: Verifying Checksum
+[16:07:21] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+12:07:37 rtx-5070-12gb: waiting (256s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:07:41 rtx-4060-ti-16gb: destroyed 49976999
+12:07:41 rtx-4060-ti-16gb: approx cost 0.01 (3 min at 0.132/h)
+12:07:41 rtx-4070-ti-super-16gb: attempt 1: renting RTX 4070S Ti (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:07:44 rtx-4070-ti-super-16gb: vast 49977206 at 0.1333888888888889/h on RTX 4070S Ti
+[16:08:16] vast status: b6e227b4a875: Pull complete
+12:08:37 rtx-4070-super-12gb: waiting (514s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+[16:08:37] vast status: b6e227b4a875: Verifying Checksum
+b6e227b4a875: Download complete
+12:08:37 rtx-4070-12gb: waiting (514s, vast loading b6e227b4a875: Download complete, container up)
+[16:08:53] vast status: 06dda4146199: Verifying Checksum
+[16:09:04] vast status: 9267a8ce8264: Verifying Checksum
+12:09:16 rtx-5070-12gb: destroyed 49976937
+12:09:16 rtx-5070-12gb: approx cost 0.02 (6 min at 0.162/h)
+12:09:16 rtx-4080-16gb: attempt 1: renting RTX 4080 (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:09:19 rtx-4080-16gb: vast 49977296 at 0.1751851851851852/h on RTX 4080
+[16:09:20] vast status: Successfully loaded ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+[16:09:25] vast status: 89d1572c7255: Download complete
+[16:09:36] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+[16:09:41] vast status: 480221485718: Download complete
+[16:09:51] vast status: b6e227b4a875: Verifying Checksum
+12:09:59 rtx-4070-ti-super-16gb: waiting (135s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+[16:10:07] vast status: bcaab74f3853: Verifying Checksum
+bcaab74f3853: Download complete
+[16:10:23] vast status: 9267a8ce8264: Verifying Checksum
+9267a8ce8264: Download complete
+[16:10:29] vast status: bcaab74f3853: Retrying in 1 second
+12:10:45 rtx-4070-super-12gb: waiting (642s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+[16:10:45] vast status: 02802ccdcff7: Verifying Checksum
+02802ccdcff7: Download complete
+12:10:45 rtx-4070-12gb: waiting (642s, vast loading 02802ccdcff7: Download complete, container up)
+[16:10:55] vast status: ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+[16:11:02] vast status: cdeb5c796ee1: Verifying Checksum
+cdeb5c796ee1: Download complete
+[16:11:11] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+12:11:27 rtx-4080-16gb: waiting (128s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:12:18 rtx-4070-ti-super-16gb: waiting (274s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+[16:12:38] vast status: f96c5878f2c1: Verifying Checksum
+12:12:49 rtx-4080-16gb: destroyed 49977296
+12:12:49 rtx-4080-16gb: approx cost 0.01 (4 min at 0.175/h)
+12:12:49 rtx-4080-super-16gb: attempt 1: renting RTX 4080S (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:12:51 rtx-4080-super-16gb: vast 49977499 at 0.16092592592592592/h on RTX 4080S
+12:12:54 rtx-4070-super-12gb: waiting (770s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:12:54 rtx-4070-12gb: waiting (771s, vast loading f96c5878f2c1: Verifying Checksum, container up)
+[16:13:24] vast status: b6e227b4a875: Verifying Checksum
+[16:13:40] vast status: b6e227b4a875: Pull complete
+12:14:37 rtx-4070-ti-super-16gb: waiting (413s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+[16:15:00] vast status: 9267a8ce8264: Verifying Checksum
+9267a8ce8264:
+12:15:00 rtx-4080-super-16gb: waiting (129s, vast loading 9267a8ce8264:, container up)
+12:15:02 rtx-4070-super-12gb: waiting (898s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:15:03 rtx-4070-12gb: waiting (899s, vast loading f96c5878f2c1: Verifying Checksum, container up)
+[16:15:35] vast status: 9267a8ce8264: Retrying in 2 seconds
+[16:15:48] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+12:16:56 rtx-4070-ti-super-16gb: waiting (552s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:17:08 rtx-4080-super-16gb: waiting (257s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:17:10 rtx-4070-super-12gb: waiting (1026s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:17:11 rtx-4070-12gb: waiting (1027s, vast loading 9267a8ce8264: Retrying in 2 seconds, container up)
+12:17:56 rtx-4080-super-16gb: destroyed 49977499
+12:17:56 rtx-4080-super-16gb: approx cost 0.01 (5 min at 0.161/h)
+12:17:56 rtx-5060-ti-16gb: attempt 1: renting RTX 5060 Ti (vast), image ghcr.io/0xsero/tabbyapi-exl3
+12:17:59 rtx-5060-ti-16gb: vast 49977801 at 0.056574074074074075/h on RTX 5060 Ti
+[16:18:32] vast status: b40150c1c271: Already exists
+[16:18:48] vast status: 480221485718: Verifying Checksum
+480221485718: Download complete
+[16:19:04] vast status: cdeb5c796ee1: Verifying Checksum
+cdeb5c796ee1: Download complete
+12:19:13 rtx-4070-ti-super-16gb: waiting (689s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:19:18 rtx-4070-super-12gb: waiting (1154s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:19:19 rtx-4070-12gb: waiting (1155s, vast loading 9267a8ce8264: Retrying in 2 seconds, container up)
+[16:19:52] vast status: f96c5878f2c1: Verifying Checksum
+f96c5878f2c1: Download complete
+12:20:08 rtx-5060-ti-16gb: waiting (129s, vast loading f96c5878f2c1: Download complete, container up)
+[16:20:23] vast status: bcaab74f3853: Retrying in 2 seconds
+12:21:26 rtx-4070-super-12gb: waiting (1282s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:21:26 rtx-4070-12gb: waiting (1283s, vast loading bcaab74f3853: Retrying in 2 seconds, container up)
+12:21:32 rtx-4070-ti-super-16gb: waiting (828s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:22:16 rtx-5060-ti-16gb: waiting (257s, vast loading f96c5878f2c1: Download complete, container up)
+12:23:34 rtx-4070-super-12gb: waiting (1410s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:23:34 rtx-4070-12gb: waiting (1410s, vast loading bcaab74f3853: Retrying in 2 seconds, container up)
+12:23:51 rtx-4070-ti-super-16gb: waiting (967s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+[16:24:08] vast status: b6e227b4a875: Verifying Checksum
+b6e227b4a875: Download complete
+[16:24:24] vast status: b6e227b4a875: Pull complete
+12:24:24 rtx-5060-ti-16gb: waiting (384s, vast loading b6e227b4a875: Pull complete, container up)
+[16:25:10] vast status: 9267a8ce8264: Retrying in 9 seconds
+[16:25:26] vast status: 9267a8ce8264: Retrying in 2 seconds
+[16:25:28] vast status: 9267a8ce8264: Retrying in 1 second
+12:25:43 rtx-4070-12gb: waiting (1539s, vast loading 9267a8ce8264: Retrying in 2 seconds, container up)
+12:25:43 rtx-4070-super-12gb: waiting (1539s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:26:10 rtx-4070-ti-super-16gb: waiting (1106s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:26:32 rtx-5060-ti-16gb: waiting (512s, vast loading 9267a8ce8264: Retrying in 1 second, container up)
+12:27:52 rtx-4070-12gb: waiting (1669s, vast loading 9267a8ce8264: Retrying in 2 seconds, container up)
+12:27:52 rtx-4070-super-12gb: waiting (1668s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:28:30 rtx-4070-ti-super-16gb: waiting (1246s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:28:40 rtx-5060-ti-16gb: waiting (641s, vast loading 9267a8ce8264: Retrying in 1 second, container up)
+12:30:00 rtx-4070-super-12gb: waiting (1796s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:30:00 rtx-4070-12gb: waiting (1797s, vast loading 9267a8ce8264: Retrying in 2 seconds, container up)
+[16:30:32] vast status: bcaab74f3853: Retrying in 14 seconds
+12:30:48 rtx-5060-ti-16gb: waiting (769s, vast loading 9267a8ce8264: Retrying in 1 second, container up)
+[16:30:48] vast status: bcaab74f3853: Retrying in 1 second
+12:30:50 rtx-4070-ti-super-16gb: waiting (1386s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)

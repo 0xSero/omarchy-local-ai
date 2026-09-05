@@ -1,0 +1,20 @@
+11:52:04 rtx-3060-12gb: attempt 1: renting RTX 3060 (vast), image ghcr.io/0xsero/tabbyapi-exl3
+11:52:06 rtx-3060-12gb: vast 49976043 at 0.06231481481481482/h on RTX 3060
+[15:52:55] vast status: Error response from daemon: Get "https://ghcr.io/v2/": net/http: request canceled (Client.Timeout exceeded while awaiting headers)
+[15:53:43] vast status: ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448: Pulling from 0xsero/tabbyapi-exl3
+[15:53:59] vast status: 90a4717e6b72: Pull complete
+[15:54:15] vast status: bcaab74f3853: Verifying Checksum
+11:54:15 rtx-3060-12gb: waiting (129s, vast loading bcaab74f3853: Verifying Checksum, container up)
+[15:54:31] vast status: bcaab74f3853: Pull complete
+[15:54:47] vast status: 9267a8ce8264: Verifying Checksum
+9267a8ce8264: Download complete
+[15:56:24] vast status: ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+11:56:24 rtx-3060-12gb: waiting (257s, vast loading ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941, container up)
+[15:56:40] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+11:58:33 rtx-3060-12gb: waiting (387s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+11:59:38 rtx-3060-12gb: destroyed 49976043
+11:59:38 rtx-3060-12gb: approx cost 0.01 (8 min at 0.062/h)
+11:59:38 RESULT rtx-3060-12gb: ready | tps=0 apis=["chat","messages","responses"] | gpu RTX 3060 | NVIDIA GeForce RTX 3060, 12288 MiB, 580.173.02 | cost 0.008
+
+hardware id                        status      detail
+rtx-3060-12gb                      ready       tps=0 apis=["chat","messages","responses"]

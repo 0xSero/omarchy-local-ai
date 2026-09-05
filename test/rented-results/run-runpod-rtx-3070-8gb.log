@@ -1,0 +1,6 @@
+12:23:17 rtx-3070-8gb: attempt 1: renting NVIDIA GeForce RTX 3070 (COMMUNITY), image lmsysorg/sglang:dev-cu12
+12:23:18 rtx-3070-8gb: runpod aeta4z4wr9mn39 at 0.13/h on NVIDIA GeForce RTX 3070
+12:25:27 rtx-3070-8gb: waiting (128s, pod RUNNING, container not started)
+12:27:32 rtx-3070-8gb: waiting (254s, pod RUNNING, container not started)
+12:29:40 rtx-3070-8gb: waiting (381s, pod RUNNING, container not started)
+12:31:48 rtx-3070-8gb: waiting (509s, pod RUNNING, container not started)

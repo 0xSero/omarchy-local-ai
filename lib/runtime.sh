@@ -124,13 +124,19 @@ accept() {
     fail "gateway answers without the key (docker logs $GATEWAY)"; return 1
   fi
   op starting "$id" "chat acceptance" 0
-  t0=$(date +%s%N)
   reply=$(post chat/completions "$(jq -nc --arg m "$served" '{model:$m,stream:false,messages:[{role:"user",content:"Reply with exactly: LOCAL_AI_READY"}]}')") || { fail "chat completion failed"; return 1; }
-  t1=$(date +%s%N)
   jq -e '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|contains("LOCAL_AI_READY")' >/dev/null <<<"$reply" || { fail "chat acceptance failed"; return 1; }
-  toks=$(jq -r '.usage.completion_tokens // 0' <<<"$reply"); tps=$(( toks * 1000000000 / (t1 - t0 + 1) ))
+  # decode speed on a reply long enough to time. Engines do not all report usage (TabbyAPI through
+  # the gateway does not), so the count falls back to the words the model actually wrote.
+  op starting "$id" "speed check" 0
+  t0=$(date +%s%N)
+  reply=$(post chat/completions "$(jq -nc --arg m "$served" '{model:$m,stream:false,max_tokens:96,messages:[{role:"user",content:"Count from 1 to 60 separated by single spaces. Write nothing else."}]}')") || { fail "speed check request failed"; return 1; }
+  t1=$(date +%s%N)
+  toks=$(jq -r '.usage.completion_tokens // 0' <<<"$reply")
+  (( toks > 0 )) || toks=$(jq -r '(.choices[0].message.content//"")|[splits("\\s+")|select(length>0)]|length' <<<"$reply")
+  tps=$(( toks * 1000000000 / (t1 - t0 + 1) ))
   floor=$(jq -r '[5, ((.speed.tps//0)/5|floor)]|max' <<<"$r")
-  (( toks < 8 || tps >= floor )) || { fail "decode ${tps} tok/s is below the ${floor} tok/s floor: the GPU is not being used (driver too old for this image?)"; return 1; }
+  (( toks < 16 || tps >= floor )) || { fail "decode ${tps} tok/s is below the ${floor} tok/s floor: the GPU is not being used (driver too old for this image?)"; return 1; }
   apis='["chat"]'
   op starting "$id" "messages acceptance" 0
   # the shapes agents really send: a system prompt plus a prior turn (Messages), instructions plus a
