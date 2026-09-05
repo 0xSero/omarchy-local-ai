@@ -280,6 +280,10 @@ rm -f "$OMARCHY_AI_STATE/gateway.recipe.json"   # a gateway started by an older 
 SHIM_KEYLESS_GATEWAY=1 "$CLI" load
 [[ $(snap .state) == error && $(snap .error) == *"without the key"* ]] || fail "keyless gateway refused" "$(snap .state) $(snap .error)"; pass "a gateway that answers without the key is refused at acceptance"
 
+# a worker that dies on something unforeseen leaves a reason, not a silent idle or a stale "starting"
+SHIM_RUN_FAIL=omarchy-local-ai-engine OMARCHY_AI_MODEL_ROOT=/nonexistent-root/x "$CLI" load 2>/dev/null || true
+[[ $(snap .state) == error && $(snap .error) != "" ]] || fail "unexpected death recorded" "$(snap .state) '$(snap .error)'"; pass "an unforeseen worker failure ends in error with a reason"
+
 # failures during start are logged and rolled back
 SHIM_RUN_FAIL=omarchy-local-ai-engine "$CLI" load
 [[ $(snap .state) == error ]] || fail "start failure"; pass "engine start failure is an error"

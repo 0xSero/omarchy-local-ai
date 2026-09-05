@@ -51,6 +51,7 @@ current_recipe() { # the one recipe for this machine, gated; prints json or fail
 
 w_load() {
   guard || oops "another operation is running"
+  trap worker_exit EXIT   # a step that dies unexpectedly still leaves a reason on the card, never a silent idle
   local r id t0
   op download "" "checking the GPU and recipe" 0
   r=$(current_recipe 2>"$STATE/gate.err") || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
@@ -77,6 +78,7 @@ w_load() {
 
 w_unload() {
   guard || oops "another operation is running"
+  trap worker_exit EXIT
   op unload "" "stopping" 0
   share_forget
   stop_all

@@ -66,10 +66,18 @@ gateway_argv() { # gateway_argv <recipe>
   printf '%s\0' --env "UPSTREAM=http://engine:$(jq -r .launch.containerPort <<<"$r")" --env "MODEL=$(jq -r .model.servedName <<<"$r")" \
     --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY_FILE:/run/gateway.key:ro" "$img"
 }
+# argv builders run in a subshell and can fail halfway (a mount root that cannot be made, a recipe
+# field missing); a process substitution would hand docker the truncated half. Build into a file
+# and check the builder's own status first.
+read_argv() { # read_argv <builder> <recipe> -> ARGV (no namerefs: the suite runs on bash 3.2 too)
+  local f; f=$(mktemp "$STATE/argv.XXXXXX") || return 1
+  if ! "$1" "$2" >"$f"; then rm -f "$f"; return 1; fi
+  ARGV=(); local v; while IFS= read -r -d '' v; do ARGV+=("$v"); done <"$f"; rm -f "$f"
+  ((${#ARGV[@]}))
+}
 start_gateway() { # start_gateway <recipe>; remembers the recipe so the gateway can be restarted alone
-  local r=$1 v; local -a argv=()
-  while IFS= read -r -d '' v; do argv+=("$v"); done < <(gateway_argv "$r") || return 1
-  ((${#argv[@]})) || return 1
+  local r=$1; local -a argv=()
+  read_argv gateway_argv "$r" || { fail "could not build the gateway command"; return 1; }; argv=("${ARGV[@]}")
   printf '%s\n' "$r" >"$STATE/gateway.recipe.json"
   log "gateway: ${argv[*]}"
   run_child "${argv[@]}" >>"$LOGFILE" 2>&1
@@ -175,10 +183,9 @@ drop_previous() { local c; for c in "$ENGINE" "$GATEWAY"; do exists "$c-previous
 stop_all() { local c; for c in "$ENGINE" "$GATEWAY" "$ENGINE-previous" "$GATEWAY-previous"; do exists "$c" && owned "$c" && docker rm -f "$c" >/dev/null 2>&1; done; return 0; }
 
 start_pair() { # start_pair <recipe>: engine then gateway; returns non-zero on any failure
-  local r=$1 v; local -a argv=()
+  local r=$1; local -a argv=()
   ensure_network; ensure_key; write_assets "$r"
-  while IFS= read -r -d '' v; do argv+=("$v"); done < <(engine_argv "$r") || return 1
-  ((${#argv[@]})) || return 1
+  read_argv engine_argv "$r" || { fail "could not build the engine command (see $LOGFILE)"; return 1; }; argv=("${ARGV[@]}")
   log "engine: ${argv[*]}"
   run_child "${argv[@]}" >>"$LOGFILE" 2>&1 || return 1
   start_gateway "$r" || return 1

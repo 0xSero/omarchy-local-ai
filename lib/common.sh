@@ -86,8 +86,20 @@ guard() {
       kill -0 "$holder" 2>/dev/null && { fail "another operation is running"; return 1; }
       rm -rf "$d"; mkdir "$d" || { fail "another operation is running"; return 1; }
     fi
-    printf '%s' "$$" >"$d/pid"; trap 'rm -rf "'"$d"'"' EXIT
+    printf '%s' "$$" >"$d/pid"; LOCKD=$d
   fi
+}
+# worker_exit: the EXIT trap of a worker. A worker that ends while the ledger still names it as the
+# running op died without op_done or oops (set -e on something unforeseen): say so, so the card
+# shows a reason instead of a stale "starting" or a silent idle. Also drops the mkdir lock.
+worker_exit() {
+  local rc=$? p; p=$(lread | jq -r '.op.pid')
+  if [[ $p == "$$" ]]; then
+    log "error: worker exited unexpectedly (status $rc) during $(lread | jq -r '.op.name'): $(lread | jq -r '.op.detail')"
+    lwrite '.error=$e | .op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0}' --arg e "stopped unexpectedly while $(lread | jq -r '.op.detail') (see $LOGFILE)"
+    snapshot_write
+  fi
+  [[ -n ${LOCKD:-} ]] && rm -rf "$LOCKD"; return 0
 }
 run_child() { "$@" 8>&- 9>&-; }          # foreground child without the lock fds
 spawn_child() { "$@" 8>&- 9>&- & }       # background child without the lock fds
