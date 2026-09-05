@@ -86,8 +86,16 @@ restart_gateway() { # same recipe, fresh publish list (share on/off); the engine
   api models 2 >/dev/null 2>&1
 }
 
-api() { curl -fsS --max-time "${2:-30}" --max-filesize 1048576 -H "Authorization: Bearer $(cat "$KEY_FILE")" "http://127.0.0.1:$PORT/v1/$1"; }
-post() { curl -fsS --max-time 600 --max-filesize 4194304 -H 'Content-Type: application/json' -H "Authorization: Bearer $(cat "$KEY_FILE")" -d "$2" "http://127.0.0.1:$PORT/v1/$1"; }
+# The bearer header travels to curl as a file (`-H @file`, 0600), never as an argument: argv is
+# readable by every local account through /proc/<pid>/cmdline while the request runs.
+AUTH_FILE="$STATE/gateway.auth"
+auth_file() { # -> path of a 0600 file holding the Authorization header for the current key
+  local want; want="Authorization: Bearer $(cat "$KEY_FILE")"
+  [[ -f $AUTH_FILE && $(cat "$AUTH_FILE") == "$want" ]] || { state_dir; printf '%s\n' "$want" >"$AUTH_FILE.tmp.$$" && mv "$AUTH_FILE.tmp.$$" "$AUTH_FILE"; }
+  printf '%s' "$AUTH_FILE"
+}
+api() { curl -fsS --max-time "${2:-30}" --max-filesize 1048576 -H "@$(auth_file)" "http://127.0.0.1:$PORT/v1/$1"; }
+post() { curl -fsS --max-time 600 --max-filesize 4194304 -H 'Content-Type: application/json' -H "@$(auth_file)" -d "$2" "http://127.0.0.1:$PORT/v1/$1"; }
 
 # accept <recipe>: the model is what the recipe says, all three dialects answer through the gateway,
 # a tool call works when the recipe claims tools, and decode speed is not a CPU fallback.

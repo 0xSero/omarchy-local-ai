@@ -175,7 +175,11 @@ file on each request, requires it as `Authorization: Bearer` or `x-api-key`.
 The key lives in that file only: not in the ledger, not in the snapshot the
 panel reads, not in the log (revised 2026-09-04 after marketplace review).
 The state directory is 0700 and every file in it 0600, since agent launch
-configs there embed the key. The share dialog shows the URL and the key file;
+configs there embed the key. The key enters no process argument: the
+acceptance probes hand curl the header as a 0600 file (`-H @file`), and an
+agent launch is a two-word bash stage that reads the key file into the named
+variables and execs the agent, so `/proc/<pid>/cmdline` carries the file's
+path and variable names only. The share dialog shows the URL and the key file;
 `share --key <value>` (and a panel field) replaces it without a restart.
 The route is the gateway's port published on the machine's tailnet address
 (`docker run --publish 100.x.y.z:12434:12434`), never `tailscale serve`: serve

@@ -21,11 +21,11 @@ ts_bin() { command -v tailscale 2>/dev/null; }
 
 ensure_key() {
   [[ -s $KEY_FILE ]] && return 0
-  state_dir; head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-32 >"$KEY_FILE"
+  state_dir; head -c 24 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-32 >"$KEY_FILE"; rm -f "$STATE/gateway.auth"
 }
 set_key() {
   [[ ${#1} -ge 16 ]] || { fail "key must be at least 16 characters"; return; }
-  state_dir; printf '%s\n' "$1" >"$KEY_FILE"
+  state_dir; printf '%s\n' "$1" >"$KEY_FILE"; rm -f "$STATE/gateway.auth"
   # every copy of the old key goes with it: agent launch configs are regenerated at the next launch
   local d; for d in "$STATE"/agents/*/; do [[ ${d%/} == "$STATE/agents/args" ]] || rm -rf "$d"; done
   rm -f "$STATE/share.cache"

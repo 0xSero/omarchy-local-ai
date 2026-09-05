@@ -29,24 +29,35 @@ agents_json() { # -> {"default":"pi","installed":["pi",...],"launchable":[...]} 
   jq -nc --arg d "${def:-}" --argjson i "$installed" --argjson l "$launchable" '{default:$d,installed:$i,launchable:$l}'
 }
 
-# agent_command <name> <served-model> <key> -> prints the argv (NUL-separated) to run in a terminal.
-# Each agent gets its own spelling of "use this endpoint"; the key doubles as the API key everywhere.
+# agent_command <name> <served-model> <key-file> -> prints the argv (NUL-separated) to run in a terminal.
+# Each agent gets its own spelling of "use this endpoint". The key never enters argv: with_key
+# prefixes a tiny bash stage that reads the key file into the named variables and execs the agent,
+# so /proc/<pid>/cmdline shows the file's path and the variable names, nothing more. Agents that
+# take the key only from a file get it in a 0600 plugin-owned file.
+with_key() { # with_key <VAR>... : the stage, then the caller appends the agent's own argv
+  printf '%s\0' bash -c 'k=$(cat "$1") || exit 1; shift; while [[ $1 != -- ]]; do export "$1=$k"; shift; done; shift; exec "$@"' omarchy-local-ai-agent "$KEY_FILE" "$@" --
+}
 agent_command() {
-  local name=$1 model=$2 key=$3 bin cfg
+  local name=$1 model=$2 key_file=$3 bin cfg key
   bin=$(bin_of "$name") || { fail "$name is not installed"; return; }
+  key=$(cat "$key_file")   # for the files written below only; it goes into no argument
   case $name in
     claude)
-      printf '%s\0' env "ANTHROPIC_BASE_URL=$ENDPOINT" "ANTHROPIC_API_KEY=$key" "ANTHROPIC_MODEL=$model" \
+      with_key ANTHROPIC_API_KEY
+      printf '%s\0' env "ANTHROPIC_BASE_URL=$ENDPOINT" "ANTHROPIC_MODEL=$model" \
         "ANTHROPIC_DEFAULT_SONNET_MODEL=$model" "ANTHROPIC_DEFAULT_OPUS_MODEL=$model" "ANTHROPIC_DEFAULT_HAIKU_MODEL=$model" \
         "$bin" --model "$model" ;;
     codex)
-      printf '%s\0' env "LOCAL_AI_KEY=$key" "$bin" \
+      with_key LOCAL_AI_KEY
+      printf '%s\0' "$bin" \
         -c "model_providers.local.name=Omarchy Local" -c "model_providers.local.base_url=$ENDPOINT/v1" \
         -c "model_providers.local.wire_api=responses" -c "model_providers.local.env_key=LOCAL_AI_KEY" \
         -c "model_provider=local" -c "model=$model" ;;
     opencode)
-      cfg=$(jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" \
-        '{"$schema":"https://opencode.ai/config.json",provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:$k},models:{($m):{name:$m}}}}}')
+      # opencode resolves {env:NAME} inside its config, so the key stays out of the config text too
+      cfg=$(jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" \
+        '{"$schema":"https://opencode.ai/config.json",provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:"{env:OMARCHY_LOCAL_AI_KEY}"},models:{($m):{name:$m}}}}}')
+      with_key OMARCHY_LOCAL_AI_KEY
       printf '%s\0' env "OPENCODE_CONFIG_CONTENT=$cfg" "$bin" --model "omarchy-local/$model" ;;
     pi|omp)
       # pi reads providers from its agent dir; a plugin-owned dir keeps the user's own untouched.
@@ -66,13 +77,17 @@ agent_command() {
       jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" \
         '{providers:{"omarchy-local":{type:"openai",name:"Omarchy Local",base_url:$u,api_key:$k,models:[{id:$m,name:$m,context_window:131072,default_max_tokens:8192}]}},models:{large:{provider:"omarchy-local",model:$m},small:{provider:"omarchy-local",model:$m}}}' \
         >"$dir/crush.json"
-      printf '%s\0' env "XDG_CONFIG_HOME=$STATE/agents/crush" "XDG_DATA_HOME=$STATE/agents/crush" "OPENAI_API_KEY=$key" "$bin" ;;
+      with_key OPENAI_API_KEY
+      printf '%s\0' env "XDG_CONFIG_HOME=$STATE/agents/crush" "XDG_DATA_HOME=$STATE/agents/crush" "$bin" ;;
     copilot)
-      printf '%s\0' env "COPILOT_PROVIDER_BASE_URL=$ENDPOINT/v1" "COPILOT_PROVIDER_API_KEY=$key" "$bin" --model "$model" ;;
+      with_key COPILOT_PROVIDER_API_KEY
+      printf '%s\0' env "COPILOT_PROVIDER_BASE_URL=$ENDPOINT/v1" "$bin" --model "$model" ;;
     grok)
-      printf '%s\0' env "GROK_CLI_CHAT_PROXY_BASE_URL=$ENDPOINT/v1" "XAI_API_KEY=$key" "$bin" ;;
+      with_key XAI_API_KEY
+      printf '%s\0' env "GROK_CLI_CHAT_PROXY_BASE_URL=$ENDPOINT/v1" "$bin" ;;
     *) # OpenAI-compatible by convention: hermes, ori, agy read the standard variables
-      printf '%s\0' env "OPENAI_BASE_URL=$ENDPOINT/v1" "OPENAI_API_BASE=$ENDPOINT/v1" "OPENAI_API_KEY=$key" "OPENAI_MODEL=$model" "$bin" ;;
+      with_key OPENAI_API_KEY
+      printf '%s\0' env "OPENAI_BASE_URL=$ENDPOINT/v1" "OPENAI_API_BASE=$ENDPOINT/v1" "OPENAI_MODEL=$model" "$bin" ;;
   esac
 }
 
@@ -83,8 +98,8 @@ open_agent() { # open_agent [name]: default agent when omitted; refuses out loud
   [[ -n $name ]] || { name=$(jq -r '.agents.default // ""' <<<"$snap"); name=${name:-pi}; }
   jq -e --arg a "$name" '.agents.launchable|index($a)!=null' <<<"$snap" >/dev/null \
     || { fail "$name cannot use this model: its API dialect did not pass acceptance"; return; }
-  model=$(jq -r '.model.servedName' <<<"$snap"); key=$(cat "$KEY_FILE")
-  local -a argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(agent_command "$name" "$model" "$key") || return 1
+  model=$(jq -r '.model.servedName' <<<"$snap")
+  local -a argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(agent_command "$name" "$model" "$KEY_FILE") || return 1
   # the person's own flags for this agent (`omarchy-local-ai agent-args <name> -- <flags>`), e.g. a yolo mode
   if [[ -s $STATE/agents/args/$name ]]; then while IFS= read -r -d '' v; do argv+=("$v"); done <"$STATE/agents/args/$name"; fi
   log "open-agent $name"
