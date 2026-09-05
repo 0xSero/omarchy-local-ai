@@ -1,0 +1,57 @@
+{
+ "hardwareId": "rtx-5060-ti-8gb",
+ "recipeId": "lfm2526b-bf16-rtx5060ti-sglang-tp1",
+ "provider": "vast",
+ "status": "ready",
+ "instance": 49985660,
+ "gpu": "RTX 5060 Ti",
+ "costPerHour": 0.08277777777777778,
+ "host": "Illinois, US",
+ "_lastLogPeek": 387,
+ "detail": "tps=64 apis=[\"chat\",\"messages\",\"responses\"]",
+ "pluginCommit": "aac0007",
+ "nvidiaSmi": "NVIDIA GeForce RTX 5060 Ti, 8151 MiB, 595.71.05",
+ "elapsedSeconds": 142,
+ "snapshot": {
+  "state": "ready",
+  "error": "",
+  "reason": "",
+  "hardwareId": "rtx-5060-ti-8gb",
+  "apis": [
+   "chat",
+   "messages",
+   "responses"
+  ],
+  "model": {
+   "recipeId": "lfm2526b-bf16-rtx5060ti-sglang-tp1",
+   "name": "LFM2.5-2.6B",
+   "servedName": "LiquidAI/LFM2.5-2.6B",
+   "engine": "sglang",
+   "ctxTokens": 131072,
+   "tps": 63,
+   "sizeGb": 5.024,
+   "downloaded": true,
+   "endpoint": "http://127.0.0.1:12434/v1"
+  },
+  "gpus": [
+   {
+    "key": "nvidia:0",
+    "backend": "nvidia",
+    "index": 0,
+    "product": "NVIDIA GeForce RTX 5060 Ti",
+    "vramGb": 8,
+    "hardwareId": "rtx-5060-ti-8gb",
+    "chosen": true
+   }
+  ]
+ },
+ "engineArgv": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30 -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2 ",
+ "gatewayArgv": "ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478 ",
+ "keyInCurlArgv": false,
+ "pluginLog": "2026-09-05T18:26:20Z op download checking the GPU and recipe\n2026-09-05T18:26:20Z op download checking\n2026-09-05T18:26:20Z op starting setting aside the previous model\n2026-09-05T18:26:20Z op starting starting\n2026-09-05T18:26:21Z engine: docker run --detach --name omarchy-local-ai-engine --restart unless-stopped --network omarchy-local-ai --network-alias engine --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=lfm2526b-bf16-rtx5060ti-sglang-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=engine --gpus device=0 --shm-size 16g --volume /root/.cache/huggingface:/root/.cache/huggingface --env HF_HOME=/root/.cache/huggingface --entrypoint /opt/sglang/bin/python lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30 -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2\nomarchy-local-ai-engine\n2026-09-05T18:26:21Z gateway: docker run --detach --name omarchy-local-ai-gateway --restart unless-stopped --network omarchy-local-ai --user 0:0 --publish 127.0.0.1:12434:12434 --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=lfm2526b-bf16-rtx5060ti-sglang-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=gateway --env UPSTREAM=http://engine:30000 --env MODEL=LiquidAI/LFM2.5-2.6B --env GATEWAY_KEY_FILE=/run/gateway.key --volume /work/state/gateway.key:/run/gateway.key:ro ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478\nomarchy-local-ai-gateway\n2026-09-05T18:26:21Z op starting loading the model\n2026-09-05T18:26:26Z op starting loading the model\n2026-09-05T18:26:32Z op starting loading the model\n2026-09-05T18:26:37Z op starting loading the model\n2026-09-05T18:26:43Z op starting loading the model\n2026-09-05T18:26:48Z op starting loading the model\n2026-09-05T18:26:54Z op starting loading the model\n2026-09-05T18:26:59Z op starting loading the model\n2026-09-05T18:27:04Z op starting loading the model\n2026-09-05T18:27:10Z op starting loading the model\n2026-09-05T18:27:15Z op starting loading the model\n2026-09-05T18:27:21Z op starting loading the model\n2026-09-05T18:27:26Z op starting loading the model\n2026-09-05T18:27:32Z op starting loading the model\n2026-09-05T18:27:37Z op starting loading the model\n2026-09-05T18:27:43Z op starting loading the model\n2026-09-05T18:27:48Z op starting loading the model\n2026-09-05T18:27:53Z op starting loading the model\n2026-09-05T18:27:59Z op starting loading the model\n2026-09-05T18:28:04Z op starting loading the model\n2026-09-05T18:28:10Z op starting loading the model\n2026-09-05T18:28:15Z op starting loading the model\n2026-09-05T18:28:20Z op starting chat acceptance\n2026-09-05T18:28:32Z op starting speed check\n2026-09-05T18:28:37Z op starting messages acceptance\n2026-09-05T18:28:38Z op starting responses acceptance\n2026-09-05T18:28:40Z accepted lfm2526b-bf16-rtx5060ti-sglang-tp1 served=LiquidAI/LFM2.5-2.6B tps=64 apis=[\"chat\",\"messages\",\"responses\"]\n2026-09-05T18:28:40Z ready lfm2526b-bf16-rtx5060ti-sglang-tp1\n",
+ "engineLogTail": "g-req: 1, #full token: 152, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 67.17, #queue-req: 0\n[2026-09-05 18:28:35] INFO:     127.0.0.1:43024 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:28:35] Prefill batch, #new-seq: 1, #new-token: 26, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 10.50\n[2026-09-05 18:28:35] Decode batch, #running-req: 1, #full token: 33, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 56.57, #queue-req: 0\n[2026-09-05 18:28:35] Decode batch, #running-req: 1, #full token: 73, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 67.43, #queue-req: 0\n[2026-09-05 18:28:36] Decode batch, #running-req: 1, #full token: 113, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 67.43, #queue-req: 0\n[2026-09-05 18:28:37] Decode batch, #running-req: 1, #full token: 153, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 67.36, #queue-req: 0\n[2026-09-05 18:28:37] INFO:     127.0.0.1:43038 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:28:37] INFO:     127.0.0.1:42702 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:28:38] Prefill batch, #new-seq: 1, #new-token: 43, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 15.48\n[2026-09-05 18:28:38] Decode batch, #running-req: 1, #full token: 51, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 39.56, #queue-req: 0\n[2026-09-05 18:28:38] Decode batch, #running-req: 1, #full token: 91, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 67.45, #queue-req: 0\n[2026-09-05 18:28:38] INFO:     127.0.0.1:42714 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:28:39] INFO:     127.0.0.1:42730 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:28:39] Prefill batch, #new-seq: 1, #new-token: 38, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 29.75\n[2026-09-05 18:28:39] Decode batch, #running-req: 1, #full token: 68, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 39.59, #queue-req: 0\n[2026-09-05 18:28:40] INFO:     127.0.0.1:42732 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:28:40] INFO:     127.0.0.1:42740 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:28:40] INFO:     127.0.0.1:42748 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:28:41] SIGTERM received. signum=None frame=None. Draining requests and shutting down...\n",
+ "gatewayLogTail": "est()\n  File \"/usr/lib/python3.12/http/server.py\", line 424, in handle_one_request\n    method()\n  File \"/work/gateway.py\", line 473, in do_GET\n    return self.passthrough(\"GET\", \"/v1/models\", None)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 508, in passthrough\n    up = Upstream(method, path, body)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 60, in __init__\n    self.conn.request(method, path, body=data, headers=headers)\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n----------------------------------------\n",
+ "harnessLog": "18:26:19 plugin aac0007, gateway.py 28645 bytes, jq jq-1.8.2\n18:26:19 gpu: NVIDIA GeForce RTX 5060 Ti, 8151 MiB, 595.71.05\n18:26:20 match: hardwareId=rtx-5060-ti-8gb reason='' gpus=[{\"product\":\"NVIDIA GeForce RTX 5060 Ti\",\"vramGb\":8,\"hardwareId\":\"rtx-5060-ti-8gb\"}]\n18:26:20 load\n18:26:21 docker: engine: /opt/sglang/bin/python -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2\n18:26:21 docker: gateway: gateway.py upstream from env, key file /work/state/gateway.key\n18:28:41 load exit 0, state ready, error '', apis [\"chat\",\"messages\",\"responses\"]\n18:28:41 2026-09-05T18:28:40Z accepted lfm2526b-bf16-rtx5060ti-sglang-tp1 served=LiquidAI/LFM2.5-2.6B tps=64 apis=[\"chat\",\"messages\",\"responses\"]\n",
+ "wallSeconds": 452,
+ "approxCost": 0.01
+}

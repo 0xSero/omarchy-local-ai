@@ -1,0 +1,57 @@
+{
+ "hardwareId": "rtx-3090-24gb",
+ "recipeId": "gemma412b-exl3-4bpw-rtx3090-tabbyapi-tp1",
+ "provider": "vast",
+ "status": "ready",
+ "instance": 49979959,
+ "gpu": "RTX 3090",
+ "costPerHour": 0.14805555555555555,
+ "host": "Estonia, EE",
+ "_lastLogPeek": 306,
+ "detail": "tps=14 apis=[\"chat\",\"messages\",\"responses\"]",
+ "pluginCommit": "200fe06",
+ "nvidiaSmi": "NVIDIA GeForce RTX 3090, 24576 MiB, 580.95.05",
+ "elapsedSeconds": 48,
+ "snapshot": {
+  "state": "ready",
+  "error": "",
+  "reason": "",
+  "hardwareId": "rtx-3090-24gb",
+  "apis": [
+   "chat",
+   "messages",
+   "responses"
+  ],
+  "model": {
+   "recipeId": "gemma412b-exl3-4bpw-rtx3090-tabbyapi-tp1",
+   "name": "Gemma-4-12B-it",
+   "servedName": "Gemma-4-12B-it-EXL3-4bpw",
+   "engine": "tabbyapi",
+   "ctxTokens": 131072,
+   "tps": 65,
+   "sizeGb": 8.37,
+   "downloaded": true,
+   "endpoint": "http://127.0.0.1:12434/v1"
+  },
+  "gpus": [
+   {
+    "key": "nvidia:0",
+    "backend": "nvidia",
+    "index": 0,
+    "product": "NVIDIA GeForce RTX 3090",
+    "vramGb": 24,
+    "hardwareId": "rtx-3090-24gb",
+    "chosen": true
+   }
+  ]
+ },
+ "engineArgv": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448 main.py --config /app/config.yml ",
+ "gatewayArgv": "ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478 ",
+ "keyInCurlArgv": false,
+ "pluginLog": "2026-09-05T16:58:46Z op download checking the GPU and recipe\n2026-09-05T16:58:47Z op download checking\n2026-09-05T16:58:47Z op starting setting aside the previous model\n2026-09-05T16:58:47Z op starting starting\n2026-09-05T16:58:48Z engine: docker run --detach --name omarchy-local-ai-engine --restart unless-stopped --network omarchy-local-ai --network-alias engine --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=gemma412b-exl3-4bpw-rtx3090-tabbyapi-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=engine --gpus device=0 --shm-size 8g --volume /work/models/gemma-4-12b-it-exl3-4bpw:/workspace/models:ro --volume /work/state/assets/gemma412bit-exl3-4bpw-128k-q6-tabbyapi-config.yml:/app/config.yml:ro --env NVIDIA_VISIBLE_DEVICES=all --entrypoint /opt/venv/bin/python3 ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448 main.py --config /app/config.yml\nomarchy-local-ai-engine\n2026-09-05T16:58:48Z gateway: docker run --detach --name omarchy-local-ai-gateway --restart unless-stopped --network omarchy-local-ai --user 0:0 --publish 127.0.0.1:12434:12434 --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=gemma412b-exl3-4bpw-rtx3090-tabbyapi-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=gateway --env UPSTREAM=http://engine:5000 --env MODEL=Gemma-4-12B-it-EXL3-4bpw --env GATEWAY_KEY_FILE=/run/gateway.key --volume /work/state/gateway.key:/run/gateway.key:ro ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478\nomarchy-local-ai-gateway\n2026-09-05T16:58:48Z op starting loading the model\n2026-09-05T16:58:54Z op starting loading the model\n2026-09-05T16:58:59Z op starting loading the model\n2026-09-05T16:59:05Z op starting loading the model\n2026-09-05T16:59:11Z op starting chat acceptance\n2026-09-05T16:59:25Z op starting speed check\n2026-09-05T16:59:28Z op starting messages acceptance\n2026-09-05T16:59:29Z op starting responses acceptance\n2026-09-05T16:59:30Z accepted gemma412b-exl3-4bpw-rtx3090-tabbyapi-tp1 served=Gemma-4-12B-it-EXL3-4bpw tps=14 apis=[\"chat\",\"messages\",\"responses\"]\n2026-09-05T16:59:31Z ready gemma412b-exl3-4bpw-rtx3090-tabbyapi-tp1\n",
+ "engineLogTail": "letions\n2026-09-05 16:59:08.643 INFO:     Started server process [996]\n2026-09-05 16:59:08.644 INFO:     Waiting for application startup.\n2026-09-05 16:59:08.645 INFO:     Application startup complete.\n2026-09-05 16:59:08.646 INFO:     Uvicorn running on http://0.0.0.0:5000 (Press \nCTRL+C to quit)\n2026-09-05 16:59:11.521 INFO:     127.0.0.1:33414 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:59:11.949 INFO:     127.0.0.1:33416 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:59:12.296 INFO:     Received chat completion request \n3c8b2c655dfa44a3a00235e85bc7b47e\n2026-09-05 16:59:25.688 INFO:     Finished chat completion request \n3c8b2c655dfa44a3a00235e85bc7b47e\n2026-09-05 16:59:25.690 INFO:     127.0.0.1:33426 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 16:59:25.691 INFO:     Metrics (ID: \n3c8b2c655dfa44a3a00235e85bc7b47e): 6 tokens generated in 13.37 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 22 new tokens at 2.43 T/s, Generate: 1.39 \nT/s, Context: 22 tokens) \n2026-09-05 16:59:26.024 INFO:     127.0.0.1:50408 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:59:26.365 INFO:     Received chat completion request \n925368e32cfd47699ba780f8af13c5f9\n2026-09-05 16:59:28.563 INFO:     Finished chat completion request \n925368e32cfd47699ba780f8af13c5f9\n2026-09-05 16:59:28.565 INFO:     127.0.0.1:50422 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 16:59:28.566 INFO:     Metrics (ID: \n925368e32cfd47699ba780f8af13c5f9): 95 tokens generated in 2.19 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 30 new tokens at 375.0 T/s, Generate: 45.04 \nT/s, Context: 30 tokens) \n2026-09-05 16:59:28.871 INFO:     127.0.0.1:50434 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:59:29.205 INFO:     Received chat completion request \nefffdd7c9a89409ca06ff460a7ee64a9\n2026-09-05 16:59:29.543 INFO:     Finished chat completion request \nefffdd7c9a89409ca06ff460a7ee64a9\n2026-09-05 16:59:29.544 INFO:     127.0.0.1:50444 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 16:59:29.545 INFO:     Metrics (ID: \nefffdd7c9a89409ca06ff460a7ee64a9): 6 tokens generated in 0.34 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 45 new tokens at 225.0 T/s, Generate: 45.82 \nT/s, Context: 45 tokens) \n2026-09-05 16:59:29.905 INFO:     127.0.0.1:50458 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:59:30.236 INFO:     Received chat completion request \n43029b5e29254a1584fc162c6596d6b8\n2026-09-05 16:59:30.495 INFO:     Finished chat completion request \n43029b5e29254a1584fc162c6596d6b8\n2026-09-05 16:59:30.496 INFO:     127.0.0.1:52640 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 16:59:30.498 INFO:     Metrics (ID: \n43029b5e29254a1584fc162c6596d6b8): 6 tokens generated in 0.25 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 41 new tokens at 455.56 T/s, Generate: 37.8 \nT/s, Context: 41 tokens) \n2026-09-05 16:59:30.925 INFO:     127.0.0.1:52650 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 16:59:31.479 INFO:     127.0.0.1:52660 - \"GET /v1/models HTTP/1.1\" \n200\n",
+ "gatewayLogTail": "est()\n  File \"/usr/lib/python3.12/http/server.py\", line 424, in handle_one_request\n    method()\n  File \"/work/gateway.py\", line 473, in do_GET\n    return self.passthrough(\"GET\", \"/v1/models\", None)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 508, in passthrough\n    up = Upstream(method, path, body)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 60, in __init__\n    self.conn.request(method, path, body=data, headers=headers)\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n----------------------------------------\n",
+ "harnessLog": "16:58:45 plugin 200fe06, gateway.py 28645 bytes, jq jq-1.8.2\n16:58:46 gpu: NVIDIA GeForce RTX 3090, 24576 MiB, 580.95.05\n16:58:46 match: hardwareId=rtx-3090-24gb reason='' gpus=[{\"product\":\"NVIDIA GeForce RTX 3090\",\"vramGb\":24,\"hardwareId\":\"rtx-3090-24gb\"}]\n16:58:46 load\n16:58:48 docker: engine: /opt/venv/bin/python3 main.py --config /app/config.yml\n16:58:48 docker: gateway: gateway.py upstream from env, key file /work/state/gateway.key\n16:59:31 load exit 0, state ready, error '', apis [\"chat\",\"messages\",\"responses\"]\n16:59:31 2026-09-05T16:59:30Z accepted gemma412b-exl3-4bpw-rtx3090-tabbyapi-tp1 served=Gemma-4-12B-it-EXL3-4bpw tps=14 apis=[\"chat\",\"messages\",\"responses\"]\n",
+ "wallSeconds": 357,
+ "approxCost": 0.015
+}

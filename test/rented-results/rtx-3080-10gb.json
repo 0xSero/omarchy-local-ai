@@ -1,0 +1,57 @@
+{
+ "hardwareId": "rtx-3080-10gb",
+ "recipeId": "lfm2526b-bf16-rtx3080-sglang-tp1",
+ "provider": "vast",
+ "status": "ready",
+ "instance": 49984674,
+ "gpu": "RTX 3080",
+ "costPerHour": 0.13472222222222222,
+ "host": "Florida, US",
+ "_lastLogPeek": 370,
+ "detail": "tps=87 apis=[\"chat\",\"messages\",\"responses\"]",
+ "pluginCommit": "aac0007",
+ "nvidiaSmi": "NVIDIA GeForce RTX 3080, 10240 MiB, 595.84",
+ "elapsedSeconds": 141,
+ "snapshot": {
+  "state": "ready",
+  "error": "",
+  "reason": "",
+  "hardwareId": "rtx-3080-10gb",
+  "apis": [
+   "chat",
+   "messages",
+   "responses"
+  ],
+  "model": {
+   "recipeId": "lfm2526b-bf16-rtx3080-sglang-tp1",
+   "name": "LFM2.5-2.6B",
+   "servedName": "LiquidAI/LFM2.5-2.6B",
+   "engine": "sglang",
+   "ctxTokens": 131072,
+   "tps": 94,
+   "sizeGb": 5.024,
+   "downloaded": true,
+   "endpoint": "http://127.0.0.1:12434/v1"
+  },
+  "gpus": [
+   {
+    "key": "nvidia:0",
+    "backend": "nvidia",
+    "index": 0,
+    "product": "NVIDIA GeForce RTX 3080",
+    "vramGb": 10,
+    "hardwareId": "rtx-3080-10gb",
+    "chosen": true
+   }
+  ]
+ },
+ "engineArgv": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30 -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2 ",
+ "gatewayArgv": "ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478 ",
+ "keyInCurlArgv": false,
+ "pluginLog": "2026-09-05T18:13:11Z op download checking the GPU and recipe\n2026-09-05T18:13:12Z op download checking\n2026-09-05T18:13:13Z op starting setting aside the previous model\n2026-09-05T18:13:13Z op starting starting\n2026-09-05T18:13:14Z engine: docker run --detach --name omarchy-local-ai-engine --restart unless-stopped --network omarchy-local-ai --network-alias engine --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=lfm2526b-bf16-rtx3080-sglang-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=engine --gpus device=0 --shm-size 16g --volume /root/.cache/huggingface:/root/.cache/huggingface --env HF_HOME=/root/.cache/huggingface --entrypoint /opt/sglang/bin/python lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30 -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2\nomarchy-local-ai-engine\n2026-09-05T18:13:14Z gateway: docker run --detach --name omarchy-local-ai-gateway --restart unless-stopped --network omarchy-local-ai --user 0:0 --publish 127.0.0.1:12434:12434 --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=lfm2526b-bf16-rtx3080-sglang-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=gateway --env UPSTREAM=http://engine:30000 --env MODEL=LiquidAI/LFM2.5-2.6B --env GATEWAY_KEY_FILE=/run/gateway.key --volume /work/state/gateway.key:/run/gateway.key:ro ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478\nomarchy-local-ai-gateway\n2026-09-05T18:13:14Z op starting loading the model\n2026-09-05T18:13:20Z op starting loading the model\n2026-09-05T18:13:26Z op starting loading the model\n2026-09-05T18:13:32Z op starting loading the model\n2026-09-05T18:13:38Z op starting loading the model\n2026-09-05T18:13:44Z op starting loading the model\n2026-09-05T18:13:49Z op starting loading the model\n2026-09-05T18:13:55Z op starting loading the model\n2026-09-05T18:14:01Z op starting loading the model\n2026-09-05T18:14:07Z op starting loading the model\n2026-09-05T18:14:13Z op starting loading the model\n2026-09-05T18:14:19Z op starting loading the model\n2026-09-05T18:14:25Z op starting loading the model\n2026-09-05T18:14:31Z op starting loading the model\n2026-09-05T18:14:37Z op starting loading the model\n2026-09-05T18:14:42Z op starting loading the model\n2026-09-05T18:14:48Z op starting loading the model\n2026-09-05T18:14:54Z op starting loading the model\n2026-09-05T18:15:00Z op starting loading the model\n2026-09-05T18:15:06Z op starting loading the model\n2026-09-05T18:15:12Z op starting chat acceptance\n2026-09-05T18:15:20Z op starting speed check\n2026-09-05T18:15:25Z op starting messages acceptance\n2026-09-05T18:15:26Z op starting responses acceptance\n2026-09-05T18:15:28Z accepted lfm2526b-bf16-rtx3080-sglang-tp1 served=LiquidAI/LFM2.5-2.6B tps=87 apis=[\"chat\",\"messages\",\"responses\"]\n2026-09-05T18:15:29Z ready lfm2526b-bf16-rtx3080-sglang-tp1\n",
+ "engineLogTail": "8246 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:15:23] Prefill batch, #new-seq: 1, #new-token: 26, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 14.10\n[2026-09-05 18:15:23] Decode batch, #running-req: 1, #full token: 48, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 70.01, #queue-req: 0\n[2026-09-05 18:15:23] Decode batch, #running-req: 1, #full token: 88, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 94.85, #queue-req: 0\n[2026-09-05 18:15:24] Decode batch, #running-req: 1, #full token: 128, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 90.77, #queue-req: 0\n[2026-09-05 18:15:24] Decode batch, #running-req: 1, #full token: 168, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 94.69, #queue-req: 0\n[2026-09-05 18:15:25] INFO:     127.0.0.1:58250 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:15:25] INFO:     127.0.0.1:44402 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:15:25] Prefill batch, #new-seq: 1, #new-token: 43, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 16.48\n[2026-09-05 18:15:26] Decode batch, #running-req: 1, #full token: 66, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 29.98, #queue-req: 0\n[2026-09-05 18:15:26] INFO:     127.0.0.1:44406 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:15:26] INFO:     127.0.0.1:44416 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:15:27] Prefill batch, #new-seq: 1, #new-token: 38, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 26.46\n[2026-09-05 18:15:27] Decode batch, #running-req: 1, #full token: 50, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 30.30, #queue-req: 0\n[2026-09-05 18:15:27] Decode batch, #running-req: 1, #full token: 90, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 94.98, #queue-req: 0\n[2026-09-05 18:15:28] Decode batch, #running-req: 1, #full token: 130, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 90.08, #queue-req: 0\n[2026-09-05 18:15:28] INFO:     127.0.0.1:44430 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:15:28] INFO:     127.0.0.1:44434 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:15:29] INFO:     127.0.0.1:44450 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:15:29] SIGTERM received. signum=None frame=None. Draining requests and shutting down...\n",
+ "gatewayLogTail": "est()\n  File \"/usr/lib/python3.12/http/server.py\", line 424, in handle_one_request\n    method()\n  File \"/work/gateway.py\", line 473, in do_GET\n    return self.passthrough(\"GET\", \"/v1/models\", None)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 508, in passthrough\n    up = Upstream(method, path, body)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 60, in __init__\n    self.conn.request(method, path, body=data, headers=headers)\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n----------------------------------------\n",
+ "harnessLog": "18:13:10 plugin aac0007, gateway.py 28645 bytes, jq jq-1.8.2\n18:13:11 gpu: NVIDIA GeForce RTX 3080, 10240 MiB, 595.84\n18:13:11 match: hardwareId=rtx-3080-10gb reason='' gpus=[{\"product\":\"NVIDIA GeForce RTX 3080\",\"vramGb\":10,\"hardwareId\":\"rtx-3080-10gb\"}]\n18:13:11 load\n18:13:14 docker: engine: /opt/sglang/bin/python -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2\n18:13:14 docker: gateway: gateway.py upstream from env, key file /work/state/gateway.key\n18:15:29 load exit 0, state ready, error '', apis [\"chat\",\"messages\",\"responses\"]\n18:15:29 2026-09-05T18:15:28Z accepted lfm2526b-bf16-rtx3080-sglang-tp1 served=LiquidAI/LFM2.5-2.6B tps=87 apis=[\"chat\",\"messages\",\"responses\"]\n",
+ "wallSeconds": 435,
+ "approxCost": 0.016
+}

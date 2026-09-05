@@ -1,0 +1,5 @@
+{
+ "hardwareId": "rtx-a6000-48gb",
+ "status": "no-offers",
+ "detail": "no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_A6000 gpu_ram>=47 inet_down>=500 disk_space>=65 reliability>0.9 cuda_max_good>=12.9 geolocation notin [CN]"
+}

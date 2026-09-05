@@ -1,11 +1,56 @@
 {
  "hardwareId": "rtx-3070-8gb",
  "recipeId": "lfm2526b-bf16-rtx3070-sglang-tp1",
- "provider": "runpod",
- "status": "no-host",
- "instance": "7eaq3efoy0ecq5",
- "gpu": "NVIDIA GeForce RTX 3070",
- "costPerHour": 0.13,
- "host": null,
- "detail": "no host started the container"
+ "provider": "vast",
+ "status": "ready",
+ "instance": 49984478,
+ "gpu": "RTX 3070",
+ "costPerHour": 0.05472222222222223,
+ "host": "France, FR",
+ "detail": "tps=64 apis=[\"chat\",\"messages\",\"responses\"]",
+ "pluginCommit": "aac0007",
+ "nvidiaSmi": "NVIDIA GeForce RTX 3070, 8192 MiB, 595.84",
+ "elapsedSeconds": 152,
+ "snapshot": {
+  "state": "ready",
+  "error": "",
+  "reason": "",
+  "hardwareId": "rtx-3070-8gb",
+  "apis": [
+   "chat",
+   "messages",
+   "responses"
+  ],
+  "model": {
+   "recipeId": "lfm2526b-bf16-rtx3070-sglang-tp1",
+   "name": "LFM2.5-2.6B",
+   "servedName": "LiquidAI/LFM2.5-2.6B",
+   "engine": "sglang",
+   "ctxTokens": 131072,
+   "tps": 67,
+   "sizeGb": 5.024,
+   "downloaded": true,
+   "endpoint": "http://127.0.0.1:12434/v1"
+  },
+  "gpus": [
+   {
+    "key": "nvidia:0",
+    "backend": "nvidia",
+    "index": 0,
+    "product": "NVIDIA GeForce RTX 3070",
+    "vramGb": 8,
+    "hardwareId": "rtx-3070-8gb",
+    "chosen": true
+   }
+  ]
+ },
+ "engineArgv": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30 -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2 ",
+ "gatewayArgv": "ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478 ",
+ "keyInCurlArgv": false,
+ "pluginLog": "2026-09-05T18:05:41Z op download checking the GPU and recipe\n2026-09-05T18:05:42Z op download checking\n2026-09-05T18:05:42Z op starting setting aside the previous model\n2026-09-05T18:05:42Z op starting starting\n2026-09-05T18:05:43Z engine: docker run --detach --name omarchy-local-ai-engine --restart unless-stopped --network omarchy-local-ai --network-alias engine --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=lfm2526b-bf16-rtx3070-sglang-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=engine --gpus device=0 --shm-size 16g --volume /root/.cache/huggingface:/root/.cache/huggingface --env HF_HOME=/root/.cache/huggingface --entrypoint /opt/sglang/bin/python lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30 -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2\nomarchy-local-ai-engine\n2026-09-05T18:05:43Z gateway: docker run --detach --name omarchy-local-ai-gateway --restart unless-stopped --network omarchy-local-ai --user 0:0 --publish 127.0.0.1:12434:12434 --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=lfm2526b-bf16-rtx3070-sglang-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=gateway --env UPSTREAM=http://engine:30000 --env MODEL=LiquidAI/LFM2.5-2.6B --env GATEWAY_KEY_FILE=/run/gateway.key --volume /work/state/gateway.key:/run/gateway.key:ro ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478\nomarchy-local-ai-gateway\n2026-09-05T18:05:43Z op starting loading the model\n2026-09-05T18:05:48Z op starting loading the model\n2026-09-05T18:05:54Z op starting loading the model\n2026-09-05T18:05:59Z op starting loading the model\n2026-09-05T18:06:05Z op starting loading the model\n2026-09-05T18:06:10Z op starting loading the model\n2026-09-05T18:06:16Z op starting loading the model\n2026-09-05T18:06:21Z op starting loading the model\n2026-09-05T18:06:27Z op starting loading the model\n2026-09-05T18:06:32Z op starting loading the model\n2026-09-05T18:06:38Z op starting loading the model\n2026-09-05T18:06:43Z op starting loading the model\n2026-09-05T18:06:49Z op starting loading the model\n2026-09-05T18:06:55Z op starting loading the model\n2026-09-05T18:07:00Z op starting loading the model\n2026-09-05T18:07:06Z op starting loading the model\n2026-09-05T18:07:12Z op starting loading the model\n2026-09-05T18:07:17Z op starting loading the model\n2026-09-05T18:07:23Z op starting loading the model\n2026-09-05T18:07:29Z op starting loading the model\n2026-09-05T18:07:34Z op starting loading the model\n2026-09-05T18:07:39Z op starting loading the model\n2026-09-05T18:07:45Z op starting loading the model\n2026-09-05T18:07:50Z op starting chat acceptance\n2026-09-05T18:08:02Z op starting speed check\n2026-09-05T18:08:07Z op starting messages acceptance\n2026-09-05T18:08:09Z op starting responses acceptance\n2026-09-05T18:08:10Z accepted lfm2526b-bf16-rtx3070-sglang-tp1 served=LiquidAI/LFM2.5-2.6B tps=64 apis=[\"chat\",\"messages\",\"responses\"]\n2026-09-05T18:08:11Z ready lfm2526b-bf16-rtx3070-sglang-tp1\n",
+ "engineLogTail": "-req: 1, #full token: 132, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 67.47, #queue-req: 0\n[2026-09-05 18:08:05] Decode batch, #running-req: 1, #full token: 172, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 66.85, #queue-req: 0\n[2026-09-05 18:08:05] INFO:     127.0.0.1:41854 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:08:05] Prefill batch, #new-seq: 1, #new-token: 26, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 10.51\n[2026-09-05 18:08:05] Decode batch, #running-req: 1, #full token: 53, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 57.34, #queue-req: 0\n[2026-09-05 18:08:06] Decode batch, #running-req: 1, #full token: 93, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 67.09, #queue-req: 0\n[2026-09-05 18:08:07] Decode batch, #running-req: 1, #full token: 133, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 67.21, #queue-req: 0\n[2026-09-05 18:08:07] Decode batch, #running-req: 1, #full token: 173, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 66.94, #queue-req: 0\n[2026-09-05 18:08:07] INFO:     127.0.0.1:51354 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:08:08] INFO:     127.0.0.1:51358 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:08:08] Prefill batch, #new-seq: 1, #new-token: 43, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 13.98\n[2026-09-05 18:08:09] Decode batch, #running-req: 1, #full token: 71, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 30.68, #queue-req: 0\n[2026-09-05 18:08:09] INFO:     127.0.0.1:51360 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:08:09] INFO:     127.0.0.1:51368 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:08:09] Prefill batch, #new-seq: 1, #new-token: 38, #cached-token: 0, full token usage: 0.00, mamba usage: 0.00, #running-req: 0, #queue-req: 0, #pending-token: 0, cuda graph: False, input throughput (token/s): 28.07\n[2026-09-05 18:08:10] Decode batch, #running-req: 1, #full token: 59, full token usage: 0.00, mamba num: 2, mamba usage: 0.00, cuda graph: True, gen throughput (token/s): 31.97, #queue-req: 0\n[2026-09-05 18:08:10] INFO:     127.0.0.1:51370 - \"POST /v1/chat/completions HTTP/1.1\" 200 OK\n[2026-09-05 18:08:11] INFO:     127.0.0.1:51378 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:08:12] INFO:     127.0.0.1:51392 - \"GET /v1/models HTTP/1.1\" 200 OK\n[2026-09-05 18:08:12] SIGTERM received. signum=None frame=None. Draining requests and shutting down...\n",
+ "gatewayLogTail": "est()\n  File \"/usr/lib/python3.12/http/server.py\", line 424, in handle_one_request\n    method()\n  File \"/work/gateway.py\", line 473, in do_GET\n    return self.passthrough(\"GET\", \"/v1/models\", None)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 508, in passthrough\n    up = Upstream(method, path, body)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 60, in __init__\n    self.conn.request(method, path, body=data, headers=headers)\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n----------------------------------------\n",
+ "harnessLog": "18:05:41 plugin aac0007, gateway.py 28645 bytes, jq jq-1.8.2\n18:05:41 gpu: NVIDIA GeForce RTX 3070, 8192 MiB, 595.84\n18:05:41 match: hardwareId=rtx-3070-8gb reason='' gpus=[{\"product\":\"NVIDIA GeForce RTX 3070\",\"vramGb\":8,\"hardwareId\":\"rtx-3070-8gb\"}]\n18:05:41 load\n18:05:43 docker: engine: /opt/sglang/bin/python -m sglang.launch_server --model-path LiquidAI/LFM2.5-2.6B --revision a334ee78cd38458bb71eda24109ac42dcec1309d --host 0.0.0.0 --port 30000 --tp 1 --context-length 131072 --mem-fraction-static 0.90 --attention-backend flashinfer --max-running-requests 4 --cuda-graph-max-bs-decode 4 --enable-cache-report --trust-remote-code --reasoning-parser qwen3-thinking --tool-call-parser lfm2\n18:05:43 docker: gateway: gateway.py upstream from env, key file /work/state/gateway.key\n18:08:12 load exit 0, state ready, error '', apis [\"chat\",\"messages\",\"responses\"]\n18:08:12 2026-09-05T18:08:10Z accepted lfm2526b-bf16-rtx3070-sglang-tp1 served=LiquidAI/LFM2.5-2.6B tps=64 apis=[\"chat\",\"messages\",\"responses\"]\n",
+ "wallSeconds": 192,
+ "approxCost": 0.003
 }

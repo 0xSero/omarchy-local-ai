@@ -1,0 +1,13 @@
+{
+  "hardwareId": "rtx-4070-ti-super-16gb",
+  "recipeId": "qwen359b-exl3-4bpw-rtx4070tisuper-tabbyapi-tp1",
+  "provider": "vast",
+  "instance": 49977206,
+  "gpu": "RTX 4070S Ti",
+  "status": "ready",
+  "detail": "tps=0 apis=[\"chat\",\"messages\",\"responses\"]",
+  "nvidiaSmi": "NVIDIA GeForce RTX 4070 Ti SUPER, 16376 MiB, 580.142",
+  "pluginCommit": "b7531f3",
+  "collectedFrom": "container log (port unreachable); recorded by hand from vastai logs",
+  "approxCost": 0.06
+}
