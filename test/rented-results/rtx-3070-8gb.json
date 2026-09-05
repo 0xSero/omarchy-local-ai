@@ -3,7 +3,7 @@
  "recipeId": "lfm2526b-bf16-rtx3070-sglang-tp1",
  "provider": "runpod",
  "status": "no-host",
- "instance": "9va0hhpr7ux5i4",
+ "instance": "7eaq3efoy0ecq5",
  "gpu": "NVIDIA GeForce RTX 3070",
  "costPerHour": 0.13,
  "host": null,

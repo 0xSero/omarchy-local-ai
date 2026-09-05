@@ -156,3 +156,5 @@ b6e227b4a875: Download complete
 12:30:48 rtx-5060-ti-16gb: waiting (769s, vast loading 9267a8ce8264: Retrying in 1 second, container up)
 [16:30:48] vast status: bcaab74f3853: Retrying in 1 second
 12:30:50 rtx-4070-ti-super-16gb: waiting (1386s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+12:32:08 rtx-4070-super-12gb: waiting (1924s, vast loading 4f4fb700ef54: Pulling fs layer, container up)
+12:32:08 rtx-4070-12gb: waiting (1924s, vast loading bcaab74f3853: Retrying in 1 second, container up)

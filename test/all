@@ -76,9 +76,9 @@ case $url in
   */v1/models) echo '{"data":[{"id":"Test-Model"}]}' ;;
   */v1/chat/completions)
     if [[ $data == *'"tools"'* ]]; then echo '{"choices":[{"message":{"content":null,"tool_calls":[{"function":{"name":"shell","arguments":"{\"command\":\"echo LOCAL_AI_TOOL_OK\"}"}}]}}],"usage":{"completion_tokens":12}}'
-    elif [[ $data == *"Count from 1 to 60"* ]]; then # the speed probe: 60 words, usage optional, an optional delay to look like a CPU
+    elif [[ $data == *"Count from 1 to 80"* ]]; then # the speed probe: 80 words, usage optional, an optional delay to look like a CPU
       [[ -n ${SHIM_SLOW:-} ]] && sleep "$SHIM_SLOW"
-      words=$(seq -s ' ' 1 60)
+      words=$(seq -s ' ' 1 80)
       if [[ ${SHIM_NO_USAGE:-} == 1 ]]; then echo "{\"choices\":[{\"message\":{\"content\":\"$words\"}}]}"
       else echo "{\"choices\":[{\"message\":{\"content\":\"$words\"}}],\"usage\":{\"completion_tokens\":${SHIM_TOKENS:-60}}}"; fi
     else echo "{\"choices\":[{\"message\":{\"content\":\"${SHIM_REPLY:-LOCAL_AI_READY}\"}}],\"usage\":{\"completion_tokens\":${SHIM_TOKENS:-12}}}"; fi ;;
@@ -194,8 +194,8 @@ SHIM_REPLY="nope" "$CLI" load
 [[ -d $SHIM/containers/omarchy-local-ai-engine && $(cat "$SHIM/containers/omarchy-local-ai-engine/state") == running ]] || fail "previous restored"; pass "previous pair restored after a failed acceptance"
 [[ $(snap .state) == ready ]] || fail "restored previous is ready" "$(snap .state)"; pass "the restored previous model is ready, with the failure shown beside it"
 
-# speed: a timed 60-word reply; the recipe claims 60 tok/s so the floor is 12 tok/s
-SHIM_SLOW=6 "$CLI" load; [[ $(snap .error) == *"below the 12 tok/s floor"* ]] || fail "slow decode refused" "$(snap .state) $(snap .error)"; pass "a CPU-speed decode fails the speed floor and says so"
+# speed: a timed 80-word reply; the recipe claims 60 tok/s so the floor is 6 tok/s; the shim's usage says 60 tokens
+SHIM_SLOW=12 "$CLI" load; [[ $(snap .error) == *"below the 6 tok/s floor"* ]] || fail "slow decode refused" "$(snap .state) $(snap .error)"; pass "a CPU-speed decode fails the speed floor and says so"
 SHIM_NO_USAGE=1 "$CLI" load; [[ $(snap .state) == ready ]] || fail "no usage" "$(snap .error)"; grep -q "tps=[1-9]" "$OMARCHY_AI_STATE/log" || fail "tps measured without usage"; pass "speed is measured from the words written when the engine reports no usage"
 SHIM_TOKENS=4 "$CLI" load; [[ $(snap .state) == ready ]] || fail "short replies skip the floor"; pass "speed floor ignores replies under 16 tokens"
 
