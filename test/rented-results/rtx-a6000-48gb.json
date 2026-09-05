@@ -1,5 +1,56 @@
 {
  "hardwareId": "rtx-a6000-48gb",
- "status": "no-offers",
- "detail": "no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_A6000 gpu_ram>=47 inet_down>=500 disk_space>=65 reliability>0.9 cuda_max_good>=12.9 geolocation notin [CN]"
+ "recipeId": "qwen3827b-exl3-4bpw-rtxa6000-tabbyapi-tp1",
+ "provider": "vast",
+ "status": "ready",
+ "instance": 49986526,
+ "gpu": "RTX A6000",
+ "costPerHour": 0.45504629629629634,
+ "host": "Virginia, US",
+ "detail": "tps=24 apis=[\"chat\",\"messages\",\"responses\"]",
+ "pluginCommit": "aac0007",
+ "nvidiaSmi": "NVIDIA RTX A6000, 49140 MiB, 580.159.03",
+ "elapsedSeconds": 101,
+ "snapshot": {
+  "state": "ready",
+  "error": "",
+  "reason": "",
+  "hardwareId": "rtx-a6000-48gb",
+  "apis": [
+   "chat",
+   "messages",
+   "responses"
+  ],
+  "model": {
+   "recipeId": "qwen3827b-exl3-4bpw-rtxa6000-tabbyapi-tp1",
+   "name": "Qwen3.8-27B",
+   "servedName": "Qwen3.8-27B-EXL3-4bpw",
+   "engine": "tabbyapi",
+   "ctxTokens": 262144,
+   "tps": 36,
+   "sizeGb": 15.73,
+   "downloaded": true,
+   "endpoint": "http://127.0.0.1:12434/v1"
+  },
+  "gpus": [
+   {
+    "key": "nvidia:0",
+    "backend": "nvidia",
+    "index": 0,
+    "product": "NVIDIA RTX A6000",
+    "vramGb": 48,
+    "hardwareId": "rtx-a6000-48gb",
+    "chosen": true
+   }
+  ]
+ },
+ "engineArgv": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448 main.py --config /app/config.yml ",
+ "gatewayArgv": "ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478 ",
+ "keyInCurlArgv": false,
+ "pluginLog": "2026-09-05T18:33:28Z op download checking the GPU and recipe\n2026-09-05T18:33:29Z op download checking\n2026-09-05T18:33:29Z op starting setting aside the previous model\n2026-09-05T18:33:29Z op starting starting\n2026-09-05T18:33:30Z engine: docker run --detach --name omarchy-local-ai-engine --restart unless-stopped --network omarchy-local-ai --network-alias engine --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=qwen3827b-exl3-4bpw-rtxa6000-tabbyapi-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=engine --gpus device=0 --shm-size 8g --volume /work/models/qwen3-8-27b-exl3-4bpw:/workspace/models:ro --volume /work/state/assets/qwen3827b-exl3-4bpw-256k-q4-tabbyapi-config.yml:/app/config.yml:ro --env NVIDIA_VISIBLE_DEVICES=all --entrypoint /opt/venv/bin/python3 ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448 main.py --config /app/config.yml\nomarchy-local-ai-engine\n2026-09-05T18:33:30Z gateway: docker run --detach --name omarchy-local-ai-gateway --restart unless-stopped --network omarchy-local-ai --user 0:0 --publish 127.0.0.1:12434:12434 --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.recipe=qwen3827b-exl3-4bpw-rtxa6000-tabbyapi-tp1 --label io.omarchy.local-ai.registry=7f320db60b4ba4159306ab9b716bd38d523c7780 --label io.omarchy.local-ai.role=gateway --env UPSTREAM=http://engine:5000 --env MODEL=Qwen3.8-27B-EXL3-4bpw --env GATEWAY_KEY_FILE=/run/gateway.key --volume /work/state/gateway.key:/run/gateway.key:ro ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478\nomarchy-local-ai-gateway\n2026-09-05T18:33:30Z op starting loading the model\n2026-09-05T18:33:35Z op starting loading the model\n2026-09-05T18:33:41Z op starting loading the model\n2026-09-05T18:33:47Z op starting loading the model\n2026-09-05T18:33:52Z op starting loading the model\n2026-09-05T18:33:58Z op starting loading the model\n2026-09-05T18:34:03Z op starting loading the model\n2026-09-05T18:34:09Z op starting loading the model\n2026-09-05T18:34:15Z op starting loading the model\n2026-09-05T18:34:20Z op starting loading the model\n2026-09-05T18:34:26Z op starting loading the model\n2026-09-05T18:34:32Z op starting loading the model\n2026-09-05T18:34:37Z op starting chat acceptance\n2026-09-05T18:34:50Z op starting speed check\n2026-09-05T18:35:00Z op starting messages acceptance\n2026-09-05T18:35:05Z op starting responses acceptance\n2026-09-05T18:35:06Z accepted qwen3827b-exl3-4bpw-rtxa6000-tabbyapi-tp1 served=Qwen3.8-27B-EXL3-4bpw tps=24 apis=[\"chat\",\"messages\",\"responses\"]\n2026-09-05T18:35:07Z ready qwen3827b-exl3-4bpw-rtxa6000-tabbyapi-tp1\n",
+ "engineLogTail": "29388e345919b48ea331f52da3e\n2026-09-05 18:34:50.569 INFO:     Finished chat completion request \nc7d4129388e345919b48ea331f52da3e\n2026-09-05 18:34:50.572 INFO:     127.0.0.1:54474 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 18:34:50.573 INFO:     Metrics (ID: \nc7d4129388e345919b48ea331f52da3e): 206 tokens generated in 12.15 seconds (Queue:\n0.01 s, Process: 0 cached tokens and 59 new tokens at 12.72 T/s, Generate: 27.45\nT/s, Context: 59 tokens) \n2026-09-05 18:34:50.860 INFO:     127.0.0.1:41946 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 18:34:51.152 INFO:     Received chat completion request \n3c09964c1e214597929fb397ddc1a7f9\n2026-09-05 18:34:56.198 INFO:     Finished chat completion request \n3c09964c1e214597929fb397ddc1a7f9\n2026-09-05 18:34:56.200 INFO:     127.0.0.1:41958 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 18:34:56.202 INFO:     Metrics (ID: \n3c09964c1e214597929fb397ddc1a7f9): 159 tokens generated in 5.02 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 69 new tokens at 106.15 T/s, Generate: 36.4 \nT/s, Context: 69 tokens) \n2026-09-05 18:34:56.326 INFO:     Received chat completion request \n1f626bf01c974ff696ced6642bf938a6\n2026-09-05 18:35:00.859 INFO:     Finished chat completion request \n1f626bf01c974ff696ced6642bf938a6\n2026-09-05 18:35:00.862 INFO:     127.0.0.1:41972 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 18:35:00.863 INFO:     Metrics (ID: \n1f626bf01c974ff696ced6642bf938a6): 159 tokens generated in 4.51 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 69 new tokens at 460.0 T/s, Generate: 36.51 \nT/s, Context: 69 tokens) \n2026-09-05 18:35:01.170 INFO:     127.0.0.1:46618 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 18:35:01.436 INFO:     Received chat completion request \n7b66533ad780469590f83dc0c81b1f6f\n2026-09-05 18:35:05.475 INFO:     Finished chat completion request \n7b66533ad780469590f83dc0c81b1f6f\n2026-09-05 18:35:05.477 INFO:     127.0.0.1:46620 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 18:35:05.478 INFO:     Metrics (ID: \n7b66533ad780469590f83dc0c81b1f6f): 140 tokens generated in 4.01 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 82 new tokens at 482.35 T/s, Generate: 36.46\nT/s, Context: 82 tokens) \n2026-09-05 18:35:05.771 INFO:     127.0.0.1:46636 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 18:35:06.049 INFO:     Received chat completion request \n4711897e5097422e95c44ec1dbccb1d7\n2026-09-05 18:35:06.565 INFO:     Finished chat completion request \n4711897e5097422e95c44ec1dbccb1d7\n2026-09-05 18:35:06.566 INFO:     127.0.0.1:46648 - \"POST /v1/chat/completions \nHTTP/1.1\" 200\n2026-09-05 18:35:06.567 INFO:     Metrics (ID: \n4711897e5097422e95c44ec1dbccb1d7): 13 tokens generated in 0.5 seconds (Queue: \n0.0 s, Process: 0 cached tokens and 74 new tokens at 528.57 T/s, Generate: 36.49\nT/s, Context: 74 tokens) \n2026-09-05 18:35:06.872 INFO:     127.0.0.1:46654 - \"GET /v1/models HTTP/1.1\" \n200\n2026-09-05 18:35:07.346 INFO:     127.0.0.1:46660 - \"GET /v1/models HTTP/1.1\" \n200\n",
+ "gatewayLogTail": "est()\n  File \"/usr/lib/python3.12/http/server.py\", line 424, in handle_one_request\n    method()\n  File \"/work/gateway.py\", line 473, in do_GET\n    return self.passthrough(\"GET\", \"/v1/models\", None)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 508, in passthrough\n    up = Upstream(method, path, body)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/work/gateway.py\", line 60, in __init__\n    self.conn.request(method, path, body=data, headers=headers)\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n----------------------------------------\n",
+ "harnessLog": "18:33:28 plugin aac0007, gateway.py 28645 bytes, jq jq-1.8.2\n18:33:28 gpu: NVIDIA RTX A6000, 49140 MiB, 580.159.03\n18:33:28 match: hardwareId=rtx-a6000-48gb reason='' gpus=[{\"product\":\"NVIDIA RTX A6000\",\"vramGb\":48,\"hardwareId\":\"rtx-a6000-48gb\"}]\n18:33:28 load\n18:33:30 docker: engine: /opt/venv/bin/python3 main.py --config /app/config.yml\n18:33:30 docker: gateway: gateway.py upstream from env, key file /work/state/gateway.key\n18:35:07 load exit 0, state ready, error '', apis [\"chat\",\"messages\",\"responses\"]\n18:35:07 2026-09-05T18:35:06Z accepted qwen3827b-exl3-4bpw-rtxa6000-tabbyapi-tp1 served=Qwen3.8-27B-EXL3-4bpw tps=24 apis=[\"chat\",\"messages\",\"responses\"]\n",
+ "wallSeconds": 304,
+ "approxCost": 0.039
 }
