@@ -25,7 +25,24 @@ PLUGIN = HERE.parent
 OUT = HERE / "rented-results"
 REPO = "0xSero/omarchy-local-ai"
 GATEWAY_REPO = "0xSero/local-ai-images"
+# the gateway source the harness runs, pinned to a commit and to the bytes at that commit
+GATEWAY_COMMIT = "0880ed7aaa5ccaa065aceaea75e36973f30af0e4"
+GATEWAY_SHA256 = "62b7c6246febde7729df8bcf58a4d25e7a8ae276c13939aad9bd24f4b5de9944"
 RESULT_PORT = 12434
+SHA40 = re.compile(r"^[0-9a-f]{40}$")
+
+
+def plugin_manifest(commit):
+    """git blob ids for every file in the plugin tree at commit: the in-container check binds the
+    downloaded archive to exactly this tree, since GitHub's archive bytes are not stable."""
+    out = subprocess.check_output(["git", "-C", str(PLUGIN), "ls-tree", "-r", commit], text=True)
+    rows = []
+    for line in out.splitlines():
+        meta, path = line.split("\t", 1)
+        mode, kind, sha = meta.split()
+        if kind == "blob":
+            rows.append(f"{sha} {mode} {path}")
+    return "\n".join(rows) + "\n"
 
 
 def log(msg):
@@ -75,6 +92,7 @@ def run_one_inner(hw_id, args, vr):
                 "PLUGIN_URL": f"https://github.com/{REPO}/archive/{args.commit}.tar.gz",
                 "PLUGIN_COMMIT": args.commit,
                 "GATEWAY_URL": f"https://raw.githubusercontent.com/{GATEWAY_REPO}/{args.gateway_commit}/gateway/gateway.py",
+                "GATEWAY_SHA256": args.gateway_sha256, "PLUGIN_MANIFEST_B64": base64.b64encode(plugin_manifest(args.commit).encode()).decode(),
                 "HW_ID": hw_id, "RECIPE_ID": recipe_id, "RESULT_PORT": str(RESULT_PORT),
                 "ENGINE_ENTRYPOINT": contract.get("entrypoint") or "", "ENGINE_TIMEOUT": str(args.timeout - 600),
                 "MODEL_REPO": entry["recipe"]["model"]["repository"], "MODEL_REV": entry["recipe"]["model"]["revision"],
@@ -189,8 +207,9 @@ def main():
     p.add_argument("hardware_ids", nargs="*")
     p.add_argument("--list", action="store_true")
     p.add_argument("--provider", default="vast", choices=["vast", "runpod"])
-    p.add_argument("--commit", default=None, help="plugin commit to test (default: HEAD, must be pushed)")
-    p.add_argument("--gateway-commit", default="main")
+    p.add_argument("--commit", default=None, help="plugin commit to test: a full 40-character sha (default: HEAD, must be pushed)")
+    p.add_argument("--gateway-commit", default=GATEWAY_COMMIT, help="local-ai-images commit for gateway.py: a full 40-character sha")
+    p.add_argument("--gateway-sha256", default=None, help="sha256 of gateway.py at that commit (default: the pinned value, or fetched and hashed locally for another commit)")
     p.add_argument("--registry", default="~/local-registry/local-ai-registry")
     p.add_argument("--gpu", default=None); p.add_argument("--cloud", default="COMMUNITY"); p.add_argument("--vast-min-inet", type=int, default=500)
     p.add_argument("--disk", type=int, default=60); p.add_argument("--timeout", type=int, default=3600)
@@ -208,6 +227,21 @@ def main():
         p.error("hardware ids, or --list")
     if not args.commit:
         args.commit = subprocess.check_output(["git", "-C", str(PLUGIN), "rev-parse", "HEAD"], text=True).strip()
+    if not SHA40.match(args.commit):
+        p.error(f"--commit must be a full 40-character commit sha, not {args.commit!r}")
+    if not SHA40.match(args.gateway_commit):
+        p.error("--gateway-commit must be a full 40-character commit sha")
+    if not args.gateway_sha256:
+        if args.gateway_commit == GATEWAY_COMMIT:
+            args.gateway_sha256 = GATEWAY_SHA256
+        else:  # hash the bytes at that commit here, once, so the container can refuse anything else
+            import hashlib
+            url = f"https://raw.githubusercontent.com/{GATEWAY_REPO}/{args.gateway_commit}/gateway/gateway.py"
+            with urllib.request.urlopen(url, timeout=60) as r:
+                args.gateway_sha256 = hashlib.sha256(r.read()).hexdigest()
+            log(f"gateway.py at {args.gateway_commit[:12]}: sha256 {args.gateway_sha256}")
+    if not re.match(r"^[0-9a-f]{64}$", args.gateway_sha256):
+        p.error("--gateway-sha256 must be 64 hex characters")
     vr = load_validator(args.registry)
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel) as pool:

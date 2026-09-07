@@ -9,8 +9,12 @@
 # gateway and engine. Weights and assets were materialized at their mount targets by the onstart
 # script before this runs. The result is served over http on RESULT_PORT until the box is destroyed.
 #
-# Env from the driver: PLUGIN_URL PLUGIN_COMMIT GATEWAY_URL HW_ID RECIPE_ID ENGINE_ENTRYPOINT
-# RESULT_PORT MODEL_REPO MODEL_REV [ENGINE_TIMEOUT]
+# Env from the driver: PLUGIN_URL PLUGIN_COMMIT PLUGIN_MANIFEST_B64 GATEWAY_URL GATEWAY_SHA256 HW_ID
+# RECIPE_ID ENGINE_ENTRYPOINT RESULT_PORT MODEL_REPO MODEL_REV [ENGINE_TIMEOUT]
+#
+# Nothing downloaded runs unverified: jq is checked against a pinned sha256, gateway.py against the
+# sha256 the driver pinned for its commit, and the plugin archive against the git blob ids of the
+# tree at PLUGIN_COMMIT (every file present with the right content, nothing extra).
 set -uo pipefail
 export ENGINE_CWD=$PWD   # the image's WORKDIR: where its entrypoint expects to run (tabbyapi's main.py lives there)
 W=${WORK:-/work}; export WORK=$W; mkdir -p $W/out $W/bin $W/dock $W/state; cd $W
@@ -51,7 +55,26 @@ fetch() { python3 -c 'import sys,urllib.request; urllib.request.urlretrieve(sys.
 command -v jq >/dev/null || { fetch https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64 $W/bin/jq
   echo "b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f  $W/bin/jq" | sha256sum -c --quiet || finish harness-error "jq checksum"; chmod +x $W/bin/jq; }
 fetch "$PLUGIN_URL" $W/plugin.tgz && mkdir -p $W/plugin && tar -xzf $W/plugin.tgz -C $W/plugin --strip-components=1 || finish harness-error "plugin download"
+python3 - "$W/plugin" "$PLUGIN_MANIFEST_B64" <<'PY' || finish harness-error "plugin archive does not match the tree at $PLUGIN_COMMIT"
+import base64, hashlib, os, sys
+root, manifest = sys.argv[1], base64.b64decode(sys.argv[2]).decode()
+want = {}
+for line in manifest.splitlines():
+    sha, mode, path = line.split(" ", 2); want[path] = (sha, mode)
+have = set()
+for d, _, files in os.walk(root):
+    for f in files:
+        p = os.path.relpath(os.path.join(d, f), root); have.add(p)
+        if p not in want: sys.exit(f"unexpected file {p}")
+        data = open(os.path.join(d, f), "rb").read()
+        blob = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+        if blob != want[p][0]: sys.exit(f"content mismatch {p}")
+missing = set(want) - have
+if missing: sys.exit(f"missing {sorted(missing)[:5]}")
+print(f"plugin tree verified: {len(have)} files")
+PY
 fetch "$GATEWAY_URL" $W/gateway.py || finish harness-error "gateway download"
+[[ $(sha256sum $W/gateway.py | cut -d' ' -f1) == "$GATEWAY_SHA256" ]] || finish harness-error "gateway.py sha256 mismatch"
 say "plugin $PLUGIN_COMMIT, gateway.py $(wc -c <$W/gateway.py) bytes, jq $(jq --version)"
 
 # curl the plugin's way, in python: -fsS --max-time N --max-filesize N -H 'k: v' | -H @file -d data URL. Records its argv.
