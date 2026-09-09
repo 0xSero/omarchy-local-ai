@@ -100,7 +100,7 @@ click $X "$(agent_row claude)"                  # claude opens on the model
 place org.omarchy.agent || { ipc close; sleep 1; click $ICON; sleep 1; click $X $OPENAGENT_OFF; sleep 1; click $X "$(agent_row claude)"; place org.omarchy.agent; }
 ipc close; sleep 0.5; click 1200 700; sleep 10
 type_text "In two lines: which model are you talking to, and what is its API base URL? Do not run any commands."
-sleep 45
+sleep 110                                       # Claude's first turn carries ~38K tokens of system prompt; a 27B on one card needs a minute for that
 close_win org.omarchy.agent
 
 # 4. Share on Tailscale, fetch it from a terminal with the key file, Stop sharing
