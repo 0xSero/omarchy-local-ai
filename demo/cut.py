@@ -10,7 +10,8 @@ import subprocess, sys
 raw, marks, out = sys.argv[1:4]
 pickups = list(zip(sys.argv[4::2], sys.argv[5::2]))
 HEAD, TAIL, FAST = 16, 14, 8          # seconds at 1x at the start and end of a chapter; speed of the middle
-PANEL = {"panel-load": (12, 8), "panel-stop": (6, 4)}   # (head, tail) for the panel chapters
+PANEL = {"panel-load": (12, 8), "panel-stop": (6, 4),   # (head, tail) for the panel chapters
+         "share": (48, 24), "cli": (44, 34)}             # features.sh: the terminal work is at the head and tail, keep it at 1x
 
 def read_marks(path, video=None):
     """Marks are wall-clock seconds from the take script. The recorder does not keep wall time exactly,

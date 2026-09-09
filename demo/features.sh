@@ -15,6 +15,8 @@ export HYPRLAND_INSTANCE_SIGNATURE=$(ls -t $XDG_RUNTIME_DIR/hypr | head -1)
 CK=${OMARCHY_PATH:-$HOME/omarchy-pr}; export OMARCHY_PATH=$CK PATH="$CK/bin:$PATH"
 TARGET=omarchy.local-ai; CLI="omarchy local ai"
 OUT=/tmp/features-raw.mp4; MARKS=/tmp/features-marks.txt; T0=$(date +%s)
+ONLY=${CHAPTER:-}                               # CHAPTER=<name>: re-record one chapter as a pickup (cut.py replaces it by name)
+[[ -n $ONLY ]] && { OUT=/tmp/features-pickup.mp4; MARKS=/tmp/features-pickup-marks.txt; }   # decided before the marks file is touched
 : >"$MARKS"; mark() { echo "$(( $(date +%s) - T0 )) $1" >>"$MARKS"; }
 ipc() { timeout 5 qs -p "$CK/shell" ipc call $TARGET "$@" >/dev/null 2>&1; }
 hypr() { timeout 5 hyprctl dispatch "$1" >/dev/null 2>&1; }
@@ -72,17 +74,24 @@ timeout 5 qs -p "$CK/shell" ipc call notifications dismissAll >/dev/null 2>&1
 ipc close; close_win org.omarchy.agent; close_win org.omarchy.demo
 hypr "hl.dsp.cursor.move({ x = $CUR_X, y = $CUR_Y })"
 
+want() { [[ -z $ONLY || $ONLY == "$1" ]]; }
+if [[ $ONLY == share || $ONLY == cli || $ONLY == agent ]]; then   # these chapters assume Gemma is up on the pinned 3090
+  $CLI gpu nvidia:0 >/dev/null; [[ $(state) == ready && $($CLI snapshot | jq -r .running.current) == true ]] || { $CLI load >/dev/null; sleep 5; wait_state ready; }
+fi
 gpu-screen-recorder -w HDMI-A-3 -f 30 -fm cfr -q high -cursor yes -o "$OUT" >/tmp/features-rec.log 2>&1 &
 REC=$!; sleep 3; mark "rec-start"
 
 # 1. the card and the GPU picker
+want card && {
 mark "card"
 sleep 1; click $ICON; sleep 3
 click $X $GPU_OFF; sleep 3                      # the picker: four cards, the B70 in use
 click $X "$(gpu_row 1 $GPU_OFF)"; sleep 4       # pin the first RTX 3090: the card now shows its recipe, and says the B70 model is still up
 echo "pinned: $($CLI snapshot | jq -c '.gpus[]|select(.chosen)|.product'), model $($CLI snapshot | jq -r .model.name)" >&2
+}
 
 # 2. Start Gemma on the 3090: Start replaces the running model (set aside, then dropped once Gemma is accepted)
+want start-3090 && {
 mark "start-3090"
 click $X $START_SWITCH; sleep 6                 # Start · N GB, while the other model still runs
 [[ $(state) == ready && $(omarchy local ai snapshot | jq -r .running.current) == false ]] && { echo "Start click did not take; ipc load" >&2; ipc load; sleep 3; }
@@ -91,8 +100,10 @@ click $X $START_SWITCH; sleep 6                 # Start · N GB, while the other
 while [[ $(state) != ready ]]; do sleep 3; [[ $(state) == error ]] && { echo "load errored: $($CLI snapshot | jq -r .error)" >&2; break; }; done
 echo "loaded on: $($CLI snapshot | jq -c '{model:.model.name, gpu:(.gpus[]|select(.chosen)|.product)}')" >&2
 sleep 4; ipc close; sleep 1
+}
 
 # 3. Open agent · claude, a live prompt on the new model
+want agent && {
 mark "agent"
 click $ICON; sleep 1.5
 click $X $OPENAGENT_OFF; sleep 1                # the agent list
@@ -102,8 +113,10 @@ ipc close; sleep 0.5; click 1200 700; sleep 10
 type_text "In two lines: which model are you talking to, and what is its API base URL? Do not run any commands."
 sleep 110                                       # Claude's first turn carries ~38K tokens of system prompt; a 27B on one card needs a minute for that
 close_win org.omarchy.agent
+}
 
 # 4. Share on Tailscale, fetch it from a terminal with the key file, Stop sharing
+want share && {
 mark "share"
 click $ICON; sleep 1.5
 click $X $SHARE_OFF; sleep 8                    # Share on Tailscale: the toggle is an op, then the URL appears
@@ -112,7 +125,7 @@ wait_state ready; sleep 4
 url=$($CLI snapshot | jq -r .share.url)
 ipc close; sleep 0.5
 terminal
-type_text "curl -s -H @~/.local/state/omarchy/local-ai/gateway.auth $url/v1/models | jq -c '.data[].id'"
+type_text "curl -s -H @$HOME/.local/state/omarchy/local-ai/gateway.auth $url/v1/models | jq -c '.data[].id'"   # curl does not expand ~ after @
 sleep 4
 type_text "curl -s -o /dev/null -w '%{http_code}\\n' $url/v1/models   # without the key"
 sleep 4
@@ -121,8 +134,10 @@ click $ICON; sleep 1.5
 click $X $SHARE_ON; sleep 8; wait_state ready   # Stop sharing
 $CLI snapshot | jq -e '.share.active' >/dev/null && { echo "Stop sharing click did not take; cli" >&2; $CLI share >/dev/null; wait_state ready; }; sleep 3
 ipc close; sleep 1
+}
 
 # 5. Stop from the card, then the CLI: back to the default card and its model
+want cli && {
 mark "cli"
 click $ICON; sleep 1.5; click $X $BOTTOM; sleep 6; [[ $(state) == idle ]] || ipc unload; wait_state idle; sleep 2; ipc close; sleep 1
 terminal
@@ -135,6 +150,7 @@ sleep 1; type_text "omarchy local ai snapshot | jq -c '{state, model: .model.nam
 sleep 5
 close_win org.omarchy.demo
 click $ICON; sleep 4; ipc close
+}
 
 mark "end"; sleep 2; mark "rec-stop"
 kill -INT $REC; wait $REC 2>/dev/null; echo "recorded $OUT"; cat "$MARKS"
