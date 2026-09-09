@@ -21,7 +21,7 @@ Each GPU group lists its running models underneath; occupied GPUs are marked **l
 ## Requirements
 
 - **Docker**, which Omarchy ships. You do not need to be in the `docker` group: Start, Stop, and Share ask for your password once, through Omarchy's own prompt. With *Sudoless Docker* enabled in Omarchy's security settings there is no prompt.
-- **An NVIDIA GPU (8 GB and up) or an Intel Arc Pro B70.** The NVIDIA container toolkit is installed for you inside that same prompt when missing.
+- **An NVIDIA GPU (8 GB and up), an Intel Arc Pro B70, or an AMD GPU.** The NVIDIA or AMD container toolkit is installed for you inside that same prompt when missing.
 - Optional: `tailscale` for sharing, `hf` for faster downloads.
 
 No config file or API key to make.
