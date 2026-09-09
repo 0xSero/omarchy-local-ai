@@ -1,0 +1,57 @@
+13:35:42 rtx-4000-ada-20gb: attempt 1: renting RTX 4000Ada (vast), image ghcr.io/0xsero/tabbyapi-exl3
+13:35:42 rtx-5080-16gb: attempt 1: renting RTX 5080 (vast), image ghcr.io/0xsero/tabbyapi-exl3
+13:35:42 rtx-5070-ti-16gb: attempt 1: renting RTX 5070 Ti (vast), image ghcr.io/0xsero/tabbyapi-exl3
+13:35:45 rtx-4000-ada-20gb: vast 49982688 at 0.2009259259259259/h on RTX 4000Ada
+13:35:45 rtx-5080-16gb: vast 49982687 at 0.1875925925925926/h on RTX 5080
+13:35:45 rtx-5070-ti-16gb: vast 49982689 at 0.11472222222222223/h on RTX 5070 Ti
+[17:36:03] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+[17:36:19] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+[17:36:19] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+13:37:24 rtx-5080-16gb: destroyed 49982687
+13:37:24 rtx-5080-16gb: approx cost 0.01 (2 min at 0.188/h)
+13:37:24 rtx-a6000-48gb: attempt 1: renting RTX A6000 (vast), image ghcr.io/0xsero/tabbyapi-exl3
+13:37:25 rtx-4070-super-12gb: attempt 1: renting RTX 4070S (vast), image ghcr.io/0xsero/tabbyapi-exl3
+13:37:27 rtx-4070-super-12gb: vast 49982792 at 0.08138888888888889/h on RTX 4070S
+13:37:55 rtx-4000-ada-20gb: waiting (130s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+13:37:59 rtx-5070-ti-16gb: waiting (133s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+[17:38:16] vast status: ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448: Pulling from 0xsero/tabbyapi-exl3
+13:38:43 rtx-4000-ada-20gb: destroyed 49982688
+13:38:43 rtx-4000-ada-20gb: approx cost 0.01 (3 min at 0.201/h)
+13:39:22 rtx-5070-ti-16gb: destroyed 49982689
+13:39:22 rtx-5070-ti-16gb: approx cost 0.01 (4 min at 0.115/h)
+13:39:22 RESULT rtx-5070-ti-16gb: ready | tps=34 apis=["chat","messages","responses"] | gpu RTX 5070 Ti | NVIDIA GeForce RTX 5070 Ti, 16303 MiB, 580.126.09 | cost 0.007
+13:39:22 RESULT rtx-5080-16gb: ready | tps=71 apis=["chat","messages","responses"] | gpu RTX 5080 | NVIDIA GeForce RTX 5080, 16303 MiB, 595.84 | cost 0.005
+13:39:22 RESULT rtx-4000-ada-20gb: ready | tps=37 apis=["chat","messages","responses"] | gpu RTX 4000Ada | NVIDIA RTX 4000 Ada Generation, 20475 MiB, 580.173.02 | cost 0.01
+13:39:22 RESULT rtx-a6000-48gb: no-offers | no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_A6000 gpu_ram>=47 inet_down>=500 disk_space>=65 reliability>0.9 cuda_max_good>=12.9 geolocation notin [CN] | gpu None |  | cost ?
+13:39:36 rtx-4070-super-12gb: waiting (128s, vast loading ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941, container up)
+[17:40:24] vast status: bcaab74f3853: Retrying in 1 second
+13:41:44 rtx-4070-super-12gb: waiting (257s, vast loading bcaab74f3853: Retrying in 1 second, container up)
+13:43:52 rtx-4070-super-12gb: waiting (385s, vast loading bcaab74f3853: Retrying in 1 second, container up)
+[17:45:44] vast status: 9267a8ce8264: Retrying in 1 second
+13:46:00 rtx-4070-super-12gb: waiting (512s, vast loading 9267a8ce8264: Retrying in 1 second, container up)
+13:48:08 rtx-4070-super-12gb: waiting (640s, vast loading 9267a8ce8264: Retrying in 1 second, container up)
+13:50:15 rtx-4070-super-12gb: waiting (768s, vast loading 9267a8ce8264: Retrying in 1 second, container up)
+[17:50:31] vast status: bcaab74f3853: Retrying in 14 seconds
+[17:50:47] vast status: bcaab74f3853: Retrying in 2 seconds
+13:52:23 rtx-4070-super-12gb: waiting (896s, vast loading bcaab74f3853: Retrying in 2 seconds, container up)
+13:52:39 rtx-4070-super-12gb: container not started after 912s (vast loading bcaab74f3853: Retrying in 2 seconds); trying another host
+13:52:40 rtx-4070-super-12gb: attempt 2: renting RTX 4070S (vast), image ghcr.io/0xsero/tabbyapi-exl3
+13:52:42 rtx-4070-super-12gb: vast 49983727 at 0.09977777777777777/h on RTX 4070S
+[17:53:15] vast status: f96c5878f2c1: Verifying Checksum
+f96c5878f2c1:
+[17:53:47] vast status: bcaab74f3853: Download complete
+[17:54:04] vast status: b6e227b4a875: Pull complete
+13:54:52 rtx-4070-super-12gb: waiting (129s, vast loading b6e227b4a875: Pull complete, container up)
+13:56:59 rtx-4070-super-12gb: waiting (257s, vast loading b6e227b4a875: Pull complete, container up)
+13:59:07 rtx-4070-super-12gb: waiting (385s, vast loading b6e227b4a875: Pull complete, container up)
+[18:03:34] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+14:03:52 rtx-4070-super-12gb: destroyed 49983727
+14:03:52 rtx-4070-super-12gb: approx cost 0.04 (22 min at 0.100/h)
+14:03:52 RESULT rtx-4070-super-12gb: ready | tps=47 apis=["chat","messages","responses"] | gpu RTX 4070S | NVIDIA GeForce RTX 4070 SUPER, 12282 MiB, 595.84 | cost 0.037
+
+hardware id                        status      detail
+rtx-5070-ti-16gb                   ready       tps=34 apis=["chat","messages","responses"]
+rtx-5080-16gb                      ready       tps=71 apis=["chat","messages","responses"]
+rtx-4000-ada-20gb                  ready       tps=37 apis=["chat","messages","responses"]
+rtx-a6000-48gb                     no-offers   no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_A6000 gpu_ram>=47 i
+rtx-4070-super-12gb                ready       tps=47 apis=["chat","messages","responses"]

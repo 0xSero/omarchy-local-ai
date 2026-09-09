@@ -1,0 +1,52 @@
+14:30:04 rtx-4060-ti-8gb: attempt 1: renting RTX 4060 Ti (vast), image lmsysorg/sglang:dev-cu12
+14:30:04 rtx-3060-ti-8gb: attempt 1: renting RTX 3060 Ti (vast), image lmsysorg/sglang:dev-cu12
+14:30:04 rtx-2000-ada-16gb: attempt 1: renting RTX 2000Ada (vast), image lmsysorg/sglang:dev-cu12
+14:30:04 rtx-a6000-48gb: attempt 1: renting RTX A6000 (vast), image ghcr.io/0xsero/tabbyapi-exl3
+14:30:08 rtx-3060-ti-8gb: vast 49986525 at 0.10898148148148148/h on RTX 3060 Ti
+14:30:08 rtx-a6000-48gb: vast 49986526 at 0.45504629629629634/h on RTX A6000
+[18:30:25] vast status: f96c5878f2c1: Download complete
+[18:30:40] vast status: b6e227b4a875: Pull complete
+[18:30:40] vast status: bade203db14f: Verifying Checksum
+bade203db14f: Download complete
+[18:30:56] vast status: 54d1813b91f9: Verifying Checksum
+[18:31:12] vast status: d778ea018b3c: Verifying Checksum
+d778ea018b3c:
+[18:31:12] vast status: 9267a8ce8264: Download complete
+[18:31:28] vast status: 5c33976a3649: Verifying Checksum
+5c33976a3649: Download complete
+[18:31:44] vast status: dd8446ce8f18: Verifying Checksum
+[18:32:00] vast status: d15f10ad58bf: Verifying Checksum
+d15f10ad58bf:
+[18:32:16] vast status: becfc5c66182: Verifying Checksum
+becfc5c66182: Download complete14:32:16 rtx-a6000-48gb: waiting (128s, vast loading 9267a8ce8264: Download complete, container up)
+
+14:32:16 rtx-3060-ti-8gb: waiting (128s, vast loading becfc5c66182: Download complete, container up)
+[18:32:32] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+[18:32:32] vast status: 5016c98ba215: Verifying Checksum
+5016c98ba215:
+[18:33:04] vast status: 1b16bb85dc53: Verifying Checksum
+14:34:24 rtx-3060-ti-8gb: waiting (256s, vast loading 1b16bb85dc53: Verifying Checksum, container up)
+14:34:25 rtx-a6000-48gb: waiting (256s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+[18:34:40] vast status: 1b16bb85dc53: Pull complete
+[18:34:56] vast status: c92c874914e6: Verifying Checksum
+c92c874914e6: Download complete
+14:35:13 rtx-a6000-48gb: destroyed 49986526
+14:35:13 rtx-a6000-48gb: approx cost 0.04 (5 min at 0.455/h)
+[18:35:44] vast status: 88e401e843bd: Pull complete
+[18:36:00] vast status: cb7ea8801ec2: Pull complete
+[18:36:16] vast status: becfc5c66182: Pull complete
+14:36:32 rtx-3060-ti-8gb: waiting (384s, vast loading becfc5c66182: Pull complete, container up)
+[18:36:48] vast status: success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+14:38:43 rtx-3060-ti-8gb: waiting (515s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+14:39:03 rtx-3060-ti-8gb: destroyed 49986525
+14:39:03 rtx-3060-ti-8gb: approx cost 0.02 (9 min at 0.109/h)
+14:39:03 RESULT rtx-3060-ti-8gb: ready | tps=64 apis=["chat","messages","responses"] | gpu RTX 3060 Ti | NVIDIA GeForce RTX 3060 Ti, 8192 MiB, 590.48.01 | cost 0.016
+14:39:03 RESULT rtx-4060-ti-8gb: no-offers | no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_4060_Ti gpu_ram>=7 inet_down>=100 disk_space>=65 reliability>0.9 cuda_max_good>=12.9 geolocation notin [CN] | gpu None |  | cost ?
+14:39:03 RESULT rtx-2000-ada-16gb: no-offers | no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_2000Ada gpu_ram>=15 inet_down>=100 disk_space>=65 reliability>0.9 cuda_max_good>=12.9 geolocation notin [CN] | gpu None |  | cost ?
+14:39:03 RESULT rtx-a6000-48gb: ready | tps=24 apis=["chat","messages","responses"] | gpu RTX A6000 | NVIDIA RTX A6000, 49140 MiB, 580.159.03 | cost 0.039
+
+hardware id                        status      detail
+rtx-3060-ti-8gb                    ready       tps=64 apis=["chat","messages","responses"]
+rtx-4060-ti-8gb                    no-offers   no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_4060_Ti gpu_ram>=7 
+rtx-2000-ada-16gb                  no-offers   no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_2000Ada gpu_ram>=15
+rtx-a6000-48gb                     ready       tps=24 apis=["chat","messages","responses"]

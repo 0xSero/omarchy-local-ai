@@ -1,0 +1,191 @@
+14:05:12 rtx-3070-ti-8gb: attempt 1: renting RTX 3070 Ti (vast), image lmsysorg/sglang:dev-cu12
+14:05:12 rtx-3060-ti-8gb: attempt 1: renting RTX 3060 Ti (vast), image lmsysorg/sglang:dev-cu12
+14:05:12 rtx-3070-8gb: attempt 1: renting RTX 3070 (vast), image lmsysorg/sglang:dev-cu12
+14:05:14 rtx-3070-ti-8gb: vast 49984476 at 0.09453703703703704/h on RTX 3070 Ti
+14:05:14 rtx-3060-ti-8gb: vast 49984477 at 0.06766666666666667/h on RTX 3060 Ti
+14:05:14 rtx-3070-8gb: vast 49984478 at 0.05472222222222223/h on RTX 3070
+[18:05:31] vast status: 761ae241e4c2: Verifying Checksum
+[18:05:47] vast status: success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+[18:05:47] vast status: success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+[18:05:47] vast status: d0b10745023c: Download complete
+[18:06:04] vast status: 75195f3f5b6b: Verifying Checksum
+[18:06:20] vast status: 09467d399a73: Verifying Checksum
+[18:06:36] vast status: 422a5fcf2835: Verifying Checksum
+[18:06:52] vast status: 54d1813b91f9: Verifying Checksum
+54d1813b91f9: Download complete
+[18:07:08] vast status: e47e64e9f51b: Verifying Checksum
+e47e64e9f51b: Download complete
+[18:07:24] vast status: 5c33976a3649: Verifying Checksum
+14:07:24 rtx-3060-ti-8gb: waiting (129s, vast loading 5c33976a3649: Verifying Checksum, container up)
+14:07:24 rtx-3070-8gb: waiting (130s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+14:07:25 rtx-3070-ti-8gb: waiting (131s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+[18:07:40] vast status: aa82766f556e: Verifying Checksum
+aa82766f556e:
+[18:07:56] vast status: dd8446ce8f18: Verifying Checksum
+dd8446ce8f18: Download complete
+[18:08:12] vast status: 92577a77b804: Verifying Checksum
+[18:08:28] vast status: 5016c98ba215: Verifying Checksum
+5016c98ba215: Download complete
+14:08:28 rtx-3070-8gb: destroyed 49984478
+14:08:28 rtx-3070-8gb: approx cost 0.00 (3 min at 0.055/h)
+14:08:28 rtx-3080-10gb: attempt 1: renting RTX 3080 (vast), image lmsysorg/sglang:dev-cu12
+14:08:30 rtx-3080-10gb: vast 49984674 at 0.13472222222222222/h on RTX 3080
+[18:08:44] vast status: b548b051a523: Verifying Checksum
+b548b051a523: Download complete
+[18:09:03] vast status: b29a8e0e6c28: Download complete
+14:09:18 rtx-3070-ti-8gb: destroyed 49984476
+14:09:18 rtx-3070-ti-8gb: approx cost 0.01 (4 min at 0.095/h)
+14:09:18 rtx-4060-8gb: attempt 1: renting RTX 4060 (vast), image lmsysorg/sglang:dev-cu12
+[18:09:18] vast status: 75195f3f5b6b: Pull complete
+14:09:20 rtx-4060-8gb: vast 49984725 at 0.10074074074074073/h on RTX 4060
+14:09:31 rtx-3060-ti-8gb: waiting (257s, vast loading b548b051a523: Download complete, container up)
+[18:09:34] vast status: ce87a6693196: Pull complete
+[18:09:37] vast status: 020c9394f8c3: Pull complete
+[18:09:51] vast status: 1927b523f1fb: Pull complete
+[18:09:53] vast status: 422a5fcf2835: Verifying Checksum
+422a5fcf2835: Download complete
+[18:10:04] vast status: f34b8dc4eed3: Pull complete
+[18:10:06] vast status: 1b16bb85dc53: Download complete
+[18:10:09] vast status: d778ea018b3c: Verifying Checksum
+d778ea018b3c: Download complete
+[18:10:25] vast status: d89e9e879454: Verifying Checksum
+14:10:38 rtx-3080-10gb: waiting (128s, vast loading 1b16bb85dc53: Download complete, container up)
+[18:10:41] vast status: 5016c98ba215: Verifying Checksum
+5016c98ba215: Download complete
+[18:10:57] vast status: 1b16bb85dc53: Verifying Checksum
+[18:11:13] vast status: 07aef1bccd93: Pull complete
+[18:11:26] vast status: 1b16bb85dc53: Pull complete
+[18:11:28] vast status: ffd9010dbbb8: Pull complete
+14:11:28 rtx-4060-8gb: waiting (128s, vast loading ffd9010dbbb8: Pull complete, container up)
+14:11:39 rtx-3060-ti-8gb: waiting (385s, vast loading f34b8dc4eed3: Pull complete, container up)
+[18:11:44] vast status: 75195f3f5b6b: Pull complete
+[18:12:14] vast status: c92c874914e6: Pull complete
+[18:12:16] vast status: b29a8e0e6c28: Pull complete
+[18:12:27] vast status: 07aef1bccd93: Pull complete
+[18:12:30] vast status: 44605574e2fc: Pull complete
+[18:12:32] vast status: 422a5fcf2835: Pull complete
+[18:12:43] vast status: ffd9010dbbb8: Pull complete
+[18:12:46] vast status: becfc5c66182: Pull complete
+14:12:46 rtx-3080-10gb: waiting (255s, vast loading becfc5c66182: Pull complete, container up)
+[18:12:48] vast status: 1927b523f1fb: Pull complete
+[18:12:59] vast status: 75195f3f5b6b: Pull complete
+[18:13:18] vast status: success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+14:13:36 rtx-4060-8gb: waiting (255s, vast loading 1927b523f1fb: Pull complete, container up)
+14:13:47 rtx-3060-ti-8gb: waiting (512s, vast loading 75195f3f5b6b: Pull complete, container up)
+[18:14:03] vast status: ce87a6693196: Pull complete
+[18:14:19] vast status: 422a5fcf2835: Pull complete
+[18:14:51] vast status: 1927b523f1fb: Pull complete
+14:14:58 rtx-3080-10gb: waiting (388s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+[18:15:43] vast status: fc714995f159: Pull complete
+14:15:43 rtx-4060-8gb: waiting (382s, vast loading fc714995f159: Pull complete, container up)
+14:15:47 rtx-3080-10gb: destroyed 49984674
+14:15:47 rtx-3080-10gb: approx cost 0.02 (7 min at 0.135/h)
+14:15:47 rtx-4060-ti-8gb: attempt 1: renting RTX 4060 Ti (vast), image lmsysorg/sglang:dev-cu12
+14:15:47 rtx-5060-8gb: attempt 1: renting RTX 5060 (vast), image lmsysorg/sglang:dev-cu12
+14:15:49 rtx-5060-8gb: vast 49985173 at 0.08196296296296297/h on RTX 5060
+14:15:54 rtx-3060-ti-8gb: waiting (640s, vast loading 1927b523f1fb: Pull complete, container up)
+[18:16:23] vast status: 52598b318bef: Download complete
+[18:16:55] vast status: 75195f3f5b6b: Verifying Checksum
+75195f3f5b6b: Download complete
+[18:17:11] vast status: ce87a6693196: Verifying Checksum
+ce87a6693196: Download complete
+[18:17:19] vast status: d778ea018b3c: Pull complete
+[18:17:27] vast status: bb167ed47a58: Verifying Checksum
+bb167ed47a58: Download complete
+[18:17:35] vast status: 92037c9c3afb: Pull complete
+[18:17:42] vast status: e47e64e9f51b: Download complete
+[18:17:50] vast status: cb7ea8801ec2: Pull complete
+14:17:50 rtx-4060-8gb: waiting (510s, vast loading cb7ea8801ec2: Pull complete, container up)
+[18:17:59] vast status: ffd9010dbbb8: Pull complete
+14:17:59 rtx-5060-8gb: waiting (129s, vast loading ffd9010dbbb8: Pull complete, container up)
+14:18:03 rtx-3060-ti-8gb: waiting (769s, vast loading 1927b523f1fb: Pull complete, container up)
+[18:18:06] vast status: d15f10ad58bf: Pull complete
+[18:18:15] vast status: aa82766f556e: Verifying Checksum
+aa82766f556e: Download complete
+[18:18:22] vast status: becfc5c66182: Pull complete
+[18:18:31] vast status: d15f10ad58bf: Verifying Checksum
+d15f10ad58bf: Download complete
+[18:18:47] vast status: 5016c98ba215: Verifying Checksum
+5016c98ba215:
+[18:19:03] vast status: b548b051a523: Verifying Checksum
+b548b051a523: Download complete
+[18:19:10] vast status: success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+[18:19:19] vast status: 1b16bb85dc53: Verifying Checksum
+1b16bb85dc53: Download complete
+[18:19:39] vast status: fc714995f159: Pull complete
+14:20:01 rtx-4060-8gb: waiting (640s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+14:20:07 rtx-5060-8gb: waiting (257s, vast loading 1b16bb85dc53: Download complete, container up)
+14:20:11 rtx-3060-ti-8gb: waiting (897s, vast loading fc714995f159: Pull complete, container up)
+[18:20:23] vast status: 1b16bb85dc53: Pull complete
+14:21:07 rtx-4060-8gb: destroyed 49984725
+14:21:07 rtx-4060-8gb: approx cost 0.02 (12 min at 0.101/h)
+14:21:07 rtx-5060-ti-8gb: attempt 1: renting RTX 5060 Ti (vast), image lmsysorg/sglang:dev-cu12
+14:21:09 rtx-5060-ti-8gb: vast 49985660 at 0.08277777777777778/h on RTX 5060 Ti
+[18:21:10] vast status: d778ea018b3c: Pull complete
+[18:21:26] vast status: 020c9394f8c3: Pull complete
+[18:21:26] vast status: d15f10ad58bf: Pull complete
+[18:21:42] vast status: becfc5c66182: Pull complete
+[18:21:42] vast status: ffd9010dbbb8: Verifying Checksum
+ffd9010dbbb8: Download complete
+[18:21:58] vast status: success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+[18:21:58] vast status: b29a8e0e6c28: Verifying Checksum
+b29a8e0e6c28: Download complete
+[18:22:14] vast status: 21e333934e13: Pull complete
+14:22:16 rtx-5060-8gb: waiting (386s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+14:22:19 rtx-3060-ti-8gb: waiting (1024s, vast loading fc714995f159: Pull complete, container up)
+[18:23:02] vast status: 08461ea869a5: Verifying Checksum
+08461ea869a5: Download complete
+[18:23:06] vast status: 2bbf0f7da51c: Pull complete
+[18:23:18] vast status: 92037c9c3afb: Verifying Checksum
+14:23:18 rtx-5060-ti-8gb: waiting (128s, vast loading 92037c9c3afb: Verifying Checksum, container up)
+[18:23:22] vast status: d778ea018b3c: Pull complete
+[18:23:34] vast status: d15f10ad58bf: Verifying Checksum
+d15f10ad58bf:
+[18:23:38] vast status: 5c33976a3649: Pull complete
+[18:23:50] vast status: 422a5fcf2835: Pull complete
+[18:24:06] vast status: 1b16bb85dc53: Verifying Checksum
+[18:24:10] vast status: aa82766f556e: Pull complete
+[18:24:22] vast status: b548b051a523: Verifying Checksum
+b548b051a523: Download complete
+[18:24:26] vast status: dd8446ce8f18: Pull complete
+14:24:26 rtx-3060-ti-8gb: waiting (1151s, vast loading dd8446ce8f18: Pull complete, container up)
+14:24:28 rtx-5060-8gb: destroyed 49985173
+14:24:28 rtx-5060-8gb: approx cost 0.01 (9 min at 0.082/h)
+14:24:28 rtx-2000-ada-16gb: attempt 1: renting RTX 2000Ada (vast), image lmsysorg/sglang:dev-cu12
+[18:24:42] vast status: d15f10ad58bf: Pull complete
+[18:24:58] vast status: becfc5c66182: Pull complete
+[18:25:10] vast status: 1b16bb85dc53: Pull complete
+14:25:26 rtx-5060-ti-8gb: waiting (256s, vast loading 1b16bb85dc53: Pull complete, container up)
+[18:25:42] vast status: e3ec96a870d1: Pull complete
+[18:25:58] vast status: 7d1cfbd935d8: Pull complete
+[18:26:02] vast status: docker.io/lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+[18:26:13] vast status: becfc5c66182: Pull complete
+[18:26:17] vast status: success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+[18:26:29] vast status: success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30
+14:26:36 rtx-3060-ti-8gb: waiting (1282s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+14:27:38 rtx-5060-ti-8gb: waiting (387s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+14:28:43 rtx-5060-ti-8gb: destroyed 49985660
+14:28:43 rtx-5060-ti-8gb: approx cost 0.01 (8 min at 0.083/h)
+14:28:52 rtx-3060-ti-8gb: waiting (1417s, vast running success, running lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd, container up)
+14:29:25 rtx-3060-ti-8gb: destroyed 49984477
+14:29:25 rtx-3060-ti-8gb: approx cost 0.03 (24 min at 0.068/h)
+14:29:25 RESULT rtx-3060-ti-8gb: error | engine exited during startup (docker logs omarchy-local-ai-engine) | gpu RTX 3060 Ti | NVIDIA GeForce RTX 3060 Ti, 8192 MiB, 580.173.02 | cost 0.027
+14:29:25 RESULT rtx-3070-8gb: ready | tps=64 apis=["chat","messages","responses"] | gpu RTX 3070 | NVIDIA GeForce RTX 3070, 8192 MiB, 595.84 | cost 0.003
+14:29:25 RESULT rtx-3070-ti-8gb: ready | tps=72 apis=["chat","messages","responses"] | gpu RTX 3070 Ti | NVIDIA GeForce RTX 3070 Ti, 8192 MiB, 595.71.05 | cost 0.006
+14:29:25 RESULT rtx-3080-10gb: ready | tps=87 apis=["chat","messages","responses"] | gpu RTX 3080 | NVIDIA GeForce RTX 3080, 10240 MiB, 595.84 | cost 0.016
+14:29:25 RESULT rtx-4060-8gb: ready | tps=44 apis=["chat","messages","responses"] | gpu RTX 4060 | NVIDIA GeForce RTX 4060, 8188 MiB, 580.95.05 | cost 0.02
+14:29:25 RESULT rtx-4060-ti-8gb: no-offers | no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_4060_Ti gpu_ram>=7 inet_down>=500 disk_space>=65 reliability>0.9 cuda_max_good>=12.9 geolocation notin [CN] | gpu None |  | cost ?
+14:29:25 RESULT rtx-5060-8gb: ready | tps=65 apis=["chat","messages","responses"] | gpu RTX 5060 | NVIDIA GeForce RTX 5060, 8151 MiB, 595.71.05 | cost 0.012
+14:29:25 RESULT rtx-5060-ti-8gb: ready | tps=64 apis=["chat","messages","responses"] | gpu RTX 5060 Ti | NVIDIA GeForce RTX 5060 Ti, 8151 MiB, 595.71.05 | cost 0.01
+14:29:25 RESULT rtx-2000-ada-16gb: no-offers | no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_2000Ada gpu_ram>=15 inet_down>=500 disk_space>=65 reliability>0.9 cuda_max_good>=12.9 geolocation notin [CN] | gpu None |  | cost ?
+
+hardware id                        status      detail
+rtx-3060-ti-8gb                    error       engine exited during startup (docker logs omarchy-local-ai-engine)
+rtx-3070-8gb                       ready       tps=64 apis=["chat","messages","responses"]
+rtx-3070-ti-8gb                    ready       tps=72 apis=["chat","messages","responses"]
+rtx-3080-10gb                      ready       tps=87 apis=["chat","messages","responses"]
+rtx-4060-8gb                       ready       tps=44 apis=["chat","messages","responses"]
+rtx-4060-ti-8gb                    no-offers   no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_4060_Ti gpu_ram>=7 
+rtx-5060-8gb                       ready       tps=65 apis=["chat","messages","responses"]
+rtx-5060-ti-8gb                    ready       tps=64 apis=["chat","messages","responses"]
+rtx-2000-ada-16gb                  no-offers   no Vast offers for num_gpus=1 rentable=true verified=true gpu_name=RTX_2000Ada gpu_ram>=15

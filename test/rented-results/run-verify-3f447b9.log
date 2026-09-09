@@ -1,0 +1,16 @@
+05:27:54 rtx-3060-12gb: attempt 1: renting RTX 3060 (vast), image ghcr.io/0xsero/tabbyapi-exl3
+05:27:59 rtx-3060-12gb: vast 50141948 at 0.057962962962962966/h on RTX 3060
+[09:28:34] vast status: 90a4717e6b72: Pull complete
+[09:28:51] vast status: bcaab74f3853: Verifying Checksum
+bcaab74f3853: Download complete
+[09:29:08] vast status: 9267a8ce8264: Verifying Checksum
+9267a8ce8264: Download complete
+[09:29:58] vast status: 9267a8ce8264: Pull complete
+[09:30:15] vast status: success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448
+05:30:15 rtx-3060-12gb: waiting (135s, vast running success, running ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd, container up)
+05:32:14 rtx-3060-12gb: destroyed 50141948
+05:32:14 rtx-3060-12gb: approx cost 0.00 (4 min at 0.058/h)
+05:32:14 RESULT rtx-3060-12gb: ready | tps=28 apis=["chat","messages","responses"] | gpu RTX 3060 | NVIDIA GeForce RTX 3060, 12288 MiB, 595.71.05 | cost 0.004
+
+hardware id                        status      detail
+rtx-3060-12gb                      ready       tps=28 apis=["chat","messages","responses"]
