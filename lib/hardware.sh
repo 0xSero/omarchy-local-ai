@@ -11,7 +11,7 @@ hardware_json() {
   fi
   [[ -n $rows ]] && nvidia=$(jq -Rsc 'split("\n")|map(select(length>0)|split(",")|map(gsub("^ +| +$";"")))
     |map({backend:"nvidia",index:(.[0]|tonumber),product:.[1],totalMiB:(.[2]|tonumber),usedMiB:(.[3]|tonumber),freeMiB:(.[4]|tonumber)})' <<<"$rows")
-  jq -nc --argjson n "$nvidia" --argjson i "$(intel_gpus)" --arg d "$driver" '{gpus:($n+$i),driver:$d}'
+  jq -nc --argjson n "$nvidia" --argjson i "$(intel_gpus)" --argjson a "$(amd_gpus)" --arg d "$driver" '{gpus:($n+$i+$a),driver:$d}'
 }
 
 intel_gpus() { # Intel Arc Pro B70 by PCI id, only when a render node exists for it
@@ -22,6 +22,36 @@ intel_gpus() { # Intel Arc Pro B70 by PCI id, only when a render node exists for
     out=$(jq -c --argjson i "$idx" '.+[{backend:"intel-xpu",index:$i,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null}]' <<<"$out")
     idx=$((idx+1))
   done < <(lspci -Dnn 2>/dev/null | grep -i 'Arc Pro B70' | awk '{print $1}')
+  printf '%s' "$out"
+}
+
+amd_smi_bin() {
+  [[ -n ${OMARCHY_AI_AMD_SMI:-} ]] && { printf '%s\n' "$OMARCHY_AI_AMD_SMI"; return; }
+  command -v amd-smi 2>/dev/null && return
+  [[ -z ${OMARCHY_AI_NO_HOST_AMD:-} && -x /opt/rocm/bin/amd-smi ]] && printf '%s\n' /opt/rocm/bin/amd-smi
+}
+
+amd_gpus() { # AMD cards via amd-smi; marketing name + VRAM so recipes match like NVIDIA
+  local smi static metric='{}' out
+  smi=$(amd_smi_bin) || true
+  [[ -n $smi ]] || { printf '[]'; return; }
+  static=$("$smi" static --json 2>/dev/null) || static=''
+  [[ -n $static ]] || { printf '[]'; return; }
+  metric=$("$smi" metric --mem-usage --json 2>/dev/null) || metric='{}'
+  out=$(jq -nc --argjson s "$static" --argjson m "$metric" '
+    ($m.gpu_data // []) as $md
+    | [($s.gpu_data // [])[]
+        | . as $g
+        | ($md[]? | select(.gpu==$g.gpu)) as $u
+        | select(($g.asic.market_name // "") != "")
+        | {
+            backend:"amd-rocm",
+            index:($g.gpu|tonumber),
+            product:$g.asic.market_name,
+            totalMiB:($g.vram.size.value // $u.mem_usage.total_vram.value // 0),
+            usedMiB:($u.mem_usage.used_vram.value // null),
+            freeMiB:($u.mem_usage.free_vram.value // null)
+          }]') || out='[]'
   printf '%s' "$out"
 }
 

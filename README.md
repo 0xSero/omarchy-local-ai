@@ -33,7 +33,7 @@ any installed coding agent on it.
 ### Requirements
 
 - Docker, with your user in the `docker` group
-- An NVIDIA GPU with the NVIDIA container toolkit, or an Intel Arc Pro B70
+- An NVIDIA GPU with the NVIDIA container toolkit, an Intel Arc Pro B70, or an AMD GPU with the AMD container toolkit
 - `jq`, `curl`, `flock`
 - Optional: `tailscale` for sharing; `hf` for faster downloads
 
