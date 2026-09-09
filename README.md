@@ -68,6 +68,8 @@ launched from the panel; typed in a terminal they keep their own provider.
   replaces it. A `HF_TOKEN` in the environment reaches the downloader by
   name only and is never written anywhere.
 
+Two recordings: `media/demo.mp4`, eight agents each doing one step of a fix on the local model; `media/features.mp4`, every feature of the card being used (GPU picker, switching cards, an agent, sharing, the CLI).
+
 ## Commands
 
 ```

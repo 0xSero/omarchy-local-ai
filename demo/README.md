@@ -9,3 +9,7 @@ The story video, reproducibly: one local model on one GPU, eight agents each doi
 - `cut.py raw.mp4 marks.txt out.mp4 [pickup.mp4 pickup-marks.txt]` keeps every action at 1x and runs the waiting as a time-lapse; pickups replace same-named chapters.
 
 Every prompt is in `story.sh`. Nothing is scripted on the model side; the answers in the video are what the model said.
+
+## features.sh: every feature, used
+
+`media/features.mp4` (3 min) is `features.sh`, recorded the same way on the same host through the first-party panel: the card and the GPU picker (four cards, the B70 in use), pinning an RTX 3090 and Starting Gemma there while the B70 model is set aside and replaced, Open agent · claude with a live prompt answered by the local model, Share on Tailscale with the tailnet URL fetched from a terminal through the key file and refused without it, Stop sharing, Stop, and `omarchy local ai gpu auto` / `load` from the terminal bringing the default card's model back. Its geometry constants are measured for the card as it is today; a card change means re-measuring them.
