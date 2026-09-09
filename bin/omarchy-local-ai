@@ -56,6 +56,7 @@ w_load() {
   op download "" "checking the GPU and recipe" 0
   r=$(current_recipe 2>"$STATE/gate.err") || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
   id=$(jq -r .id <<<"$r")
+  why=$(docker_ok "$(jq -r .match.backend <<<"$r")") || oops "$why"   # before any pull: a daemon that refuses this user says so in one sentence
   op download "$id" "checking" 0
   ensure_image "$(jq -r .launch.image <<<"$r")" "$id"
   ensure_image "$(gateway_image)" "$id"

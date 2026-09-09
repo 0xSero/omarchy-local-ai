@@ -79,9 +79,33 @@ download_weights() {
   op download "$id" "weights complete" 100
 }
 
+# docker_reason <stderr-file> <what>: docker's own last line, turned into the sentence a person can act on.
+# The card has three lines; the fix comes first, the raw line goes to the log.
+docker_reason() {
+  local last; last=$(grep -v '^\s*$' "$1" 2>/dev/null | tail -1 | cut -c1-200)
+  log "$2: ${last:-no output from docker}"
+  case $last in
+    *permission\ denied*docker.sock*|*permission\ denied*Docker\ daemon*) printf 'Docker refuses your user: sudo usermod -aG docker $USER, then log out and in' ;;
+    *could\ not\ select\ device\ driver*|*nvidia-container*|*unknown\ or\ invalid\ runtime*) printf 'the NVIDIA container toolkit is not set up: sudo pacman -S nvidia-container-toolkit; sudo nvidia-ctk runtime configure --runtime=docker; sudo systemctl restart docker' ;;
+    *Cannot\ connect\ to\ the\ Docker\ daemon*|*Is\ the\ docker\ daemon\ running*) printf 'Docker is not running: sudo systemctl enable --now docker' ;;
+    *no\ space\ left*|*No\ space\ left*) printf 'out of disk space for %s' "$2" ;;
+    *unauthorized*|*denied:*|*authentication\ required*) printf 'the registry refused the pull: run docker logout ghcr.io and try again' ;;
+    *TLS\ handshake*|*no\ such\ host*|*i/o\ timeout*|*dial\ tcp*|*connection\ refused*|*network\ is\ unreachable*) printf 'no route to the image registry: check the network and try again' ;;
+    *manifest\ unknown*|*not\ found*) printf 'the pinned image is missing from the registry: report this' ;;
+    "") printf '%s failed (see %s)' "$2" "$LOGFILE" ;;
+    *) printf '%s failed: %s' "$2" "$(cut -c1-90 <<<"$last")" ;;
+  esac
+}
+docker_ok() { # docker_ok [nvidia]: the daemon answers this user, and the NVIDIA runtime is there when the recipe needs it
+  docker info >"$STATE/docker.info" 2>"$STATE/docker.err" || { docker_reason "$STATE/docker.err" "docker"; return 1; }
+  if [[ ${1:-} == nvidia ]] && ! grep -qi 'nvidia' "$STATE/docker.info"; then
+    printf 'the NVIDIA container toolkit is not set up: sudo pacman -S nvidia-container-toolkit; sudo nvidia-ctk runtime configure --runtime=docker; sudo systemctl restart docker'
+    return 1
+  fi
+}
 ensure_image() { # pull once; the digest guarantees what we get
   local img=$1 id=$2
   docker image inspect "$img" >/dev/null 2>&1 && return 0
   op download "$id" "pulling image" 0
-  run_child docker pull "$img" >>"$LOGFILE" 2>&1 || oops "image pull failed for $id (see $LOGFILE)"
+  run_child docker pull "$img" >>"$LOGFILE" 2>"$STATE/pull.err" || oops "$(docker_reason "$STATE/pull.err" "image pull for $id")"
 }

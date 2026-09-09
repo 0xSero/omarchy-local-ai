@@ -34,7 +34,8 @@ echo "docker $*" >>"$SHIM/docker.log"
 case "$1" in
   network) [[ $2 == inspect ]] && { [[ -f $SHIM/net ]] && exit 0 || exit 1; }; [[ $2 == create ]] && touch "$SHIM/net"; exit 0 ;;
   image) [[ $2 == inspect ]] && { grep -qxF "$3" "$SHIM/images" 2>/dev/null; exit $?; }; exit 0 ;;
-  pull) [[ ${SHIM_PULL_FAIL:-} == 1 ]] && exit 1; echo "$2" >>"$SHIM/images"; exit 0 ;;
+  info) [[ -n ${SHIM_DOCKER_DOWN:-} ]] && { echo "$SHIM_DOCKER_DOWN" >&2; exit 1; }; echo "Runtimes: io.containerd.runc.v2 ${SHIM_RUNTIMES:-nvidia} runc"; exit 0 ;;
+  pull) [[ ${SHIM_PULL_FAIL:-} == 1 ]] && { echo "${SHIM_PULL_ERR:-error pulling image configuration: no space left on device}" >&2; exit 1; }; echo "$2" >>"$SHIM/images"; exit 0 ;;
   run)
     name=""; labels=""; role=""; args=("$@")
     for ((i=0;i<${#args[@]};i++)); do
@@ -289,13 +290,26 @@ rm -f "$OMARCHY_AI_STATE/gateway.recipe.json"   # a gateway started by an older 
 SHIM_KEYLESS_GATEWAY=1 "$CLI" load
 [[ $(snap .state) == error && $(snap .error) == *"without the key"* ]] || fail "keyless gateway refused" "$(snap .state) $(snap .error)"; pass "a gateway that answers without the key is refused at acceptance"
 
+# docker trouble is said in the words that fix it, before anything is pulled
+SHIM_DOCKER_DOWN="permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock" "$CLI" load
+[[ $(snap .error) == *"usermod -aG docker"* ]] || fail "docker group hint" "$(snap .error)"; pass "a user outside the docker group is told the exact command"
+SHIM_RUNTIMES=runc "$CLI" load
+[[ $(snap .error) == *"NVIDIA container toolkit"* ]] || fail "toolkit hint" "$(snap .error)"; pass "a missing NVIDIA container toolkit is named with its install steps"
+SHIM_DOCKER_DOWN="Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" "$CLI" load
+[[ $(snap .error) == *"Docker is not running"* ]] || fail "daemon down hint" "$(snap .error)"; pass "a stopped daemon is named as such"
+"$CLI" unload >/dev/null; rm -f "$SHIM/images"; SHIM_PULL_FAIL=1 "$CLI" load
+[[ $(snap .error) == *"out of disk space"* ]] || fail "pull disk hint" "$(snap .error)"; pass "a failed pull says why in docker's words, translated"
+SHIM_PULL_FAIL=1 SHIM_PULL_ERR="Error response from daemon: Get https://ghcr.io/v2/: dial tcp: i/o timeout" "$CLI" load
+[[ $(snap .error) == *"no route to the image registry"* ]] || fail "pull network hint" "$(snap .error)"; pass "a pull without network says so"
+"$CLI" load; [[ $(snap .state) == ready ]] || fail "recover after pull errors" "$(snap .error)"
+
 # a worker that dies on something unforeseen leaves a reason, not a silent idle or a stale "starting"
 SHIM_RUN_FAIL=omarchy-local-ai-engine OMARCHY_AI_MODEL_ROOT=/nonexistent-root/x "$CLI" load 2>/dev/null || true
-[[ $(snap .state) == error && $(snap .error) != "" ]] || fail "unexpected death recorded" "$(snap .state) '$(snap .error)'"; pass "an unforeseen worker failure ends in error with a reason"
+[[ $(snap .error) != "" ]] || fail "unexpected death recorded" "$(snap .state) '$(snap .error)'"; pass "an unforeseen worker failure leaves a reason (and the previous model, when there was one)"
 
 # failures during start are logged and rolled back
 SHIM_RUN_FAIL=omarchy-local-ai-engine "$CLI" load
-[[ $(snap .state) == error ]] || fail "start failure"; pass "engine start failure is an error"
+[[ $(snap .error) == *"engine failed to start"* || $(snap .error) == *"engine exited"* ]] || fail "start failure" "$(snap .state) $(snap .error)"; pass "engine start failure is reported (the previous model restored when there was one)"
 grep -q "rollback" "$OMARCHY_AI_STATE/log" || fail "logged"; pass "every worker step is in the log"
 
 echo "1..$n"
