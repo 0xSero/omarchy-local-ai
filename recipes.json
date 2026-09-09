@@ -361,7 +361,9 @@
             "--tool-call-parser",
             "qwen3_coder",
             "--attention-backend",
-            "TRITON_ATTN"
+            "TRITON_ATTN",
+            "--max-num-seqs",
+            "8"
           ],
           "capAdd": [],
           "containerPort": 8000,
@@ -396,7 +398,7 @@
           "sizeGb": 35.5
         },
         "serving": {
-          "concurrency": 2,
+          "concurrency": 8,
           "ctxTokens": 262144
         },
         "speed": {
