@@ -86,6 +86,7 @@ docker_reason() {
   log "$2: ${last:-no output from docker}"
   case $last in
     *permission\ denied*docker.sock*|*permission\ denied*Docker\ daemon*) printf 'Docker refuses your user: sudo usermod -aG docker $USER, then log out and in' ;;
+    *amd.com/gpu*|*amd-container*) printf 'the AMD container toolkit is not set up: sudo pacman -S amd-container-toolkit; sudo amd-ctk runtime configure --runtime=docker; sudo systemctl restart docker' ;;
     *could\ not\ select\ device\ driver*|*nvidia-container*|*unknown\ or\ invalid\ runtime*) printf 'the NVIDIA container toolkit is not set up: sudo pacman -S nvidia-container-toolkit; sudo nvidia-ctk runtime configure --runtime=docker; sudo systemctl restart docker' ;;
     *Cannot\ connect\ to\ the\ Docker\ daemon*|*Is\ the\ docker\ daemon\ running*) printf 'Docker is not running: sudo systemctl enable --now docker' ;;
     *no\ space\ left*|*No\ space\ left*) printf 'out of disk space for %s' "$2" ;;
@@ -96,12 +97,20 @@ docker_reason() {
     *) printf '%s failed: %s' "$2" "$(cut -c1-90 <<<"$last")" ;;
   esac
 }
-docker_ok() { # docker_ok [nvidia]: the daemon answers this user, and the NVIDIA runtime is there when the recipe needs it
+docker_ok() { # docker_ok [backend]: the daemon answers this user; NVIDIA/AMD toolkit present when the recipe needs it
   docker info >"$STATE/docker.info" 2>"$STATE/docker.err" || { docker_reason "$STATE/docker.err" "docker"; return 1; }
-  if [[ ${1:-} == nvidia ]] && ! grep -qi 'nvidia' "$STATE/docker.info"; then
-    printf 'the NVIDIA container toolkit is not set up: sudo pacman -S nvidia-container-toolkit; sudo nvidia-ctk runtime configure --runtime=docker; sudo systemctl restart docker'
-    return 1
-  fi
+  case ${1:-} in
+    nvidia)
+      grep -qi 'nvidia' "$STATE/docker.info" || {
+        printf 'the NVIDIA container toolkit is not set up: sudo pacman -S nvidia-container-toolkit; sudo nvidia-ctk runtime configure --runtime=docker; sudo systemctl restart docker'
+        return 1
+      } ;;
+    amd-rocm)
+      grep -qiE 'amd\.com/gpu=|[[:space:]]amd([[:space:]]|$)' "$STATE/docker.info" || {
+        printf 'the AMD container toolkit is not set up: sudo pacman -S amd-container-toolkit; sudo amd-ctk runtime configure --runtime=docker; sudo systemctl restart docker'
+        return 1
+      } ;;
+  esac
 }
 ensure_image() { # pull once; the digest guarantees what we get
   local img=$1 id=$2

@@ -30,6 +30,11 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
     --label "$LABEL=1" --label "$LABEL.recipe=$id" --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=engine")
   if [[ $backend == nvidia ]]; then
     a+=(--gpus "device=$(jq -r .gpuIndex <<<"$r")")
+  elif [[ $backend == amd-rocm ]]; then
+    # CDI injects /dev/kfd and the card's render node. TP>1 gets every GPU; TP=1 gets the chosen one.
+    local tp; tp=$(jq -r '[.launch.arguments[]?]|index("--tensor-parallel-size") as $i | if $i==null then 1 else (.[$i+1]|tonumber) end' <<<"$r")
+    if (( tp > 1 )); then a+=(--device amd.com/gpu=all); else a+=(--device "amd.com/gpu=$(jq -r .gpuIndex <<<"$r")"); fi
+    a+=(--group-add video --group-add render)
   else # Intel: render nodes only, resolved per device; no card* control nodes, no whole /dev/dri
     local -a nodes=()
     for v in "${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}"/*-render; do [[ -e $v ]] || continue; real=$(canon "$v"); nodes+=(--device "$real:$real"); done

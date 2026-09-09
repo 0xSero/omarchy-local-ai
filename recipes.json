@@ -224,6 +224,192 @@
         }
       }
     },
+    "rx-7900-xtx-24gb": {
+      "match": {
+        "backend": "amd-rocm",
+        "name": "AMD Radeon RX 7900 XTX",
+        "names": [
+          "rx7900xtx"
+        ],
+        "vramGb": 24
+      },
+      "recipe": {
+        "capabilities": {
+          "chat": true,
+          "reasoning": true,
+          "tools": false,
+          "vision": false
+        },
+        "engine": "vllm",
+        "id": "qwen35-9b-bf16-rx7900xtx-vllm-tp1",
+        "image": {
+          "attestation": null,
+          "provenance": "upstream-published"
+        },
+        "launch": {
+          "arguments": [
+            "Qwen/Qwen3.5-9B",
+            "--revision",
+            "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+            "--served-model-name",
+            "qwen3.5-9b",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--max-model-len",
+            "32768",
+            "--gpu-memory-utilization",
+            "0.90",
+            "--trust-remote-code",
+            "--reasoning-parser",
+            "qwen3",
+            "--attention-backend",
+            "TRITON_ATTN"
+          ],
+          "capAdd": [],
+          "containerPort": 8000,
+          "entrypoint": null,
+          "environment": {
+            "HF_HOME": "/root/.cache/huggingface",
+            "VLLM_ROCM_USE_AITER": "0",
+            "FLASH_ATTENTION_TRITON_AMD_ENABLE": "TRUE"
+          },
+          "image": "vllm/vllm-openai-rocm@sha256:e5e47f6aaab675c252c381f0dac237b31b10d87bb74d092b07fb4065efd7f5a1",
+          "ipc": null,
+          "mounts": [
+            {
+              "read_only": false,
+              "source": "~/.cache/huggingface",
+              "target": "/root/.cache/huggingface"
+            }
+          ],
+          "networkMode": "bridge",
+          "securityOpt": [],
+          "shm": "16g"
+        },
+        "minDriver": "",
+        "model": {
+          "id": "qwen3-5-9b",
+          "name": "Qwen3.5-9B",
+          "precision": "BF16",
+          "repository": "Qwen/Qwen3.5-9B",
+          "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+          "servedName": "qwen3.5-9b",
+          "sizeGb": 19.3
+        },
+        "serving": {
+          "concurrency": 2,
+          "ctxTokens": 32768
+        },
+        "speed": {
+          "tps": 0
+        },
+        "validated": {
+          "acceptedAt": null,
+          "harness": null
+        },
+        "weights": {
+          "subdir": ""
+        }
+      }
+    },
+    "rx-7900-xtx-24gb-tp2": {
+      "match": {
+        "backend": "amd-rocm",
+        "gpuCount": 2,
+        "name": "AMD Radeon RX 7900 XTX",
+        "names": [
+          "rx7900xtx"
+        ],
+        "vramGb": 24
+      },
+      "recipe": {
+        "capabilities": {
+          "chat": true,
+          "reasoning": true,
+          "tools": true,
+          "vision": true
+        },
+        "engine": "vllm",
+        "id": "qwen38-int4-rx7900xtx-vllm-tp2",
+        "image": {
+          "attestation": null,
+          "provenance": "upstream-published"
+        },
+        "launch": {
+          "arguments": [
+            "RedHatAI/Qwen3.8-27B-INT4",
+            "--revision",
+            "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+            "--served-model-name",
+            "qwen3.8-27b",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8000",
+            "--tensor-parallel-size",
+            "2",
+            "--mm-encoder-tp-mode",
+            "data",
+            "--gpu-memory-utilization",
+            "0.90",
+            "--trust-remote-code",
+            "--reasoning-parser",
+            "qwen3",
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "qwen3_coder",
+            "--attention-backend",
+            "TRITON_ATTN"
+          ],
+          "capAdd": [],
+          "containerPort": 8000,
+          "entrypoint": null,
+          "environment": {
+            "HF_HOME": "/root/.cache/huggingface",
+            "VLLM_ROCM_USE_AITER": "0",
+            "FLASH_ATTENTION_TRITON_AMD_ENABLE": "TRUE"
+          },
+          "image": "vllm/vllm-openai-rocm@sha256:e5e47f6aaab675c252c381f0dac237b31b10d87bb74d092b07fb4065efd7f5a1",
+          "ipc": null,
+          "mounts": [
+            {
+              "read_only": false,
+              "source": "~/.cache/huggingface",
+              "target": "/root/.cache/huggingface"
+            }
+          ],
+          "networkMode": "bridge",
+          "securityOpt": [],
+          "shm": "16g"
+        },
+        "minDriver": "",
+        "model": {
+          "id": "qwen3-8-27b",
+          "name": "Qwen3.8-27B",
+          "precision": "INT4",
+          "repository": "RedHatAI/Qwen3.8-27B-INT4",
+          "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
+          "servedName": "qwen3.8-27b",
+          "sizeGb": 35.5
+        },
+        "serving": {
+          "concurrency": 2,
+          "ctxTokens": 262144
+        },
+        "speed": {
+          "tps": 0
+        },
+        "validated": {
+          "acceptedAt": null,
+          "harness": null
+        },
+        "weights": {
+          "subdir": ""
+        }
+      }
+    },
     "rtx-2000-ada-16gb": {
       "match": {
         "backend": "nvidia",

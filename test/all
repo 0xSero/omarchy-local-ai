@@ -9,7 +9,7 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 export OMARCHY_AI_USER_HOME="$TMP/home" OMARCHY_AI_STATE="$TMP/state" OMARCHY_AI_RECIPES="$TMP/recipes.json" \
   OMARCHY_AI_MODEL_ROOT="$TMP/home/.cache/omarchy/local-ai/models" OMARCHY_AI_CACHE_ROOT="$TMP/home/.cache/omarchy/local-ai/cache" \
   OMARCHY_AI_HF_HOME="$TMP/home/.cache/huggingface" OMARCHY_AI_PORT=12434 OMARCHY_AI_POLL=0 OMARCHY_AI_TIMEOUT=5 \
-  OMARCHY_AI_FOREGROUND=1 OMARCHY_AI_NO_HOST_HF=1 SHIM="$TMP/shim" \
+  OMARCHY_AI_FOREGROUND=1 OMARCHY_AI_NO_HOST_HF=1 OMARCHY_AI_NO_HOST_AMD=1 SHIM="$TMP/shim" \
   PATH="$TMP/bin:/usr/bin:/bin"   # shims plus the base system only; the developer's own agents must not leak in
 mkdir -p "$TMP/bin" "$TMP/home" "$SHIM"
 ln -s "$(PATH="$PATH:/opt/homebrew/bin:/usr/local/bin" command -v jq)" "$TMP/bin/jq"
@@ -34,7 +34,10 @@ echo "docker $*" >>"$SHIM/docker.log"
 case "$1" in
   network) [[ $2 == inspect ]] && { [[ -f $SHIM/net ]] && exit 0 || exit 1; }; [[ $2 == create ]] && touch "$SHIM/net"; exit 0 ;;
   image) [[ $2 == inspect ]] && { grep -qxF "$3" "$SHIM/images" 2>/dev/null; exit $?; }; exit 0 ;;
-  info) [[ -n ${SHIM_DOCKER_DOWN:-} ]] && { echo "$SHIM_DOCKER_DOWN" >&2; exit 1; }; echo "Runtimes: io.containerd.runc.v2 ${SHIM_RUNTIMES:-nvidia} runc"; exit 0 ;;
+  info) [[ -n ${SHIM_DOCKER_DOWN:-} ]] && { echo "$SHIM_DOCKER_DOWN" >&2; exit 1; }
+    echo "Runtimes: io.containerd.runc.v2 ${SHIM_RUNTIMES:-nvidia} runc"
+    [[ ${SHIM_RUNTIMES:-} == *amd* ]] && echo "  cdi: amd.com/gpu=0"
+    exit 0 ;;
   pull) [[ ${SHIM_PULL_FAIL:-} == 1 ]] && { echo "${SHIM_PULL_ERR:-error pulling image configuration: no space left on device}" >&2; exit 1; }; echo "$2" >>"$SHIM/images"; exit 0 ;;
   run)
     name=""; labels=""; role=""; args=("$@")
@@ -121,11 +124,11 @@ recipe() { # recipe <id> <tools> <mountkind hf|dir|asset>
        shm:"8g", ipc:null, networkMode:"bridge", capAdd:[], securityOpt:[]},
      validated:{harness:"test",acceptedAt:"2026-09-03T00:00:00Z"}}'
 }
-write_recipes() { # write_recipes <recipe-json> [hardware-id]
-  jq -n --argjson r "$1" --arg hw "${2:-rtx-4090-24gb}" --arg dg "$digest" '
+write_recipes() { # write_recipes <recipe-json> [hardware-id] [backend]
+  jq -n --argjson r "$1" --arg hw "${2:-rtx-4090-24gb}" --arg backend "${3:-nvidia}" --arg dg "$digest" '
     {schemaVersion:"omarchy-local-ai/recipes/1", registryCommit:"deadbeef", generatedAt:"2026-09-03T00:00:00Z",
      gateway:{image:("ghcr.io/x/gateway@sha256:"+$dg)}, assets:{"cfg.yml":"model_name: Test-Model\n"},
-     hardware:{($hw):{match:{backend:"nvidia",vramGb:24,names:[($hw|sub("-[0-9]+gb$";"")|gsub("-";""))],name:$hw}, recipe:$r}}}' >"$OMARCHY_AI_RECIPES"
+     hardware:{($hw):{match:{backend:$backend,vramGb:24,names:[($hw|sub("-[0-9]+gb$";"")|gsub("-";""))],name:$hw}, recipe:$r}}}' >"$OMARCHY_AI_RECIPES"
 }
 write_recipes "$(recipe good true asset)"
 
@@ -248,6 +251,62 @@ export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n1, NVIDIA GeFo
 "$CLI" gpu auto >/dev/null; [[ $(snap '.gpus[1].chosen') == true && $(snap .hardwareId) == rtx-4090-24gb && $(snap .gpuPinned) == false ]] || fail "gpu auto"; pass "gpu auto returns to the largest card with a recipe"
 "$CLI" gpu bogus >/dev/null 2>&1 && fail "bad gpu key accepted"; pass "gpu refuses a malformed key"
 unset SHIM_GPUS
+
+# AMD: amd-smi inventory, CDI launch, toolkit refusal. Hide nvidia-smi so the shim 4090 does not steal the match.
+mv "$TMP/bin/nvidia-smi" "$TMP/nvidia-smi.bak"
+cat >"$TMP/bin/amd-smi" <<'EOF'
+#!/usr/bin/env bash
+# SHIM_AMD_GPUS: default one 7900 XTX; two = a second identical card at index 1
+gpus=${SHIM_AMD_GPUS:-1}
+if [[ $* == *static* ]]; then
+  if [[ $gpus == 2 ]]; then
+    echo '{"gpu_data":[{"gpu":0,"asic":{"market_name":"AMD Radeon RX 7900 XTX"},"vram":{"size":{"value":24560,"unit":"MB"}}},{"gpu":1,"asic":{"market_name":"AMD Radeon RX 7900 XTX"},"vram":{"size":{"value":24560,"unit":"MB"}}}]}'
+  else
+    echo '{"gpu_data":[{"gpu":0,"asic":{"market_name":"AMD Radeon RX 7900 XTX"},"vram":{"size":{"value":24560,"unit":"MB"}}}]}'
+  fi
+else
+  echo '{"gpu_data":[{"gpu":0,"mem_usage":{"total_vram":{"value":24560},"used_vram":{"value":100},"free_vram":{"value":24460}}},{"gpu":1,"mem_usage":{"total_vram":{"value":24560},"used_vram":{"value":50},"free_vram":{"value":24510}}}]}'
+fi
+EOF
+chmod +x "$TMP/bin/amd-smi"
+write_recipes "$(recipe good true asset | jq '.launch.environment.FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"')" rx-7900-xtx-24gb amd-rocm
+"$CLI" snapshot >/dev/null
+[[ $(snap .hardwareId) == rx-7900-xtx-24gb && $(snap .model.name) == "Test Model" && $(snap '.gpus[0].backend') == amd-rocm && $(snap '.gpus[0].product') == "AMD Radeon RX 7900 XTX" ]] || fail "amd match" "$(snap .hardwareId) $(snap .gpus)"; pass "AMD card: amd-smi inventory matches the rx-7900-xtx recipe"
+: >"$SHIM/docker.log"; SHIM_RUNTIMES=amd "$CLI" load
+[[ $(snap .state) == ready ]] || fail "amd load" "$(snap .state) $(snap .error)"; pass "AMD load reaches ready"
+grep -q -- "--device amd.com/gpu=0" "$SHIM/docker.log" || fail "amd cdi device" "$(grep engine "$SHIM/docker.log" | tail -1)"; pass "AMD engine is launched with CDI --device amd.com/gpu=N, not --gpus"
+grep -q -- "--gpus " "$SHIM/docker.log" && fail "nvidia gpus on amd launch"; pass "AMD launch does not pass --gpus"
+grep -q -- "--group-add video" "$SHIM/docker.log" && grep -q -- "--group-add render" "$SHIM/docker.log" || fail "amd groups"; pass "AMD launch adds the video and render groups"
+grep -q -- "--env FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE" "$SHIM/docker.log" || fail "amd flash attn env" "$(grep engine "$SHIM/docker.log" | tail -1)"; pass "AMD launch enables Triton Flash Attention"
+"$CLI" unload
+SHIM_RUNTIMES=runc "$CLI" load
+[[ $(snap .error) == *"AMD container toolkit"* ]] || fail "amd toolkit hint" "$(snap .error)"; pass "a missing AMD container toolkit is named with its install steps"
+export SHIM_AMD_GPUS=2 SHIM_RUNTIMES=amd
+"$CLI" snapshot >/dev/null
+[[ $(snap '.gpus|length') == 2 && $(snap '.gpus[0].chosen') == true && $(snap '.gpus[0].key') == amd-rocm:0 ]] || fail "two amd gpus" "$(snap .gpus)"; pass "two AMD cards: both listed, index 0 chosen by default"
+"$CLI" gpu amd-rocm:1 >/dev/null
+[[ $(snap '.gpus[1].chosen') == true && $(snap .gpuPinned) == true ]] || fail "pin second amd" "$(snap .gpus)"; pass "gpu amd-rocm:1 pins the second AMD card"
+"$CLI" gpu auto >/dev/null
+# two cards: a gpuCount=2 sibling is preferred; pinning a card keeps the 1-GPU recipe
+tp2=$(recipe tp2 true hf | jq '.model.name="TP2 Model" | .launch.arguments += ["--tensor-parallel-size","2"]')
+jq --argjson r "$tp2" '.hardware["rx-7900-xtx-24gb-tp2"]={match:{backend:"amd-rocm",vramGb:24,gpuCount:2,names:["rx7900xtx"],name:"rx-7900-xtx-24gb-tp2"},recipe:$r}' \
+  "$OMARCHY_AI_RECIPES" >"$TMP/recipes.tp2.json" && mv "$TMP/recipes.tp2.json" "$OMARCHY_AI_RECIPES"
+"$CLI" snapshot >/dev/null
+[[ $(snap .hardwareId) == rx-7900-xtx-24gb-tp2 && $(snap .model.name) == "TP2 Model" ]] || fail "two amd pick tp2" "$(snap .hardwareId) $(snap .model)"; pass "two AMD cards pick the gpuCount=2 recipe"
+: >"$SHIM/docker.log"; SHIM_RUNTIMES=amd "$CLI" load
+grep -q -- "--device amd.com/gpu=all" "$SHIM/docker.log" || fail "amd tp2 cdi" "$(grep engine "$SHIM/docker.log" | tail -1)"; pass "TP>1 AMD launch uses CDI amd.com/gpu=all"
+"$CLI" unload
+"$CLI" gpu amd-rocm:0 >/dev/null
+[[ $(snap .hardwareId) == rx-7900-xtx-24gb && $(snap .model.name) == "Test Model" ]] || fail "pin keeps 1-gpu recipe" "$(snap .hardwareId) $(snap .model)"; pass "pinning one AMD card keeps the 1-GPU recipe"
+: >"$SHIM/docker.log"; SHIM_RUNTIMES=amd "$CLI" load
+grep -q -- "--device amd.com/gpu=0" "$SHIM/docker.log" || fail "pinned amd device" "$(grep engine "$SHIM/docker.log" | tail -1)"
+grep -q -- "--device amd.com/gpu=all" "$SHIM/docker.log" && fail "pinned used all gpus"; pass "a pinned 1-GPU AMD launch still uses amd.com/gpu=N"
+"$CLI" unload; "$CLI" gpu auto >/dev/null
+SHIM_AMD_GPUS=1 "$CLI" snapshot >/dev/null
+[[ $(snap .hardwareId) == rx-7900-xtx-24gb && $(snap '.gpus|length') == 1 ]] || fail "one amd ignores tp2" "$(snap .hardwareId) $(snap .gpus)"; pass "one AMD card ignores the gpuCount=2 recipe"
+unset SHIM_RUNTIMES SHIM_AMD_GPUS
+rm -f "$TMP/bin/amd-smi"; mv "$TMP/nvidia-smi.bak" "$TMP/bin/nvidia-smi"
+write_recipes "$(recipe good true asset)"
 
 # hf-cache recipes download into the cache, not a local dir
 write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI" load
