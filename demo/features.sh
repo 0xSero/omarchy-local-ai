@@ -65,7 +65,8 @@ terminal() { # a terminal on camera; commands are typed into it
 
 # --- a known starting point: default card, model ready, share off ---------------------------
 $CLI gpu auto >/dev/null 2>&1
-[[ $(state) == ready ]] || { $CLI load >/dev/null; wait_state ready; }
+# the default card's own model must be the one running (a leftover pin may have put another card's model up)
+[[ $(state) == ready && $($CLI snapshot | jq -r '.running.current') == true ]] || { $CLI load >/dev/null; sleep 5; wait_state ready; }
 $CLI snapshot | jq -e '.share.active' >/dev/null 2>&1 && { $CLI share >/dev/null; sleep 3; }
 timeout 5 qs -p "$CK/shell" ipc call notifications dismissAll >/dev/null 2>&1
 ipc close; close_win org.omarchy.agent; close_win org.omarchy.demo

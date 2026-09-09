@@ -79,6 +79,7 @@ case $url in
     elif [[ $data == *"Count from 1 to 80"* ]]; then # the speed probe: 80 words, usage optional, an optional delay to look like a CPU
       [[ -n ${SHIM_SLOW:-} ]] && sleep "$SHIM_SLOW"
       words=$(seq -s ' ' 1 80)
+      [[ ${SHIM_LEAK_THINK:-} == 1 ]] && words="I should count.</think>$words"   # a reasoning model with the parser off
       if [[ ${SHIM_NO_USAGE:-} == 1 ]]; then echo "{\"choices\":[{\"message\":{\"content\":\"$words\"}}]}"
       else echo "{\"choices\":[{\"message\":{\"content\":\"$words\"}}],\"usage\":{\"completion_tokens\":${SHIM_TOKENS:-60}}}"; fi
     else echo "{\"choices\":[{\"message\":{\"content\":\"${SHIM_REPLY:-LOCAL_AI_READY}\"}}],\"usage\":{\"completion_tokens\":${SHIM_TOKENS:-12}}}"; fi ;;
@@ -198,6 +199,8 @@ SHIM_REPLY="nope" "$CLI" load
 SHIM_SLOW=12 "$CLI" load; [[ $(snap .error) == *"below the 6 tok/s floor"* ]] || fail "slow decode refused" "$(snap .state) $(snap .error)"; pass "a CPU-speed decode fails the speed floor and says so"
 SHIM_NO_USAGE=1 "$CLI" load; [[ $(snap .state) == ready ]] || fail "no usage" "$(snap .error)"; grep -q "tps=[1-9]" "$OMARCHY_AI_STATE/log" || fail "tps measured without usage"; pass "speed is measured from the words written when the engine reports no usage"
 SHIM_TOKENS=4 "$CLI" load; [[ $(snap .state) == ready ]] || fail "short replies skip the floor"; pass "speed floor ignores replies under 16 tokens"
+SHIM_LEAK_THINK=1 "$CLI" load; [[ $(snap .error) == *"reasoning leaks into the answer"* ]] || fail "think leak" "$(snap .error)"; pass "a reasoning model whose thinking leaks into the answer is refused"
+"$CLI" load; [[ $(snap .state) == ready && $(snap .error) == "" ]] || fail "recover after leak"
 
 # missing dialects hide agents
 SHIM_APIS=chat "$CLI" load; [[ $(snap '.agents.launchable|join(",")') == "pi" ]] || fail "launchable filtered" "$(snap .agents.launchable)"; pass "agents whose dialect failed acceptance are hidden"
