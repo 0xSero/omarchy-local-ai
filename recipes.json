@@ -366,7 +366,9 @@
             "--max-num-seqs",
             "8",
             "--chat-template",
-            "/opt/omarchy/qwen38-chat-template.jinja"
+            "/opt/omarchy/qwen38-chat-template.jinja",
+            "--speculative-config",
+            "{\"method\":\"mtp\",\"num_speculative_tokens\":2}"
           ],
           "capAdd": [],
           "containerPort": 8000,
