@@ -258,6 +258,18 @@ export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n1, NVIDIA GeFo
 "$CLI" gpu bogus >/dev/null 2>&1 && fail "bad gpu key accepted"; pass "gpu refuses a malformed key"
 unset SHIM_GPUS
 
+# AMD ROCm: an RX 6800 XT must match its recipe and pass only its KFD + assigned render node to Docker.
+export OMARCHY_AI_HARDWARE_JSON='{"gpus":[{"backend":"amd-rocm","index":0,"product":"AMD Radeon RX 6800 XT","totalMiB":16368,"usedMiB":0,"freeMiB":16368,"renderNode":"/dev/dri/renderD128"}],"driver":""}'
+write_recipes "$(recipe rx6800xt true asset | jq '.launch.mounts=[{source:"${MODEL_ROOT}/test",target:"/workspace/models",read_only:true}]')" rx-6800-xt-16gb
+jq '.hardware["rx-6800-xt-16gb"].match={backend:"amd-rocm",vramGb:16,names:["rx6800xt"]}' "$OMARCHY_AI_RECIPES" >"$TMP/recipes.amd.json" && mv "$TMP/recipes.amd.json" "$OMARCHY_AI_RECIPES"
+"$CLI" snapshot >/dev/null
+[[ $(snap .hardwareId) == rx-6800-xt-16gb && $(snap '.gpus[0].key') == amd-rocm:0 ]] || fail "amd hardware matched" "$(snap .gpus)"; pass "AMD RX 6800 XT matches an amd-rocm recipe"
+"$CLI" load
+[[ $(snap .state) == ready ]] || fail "amd load" "$(snap .state) $(snap .error)"
+grep -q -- "--device /dev/kfd:/dev/kfd" "$SHIM/docker.log" && grep -q -- "--device /dev/dri/renderD128:/dev/dri/renderD128" "$SHIM/docker.log" || fail "amd device wiring" "$(grep omarchy-local-ai-engine "$SHIM/docker.log" | tail -1)"; pass "AMD engine receives KFD and only its assigned render node"
+"$CLI" unload
+unset OMARCHY_AI_HARDWARE_JSON
+
 # hf-cache recipes download into the cache, not a local dir
 write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI" load
 [[ $(snap .state) == ready ]] || fail "hf recipe" "$(snap .error)"; pass "hf-cache recipe: downloaded into the shared cache and started"

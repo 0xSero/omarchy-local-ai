@@ -31,6 +31,10 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
     --label "$LABEL=1" --label "$LABEL.recipe=$id" --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=engine")
   if [[ $backend == nvidia ]]; then
     a+=(--gpus "device=$(jq -r .gpuIndex <<<"$r")")
+  elif [[ $backend == amd-rocm ]]; then # ROCm needs KFD plus the single render node identified with the selected PCI device
+    real=$(jq -r .gpuRenderNode <<<"$r")
+    [[ $real =~ ^/dev/dri/renderD[0-9]+$ ]] || { fail "no render node found for the selected AMD GPU"; return 1; }
+    a+=(--device /dev/kfd:/dev/kfd --device "$real:$real")
   else # Intel: render nodes only, resolved per device; no card* control nodes, no whole /dev/dri
     local -a nodes=()
     for v in "${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}"/*-render; do [[ -e $v ]] || continue; real=$(canon "$v"); nodes+=(--device "$real:$real"); done
