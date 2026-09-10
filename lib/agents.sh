@@ -111,17 +111,14 @@ open_agent() { # open_agent [name]: default agent when omitted; refuses out loud
   # `omarchy-local-ai agent-dir <path>`, else wherever the shell was started (usually home)
   local dir=${OMARCHY_AI_AGENT_DIR:-$(cat "$STATE/agent-dir" 2>/dev/null)}
   [[ -n $dir && -d $dir ]] && cd "$dir"
-  # the launcher's exit code is the terminal handshake (uwsm-app), not the agent: when it fails,
-  # say what it said, so a stuck app daemon is not reported as a broken agent
-  # omarchy-launch-tui blocks for the terminal's whole life and exits with the terminal's status, so
-  # it is detached and its exit is not the launch result. It goes through uwsm's fast app daemon,
-  # which can wedge ("Timed out waiting for pipes", ten seconds per call): a two-second ping decides,
-  # and a wedged daemon gets the same terminal command through the plain uwsm client instead.
-  if ! command -v uwsm-app >/dev/null 2>&1 || timeout 2 uwsm-app ping >/dev/null 2>&1; then
+  # omarchy-launch-tui is the normal terminal path. Do not probe `uwsm-app ping`: on current
+  # Omarchy it surfaces a visible "pong" notification, which makes a right-click look like a test
+  # action. If the launcher is absent, use the plain UWSM terminal path instead.
+  if command -v omarchy-launch-tui >/dev/null 2>&1; then
     setsid omarchy-launch-tui --app-id=org.omarchy.agent "${argv[@]}" >/dev/null 2>>"$LOGFILE" </dev/null & disown
   elif command -v uwsm >/dev/null 2>&1 && command -v xdg-terminal-exec >/dev/null 2>&1; then
-    log "uwsm app daemon is not answering; opening $name through uwsm app"
+    log "omarchy-launch-tui is unavailable; opening $name through uwsm app"
     setsid uwsm app -- xdg-terminal-exec --app-id=org.omarchy.agent -e "${argv[@]}" >/dev/null 2>>"$LOGFILE" </dev/null & disown
-  else fail "could not open a terminal for $name: the uwsm app daemon is not answering"; return 1; fi
+  else fail "could not open a terminal for $name: no Omarchy terminal launcher is available"; return 1; fi
   lwrite '.error=""'; snapshot_write   # a launch that worked retires an earlier refusal
 }

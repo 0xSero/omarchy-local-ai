@@ -44,7 +44,7 @@ current_recipe() { # the one recipe for this machine, gated; prints json or fail
   m=$(match_hardware); id=$(jq -r .hardwareId <<<"$m")
   [[ -n $id ]] || { fail "$(jq -r .reason <<<"$m")"; return 1; }
   r=$(recipe_for "$id") || return 1
-  r=$(jq -c --argjson m "$m" '. + {gpuIndex:$m.gpu.index, match:{backend:$m.gpu.backend}}' <<<"$r")
+  r=$(jq -c --argjson m "$m" '. + {gpuIndex:$m.gpu.index, gpuRenderNode:($m.gpu.renderNode // ""), match:{backend:$m.gpu.backend}}' <<<"$r")
   gate=$(gate_reason "$r"); [[ -z $gate ]] || { fail "recipe refused: $gate"; return 1; }
   driver_ok "$(hardware_json | jq -r .driver)" "$(jq -r '.minDriver // ""' <<<"$r")" \
     || { fail "needs NVIDIA driver $(jq -r .minDriver <<<"$r") or newer"; return 1; }

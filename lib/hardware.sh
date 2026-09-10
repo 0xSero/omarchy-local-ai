@@ -11,7 +11,25 @@ hardware_json() {
   fi
   [[ -n $rows ]] && nvidia=$(jq -Rsc 'split("\n")|map(select(length>0)|split(",")|map(gsub("^ +| +$";"")))
     |map({backend:"nvidia",index:(.[0]|tonumber),product:.[1],totalMiB:(.[2]|tonumber),usedMiB:(.[3]|tonumber),freeMiB:(.[4]|tonumber)})' <<<"$rows")
-  jq -nc --argjson n "$nvidia" --argjson i "$(intel_gpus)" --arg d "$driver" '{gpus:($n+$i),driver:$d}'
+  jq -nc --argjson n "$nvidia" --argjson a "$(amd_gpus)" --argjson i "$(intel_gpus)" --arg d "$driver" '{gpus:($n+$a+$i),driver:$d}'
+}
+
+amd_gpus() { # ROCm cards with a PCI-resolved render node; low-VRAM APUs remain visible but cannot match a recipe
+  command -v rocm-smi >/dev/null 2>&1 && command -v lspci >/dev/null 2>&1 || { printf '[]'; return; }
+  local raw card product bytes used model hex pci node idx=0 out='[]'
+  raw=$(rocm-smi --showproductname --showmeminfo vram --json 2>/dev/null | sed -n '/^{/,$p')
+  [[ -n $raw ]] && jq -e . >/dev/null 2>&1 <<<"$raw" || { printf '[]'; return; }
+  while IFS=$'\t' read -r card product bytes used model; do
+    [[ -n $product && -n $bytes && -n $model ]] || continue
+    hex=$(tr '[:upper:]' '[:lower:]' <<<"${model#0x}"); pci=$(lspci -Dnn 2>/dev/null | awk -v id="1002:$hex" 'tolower($0) ~ "\\[" id "\\]" {print $1; exit}')
+    [[ -n $pci ]] || continue
+    node=$(readlink -f "/dev/dri/by-path/pci-$pci-render" 2>/dev/null || true)
+    [[ $node =~ ^/dev/dri/renderD[0-9]+$ ]] || continue
+    out=$(jq -c --argjson i "$idx" --arg p "$product" --argjson t "$bytes" --argjson u "${used:-0}" --arg n "$node" \
+      '.+[{backend:"amd-rocm",index:$i,product:$p,totalMiB:($t/1048576|floor),usedMiB:($u/1048576|floor),freeMiB:(($t-$u)/1048576|floor),renderNode:$n}]' <<<"$out")
+    idx=$((idx+1))
+  done < <(jq -r 'to_entries[]|[.key,.value["Card Series"],.value["VRAM Total Memory (B)"],.value["VRAM Total Used Memory (B)"],.value["Card Model"]]|@tsv' <<<"$raw")
+  printf '%s' "$out"
 }
 
 intel_gpus() { # Intel Arc Pro B70 by PCI id, only when a render node exists for it
