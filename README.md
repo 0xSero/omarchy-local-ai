@@ -32,14 +32,18 @@ any installed coding agent on it.
 
 ### Requirements
 
-- Docker, with your user in the `docker` group
-- An NVIDIA GPU with the NVIDIA container toolkit, or an Intel Arc Pro B70
-- `jq`, `curl`, `flock`
+- Docker (Omarchy ships it). You do **not** need to be in the `docker`
+  group: Omarchy keeps users out of it on purpose, and the plugin follows
+  suit. Start, Stop, and Share each ask for your password once, through
+  Omarchy's own prompt, exactly like Omarchy's other Docker features. With
+  *Sudoless Docker* enabled in Omarchy's security settings there is no prompt.
+- An NVIDIA GPU or an Intel Arc Pro B70. The NVIDIA container toolkit is
+  installed for you inside that same prompt when it is missing.
+- `jq`, `curl`, `flock` (all on Omarchy)
 - Optional: `tailscale` for sharing; `hf` for faster downloads
 
-The listing is marked *manual setup* because of Docker and the container
-toolkit. Nothing else needs configuring: no model to pick, no config file to
-write, no API key to make.
+Nothing else needs configuring: no model to pick, no config file to write,
+no API key to make.
 
 ## What you get
 
@@ -98,6 +102,13 @@ limits, and the validation record from the card it was proven on.
 digest-pinned, asks for host IPC, extra capabilities, or a weakened security
 profile, or mounts a path outside the plugin's two cache roots. Mount paths
 are canonicalized, so a symlink out of the root is refused too.
+
+**Docker on Omarchy's terms.** When your user can reach the Docker socket,
+the plugin calls docker directly. Otherwise every docker call of one action
+is batched into a single privileged run of the plugin's own script, one
+password prompt through Omarchy's polkit agent, and the card's background
+refresh never touches docker at all: it reads the ledger and asks the
+gateway. A root phase writes no file into your state directory.
 
 **Two containers**, both labeled and owned by the plugin, on a private bridge
 network: the engine (TabbyAPI, SGLang, vLLM, or llama.cpp), never reachable

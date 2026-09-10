@@ -168,6 +168,18 @@ dialects through the gateway; an agent whose dialect fails is hidden from
 the selector. The gateway shares the engine's labels, lifecycle, and
 rollback. The registry validates engine plus gateway as one recipe.
 
+### 5a. Docker without the docker group (agreed 2026-09-10)
+Omarchy leaves users out of the docker group on purpose and reaches the
+daemon through a polkit prompt; polkit there is `auth_admin` without keep.
+So: direct docker when the socket is writable; otherwise the docker work of
+one action (Start, Stop, share) runs as ONE `pkexec` of this script
+(`_root <phase>`, `lib/priv.sh`), one prompt, the way
+`omarchy-launch-docker-tui` does it. The card's refresh never calls docker in
+that mode. A root phase creates no file under the user's state; progress and
+reasons come back on stdout. The set-aside pair is dropped by the next phase,
+so a successful Start costs one prompt. A missing NVIDIA container toolkit is
+installed inside the same prompt.
+
 ### 5b. Tailscale share is keyed, auto-configured, user-changeable (agreed 2026-09-03)
 Loopback is keyless. The first Share generates a random key, stores it in the
 plugin's state directory (mode 600), and the gateway, which reads the key
