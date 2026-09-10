@@ -202,9 +202,9 @@ the stateless gateway with or without the second publish. Stop sharing drops
 it; the key stays for next time. (revised 2026-09-03 evening)
 
 ### 6. Commands
-Exactly `snapshot`, `load`, `unload`, `open-agent [name]`, `share`. Drop
-`download`, `run`, `switch`, `remove`, `default`, `scan`. Workers log to
-`$STATE/log`.
+`snapshot`, `load`, `unload`, `open-agent [name]`, `share [--key]`, `gpu`,
+`agent-dir`, `agent-args`; nothing else. The last three are settings, never
+workers. Workers log to `$STATE/log`.
 
 ### 7. Panel
 Unchanged in shape. Add the "no model for this card" reason and the driver

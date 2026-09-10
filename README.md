@@ -136,7 +136,7 @@ probes hand curl a header file. `share --key <value>` replaces it in place.
   through RTX 6000 Ada; per-card logs are in [`test/rented-results/`](test/rented-results/).
 - The Intel Arc Pro B70 recipe runs daily on a mixed RTX 3090 + B70 host,
   where both videos were recorded.
-- 87 shimmed tests cover the gate, download, start, acceptance, rollback,
+- 110 shimmed tests cover the gate, download, start, acceptance, rollback,
   agents, sharing, and the key handling, without a GPU: `bash test/all`.
 - The marketplace listing passed validation and the automated security
   baseline and went through five rounds of security review.
