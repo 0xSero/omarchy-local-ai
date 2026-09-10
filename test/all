@@ -112,6 +112,7 @@ EOF
 for tk in pacman nvidia-ctk systemctl; do printf '#!/usr/bin/env bash\necho "%s $*" >>"$SHIM/toolkit.log"\n' "$tk" >"$TMP/bin/$tk"; done
 for a in pi claude codex; do printf '#!/usr/bin/env bash\necho "$0 $* ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-} ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-} LOCAL_AI_KEY=${LOCAL_AI_KEY:-}"\n' >"$TMP/bin/$a"; done
 printf '#!/usr/bin/env bash\necho "launch $*"\n' >"$TMP/bin/omarchy-launch-tui"
+printf '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >>"$SHIM/uwsm-app.log"\nexit 0\n' >"$TMP/bin/uwsm-app"
 printf '#!/usr/bin/env bash\necho pi\n' >"$TMP/bin/omarchy-default-agent"
 find "$TMP/bin" -type f -exec chmod +x {} +   # not the jq symlink: its target is not ours to chmod on CI
 
@@ -297,6 +298,7 @@ wait $holder; "$CLI" unload
 "$CLI" load; [[ $(snap .state) == ready && $(snap .error) == "" ]] || fail "op clears refusal"; pass "a finished operation clears an earlier refusal"
 "$CLI" open-agent nope >/dev/null 2>&1 || true; [[ $(snap .state) == ready && $(snap .error) != "" ]] || fail "refusal beside ready" "$(snap .state) $(snap .error)"; pass "a refused agent launch keeps a running model ready and shows the reason"
 OMARCHY_AI_FOREGROUND=0 "$CLI" open-agent pi >/dev/null; [[ $(snap .error) == "" ]] || fail "launch clears refusal"; pass "a launch that works clears the earlier refusal"
+[[ ! -s $SHIM/uwsm-app.log ]] || fail "agent launch probes uwsm-app and shows ping feedback" "$(cat "$SHIM/uwsm-app.log")"; pass "agent launch does not probe uwsm-app"
 # an older install: key copied into the ledger, files world-readable; the next snapshot scrubs and tightens
 jq '.share={key:"leaked-old-key"}' "$OMARCHY_AI_STATE/ledger.json" >"$TMP/l.json" && mv "$TMP/l.json" "$OMARCHY_AI_STATE/ledger.json"; chmod 644 "$OMARCHY_AI_STATE/ledger.json" "$OMARCHY_AI_STATE/snapshot.json"
 "$CLI" snapshot >/dev/null; grep -q leaked-old-key "$OMARCHY_AI_STATE/ledger.json" && fail "old key not scrubbed"
