@@ -92,19 +92,26 @@ d.text((272, 104), "Local AI", font=f_title, fill=INK)
 d.text((276, 192), "for Omarchy", font=f_sub, fill=DIM)
 
 d.text((96, 300), "The model validated for your GPU,\none button on the bar.", font=f_sub, fill=INK, spacing=10)
-feats = [
-    "Start downloads it, proves it works, serves it",
-    "Open any coding agent on it: claude, codex, pi…",
-    "Share on your tailnet, keyed, in one click",
-    "Every detected GPU listed; pick the one you want",
-    "Docker containers only this plugin touches",
+# how it works, in three steps: what the person does, what happens
+steps = [
+    ("Start",       "downloads the model validated for your card,",
+                    "proves it works, then serves it on localhost"),
+    ("Open agent",  "claude, codex, pi, opencode, crush… open on it;",
+                    "nothing is written to your config"),
+    ("Share",       "the same keyed endpoint on your tailnet,",
+                    "one click, no root"),
 ]
-y = 420
-for t in feats:
-    d.rounded_rectangle([98, y + 9, 108, y + 19], radius=2, fill=INK)
-    d.text((126, y), t, font=f_feat, fill=INK)
-    y += 48
-d.text((96, 800), "34 validated GPU recipes · NVIDIA and Intel Arc · verified listing", font=f_small, fill=DIM)
+f_step = ImageFont.truetype(MONO_B, 27)
+f_num = ImageFont.truetype(MONO_B, 22)
+y = 412
+for i, (head, l1, l2) in enumerate(steps, 1):
+    d.rounded_rectangle([96, y + 2, 132, y + 38], radius=6, fill=INK)
+    d.text((114, y + 20), str(i), font=f_num, fill=BG, anchor="mm")
+    d.text((150, y + 2), head, font=f_step, fill=INK)
+    d.text((150, y + 42), l1, font=f_feat, fill=DIM)
+    d.text((150, y + 74), l2, font=f_feat, fill=DIM)
+    y += 122
+d.text((96, 800), "34 validated GPU recipes · NVIDIA and Intel Arc · no docker group needed", font=f_small, fill=DIM)
 
 # right: the card, scaled, with a soft glow behind it
 cw, ch = card.size
