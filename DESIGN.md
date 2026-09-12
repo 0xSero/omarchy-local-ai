@@ -222,3 +222,13 @@ on `runpod-validation` (draft PR), gateway and TabbyAPI images attested in
 `0xSero/local-ai-images`. Not yet run on real hardware: the Omarchy box is
 held by a GLM-5.3 job. Open items: live run, gateway re-validation per engine
 family (in progress), driver floors are per image family rather than measured.
+
+## Releasing
+
+`main` is always green and always releasable; nothing lands on it without the suite passing. A
+release is a version in `manifest.json`, a `CHANGELOG.md` section, and a signed-off commit
+"Release vX.Y.Z" on `main`, tagged `vX.Y.Z`. Pushing the tag runs the suite again, checks the
+version and the changelog section, and publishes the GitHub release. The marketplace update
+request (omacom/omarchy-plugin-marketplace) targets that tagged commit and nothing else, so what
+the marketplace verifies is always a release. Patch for fixes, minor for behaviour, major for a
+change to what the card does or to the state files.

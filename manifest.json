@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "author": "0xSero",
   "license": "MIT",
   "description": "Run the model validated for your GPU as one button on the bar. Start downloads it, proves it works, and serves it; Open agent starts any coding agent on it (claude, codex, pi, opencode, crush, and more) with nothing written to your config; Share puts the same keyed endpoint on your tailnet in one click. Every detected GPU is listed and any can be picked. 34 validated recipes for NVIDIA and Intel Arc, two Docker containers only this plugin touches, and every refusal spelled out on the card.",

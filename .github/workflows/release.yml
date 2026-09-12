@@ -1,0 +1,28 @@
+name: release
+# A tag vX.Y.Z is a release: it must sit on main, the suite must pass, manifest.json must carry
+# the same version, and CHANGELOG.md must have that version's section, which becomes the notes.
+on:
+  push:
+    tags: ["v*"]
+permissions: {contents: write}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with: {fetch-depth: 0}
+      - name: tag is on main and matches the manifest
+        run: |
+          v=${GITHUB_REF_NAME#v}; m=$(jq -r .version manifest.json)
+          [[ $m == "$v" ]] || { echo "manifest.json says $m, tag says $v"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag is not on main"; exit 1; }
+      - name: tests
+        run: ./test/all
+      - name: notes from the changelog
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          awk -v v="$v" '/^## \[/{p=($0 ~ "\\["v"\\]")} p' CHANGELOG.md | tail -n +2 >notes.md
+          [[ -s notes.md ]] || { echo "no CHANGELOG section for $v"; exit 1; }
+      - name: publish
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
