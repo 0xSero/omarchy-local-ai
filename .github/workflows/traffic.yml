@@ -13,7 +13,7 @@ jobs:
         with: {ref: stats}
         continue-on-error: true
       - name: record
-        env: {GH_TOKEN: "${{ github.token }}"}
+        env: {GH_TOKEN: "${{ secrets.TRAFFIC_TOKEN }}"}   # traffic needs push access: a token of the owner, not the workflow token
         run: |
           set -e
           git config user.name traffic-bot; git config user.email traffic@users.noreply.github.com
