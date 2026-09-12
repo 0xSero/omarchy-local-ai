@@ -1,0 +1,27 @@
+name: traffic
+# GitHub keeps clone/view traffic for 14 days. This records it daily on the `stats` branch, so
+# installs (every `omarchy plugin add` is a clone) accumulate. Never touches main.
+on:
+  schedule: [{cron: "17 3 * * *"}]
+  workflow_dispatch:
+permissions: {contents: write}
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: stats}
+        continue-on-error: true
+      - name: record
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          set -e
+          git config user.name traffic-bot; git config user.email traffic@users.noreply.github.com
+          git checkout -B stats
+          mkdir -p traffic
+          gh api "repos/${GITHUB_REPOSITORY}/traffic/clones" >traffic/clones.$(date -u +%F).json
+          gh api "repos/${GITHUB_REPOSITORY}/traffic/views"  >traffic/views.$(date -u +%F).json
+          jq -s '[.[] | .clones[]] | group_by(.timestamp) | map({day: .[0].timestamp[:10], clones: (map(.count)|max), unique: (map(.uniques)|max)}) | sort_by(.day)' traffic/clones.*.json >traffic/clones-daily.json
+          jq '{days: length, clones: (map(.clones)|add), unique_cloners: (map(.unique)|add)}' traffic/clones-daily.json >traffic/summary.json
+          cat traffic/summary.json
+          git add traffic && git commit -qm "traffic $(date -u +%F)" && git push -q origin stats
