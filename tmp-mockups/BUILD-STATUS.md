@@ -1,9 +1,9 @@
 STATUS: done-push-pending
 BRANCH: panel-v5
 COMMITS:
-- 99b0f64 Panel v5: the command stack (state slab, orb, noun · datum rows, path stack)
-- (tip) BUILD-STATUS: done-push-pending, the status commit on top of 99b0f64
-TIP: see the line below, written after the status commit
+- 99b0f64 Panel v5: the command stack (state slab, orb, noun · datum rows, path stack)   (implementation: Panel.qml, lib/snapshot.sh, lib/runtime.sh, test/all, CHANGELOG.md)
+- a6853c4 BUILD-STATUS: done-push-pending
+- (tip) BUILD-STATUS: record the tip hash   (this file; the tip is `git rev-parse panel-v5`, three commits on main a85de0c)
 PR: not opened from this rig (gh not installed, deploy key not authorized); the orchestrator fetches panel-v5 and opens it
 NOTES:
 - rig: this machine is the Omarchy box, not a one-3090 rig: 2× RTX 3090 (24 GB) + 2× Intel Arc Pro B70 (32 GB), user in the docker group (direct mode), tailscale up. The aggregate path ran on real data (2× RTX 3090 · 48 GB total · 1 claimed · 1 idle).
