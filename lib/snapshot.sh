@@ -10,6 +10,39 @@
 # the gateway answers; else error when the ledger has one; else starting when they run but do
 # not answer yet; else idle. Reality outranks the message: a model that answers is ready even
 # when the last verb was refused (the error text still shows beside it).
+#
+# Snapshot 8 adds what the command-stack panel renders and nothing the old panel read has moved:
+#   cards      detected GPUs aggregated by identical product (2× RTX 3090 · 48 GB total), each with
+#              its recipe, how many of its cards the selected recipe claims, and how many stay idle
+#   recipes    one entry per detected card type that has a recipe, with onDisk and its card claim
+#   selected   the recipe for the chosen card, with the claims it makes on the card groups
+#   running    now also carries the recipe's name and `older` (a running recipe the file no longer has)
+#   port       the gateway port and whether something that is not ours listens on it
+#   stats      decode and prefill speed measured at acceptance, VRAM in use, tokens served by window
+#   registry*  registryCount and registryList: every hardware id the vendored file carries
+
+recipe_on_disk() { # recipe_on_disk <recipe-json> -> true|false: weights marked complete and, where docker answers, the image pulled
+  local r=$1
+  if weights_present "$r" && { ! docker_direct || docker image inspect "$(jq -r .launch.image <<<"$r")" >/dev/null 2>&1; }; then printf true; else printf false; fi
+}
+port_busy() { # a listener on the plugin's port that is not our gateway (asked only when nothing of ours answers)
+  command -v ss >/dev/null 2>&1 || return 1
+  [[ -n $(ss -Hltn "( sport = :$PORT )" 2>/dev/null) ]] || return 1
+  # our own gateway answers /health with a status object even when its engine is gone; anything else is foreign
+  curl -s --max-time 2 --max-filesize 4096 "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q '"status"' && return 1
+  return 0
+}
+USAGE_FILE_NAME=usage.jsonl
+usage_note() { # usage_note <prompt-tokens> <completion-tokens>: one line per request the plugin itself made through the gateway
+  state_dir; printf '{"t":%s,"prompt":%s,"completion":%s}\n' "$(date -u +%s)" "${1:-0}" "${2:-0}" >>"$STATE/$USAGE_FILE_NAME"
+}
+usage_windows() { # -> {hour,today,week}: completion tokens served through the gateway, summed per window
+  local f="$STATE/$USAGE_FILE_NAME" now; now=$(date -u +%s)
+  [[ -s $f ]] || { printf '{"hour":0,"today":0,"week":0}'; return; }
+  jq -sc --argjson now "$now" '[.[]|select(type=="object")] as $u
+    | {hour:([$u[]|select(.t>=$now-3600)|.completion]|add//0), today:([$u[]|select(.t>=$now-86400)|.completion]|add//0), week:([$u[]|select(.t>=$now-604800)|.completion]|add//0)}' "$f" 2>/dev/null \
+    || printf '{"hour":0,"today":0,"week":0}'
+}
 
 snapshot_write() {
   state_dir
@@ -41,22 +74,58 @@ snapshot_write() {
   else state=idle; fi
   # a running recipe that the vendored file no longer carries is still ours: say so instead of hiding it
   local running_known=true; [[ -n $running_recipe && $running_recipe != "$(jq -r '.id // ""' <<<"$rec")" ]] && running_known=false
-  local downloaded=false; [[ -n $rec ]] && weights_present "$rec" && { ! docker_direct || docker image inspect "$(jq -r .launch.image <<<"$rec")" >/dev/null 2>&1; } && downloaded=true
+  local downloaded=false; [[ -n $rec ]] && [[ $(recipe_on_disk "$rec") == true ]] && downloaded=true
   local gate=""; [[ -n $rec ]] && gate=$(gate_reason "$rec")
   local driver_min driver_have; driver_have=$(jq -r .driver <<<"$match"); driver_min=$(jq -r '.minDriver // ""' <<<"${rec:-null}")
   [[ -n $rec && -z $gate ]] && ! driver_ok "$driver_have" "$driver_min" && gate="needs NVIDIA driver $driver_min or newer (have ${driver_have:-none})"
+  # every recipe a detected card type has, with its disk state and the cards it claims (a recipe
+  # without a `cards` count claims one card of its own type)
+  local recs='[]' h r od
+  while IFS= read -r h; do
+    [[ -n $h ]] || continue
+    r=$(recipe_for "$h") || continue; [[ -n $r ]] || continue
+    od=$(recipe_on_disk "$r")
+    recs=$(jq -c --argjson r "$r" --arg h "$h" --argjson od "$od" '. + [{id:$r.id, name:$r.model.name, engine:$r.engine, sizeGb:($r.model.sizeGb//0),
+      ctxTokens:($r.serving.ctxTokens//0), onDisk:$od, hardwareId:$h, cards:($r.cards//1), claims:($r.claims // {($h):($r.cards//1)})}]' <<<"$recs")
+  done < <(jq -r '[.gpus[].hardwareId|select(.!="")]|unique[]' <<<"$match")
+  local pbusy=false; ! $engine_up && ! $answering && port_busy && pbusy=true
   jq -nc --argjson l "$ledger" --argjson rec "${rec:-null}" --argjson match "$match" --arg state "$state" --arg reason "$reason" --arg gate "$gate" \
     --arg hw "$hw_id" --arg served "$served" --arg rr "$running_recipe" --argjson known "$running_known" --argjson dl "$downloaded" \
-    --argjson agents "$(agents_json)" --argjson share "$(share_state)" --arg reg "$(registry_commit)" --arg t "$(now)" --arg note "$note" '
-    {schemaVersion:"omarchy-local-ai/snapshot/7", updatedAt:$t, state:$state, error:(if $l.error!="" then $l.error else $note end), lastStartSeconds:($l.lastStartSeconds//0),
-     operation:{name:$l.op.name, detail:$l.op.detail, percent:$l.op.percent, startedAt:$l.op.startedAt,
-       expectedSeconds:(if $l.op.name=="starting" then ($l.lastStartSeconds//0) else 0 end)},
-     hardwareId:$hw, registry:$reg, gpus:$match.gpus, gpuPinned:$match.pinned,
-     model:(if $rec==null then null else
-       {recipeId:$rec.id, name:$rec.model.name, servedName:(if $served!="" then $served else $rec.model.servedName end),
-        engine:$rec.engine, ctxTokens:$rec.serving.ctxTokens, tps:$rec.speed.tps, sizeGb:$rec.model.sizeGb, downloaded:$dl,
-        endpoint:("http://127.0.0.1:"+($ENV.OMARCHY_AI_PORT // "12434")+"/v1")} end),
-     reason:(if $gate!="" then ("recipe refused: "+$gate) elif $rec==null then $reason else "" end),
-     running:(if $rr=="" then null else {recipeId:$rr, current:$known} end),
-     apis:$l.accepted.apis, agents:$agents, share:$share}' >"$SNAPSHOT.tmp.$$" && mv "$SNAPSHOT.tmp.$$" "$SNAPSHOT"
+    --argjson agents "$(agents_json)" --argjson share "$(share_state)" --arg reg "$(registry_commit)" --arg t "$(now)" --arg note "$note" \
+    --argjson recs "$recs" --argjson pbusy "$pbusy" --argjson port "$PORT" --argjson usage "$(usage_windows)" \
+    --argjson reglist "$(jq -c '[.hardware|to_entries[]|{hardwareId:.key, card:((.value.match.name//.key)|gsub("^(NVIDIA GeForce |NVIDIA |GeForce |Intel |AMD Radeon |AMD )";"")), model:(.value.recipe.model.name//""), engine:(.value.recipe.engine//""), sizeGb:(.value.recipe.model.sizeGb//0)}]' "$RECIPES")" '
+    def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
+    ($recs | map(select(.id==($rec.id // ""))) | .[0]) as $sel
+    | ($match.gpus | group_by([.backend, .product, .vramGb]) | map(
+        (.[0]) as $g | length as $n | (if $sel==null then 0 else ($sel.claims[$g.hardwareId] // 0) end) as $need
+        | {hardwareId:$g.hardwareId, backend:$g.backend, product:$g.product, name:($g.product|short), vramGb:$g.vramGb, count:$n,
+           totalGb:(($g.vramGb//0)*$n), keys:map(.key), chosen:(map(.chosen)|any),
+           recipe:($recs|map(select(.hardwareId==$g.hardwareId))|.[0] // null),
+           claimed:([$need,$n]|min), idle:($n-([$need,$n]|min))})
+        | sort_by(-(.totalGb//0), .name)) as $cards
+    | (if $sel==null then 0 else ($cards|map(select(.hardwareId==$hw))|.[0].count // 0) end) as $have
+    | (if $gate!="" then ("recipe refused: "+$gate)
+       elif $rec==null then $reason
+       elif $sel!=null and $sel.cards > $have then ("recipe needs \($sel.cards) cards, \($have) detected")
+       elif $pbusy then ("port \($port) is in use by something else")
+       else "" end) as $why
+    | {schemaVersion:"omarchy-local-ai/snapshot/8", updatedAt:$t, state:$state, error:(if $l.error!="" then $l.error else $note end), lastStartSeconds:($l.lastStartSeconds//0),
+       operation:{name:$l.op.name, detail:$l.op.detail, percent:$l.op.percent, startedAt:$l.op.startedAt,
+         expectedSeconds:(if $l.op.name=="starting" then ($l.lastStartSeconds//0) else 0 end)},
+       hardwareId:$hw, registry:$reg, gpus:$match.gpus, gpuPinned:$match.pinned,
+       model:(if $rec==null then null else
+         {recipeId:$rec.id, name:$rec.model.name, servedName:(if $served!="" then $served else $rec.model.servedName end),
+          engine:$rec.engine, ctxTokens:$rec.serving.ctxTokens, tps:$rec.speed.tps, sizeGb:$rec.model.sizeGb, downloaded:$dl,
+          endpoint:("http://127.0.0.1:"+($port|tostring)+"/v1")} end),
+       reason:$why,
+       running:(if $rr=="" then null else {recipeId:$rr, current:$known, older:($known|not), name:(($recs|map(select(.id==$rr))|.[0].name) // $rr)} end),
+       apis:$l.accepted.apis, agents:$agents, share:$share,
+       cards:$cards, recipes:$recs,
+       selected:(if $sel==null then null else {recipeId:$sel.id, name:$sel.name, hardwareId:$sel.hardwareId, cards:$sel.cards, claims:$sel.claims, onDisk:$sel.onDisk, sizeGb:$sel.sizeGb} end),
+       port:{number:$port, busy:$pbusy},
+       stats:{decodeTps:($l.accepted.tps//0), prefillTps:($l.accepted.prefillTps//0), validatedTps:($rec.speed.tps//0),
+              vramUsedGb:(if $match.gpu==null or $match.gpu.usedMiB==null then null else (($match.gpu.usedMiB/1024*10|round)/10) end),
+              vramTotalGb:(if $match.gpu==null or $match.gpu.totalMiB==null then null else (($match.gpu.totalMiB/1024)+0.5|floor) end),
+              ctxTokens:($rec.serving.ctxTokens//0), tokens:$usage},
+       registryCount:($reglist|length), registryList:$reglist}' >"$SNAPSHOT.tmp.$$" && mv "$SNAPSHOT.tmp.$$" "$SNAPSHOT"
 }

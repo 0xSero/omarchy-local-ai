@@ -9,7 +9,7 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 export OMARCHY_AI_USER_HOME="$TMP/home" OMARCHY_AI_STATE="$TMP/state" OMARCHY_AI_RECIPES="$TMP/recipes.json" \
   OMARCHY_AI_MODEL_ROOT="$TMP/home/.cache/omarchy/local-ai/models" OMARCHY_AI_CACHE_ROOT="$TMP/home/.cache/omarchy/local-ai/cache" \
   OMARCHY_AI_HF_HOME="$TMP/home/.cache/huggingface" OMARCHY_AI_PORT=12434 OMARCHY_AI_POLL=0 OMARCHY_AI_TIMEOUT=5 \
-  OMARCHY_AI_FOREGROUND=1 OMARCHY_AI_NO_HOST_HF=1 OMARCHY_AI_DOCKER=direct SHIM="$TMP/shim" \
+  OMARCHY_AI_FOREGROUND=1 OMARCHY_AI_NO_HOST_HF=1 OMARCHY_AI_DOCKER=direct SHIM="$TMP/shim" OMARCHY_AI_DRI_PATH="$TMP/dri" \
   PATH="$TMP/bin:/usr/bin:/bin"   # shims plus the base system only; the developer's own agents must not leak in
 mkdir -p "$TMP/bin" "$TMP/home" "$SHIM"
 ln -s "$(PATH="$PATH:/opt/homebrew/bin:/usr/local/bin" command -v jq)" "$TMP/bin/jq"
@@ -113,6 +113,7 @@ echo "pkexec $*" >>"$SHIM/pkexec.log"
 args=(); for v in "${!SHIM_@}"; do args+=("$v=${!v}"); done
 exec env -i PATH="$PATH" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" SHIM="$SHIM" OMARCHY_AI_TEST_ROOT=1 SHIM_ROOT=1 PKEXEC_UID="${SHIM_PKEXEC_UID:-$(id -u)}" "${args[@]}" "$@"
 EOF
+printf '#!/usr/bin/env bash\n[[ ${SHIM_PORT_BUSY:-} == 1 ]] && echo "LISTEN 0 4096 127.0.0.1:12434 0.0.0.0:*"\nexit 0\n' >"$TMP/bin/ss"
 for tk in pacman nvidia-ctk systemctl; do printf '#!/usr/bin/env bash\necho "%s $*" >>"$SHIM/toolkit.log"\n' "$tk" >"$TMP/bin/$tk"; done
 for a in pi claude codex; do printf '#!/usr/bin/env bash\necho "$0 $* ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-} ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-} LOCAL_AI_KEY=${LOCAL_AI_KEY:-}"\n' >"$TMP/bin/$a"; done
 printf '#!/usr/bin/env bash\necho "launch $*"\n' >"$TMP/bin/omarchy-launch-tui"
@@ -265,6 +266,32 @@ export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n1, NVIDIA GeFo
 "$CLI" gpu auto >/dev/null; [[ $(snap '.gpus[1].chosen') == true && $(snap .hardwareId) == rtx-4090-24gb && $(snap .gpuPinned) == false ]] || fail "gpu auto"; pass "gpu auto returns to the largest card with a recipe"
 "$CLI" gpu bogus >/dev/null 2>&1 && fail "bad gpu key accepted"; pass "gpu refuses a malformed key"
 unset SHIM_GPUS
+
+# cards: identical GPUs aggregate into one group with a total; a recipe claims cards from its own group
+export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 300, 24264\n1, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n2, NVIDIA GeForce RTX 4090, 24564, 300, 24264'
+"$CLI" snapshot >/dev/null
+[[ $(snap '.cards|length') == 2 && $(snap '.cards[0].name') == "RTX 4090" && $(snap '.cards[0].count') == 2 && $(snap '.cards[0].totalGb') == 48 && $(snap '.cards[0].keys|join(",")') == "nvidia:0,nvidia:2" ]] || fail "aggregate" "$(snap .cards)"; pass "cards: two identical cards aggregate into one group with the total VRAM and both keys"
+[[ $(snap '.cards[0].claimed') == 1 && $(snap '.cards[0].idle') == 1 && $(snap '.cards[0].chosen') == true && $(snap '.cards[1].recipe') == null && $(snap '.cards[1].idle') == 1 ]] || fail "claims" "$(snap .cards)"; pass "cards: a one-card recipe claims one of the two, the other reads idle; a card without a recipe is all idle"
+[[ $(snap '.selected.recipeId') == good && $(snap '.selected.cards') == 1 && $(snap '.selected.claims["rtx-4090-24gb"]') == 1 && $(snap '.recipes|length') == 1 && $(snap '.recipes[0].onDisk') == true ]] || fail "selected" "$(snap .selected) $(snap .recipes)"; pass "selected names the recipe, its card claim, and the recipes list carries the disk state"
+write_recipes "$(recipe good true asset | jq '.cards=2')"; "$CLI" snapshot >/dev/null
+[[ $(snap '.cards[0].claimed') == 2 && $(snap '.cards[0].idle') == 0 && $(snap '.selected.cards') == 2 && $(snap .reason) == "" ]] || fail "two-card claim" "$(snap .cards)"; pass "cards: a two-card recipe claims both cards of its group"
+write_recipes "$(recipe good true asset | jq '.cards=3')"; "$CLI" snapshot >/dev/null
+[[ $(snap '.cards[0].claimed') == 2 && $(snap .reason) == *"needs 3 cards, 2 detected"* ]] || fail "short claim" "$(snap .reason)"; pass "cards: a recipe needing more cards than the group has is refused with the count"
+write_recipes "$(recipe good true asset)"; unset SHIM_GPUS
+
+# the port: something that is not ours listening there is a reason, not a mystery
+"$CLI" snapshot >/dev/null; [[ $(snap .port.number) == 12434 && $(snap .port.busy) == false ]] || fail "port free" "$(snap .port)"; pass "port: number and free"
+SHIM_PORT_BUSY=1 "$CLI" snapshot >/dev/null; [[ $(snap .port.busy) == true && $(snap .reason) == *"port 12434 is in use"* ]] || fail "port busy" "$(snap .port) $(snap .reason)"; pass "port: a foreign listener is reported as busy with the reason"
+"$CLI" snapshot >/dev/null
+
+# stats and the running identity
+"$CLI" load; [[ $(snap .state) == ready ]] || fail "ready for stats" "$(snap .error)"
+[[ $(snap .stats.decodeTps) -gt 0 && $(snap .stats.prefillTps) -gt 0 && $(snap .stats.validatedTps) == 60 && $(snap .stats.tokens.today) -gt 0 && $(snap .stats.tokens.week) -ge $(snap .stats.tokens.today) ]] || fail "stats" "$(snap .stats)"; pass "stats: decode and prefill speed measured at acceptance, tokens served counted by window"
+[[ $(snap .running.name) == "Test Model" && $(snap .running.older) == false && $(snap .running.current) == true ]] || fail "running identity" "$(snap .running)"; pass "running carries the recipe's name and is not older"
+write_recipes "$(recipe other true asset)"; "$CLI" snapshot >/dev/null
+[[ $(snap .running.older) == true && $(snap .running.name) == good ]] || fail "older" "$(snap .running)"; pass "a running recipe the file no longer carries is older, named by its id"
+write_recipes "$(recipe good true asset)"; "$CLI" unload
+[[ $(snap .registryCount) == 1 && $(snap '.registryList[0].hardwareId') == rtx-4090-24gb ]] || fail "registry list" "$(snap .registryList)"; pass "the registry list names every hardware id the file carries"
 
 # hf-cache recipes download into the cache, not a local dir
 write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI" load

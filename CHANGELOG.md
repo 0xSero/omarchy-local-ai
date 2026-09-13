@@ -2,6 +2,14 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `DESIGN.md`.
 
+## [Unreleased]
+
+### Changed
+- The card is a command stack: one recessed state slab (state, title, the orb) over rows of noun and datum. Drill-down is a path stack (`local ai / options / registry`); esc and back pop one level. Idle shows the claimed card group, the next action and an options count; ready shows the primary command, `runtime · 3 · stats live` and stop; agent, stats and share sit one level deeper. Every state breathes through the orb, and a download grows its lit radius.
+- Identical GPUs aggregate (`2× RTX 3090 · 48 GB total`); a recipe claims cards from its own group and the rest read idle. Recipes on disk say so and their action is `run`; a card reopened while a model runs opens in ready on the live recipe; a selection that differs from the running recipe offers `run · swap`; a running recipe the file no longer carries offers `update + restart`.
+- Stats behind `runtime / stats`: decode and prefill speed measured at acceptance, tokens served by hour, day or week, VRAM in use.
+- Snapshot 8 adds `cards`, `recipes`, `selected`, `port`, `stats`, `registryCount`, `registryList`, and `running.name` / `running.older`; nothing the old panel read has moved. A foreign listener on the gateway port is reported as a reason.
+
 ## [4.1.0] - 2026-09-12
 
 ### Changed

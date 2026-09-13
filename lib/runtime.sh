@@ -131,6 +131,7 @@ accept() {
   op starting "$id" "chat acceptance" 0
   reply=$(post chat/completions "$(jq -nc --arg m "$served" '{model:$m,stream:false,messages:[{role:"user",content:"Reply with exactly: LOCAL_AI_READY"}]}')") || { fail "chat completion failed"; return 1; }
   jq -e '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|contains("LOCAL_AI_READY")' >/dev/null <<<"$reply" || { fail "chat acceptance failed"; return 1; }
+  usage_note "$(jq -r '.usage.prompt_tokens // 0' <<<"$reply")" "$(jq -r '.usage.completion_tokens // 0' <<<"$reply")"
   # decode speed, coarsely: this exists to catch a CPU fallback (one or two tok/s), not to benchmark.
   # Engines do not all report usage (TabbyAPI does not), so tokens fall back to words written,
   # thinking included, at 1.3 tokens a word. Two runs, the better counts: the first is cold. The
@@ -144,6 +145,7 @@ accept() {
     toks=$(jq -r '.usage.completion_tokens // 0' <<<"$reply")
     (( toks > 0 )) || toks=$(jq -r '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|[splits("\\s+")|select(length>0)]|length|.*1.3|floor' <<<"$reply")
     tps=$(( toks * 1000000000 / (t1 - t0 + 1) )); (( tps > best )) && best=$tps
+    usage_note "$(jq -r '.usage.prompt_tokens // 0' <<<"$reply")" "$toks"
   done
   tps=$best
   # a reasoning model whose engine is not splitting: the closing think tag lands in the answer text,
@@ -153,6 +155,21 @@ accept() {
   floor=$(jq -r '[3, ((.speed.tps//0)/10|floor)]|max' <<<"$r")
   (( toks < 16 || tps >= floor )) || { fail "decode ${tps} tok/s is below the ${floor} tok/s floor: the GPU is not being used (driver too old for this image?)"; return 1; }
   apis='["chat"]'
+  # prefill speed, as coarsely: a long prompt with a one-word answer, timed whole, minus the decode
+  # share at the rate just measured. The panel's stats show it; nothing is gated on it.
+  op starting "$id" "prefill check" 0
+  local prefill=0 ptxt ptoks ctoks ns
+  ptxt=$(printf 'The quick brown fox jumps over the lazy dog near the quiet river bank at dawn. %.0s' {1..80})
+  t0=$(date +%s%N)
+  if reply=$(post chat/completions "$(jq -nc --arg m "$served" --arg p "$ptxt" '{model:$m,stream:false,messages:[{role:"user",content:($p+"\nReply with exactly: OK")}]}')"); then
+    t1=$(date +%s%N)
+    ptoks=$(jq -r '.usage.prompt_tokens // 0' <<<"$reply"); (( ptoks > 0 )) || ptoks=$(( ${#ptxt} / 4 ))
+    ctoks=$(jq -r '.usage.completion_tokens // 0' <<<"$reply")
+    (( ctoks > 0 )) || ctoks=$(jq -r '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|[splits("\\s+")|select(length>0)]|length|.*1.3|floor' <<<"$reply")
+    ns=$(( t1 - t0 )); (( tps > 0 )) && ns=$(( ns - ctoks * 1000000000 / tps )); (( ns < 1000000 )) && ns=1000000
+    prefill=$(( ptoks * 1000000000 / ns ))
+    usage_note "$ptoks" "$ctoks"
+  fi
   op starting "$id" "messages acceptance" 0
   # the shapes agents really send: a system prompt plus a prior turn (Messages), instructions plus a
   # developer item after the user (Responses); a template that refuses a late system message fails here
@@ -169,8 +186,8 @@ accept() {
     reply=$(post chat/completions "$(jq -nc --arg m "$served" --argjson t "$tools" '{model:$m,stream:false,tools:$t,tool_choice:"auto",messages:[{role:"user",content:"Use the shell tool to run: echo LOCAL_AI_TOOL_OK"}]}')") || { fail "tool-call request failed"; return 1; }
     jq -e '[(.choices[0].message.tool_calls//[])[]|select(.function.name=="shell" and ((.function.arguments//"")|contains("LOCAL_AI_TOOL_OK")))]|length>0' >/dev/null <<<"$reply" || { fail "tool-call acceptance failed"; return 1; }
   fi
-  lwrite '.accepted={recipeId:$r,servedModel:$s,registry:$g,apis:$a}' --arg r "$id" --arg s "$served" --arg g "$(registry_commit)" --argjson a "$apis"
-  log "accepted $id served=$served tps=$tps apis=$apis"
+  lwrite '.accepted={recipeId:$r,servedModel:$s,registry:$g,apis:$a,tps:($t|tonumber),prefillTps:($p|tonumber)}' --arg r "$id" --arg s "$served" --arg g "$(registry_commit)" --argjson a "$apis" --arg t "$tps" --arg p "$prefill"
+  log "accepted $id served=$served tps=$tps prefill=$prefill apis=$apis"
 }
 
 # start_percent: elapsed share of the last successful Start, capped so it never claims done.
