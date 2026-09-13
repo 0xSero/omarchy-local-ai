@@ -1,6 +1,9 @@
-STATUS: testing
+STATUS: done-push-pending
 BRANCH: panel-v5
-COMMITS: (pending)
+COMMITS:
+- 99b0f64 Panel v5: the command stack (state slab, orb, noun · datum rows, path stack)
+- (tip) BUILD-STATUS: done-push-pending, the status commit on top of 99b0f64
+TIP: see the line below, written after the status commit
 PR: not opened from this rig (gh not installed, deploy key not authorized); the orchestrator fetches panel-v5 and opens it
 NOTES:
 - rig: this machine is the Omarchy box, not a one-3090 rig: 2× RTX 3090 (24 GB) + 2× Intel Arc Pro B70 (32 GB), user in the docker group (direct mode), tailscale up. The aggregate path ran on real data (2× RTX 3090 · 48 GB total · 1 claimed · 1 idle).
