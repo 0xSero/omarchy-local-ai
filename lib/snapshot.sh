@@ -25,12 +25,17 @@ recipe_on_disk() { # recipe_on_disk <recipe-json> -> true|false: weights marked 
   local r=$1
   if weights_present "$r" && { ! docker_direct || docker image inspect "$(jq -r .launch.image <<<"$r")" >/dev/null 2>&1; }; then printf true; else printf false; fi
 }
-port_busy() { # a listener on the plugin's port that is not our gateway (asked only when nothing of ours answers)
-  command -v ss >/dev/null 2>&1 || return 1
-  [[ -n $(ss -Hltn "( sport = :$PORT )" 2>/dev/null) ]] || return 1
-  # our own gateway answers /health with a status object even when its engine is gone; anything else is foreign
-  curl -s --max-time 2 --max-filesize 4096 "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q '"status"' && return 1
-  return 0
+# port_listener -> none | gateway | other. A listener is found with ss, or, without ss, by a
+# connect probe (never assumed free). Our gateway is recognised by its exact refusal of an
+# unkeyed /v1/models: HTTP 401 with {"error":{"type":"authentication_error","message":"invalid or missing API key"}}.
+port_listener() {
+  local listening=false out code body
+  if command -v ss >/dev/null 2>&1; then [[ -n $(ss -Hltn "( sport = :$PORT )" 2>/dev/null) ]] && listening=true
+  else curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/" >/dev/null 2>&1; [[ $? != 7 ]] && listening=true; fi   # 7: connection refused
+  $listening || { printf none; return; }
+  out=$(curl -s --max-time 2 --max-filesize 4096 -w '\n%{http_code}' "http://127.0.0.1:$PORT/v1/models" 2>/dev/null || true)
+  code=${out##*$'\n'}; body=${out%$'\n'*}
+  if [[ $code == 401 ]] && jq -e '.error.type=="authentication_error" and .error.message=="invalid or missing API key"' <<<"$body" >/dev/null 2>&1; then printf gateway; else printf other; fi
 }
 USAGE_FILE_NAME=usage.jsonl
 usage_note() { # usage_note <prompt-tokens> <completion-tokens>: one line per request the plugin itself made through the gateway
@@ -72,8 +77,9 @@ snapshot_write() {
   elif [[ $(jq -r .error <<<"$ledger") != "" ]]; then state=error
   elif $engine_up; then state=error; note="the gateway is not answering; press Start or Stop"   # no worker is bringing it up
   else state=idle; fi
-  # a running recipe that the vendored file no longer carries is still ours: say so instead of hiding it
-  local running_known=true; [[ -n $running_recipe && $running_recipe != "$(jq -r '.id // ""' <<<"$rec")" ]] && running_known=false
+  # a running recipe the vendored file no longer carries (any card, recommended or alternate) is
+  # still ours: it is reported as older. Whether it matches the selection is a separate question.
+  local running_known=true; [[ -n $running_recipe ]] && ! recipe_known "$running_recipe" && running_known=false
   local downloaded=false; [[ -n $rec ]] && [[ $(recipe_on_disk "$rec") == true ]] && downloaded=true
   local gate=""; [[ -n $rec ]] && gate=$(gate_reason "$rec")
   local driver_min driver_have; driver_have=$(jq -r .driver <<<"$match"); driver_min=$(jq -r '.minDriver // ""' <<<"${rec:-null}")
@@ -86,19 +92,20 @@ snapshot_write() {
     all=$(recipes_for "$h")
     while IFS= read -r r; do
       [[ -n $r ]] || continue
-      od=$(recipe_on_disk "$r")
-      recs=$(jq -c --argjson r "$r" --arg h "$h" --argjson od "$od" --argjson n "$(jq 'length' <<<"$recs")" '. + [{id:$r.id, name:$r.model.name, engine:$r.engine, sizeGb:($r.model.sizeGb//0),
-        ctxTokens:($r.serving.ctxTokens//0), tools:($r.capabilities.tools//false), onDisk:$od, hardwareId:$h, cards:($r.cards//1), claims:($r.claims // {($h):($r.cards//1)}),
-        recommended:(($n|tostring) as $x | true)}]' <<<"$recs")
+      od=$(recipe_on_disk "$r"); local pb=0; [[ $od == false ]] && pb=$(weights_partial_bytes "$r")
+      recs=$(jq -c --argjson r "$r" --arg h "$h" --argjson od "$od" --argjson pb "${pb:-0}" '. + [{id:$r.id, name:$r.model.name, engine:$r.engine, sizeGb:($r.model.sizeGb//0),
+        ctxTokens:($r.serving.ctxTokens//0), tools:($r.capabilities.tools//false), onDisk:$od, partialBytes:$pb, hardwareId:$h, cards:($r.cards//1), claims:($r.claims // {($h):($r.cards//1)}),
+        recommended:true}]' <<<"$recs")
     done < <(jq -c '.[]' <<<"$all")
   done < <(jq -r '[.gpus[].hardwareId|select(.!="")]|unique[]' <<<"$match")
   # the first recipe of each card is the recommended one
   recs=$(jq -c 'reduce .[] as $r ([]; if any(.[]; .hardwareId==$r.hardwareId) then . + [$r + {recommended:false}] else . + [$r + {recommended:true}] end)' <<<"$recs")
-  local pbusy=false; ! $engine_up && ! $answering && port_busy && pbusy=true
+  local listener=none; ! $engine_up && ! $answering && listener=$(port_listener); local pbusy=false; [[ $listener == other ]] && pbusy=true
+  local claim='{"indexes":[],"backends":[],"short":""}'; [[ -n $rec ]] && claim=$(claimed_indexes "$rec" "$match")
   jq -nc --argjson l "$ledger" --argjson rec "${rec:-null}" --argjson match "$match" --arg state "$state" --arg reason "$reason" --arg gate "$gate" \
     --arg hw "$hw_id" --arg served "$served" --arg rr "$running_recipe" --argjson known "$running_known" --argjson dl "$downloaded" \
     --argjson agents "$(agents_json)" --argjson share "$(share_state)" --arg reg "$(registry_commit)" --arg t "$(now)" --arg note "$note" \
-    --argjson recs "$recs" --arg pick "$(recipe_pick)" --argjson pbusy "$pbusy" --argjson port "$PORT" --argjson usage "$(usage_windows)" \
+    --argjson recs "$recs" --arg pick "$(recipe_pick)" --argjson pbusy "$pbusy" --arg listener "$listener" --argjson claim "$claim" --argjson port "$PORT" --argjson usage "$(usage_windows)" \
     --argjson reglist "$(jq -c '[.hardware|to_entries[]|{hardwareId:.key, card:((.value.match.name//.key)|gsub("^(NVIDIA GeForce |NVIDIA |GeForce |Intel |AMD Radeon |AMD )";"")), model:(.value.recipe.model.name//""), engine:(.value.recipe.engine//""), sizeGb:(.value.recipe.model.sizeGb//0)}]' "$RECIPES")" '
     def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
     ($recs | map(select(.id==($rec.id // ""))) | .[0]) as $sel
@@ -109,10 +116,9 @@ snapshot_write() {
            recipe:($recs|map(select(.hardwareId==$g.hardwareId))|.[0] // null),
            claimed:([$need,$n]|min), idle:($n-([$need,$n]|min))})
         | sort_by(-(.totalGb//0), .name)) as $cards
-    | (if $sel==null then 0 else ($cards|map(select(.hardwareId==$hw))|.[0].count // 0) end) as $have
     | (if $gate!="" then ("recipe refused: "+$gate)
        elif $rec==null then $reason
-       elif $sel!=null and $sel.cards > $have then ("recipe needs \($sel.cards) cards, \($have) detected")
+       elif $claim.short != "" then $claim.short
        elif $pbusy then ("port \($port) is in use by something else")
        else "" end) as $why
     | {schemaVersion:"omarchy-local-ai/snapshot/8", updatedAt:$t, state:$state, error:(if $l.error!="" then $l.error else $note end), lastStartSeconds:($l.lastStartSeconds//0),
@@ -124,11 +130,12 @@ snapshot_write() {
           engine:$rec.engine, ctxTokens:$rec.serving.ctxTokens, tps:$rec.speed.tps, sizeGb:$rec.model.sizeGb, downloaded:$dl,
           endpoint:("http://127.0.0.1:"+($port|tostring)+"/v1")} end),
        reason:$why,
-       running:(if $rr=="" then null else {recipeId:$rr, current:$known, older:($known|not), name:(($recs|map(select(.id==$rr))|.[0].name) // $rr)} end),
+       running:(if $rr=="" then null else {recipeId:$rr, current:$known, older:($known|not), name:(($recs|map(select(.id==$rr))|.[0].name) // $rr),
+                cards:((($recs|map(select(.id==$rr))|.[0].cards) // 1))} end),
        apis:$l.accepted.apis, agents:$agents, share:$share,
        cards:$cards, recipes:$recs, recipePinned:($pick!=""),
-       selected:(if $sel==null then null else {recipeId:$sel.id, name:$sel.name, hardwareId:$sel.hardwareId, cards:$sel.cards, claims:$sel.claims, onDisk:$sel.onDisk, sizeGb:$sel.sizeGb} end),
-       port:{number:$port, busy:$pbusy},
+       selected:(if $sel==null then null else {recipeId:$sel.id, name:$sel.name, hardwareId:$sel.hardwareId, cards:$sel.cards, claims:$sel.claims, indexes:$claim.indexes, onDisk:$sel.onDisk, partialBytes:$sel.partialBytes, sizeGb:$sel.sizeGb} end),
+       port:{number:$port, busy:$pbusy, listener:$listener},
        stats:{decodeTps:($l.accepted.tps//0), prefillTps:($l.accepted.prefillTps//0), validatedTps:($rec.speed.tps//0),
               vramUsedGb:(if $match.gpu==null or $match.gpu.usedMiB==null then null else (($match.gpu.usedMiB/1024*10|round)/10) end),
               vramTotalGb:(if $match.gpu==null or $match.gpu.totalMiB==null then null else (($match.gpu.totalMiB/1024)+0.5|floor) end),

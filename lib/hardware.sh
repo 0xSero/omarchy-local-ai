@@ -14,14 +14,19 @@ hardware_json() {
   jq -nc --argjson n "$nvidia" --argjson i "$(intel_gpus)" --arg d "$driver" '{gpus:($n+$i),driver:$d}'
 }
 
-intel_gpus() { # Intel Arc Pro B70 by PCI id, only when a render node exists for it
+# Intel Arc Pro B70 (Battlemage G31, PCI 8086:e223), one entry per card that has a render node.
+# Matched by the PCI vendor:device id first: the marketing name only appears when the host's
+# pci.ids knows the part, and an older database prints "Device e223" instead, which used to make
+# the card vanish from the inventory.
+INTEL_B70_IDS='8086:e223'
+intel_gpus() {
   command -v lspci >/dev/null 2>&1 || { printf '[]'; return; }
   local dri="${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}" a idx=0 out='[]'
   while IFS= read -r a; do
     [[ -n $a && -e "$dri/pci-$a-render" ]] || continue
     out=$(jq -c --argjson i "$idx" '.+[{backend:"intel-xpu",index:$i,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null}]' <<<"$out")
     idx=$((idx+1))
-  done < <(lspci -Dnn 2>/dev/null | grep -i 'Arc Pro B70' | awk '{print $1}')
+  done < <(lspci -Dnn 2>/dev/null | grep -iE "\[($INTEL_B70_IDS)\]|Arc Pro B70|Battlemage G31" | awk '{print $1}' | sort -u)
   printf '%s' "$out"
 }
 

@@ -59,8 +59,10 @@ Panel {
   readonly property bool working: ["download", "starting", "unload", "share"].indexOf(state) >= 0
   // a setting verb in flight (gpu, recipe) guards against a second click but is not "working":
   // the surface must not flip, reset its path, or turn the next esc into a close
-  readonly property bool settling: pending && lastVerb !== "load" && lastVerb !== "unload" && lastVerb !== "share"
-  readonly property bool busy: working || (pending && !settling)
+  // (both read pending and lastVerb directly: a chained binding is re-evaluated in no fixed order
+  // inside one notification, and a stale intermediate flipped the surface to working)
+  readonly property bool settling: pending && ["load", "unload", "share"].indexOf(String(lastVerb)) < 0
+  readonly property bool busy: working || (pending && ["load", "unload", "share"].indexOf(String(lastVerb)) >= 0)
   property int elapsed: 0
   readonly property int expected: operation.expectedSeconds || 0
   readonly property int progress: operation.percent > 0 ? operation.percent
@@ -88,7 +90,8 @@ Panel {
   property string lastVerb: ""
   property bool actionDone: false
   property var next: null   // a second verb to run when the current one exits (pick a card, then a recipe)
-  function act(args) { if (busy || pending || action.running) return; lastVerb = args[0]; actionDone = false; pending = true; pendingTimeout.restart(); action.command = [cli].concat(args); action.running = true }
+  // a verb pressed while a setting verb is still running is queued behind it, never dropped
+  function act(args) { if (busy) return; if (action.running) { next = args; return } lastVerb = args[0]; actionDone = false; pending = true; pendingTimeout.restart(); action.command = [cli].concat(args); action.running = true }
   function take(json) {
     try { snap = JSON.parse(json); localError = ""; if (working || snap.error || (actionDone && lastVerb !== "load" && lastVerb !== "unload")) pending = false; tick() }
     catch (e) { if (json.trim() === "") { localError = "no answer"; pending = false } }
@@ -115,6 +118,7 @@ Panel {
   property int cursor: 0
   property string tokenWindow: "today"
   property bool copied: false
+  property int shareZone: 0   // on the share row: 0 = the toggle, 1 = the endpoint (reveal + copy)
   property string toast: ""
   function enterView(v) { if (view !== v) { var p = path.slice(); p.push(v); path = p } cursor = 0 }
   function leaveView() { if (path.length > 1) { var p = path.slice(); p.pop(); path = p } query = ""; cursor = 0 }
@@ -164,7 +168,7 @@ Panel {
   function stateCopy() { // [eyebrow, title, subtitle]
     var name = selected ? selected.name : (model ? model.name : "")
     var runName = running ? running.name : name
-    var n = selected ? selected.cards : 1
+    var n = running && running.cards ? running.cards : (selected ? selected.cards : 1)
     if (ui === "working") {
       if (pending && !working) return ["working", name || "Local AI", ""]
       var verb = { download: "download", starting: "starting", unload: "stop", share: "share" }[state] || state
@@ -182,6 +186,7 @@ Panel {
       var v = progress > 0 ? progress + "%" : (elapsed > 0 ? mmss(elapsed) + (expected > 0 ? " · " + mmss(expected) : "") : "…")
       r.push(row(verb, v, "", { type: "status" }))
       if (operation.detail && operation.detail !== "starting") r.push(row("step", operation.detail, ""))
+      if (state === "download" && !pending) r.push(row("stop", "keeps weights", "stop-download", { kind: "danger" }))
       return r
     }
     if (ui === "ready") {
@@ -203,7 +208,7 @@ Panel {
     var c = chosenCard(); var claimed = selected ? selected.cards : 1
     var groups = cards.slice().sort(function(a, b) { return (b.chosen ? 1 : 0) - (a.chosen ? 1 : 0) }).map(cardLabel)
     r.push(row(cardCount > 1 ? "cards" : "card", (claimed > 1 ? claimed + " claimed · " : "") + (groups.length ? groups.join(" · ") : "none") + " ›", "cards"))
-    if (selected) r.push(row(selected.onDisk ? "run" : "download + run", selected.onDisk ? "on disk" : gb(selected.sizeGb), "run", { kind: "primary" }))
+    if (selected) r.push(row(selected.onDisk ? "run" : "download + run", selected.name + " · " + (selected.onDisk ? "on disk" : (selected.partialBytes > 0 ? "resume · " + gb(selected.partialBytes / 1073741824) + " of " + gb(selected.sizeGb) : gb(selected.sizeGb))), "run", { kind: "primary" }))
     else r.push(row("run", "unavailable", "", { disabled: true }))
     r.push(row("options", "3 ›", "options"))
     return r
@@ -230,8 +235,13 @@ Panel {
       if (!list.length) r.push(row("recipe", "none"))
     } else if (view === "options") {
       r.push(row("recipe", (selected ? selected.name : "none") + " · " + recipes.length + " ›", "models"))
-      r.push(row("port", String(port)))
+      r.push(row("port", port + " ›", "port"))
       r.push(row("registry", registryList.length + " ›", "registry"))
+    } else if (view === "port") {
+      var lis = (snap.port && snap.port.listener) || "none"
+      r.push(row("port", String(port)))
+      r.push(row("listener", lis === "gateway" ? "ours" : lis, "", { urgent: lis === "other" }))
+      r.push(row("endpoint", "127.0.0.1:" + port + "/v1"))
     } else if (view === "registry") {
       r.push(row("search", "", "", { type: "search" }))
       var q = query.trim().toLowerCase(), n = 0, shown = 0
@@ -257,7 +267,7 @@ Panel {
     } else if (view === "share") {
       if (!share.available) r.push(row("share", "no tailscale", "", { disabled: true }))
       else if (!share.active) r.push(row("share", "off · return", "share-toggle", { kind: "primary" }))
-      else { r.push(row("share", "on", "share-toggle")); r.push(row("endpoint", (share.url || "").replace(/^https?:\/\//, "") + " · " + (copied ? "copied" : "copy"), "copy")) }
+      else r.push(row("share", "on", "share-toggle", { type: "share", extra: { address: (share.url || "").replace(/^https?:\/\//, ""), copy: copied ? "copied" : "copy" } }))
       if (share.active) r.push(row("key", tilde(share.keyFile || "")))
       if (share.error) r.push(row("share", share.error, "", { urgent: true, type: "text" }))
     } else if (view === "recovery") {
@@ -276,6 +286,7 @@ Panel {
     if (view === "recipes") return String(recipes.filter(function(x) { return x.hardwareId === cardSel }).length)
     if (view === "models") return String(recipes.length)
     if (view === "options") return "3"
+    if (view === "port") return "3"
     if (view === "registry") return String(registryList.length)
     if (view === "runtime") return "3"
     if (view === "agents") return String(agentList.length)
@@ -286,11 +297,11 @@ Panel {
   }
   function moveCursor(d) { if (!actionable.length) return; cursor = ((cursor + d) % actionable.length + actionable.length) % actionable.length }
   function cursorRow() { if (!actionable.length) return null; var i = actionable[Math.min(cursor, actionable.length - 1)]; return i === -2 ? { action: "back", type: "row" } : rows[i] }
-  function activateCursor() { var r = cursorRow(); if (r) activate(r.action) }
+  function activateCursor() { var r = cursorRow(); if (!r) return; if (r.type === "share" && shareZone === 1) activate("copy"); else activate(r.action) }
   function cycleWindow(d) { var w = ["hour", "today", "week"]; tokenWindow = w[((w.indexOf(tokenWindow) + d) % 3 + 3) % 3] }
   function activate(a) {
     var parts = a.split(":"), verb = parts[0]
-    if (verb === "cards" || verb === "options" || verb === "models" || verb === "registry" || verb === "runtime" || verb === "agents" || verb === "stats" || verb === "share" || verb === "recovery") enterView(verb)
+    if (verb === "cards" || verb === "options" || verb === "models" || verb === "port" || verb === "registry" || verb === "runtime" || verb === "agents" || verb === "stats" || verb === "share" || verb === "recovery") enterView(verb)
     else if (verb === "recipes") { cardSel = parts[1]; enterView("recipes") }
     else if (verb === "pick-card") { act(["gpu", parts[1]]); leaveView() }
     else if (verb === "pick-recipe") { // the recipe, and the card it belongs to when that is not the chosen one
@@ -301,8 +312,9 @@ Panel {
     else if (verb === "pick-agent") { agentPick = parts[1]; leaveView() }
     else if (verb === "run" || verb === "run-again" || verb === "swap" || verb === "update-restart") { if (localError) { refresh(); return } resetPath(); act(["load"]) }
     else if (verb === "stop") { resetPath(); act(["unload"]) }
+    else if (verb === "stop-download") { if (action.running) return; lastVerb = "unload"; actionDone = false; action.command = [cli, "unload"]; action.running = true }
     else if (verb === "share-toggle") act(["share"])
-    else if (verb === "copy") { copy.command = ["wl-copy", "--", (share.url || "")]; copy.running = true; copied = true; copiedTimer.restart() }
+    else if (verb === "copy") { if (copy.running) return; copy.command = ["bash", "-c", "command -v wl-copy >/dev/null 2>&1 || exit 127; printf %s \"$1\" | wl-copy", "_", (share.url || "")]; copy.running = true }
     else if (verb === "open-agent") openAgent()
     else if (verb === "window") cycleWindow(1)
     else if (verb === "log") { logOpen.running = true; toastSay("log · open") }
@@ -325,9 +337,9 @@ Panel {
   }
   // a setting verb (gpu, recipe, share) is done when its process exits: the card must not swallow
   // the next keypress while a snapshot is still on its way
-  Process { id: action; onExited: { if (root.next) { var n = root.next; root.next = null; root.lastVerb = n[0]; action.command = [root.cli].concat(n); action.running = true; return } root.actionDone = true; if (root.lastVerb !== "load" && root.lastVerb !== "unload") root.pending = false; root.refresh() } }
+  Process { id: action; onExited: { if (root.next) { var n = root.next; root.next = null; root.lastVerb = n[0]; root.pending = true; pendingTimeout.restart(); action.command = [root.cli].concat(n); action.running = true; return } root.actionDone = true; if (root.settling) root.pending = false; root.refresh() } }
   Process { id: agentLaunch; onExited: function(code) { root.refresh(); if (code === 0) root.close() } }
-  Process { id: copy }
+  Process { id: copy; onExited: function(code) { if (code === 0) { root.copied = true; copiedTimer.restart() } else root.toastSay(code === 127 ? "wl-copy · missing" : "copy · failed") } }
   Process { id: logOpen; command: ["omarchy-launch-tui", "--app-id=org.omarchy.local-ai-log", "less", "+G", root.stateDir + "/log"] }
   // Poll fast while something runs, whether or not the panel is open, so the bar icon starts and
   // stops moving with the operation; slow when idle. The file watch above makes this a backstop.
@@ -339,7 +351,9 @@ Panel {
 
   onOpenedChanged: { if (opened) { refresh(); if (!loaded && !busy) resetPath() } }
   // a state change under an open drill (download finished, model stopped) lands on the main surface
-  onUiChanged: { if (view !== "main" && (ui === "working" || ui === "error")) resetPath(); cursor = 0 }
+  // a state change under an open drill lands on the main surface, except the share toggle, which
+  // is an op of its own and keeps the person in the share view while the gateway restarts
+  onUiChanged: { if (view !== "main" && (ui === "error" || (ui === "working" && state !== "share" && lastVerb !== "share"))) resetPath(); cursor = 0 }
   onViewChanged: cursor = 0
 
   IpcHandler {
@@ -400,6 +414,7 @@ Panel {
         if (k === Qt.Key_Return || k === Qt.Key_Enter) { root.activateCursor(); event.accepted = true; return }
         var r = root.cursorRow()
         if ((k === Qt.Key_Left || k === Qt.Key_Right) && r && r.type === "tabs") { root.cycleWindow(k === Qt.Key_Right ? 1 : -1); event.accepted = true; return }
+        if ((k === Qt.Key_Left || k === Qt.Key_Right) && r && r.type === "share") { root.shareZone = k === Qt.Key_Right ? 1 : 0; event.accepted = true; return }
         if (root.view === "registry") { // the search field: typing filters, arrows still navigate
           if (k === Qt.Key_Backspace) { root.query = root.query.slice(0, -1); event.accepted = true; return }
           if (event.text && event.text.length === 1 && !(event.modifiers & Qt.ControlModifier) && event.text >= " ") { root.query += event.text; event.accepted = true; return }
@@ -524,11 +539,32 @@ Panel {
     readonly property bool primary: r.kind === "primary"
     readonly property color labelColor: r.disabled ? root.faint : primary ? root.popupBg : r.kind === "danger" ? root.urgent : r.urgent ? root.urgent : r.selected ? root.ink : root.fg
     readonly property color valueColor: r.disabled ? root.faint : primary ? root.popupBg : r.urgent ? root.urgent : r.selected ? root.fg : root.dim
-    implicitHeight: r.type === "status" ? Style.space(48) : r.type === "search" ? Style.space(34) : r.type === "tabs" ? Style.space(24) : r.type === "stat" ? Style.space(52) : r.type === "text" ? textBlock.implicitHeight + Style.space(16) : Style.space(38)
+    implicitHeight: r.type === "share" ? Style.space(42) : r.type === "status" ? Style.space(48) : r.type === "search" ? Style.space(34) : r.type === "tabs" ? Style.space(24) : r.type === "stat" ? Style.space(52) : r.type === "text" ? textBlock.implicitHeight + Style.space(16) : Style.space(38)
     Rectangle {
       anchors.fill: parent
-      visible: r.type !== "stat" && r.type !== "tabs"
+      visible: r.type !== "stat" && r.type !== "tabs" && r.type !== "share"
       color: r.type === "status" || r.type === "text" ? root.recessed : primary ? (hasCursor || mouse.containsMouse ? root.fg : root.ink) : r.selected ? root.selectedFill : (hasCursor || (mouse.containsMouse && actionable) || r.type === "search") ? root.hoverFill : root.restFill
+    }
+    // the share row: the toggle on the left, the endpoint on the right; one cursor item, two zones
+    Row {
+      visible: r.type === "share"; anchors.fill: parent; spacing: 1
+      Rectangle {
+        width: Style.space(84); height: parent.height
+        color: (hasCursor && root.shareZone === 0) || zoneA.containsMouse ? root.hoverFill : root.restFill
+        Text { anchors.left: parent.left; anchors.leftMargin: Style.space(10); anchors.verticalCenter: parent.verticalCenter; text: "share"; color: root.fg; font.family: root.mono; font.pixelSize: Style.font.body; textFormat: Text.PlainText }
+        Text { anchors.right: parent.right; anchors.rightMargin: Style.space(10); anchors.verticalCenter: parent.verticalCenter; text: r.value || ""; color: root.dim; font.family: root.mono; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
+        MouseArea { id: zoneA; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.activate(r.action) }
+      }
+      Rectangle {
+        width: parent.width - Style.space(84) - 1; height: parent.height
+        color: (hasCursor && root.shareZone === 1) || zoneB.containsMouse ? root.hoverFill : root.restFill
+        Column {
+          anchors.right: parent.right; anchors.rightMargin: Style.space(10); anchors.verticalCenter: parent.verticalCenter; spacing: 1
+          Text { anchors.right: parent.right; text: "endpoint"; color: root.faint; font.family: root.mono; font.pixelSize: Style.fontPx(0.75); textFormat: Text.PlainText }
+          Text { anchors.right: parent.right; text: (r.extra ? r.extra.address + " · " + r.extra.copy : ""); color: root.dim; font.family: root.mono; font.pixelSize: Style.font.caption; elide: Text.ElideLeft; width: Math.min(implicitWidth, parent.parent.width - Style.space(20)); textFormat: Text.PlainText }
+        }
+        MouseArea { id: zoneB; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.activate("copy") }
+      }
     }
     // the plain row: noun left, datum right
     Text {
@@ -591,7 +627,7 @@ Panel {
     }
     MouseArea {
       id: mouse
-      anchors.fill: parent; hoverEnabled: true; enabled: actionable && r.type !== "tabs"
+      anchors.fill: parent; hoverEnabled: true; enabled: actionable && r.type !== "tabs" && r.type !== "share"
       cursorShape: actionable ? Qt.PointingHandCursor : Qt.ArrowCursor
       onClicked: root.activate(r.action)
     }

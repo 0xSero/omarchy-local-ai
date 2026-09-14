@@ -34,7 +34,10 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
   local -a a=(docker run --detach --name "$ENGINE" --restart unless-stopped --network "$NET" --network-alias engine
     --label "$LABEL=1" --label "$LABEL.recipe=$id" --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=engine")
   if [[ $backend == nvidia ]]; then
-    a+=(--gpus "device=$(jq -r .gpuIndex <<<"$r")")
+    # docker's --gpus value is a csv: a list of devices must be quoted as one field, or "device=0,1"
+    # reads as device 0 plus count 1 ("cannot set both Count and DeviceIDs")
+    local ids; ids=$(jq -r '(.gpuIndexes // [.gpuIndex]) | map(tostring) | join(",")' <<<"$r")
+    if [[ $ids == *,* ]]; then a+=(--gpus "\"device=$ids\""); else a+=(--gpus "device=$ids"); fi
   else # Intel: render nodes only, resolved per device; no card* control nodes, no whole /dev/dri
     local -a nodes=()
     for v in "${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}"/*-render; do [[ -e $v ]] || continue; real=$(canon "$v"); nodes+=(--device "$real:$real"); done

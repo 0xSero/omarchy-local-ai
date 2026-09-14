@@ -44,8 +44,8 @@ case "$1" in
       [[ ${args[$i]} == --label ]] && labels+="${args[$((i+1))]}"$'\n'
       [[ ${args[$i]} == --entrypoint && ${args[$((i+1))]} == python3 ]] && role=download
     done
-    if [[ $role == download ]]; then # the weights downloader: write a fake file into the mounted dir
-      for ((i=0;i<${#args[@]};i++)); do [[ ${args[$i]} == --volume ]] && { src=${args[$((i+1))]%%:*}; mkdir -p "$src"; head -c 4096 /dev/zero >"$src/model.safetensors"; }; done
+    if [[ $role == download ]]; then # the weights downloader: write a fake file into the mounted dir (a partial one first when slow)
+      for ((i=0;i<${#args[@]};i++)); do [[ ${args[$i]} == --volume ]] && { src=${args[$((i+1))]%%:*}; mkdir -p "$src"; [[ -n ${SHIM_DOWNLOAD_SLOW:-} ]] && { head -c 1024 /dev/zero >"$src/model.safetensors"; sleep "$SHIM_DOWNLOAD_SLOW"; }; head -c 4096 /dev/zero >"$src/model.safetensors"; }; done
       [[ ${SHIM_DOWNLOAD_FAIL:-} == 1 ]] && exit 1; exit 0
     fi
     [[ ${SHIM_RUN_FAIL:-} == "$name" ]] && exit 125
@@ -72,7 +72,8 @@ cat >"$TMP/bin/curl" <<'EOF'
 # the gateway: healthy when the engine and gateway "containers" run; dialects from SHIM_APIS
 url=${@: -1}; data=""; auth=""; for ((i=1;i<=$#;i++)); do [[ ${!i} == -d ]] && { j=$((i+1)); data=${!j}; }; [[ ${!i} == -H ]] && { j=$((i+1)); h=${!j}; [[ $h == @* ]] && h=$(cat "${h#@}" 2>/dev/null); [[ $h == "Authorization: Bearer "* ]] && auth=${h#Authorization: Bearer }; }; done
 printf '%s\n' "$*" >>"$SHIM/curl.log"   # this shim's argv is what /proc/<pid>/cmdline would show
-[[ $auth == "$(cat "$SHIM/../state/gateway.key" 2>/dev/null)" || ${SHIM_KEYLESS_GATEWAY:-} == 1 ]] || exit 22   # the gateway refuses unkeyed requests; -f makes that exit 22
+if [[ $auth != "$(cat "$SHIM/../state/gateway.key" 2>/dev/null)" && ${SHIM_KEYLESS_GATEWAY:-} != 1 ]]; then   # the gateway refuses unkeyed requests; -f makes that exit 22
+  [[ $* == *'%{http_code}'* ]] && { [[ ${SHIM_FOREIGN_PORT:-} == 1 ]] && { printf 'hello\n200'; exit 0; }; printf '{"error":{"type":"authentication_error","message":"invalid or missing API key"}}\n401'; exit 0; }; exit 22; fi
 [[ $(cat "$SHIM/containers/omarchy-local-ai-engine/state" 2>/dev/null) == running && $(cat "$SHIM/containers/omarchy-local-ai-gateway/state" 2>/dev/null) == running ]] || exit 7
 apis=${SHIM_APIS:-chat,messages,responses}
 case $url in
@@ -112,6 +113,15 @@ echo "pkexec $*" >>"$SHIM/pkexec.log"
 # real pkexec starts from a clean environment: only what the plugin's env file carries reaches the root phase
 args=(); for v in "${!SHIM_@}"; do args+=("$v=${!v}"); done
 exec env -i PATH="$PATH" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" SHIM="$SHIM" OMARCHY_AI_TEST_ROOT=1 SHIM_ROOT=1 PKEXEC_UID="${SHIM_PKEXEC_UID:-$(id -u)}" "${args[@]}" "$@"
+EOF
+cat >"$TMP/bin/lspci" <<'EOF'
+#!/usr/bin/env bash
+# an lspci whose pci.ids is older than the card: the marketing name is missing, the id is not
+[[ -n ${SHIM_LSPCI:-} ]] || exit 0
+printf '0000:45:00.0 VGA compatible controller [0300]: ASPEED Technology, Inc. ASPEED Graphics Family [1a03:2000] (rev 41)\n'
+printf '0000:84:00.0 VGA compatible controller [0300]: Intel Corporation Device [8086:e223]\n'
+printf '0000:c3:00.0 VGA compatible controller [0300]: Intel Corporation Battlemage G31 [Arc Pro B70] [8086:e223]\n'
+printf '0000:c4:00.0 VGA compatible controller [0300]: Intel Corporation Device [8086:e223]\n'
 EOF
 printf '#!/usr/bin/env bash\n[[ ${SHIM_PORT_BUSY:-} == 1 ]] && echo "LISTEN 0 4096 127.0.0.1:12434 0.0.0.0:*"\nexit 0\n' >"$TMP/bin/ss"
 for tk in pacman nvidia-ctk systemctl; do printf '#!/usr/bin/env bash\necho "%s $*" >>"$SHIM/toolkit.log"\n' "$tk" >"$TMP/bin/$tk"; done
@@ -267,6 +277,14 @@ export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n1, NVIDIA GeFo
 "$CLI" gpu bogus >/dev/null 2>&1 && fail "bad gpu key accepted"; pass "gpu refuses a malformed key"
 unset SHIM_GPUS
 
+# Intel cards: found by PCI id even when pci.ids has no name for them, one per render node
+mkdir -p "$TMP/dri"; touch "$TMP/dri/pci-0000:84:00.0-render" "$TMP/dri/pci-0000:c3:00.0-render"   # c4 has no render node: not usable
+write_recipes "$(recipe b70 true asset | jq '.launch.mounts=[{source:"/dev/dri/by-path",target:"/dev/dri/by-path",read_only:true},{source:"${MODEL_ROOT}/test",target:"/models",read_only:true}]')" intel-arc-pro-b70-32gb
+jq '.hardware["intel-arc-pro-b70-32gb"].match={backend:"intel-xpu",vramGb:32,names:["arcprob70"],name:"Intel Arc Pro B70"}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
+SHIM_LSPCI=1 "$CLI" snapshot >/dev/null
+[[ $(snap '[.gpus[]|select(.backend=="intel-xpu")]|length') == 2 && $(snap '.cards[]|select(.backend=="intel-xpu")|.count') == 2 && $(snap '.cards[]|select(.backend=="intel-xpu")|.totalGb') == 64 && $(snap '.cards[]|select(.backend=="intel-xpu")|.recipe.id') == b70 ]] || fail "intel by id" "$(snap .gpus) $(snap .cards)"; pass "two Arc Pro B70 named only by PCI id (old pci.ids) are detected and aggregate as 2× Arc Pro B70 · 64 GB; a card without a render node is left out"
+rm -f "$TMP/dri"/*; write_recipes "$(recipe good true asset)"
+
 # cards: identical GPUs aggregate into one group with a total; a recipe claims cards from its own group
 export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 300, 24264\n1, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n2, NVIDIA GeForce RTX 4090, 24564, 300, 24264'
 "$CLI" snapshot >/dev/null
@@ -290,6 +308,8 @@ write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | j
 "$CLI" recipe alt-small >/dev/null; [[ $(snap .selected.recipeId) == alt-small && $(snap .model.name) == "Alt Small" && $(snap .recipePinned) == true ]] || fail "recipe pick" "$(snap .selected)"; pass "recipe <id> picks an alternate; model and selected follow it"
 "$CLI" load; [[ $(snap .state) == ready && $(snap .running.recipeId) == alt-small && $(snap '.recipes[1].onDisk') == true ]] || fail "alt runs" "$(snap .state) $(snap .error) $(snap .running)"; pass "load runs the picked recipe and marks it on disk"
 "$CLI" unload >/dev/null
+write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | jq '.model.name="Alt Small" | .model.sizeGb=0.000001')" "$(recipe good-tp2 true asset | jq '.cards=2 | .model.name="Test Model TP2"')"; "$CLI" snapshot >/dev/null
+[[ $(snap '.recipes[2].onDisk') == true && $(snap '.recipes[2].cards') == 2 ]] || fail "shared weights" "$(snap .recipes)"; pass "a variant that shares a downloaded model's weights at the same path is on disk without a download of its own"
 "$CLI" recipe bogus >/dev/null 2>&1 && fail "bad recipe id accepted"; "$CLI" recipe no-such-recipe >/dev/null 2>&1 && fail "unknown recipe accepted"; pass "recipe refuses ids the file does not carry"
 "$CLI" recipe auto >/dev/null; [[ $(snap .selected.recipeId) == good && $(snap .recipePinned) == false ]] || fail "recipe auto"; pass "recipe auto returns to the recommended one"
 "$CLI" recipe alt-small >/dev/null; write_recipes "$(recipe good true asset)" rtx-3090-24gb; export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3090, 24564, 300, 24264'; "$CLI" snapshot >/dev/null
@@ -298,8 +318,19 @@ unset SHIM_GPUS; "$CLI" recipe auto >/dev/null; write_recipes "$(recipe good tru
 
 # the port: something that is not ours listening there is a reason, not a mystery
 "$CLI" snapshot >/dev/null; [[ $(snap .port.number) == 12434 && $(snap .port.busy) == false ]] || fail "port free" "$(snap .port)"; pass "port: number and free"
-SHIM_PORT_BUSY=1 "$CLI" snapshot >/dev/null; [[ $(snap .port.busy) == true && $(snap .reason) == *"port 12434 is in use"* ]] || fail "port busy" "$(snap .port) $(snap .reason)"; pass "port: a foreign listener is reported as busy with the reason"
+SHIM_PORT_BUSY=1 SHIM_FOREIGN_PORT=1 "$CLI" snapshot >/dev/null; [[ $(snap .port.busy) == true && $(snap .port.listener) == other && $(snap .reason) == *"port 12434 is in use"* ]] || fail "port busy" "$(snap .port) $(snap .reason)"; pass "port: a foreign listener is reported as busy with the reason"
+SHIM_PORT_BUSY=1 "$CLI" snapshot >/dev/null; [[ $(snap .port.busy) == false && $(snap .port.listener) == gateway ]] || fail "port ours" "$(snap .port)"; pass "port: a listener that answers with the gateway's own 401 is ours, not busy"
 "$CLI" snapshot >/dev/null
+
+# every claimed card reaches docker; a claim across groups is validated per group
+export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 300, 24264\n1, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n2, NVIDIA GeForce RTX 4090, 24564, 300, 24264'
+write_recipes "$(recipe good true asset | jq '.cards=2')"; : >"$SHIM/docker.log"; "$CLI" load
+[[ $(snap .state) == ready && $(snap '.selected.indexes|join(",")') == "0,2" && $(snap .running.cards) == 2 ]] || fail "two-card run" "$(snap .state) $(snap .error) $(snap .selected)"; pass "a two-card recipe runs on both cards of its group"
+grep -q -- '--gpus "device=0,2"' "$SHIM/docker.log" || fail "gpus argv" "$(grep -- '--gpus' "$SHIM/docker.log" | head -1)"; pass "docker receives every claimed device index"
+"$CLI" unload >/dev/null
+write_recipes "$(recipe good true asset | jq '.claims={"rtx-4090-24gb":1,"rtx-3060-12gb":1}')"; "$CLI" snapshot >/dev/null
+[[ $(snap .reason) == *"needs 1 rtx-3060-12gb cards, 0 detected"* ]] || fail "claim per group" "$(snap .reason)"; pass "a claim on a card group with no recipe-matched card is refused per group"
+write_recipes "$(recipe good true asset)"; unset SHIM_GPUS
 
 # stats and the running identity
 "$CLI" load; [[ $(snap .state) == ready ]] || fail "ready for stats" "$(snap .error)"
@@ -307,6 +338,8 @@ SHIM_PORT_BUSY=1 "$CLI" snapshot >/dev/null; [[ $(snap .port.busy) == true && $(
 [[ $(snap .running.name) == "Test Model" && $(snap .running.older) == false && $(snap .running.current) == true ]] || fail "running identity" "$(snap .running)"; pass "running carries the recipe's name and is not older"
 write_recipes "$(recipe other true asset)"; "$CLI" snapshot >/dev/null
 [[ $(snap .running.older) == true && $(snap .running.name) == good ]] || fail "older" "$(snap .running)"; pass "a running recipe the file no longer carries is older, named by its id"
+write_recipes_alts "$(recipe other true asset)" "$(recipe good true asset)"; "$CLI" snapshot >/dev/null
+[[ $(snap .running.current) == true && $(snap .running.older) == false && $(snap .selected.recipeId) == other ]] || fail "membership" "$(snap .running) $(snap .selected)"; pass "a running recipe still in the file is current even when another one is selected (that is a swap, not older)"
 write_recipes "$(recipe good true asset)"; "$CLI" unload
 [[ $(snap .registryCount) == 1 && $(snap '.registryList[0].hardwareId') == rtx-4090-24gb ]] || fail "registry list" "$(snap .registryList)"; pass "the registry list names every hardware id the file carries"
 
@@ -393,6 +426,14 @@ export OMARCHY_AI_DOCKER=direct
 : >"$SHIM/toolkit.log"; "$CLI" unload >/dev/null; SHIM_RUNTIMES=runc "$CLI" load; grep -q "pacman" "$SHIM/toolkit.log" || fail "direct toolkit"; pass "direct mode: a missing toolkit is set up behind one prompt, then Start continues"
 "$CLI" load; [[ $(snap .state) == ready ]] || fail "recover" "$(snap .error)"
 
+# a download can be stopped; partial weights stay and the next load resumes
+"$CLI" unload >/dev/null; rm -f "$OMARCHY_AI_STATE/weights/good.json"; rm -rf "$OMARCHY_AI_MODEL_ROOT/test"
+OMARCHY_AI_FOREGROUND=0 SHIM_DOWNLOAD_SLOW=20 "$CLI" load; for ((i=0;i<100;i++)); do [[ $(snap .state) == download && -s $OMARCHY_AI_MODEL_ROOT/test/Test-Model/model.safetensors ]] && break; sleep 0.1; done
+[[ $(snap .state) == download ]] || fail "download in flight" "$(snap .state) $(snap .error)"
+"$CLI" unload; [[ $(snap .state) == idle && $(snap .error) == "" && $(snap .operation.name) == "" ]] || fail "cancel" "$(snap .state) '$(snap .error)' $(snap .operation)"; pass "unload during a download stops it cleanly: idle, no error"
+[[ -s $OMARCHY_AI_MODEL_ROOT/test/Test-Model/model.safetensors && ! -f $OMARCHY_AI_STATE/weights/good.json && $(snap .selected.partialBytes) -gt 0 && $(snap .selected.onDisk) == false ]] || fail "partial kept" "$(ls -la "$OMARCHY_AI_MODEL_ROOT/test/Test-Model" 2>&1) $(snap .selected)"; pass "partial weights stay on disk, unmarked, and the snapshot says how much is there"
+"$CLI" load; [[ $(snap .state) == ready && $(snap .selected.onDisk) == true ]] || fail "resume" "$(snap .state) $(snap .error)"; pass "the next load resumes and completes"
+
 # nothing can run without the recipe file, but the card still gets a sentence
 echo '{"broken":' >"$TMP/broken.json"; out=$(OMARCHY_AI_RECIPES="$TMP/broken.json" "$CLI" snapshot 2>/dev/null || true)
 [[ $(jq -r .state <<<"$out") == error && $(jq -r .error <<<"$out") == *"recipes.json"* ]] || fail "broken recipes" "$out"; pass "a broken recipes.json still prints an error state for the card"
@@ -404,7 +445,7 @@ SHIM_RUN_FAIL=omarchy-local-ai-engine OMARCHY_AI_MODEL_ROOT=/nonexistent-root/x 
 # failures during start are logged and rolled back
 SHIM_RUN_FAIL=omarchy-local-ai-engine "$CLI" load
 [[ $(snap .error) == *"engine failed to start"* || $(snap .error) == *"engine exited"* ]] || fail "start failure" "$(snap .state) $(snap .error)"
-[[ $(cat "$SHIM/containers/omarchy-local-ai-engine/state") == running && $(cat "$SHIM/containers/omarchy-local-ai-gateway/state") == running && ! -d $SHIM/containers/omarchy-local-ai-engine-previous ]] || fail "start failure rollback" "$(ls "$SHIM/containers")" pass "engine start failure is reported (the previous model restored when there was one)"
+[[ $(cat "$SHIM/containers/omarchy-local-ai-engine/state") == running && $(cat "$SHIM/containers/omarchy-local-ai-gateway/state") == running && ! -d $SHIM/containers/omarchy-local-ai-engine-previous ]] || fail "start failure rollback" "$(ls "$SHIM/containers")"; pass "engine start failure is reported (the previous model restored when there was one)"
 grep -q "rollback" "$OMARCHY_AI_STATE/log" || fail "logged"; pass "every worker step is in the log"
 
 echo "1..$n"

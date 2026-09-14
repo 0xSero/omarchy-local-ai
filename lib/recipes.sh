@@ -46,6 +46,23 @@ match_hardware() {
 RECIPE_PICK="$STATE/recipe-pick"
 recipe_pick() { printf '%s' "${OMARCHY_AI_RECIPE:-$(cat "$RECIPE_PICK" 2>/dev/null || true)}"; }
 recipes_for() { jq -c --arg h "$1" '[.hardware[$h] | select(.!=null) | (.recipe // empty), (.recipes[]? // empty)]' "$RECIPES"; }   # every recipe of a card, recommended first
+# claimed_indexes <recipe-json> <match-json> -> {"indexes":[..],"backends":[..],"short":""}: every card the
+# recipe claims (claims per hardware id, or `cards` of its own type), resolved to device indexes:
+# the chosen card first, then the other cards of that type in device order. `short` names the
+# first group that cannot be satisfied; a claim across backends cannot run in one container.
+claimed_indexes() {
+  jq -nc --argjson r "$1" --argjson m "$2" '
+    ($r.claims // {($m.hardwareId): ($r.cards // 1)}) as $claims
+    | ($claims | length) as $groups
+    | reduce ($claims | to_entries[]) as $c ({indexes:[], backends:[], short:""};
+        ([$m.gpus[] | select(.hardwareId == $c.key)] | sort_by(if .chosen then 0 else 1 end)) as $pool
+        | if ($pool|length) < $c.value then
+            .short = (if .short != "" then .short else "recipe needs \($c.value) \(if $groups > 1 then $c.key + " " else "" end)cards, \($pool|length) detected" end)
+          else .indexes += ($pool[:$c.value] | map(.index)) | .backends += ($pool[:$c.value] | map(.backend)) end)
+    | .backends |= unique
+    | if .short == "" and (.backends|length) > 1 then .short = "recipe claims cards of different backends" else . end'
+}
+recipe_known() { jq -e --arg id "$1" '[.hardware[] | .recipe.id, (.recipes[]?.id)] | index($id) != null' "$RECIPES" >/dev/null 2>&1; }   # the file carries this recipe id, for any card
 recipe_for() { jq -c --arg h "$1" --arg p "$(recipe_pick)" '.hardware[$h] as $c | if $c==null then empty else (([$c.recipes[]? | select(.id==$p)] | .[0]) // $c.recipe // empty) end' "$RECIPES"; }
 
 # gate_reason <recipe-json> -> one-line refusal on stdout; empty means launchable.

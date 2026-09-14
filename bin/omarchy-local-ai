@@ -54,6 +54,8 @@ current_recipe() { # the one recipe for this machine, gated; prints json or fail
   r=$(recipe_for "$id") || return 1
   r=$(jq -c --argjson m "$m" '. + {gpuIndex:$m.gpu.index, match:{backend:$m.gpu.backend}}' <<<"$r")
   gate=$(gate_reason "$r"); [[ -z $gate ]] || { fail "recipe refused: $gate"; return 1; }
+  local ci; ci=$(claimed_indexes "$r" "$m"); [[ $(jq -r .short <<<"$ci") == "" ]] || { fail "$(jq -r .short <<<"$ci")"; return 1; }
+  r=$(jq -c --argjson ci "$ci" '. + {gpuIndexes:$ci.indexes}' <<<"$r")
   driver_ok "$(jq -r .driver <<<"$m")" "$(jq -r '.minDriver // ""' <<<"$r")" \
     || { fail "needs NVIDIA driver $(jq -r .minDriver <<<"$r") or newer"; return 1; }
   printf '%s\n' "$r"
@@ -88,6 +90,8 @@ w_load() {
   if ! accept "$r" 2>"$STATE/accept.err"; then
     local why; why=$(sed -n '$s/^local-ai: //p' "$STATE/accept.err" 2>/dev/null); [[ -n $why ]] || why="engine failed to start (see $LOGFILE)"
     log "rollback: $why"; op starting "$id" "rolling back" 0
+    # the failed engine's own last lines, before rollback removes it: the reason lives there
+    if docker_direct; then { echo "--- engine log before rollback ($id)"; docker logs --tail 80 "$ENGINE" 2>&1 | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true; fi
     privileged restore >"$STATE/phase.out" 2>>"$LOGFILE" || why+="; the previous model could not be restored (see $LOGFILE)"
     oops "$why"
   fi
@@ -112,7 +116,7 @@ usage() {
   echo 'Usage: omarchy-local-ai <command>
   snapshot               refresh and print the state the panel renders
   load                   download if needed, then start the model for this GPU
-  unload                 stop the model; keep downloads
+  unload                 stop the model, or stop a running download (partial weights stay; the next load resumes)
   open-agent [name]      open an installed coding agent on the running model
   share [--key <value>]  toggle sharing on your tailnet, or replace the key
   agent-dir <path>       directory agents open in (default: where the shell started)
@@ -125,7 +129,9 @@ cmd=${1:-help}; shift || true
 case $cmd in
   snapshot) snapshot_write; cat "$SNAPSHOT" ;;
   load) [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1; spawn download _worker-load ;;
-  unload) [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1; spawn unload _worker-unload ;;
+  unload) p=$(busy_pid)
+          if [[ -n $p ]]; then [[ $(lread | jq -r .op.name) == download ]] || { fail "another operation is running"; exit 1; }; cancel_download "$p"
+          else spawn unload _worker-unload; fi ;;
   open-agent) snapshot_write; open_agent "${1:-}" 2>"$STATE/agent.err" || { m=$(sed -n '$s/^local-ai: //p' "$STATE/agent.err"); refuse "${m:-agent launch failed (see $LOGFILE)}"; exit 1; } ;;
   share) guard || exit 1; share_toggle "$@" ;;
   agent-args) [[ -n ${1:-} ]] && printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$1" || { fail "agent-args <agent> [-- flags...], one of: ${AGENTS[*]}"; exit 1; }; n=$1; shift; [[ ${1:-} == -- ]] && shift; mkdir -p "$STATE/agents/args"; if (( $# )); then printf '%s\0' "$@" >"$STATE/agents/args/$n"; else rm -f "$STATE/agents/args/$n"; fi; log "agent-args $n: $*" ;;

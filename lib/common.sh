@@ -96,6 +96,7 @@ guard() {
 # shows a reason instead of a stale "starting" or a silent idle. Also drops the mkdir lock.
 worker_exit() {
   local rc=$? p; p=$(lread | jq -r '.op.pid')
+  if [[ -f $STATE/cancel ]]; then [[ -n ${LOCKD:-} ]] && rm -rf "$LOCKD"; return 0; fi   # asked to stop: the canceller records the outcome
   if [[ $p == "$$" ]]; then
     log "error: worker exited unexpectedly (status $rc) during $(lread | jq -r '.op.name'): $(lread | jq -r '.op.detail')"
     lwrite '.error=$e | .op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0}' --arg e "stopped unexpectedly while $(lread | jq -r '.op.detail') (see $LOGFILE)"

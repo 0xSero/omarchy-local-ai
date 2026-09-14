@@ -17,10 +17,17 @@ weights_dest() { # weights_dest <recipe> -> "dir\t<path>" or "hf\t<hf-home>"
   printf 'hf\t%s\n' "$HF_HOME_DIR"
 }
 marker_path() { printf '%s/weights/%s.json\n' "$STATE" "$1"; }
-weights_present() { # weights_present <recipe> : marker matches repository+revision
-  local r=$1 m; m=$(marker_path "$(jq -r .id <<<"$r")")
-  [[ -f $m ]] && jq -e --arg repo "$(jq -r .model.repository <<<"$r")" --arg rev "$(jq -r .model.revision <<<"$r")" \
-    '.repository==$repo and .revision==$rev' "$m" >/dev/null 2>&1
+weights_present() { # weights_present <recipe> : a marker matches repository+revision, this recipe's own or one of a
+  # recipe that shares the same weights at the same path (a TP2 variant of the same model downloads nothing)
+  local r=$1 m repo rev kind base
+  repo=$(jq -r .model.repository <<<"$r"); rev=$(jq -r .model.revision <<<"$r"); m=$(marker_path "$(jq -r .id <<<"$r")")
+  [[ -f $m ]] && jq -e --arg repo "$repo" --arg rev "$rev" '.repository==$repo and .revision==$rev' "$m" >/dev/null 2>&1 && return 0
+  read -r kind base < <(weights_dest "$r")
+  for m in "$STATE"/weights/*.json; do
+    [[ -f $m ]] || continue
+    jq -e --arg repo "$repo" --arg rev "$rev" --arg k "$kind" --arg b "$base" '.repository==$repo and .revision==$rev and .kind==$k and .path==$b' "$m" >/dev/null 2>&1 && return 0
+  done
+  return 1
 }
 dir_bytes() { [[ -d $1 ]] && du -skL "$1" 2>/dev/null | awk '{print $1*1024}' || printf 0; }
 
@@ -54,6 +61,26 @@ weights_mark() { # weights_mark <recipe>: the completion marker, written by this
   local r=$1
   jq -nc --arg repo "$(jq -r .model.repository <<<"$r")" --arg rev "$(jq -r .model.revision <<<"$r")" --arg t "$(now)" --arg k "$WKIND" --arg b "$WBASE" \
     '{repository:$repo,revision:$rev,completedAt:$t,kind:$k,path:$b}' >"$(marker_path "$(jq -r .id <<<"$r")")"
+}
+weights_partial_bytes() { # weights_partial_bytes <recipe> -> bytes already on disk for a recipe that is not marked complete
+  local r=$1 kind base
+  read -r kind base < <(weights_dest "$r")
+  [[ $kind == hf ]] && base="$base/hub/models--$(jq -r '.model.repository' <<<"$r" | sed 's|/|--|g')"
+  dir_bytes "$base"
+}
+# cancel_download <worker-pid>: stop the download worker and everything it spawned; partial weights
+# stay where they are and the next load resumes (hf and the hub downloader both pick up what is
+# there). The cancel marker tells the worker's exit trap this was asked for, not a crash.
+cancel_download() {
+  local p=$1 i c
+  if ! docker_direct && ! host_hf >/dev/null; then refuse "the download runs behind the password prompt and cannot be stopped from here"; return 1; fi
+  state_dir; : >"$STATE/cancel"; log "cancel: stopping download worker $p"
+  kill -TERM -- "-$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null || true
+  for ((i=0; i<100; i++)); do kill -0 "$p" 2>/dev/null || break; sleep 0.1; done
+  kill -0 "$p" 2>/dev/null && { kill -KILL -- "-$p" 2>/dev/null || kill -KILL "$p" 2>/dev/null || true; sleep 0.2; }
+  if docker_direct; then for c in $(docker ps -q --filter "label=$LABEL.download=1" 2>/dev/null); do docker rm -f "$c" >/dev/null 2>&1 || true; done; fi
+  lwrite '.op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0} | .error=""'; rm -f "$STATE/cancel"
+  log "download stopped; partial weights kept"; snapshot_write
 }
 host_hf() { [[ -z ${OMARCHY_AI_NO_HOST_HF:-} ]] && bin_of hf 2>/dev/null; }
 
