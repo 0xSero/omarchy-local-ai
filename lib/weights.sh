@@ -21,13 +21,14 @@ weights_present() { # weights_present <recipe> : a marker matches repository+rev
   # recipe that shares the same weights at the same path (a TP2 variant of the same model downloads nothing)
   local r=$1 m repo rev kind base
   repo=$(jq -r .model.repository <<<"$r"); rev=$(jq -r .model.revision <<<"$r"); m=$(marker_path "$(jq -r .id <<<"$r")")
-  [[ -f $m ]] && jq -e --arg repo "$repo" --arg rev "$rev" '.repository==$repo and .revision==$rev' "$m" >/dev/null 2>&1 && return 0
   read -r kind base < <(weights_dest "$r")
-  for m in "$STATE"/weights/*.json; do
-    [[ -f $m ]] || continue
-    jq -e --arg repo "$repo" --arg rev "$rev" --arg k "$kind" --arg b "$base" '.repository==$repo and .revision==$rev and .kind==$k and .path==$b' "$m" >/dev/null 2>&1 && return 0
-  done
-  return 1
+  # every marker through one jq: the recipe's own marker matches on repository+revision alone,
+  # any other marker must also carry the recipe's kind and path (it says the same weights are there);
+  # if, not &&, so an unmatched entry leaves the group's status clean and pipefail reports only jq's verdict
+  { if [[ -f $m ]]; then jq -c --arg own true '{marker:$own, m:.}' "$m"; fi
+    for f in "$STATE"/weights/*.json; do if [[ -f $f && $f != "$m" ]]; then jq -c '{marker:"other", m:.}' "$f"; fi; done; } \
+    | jq -es 'map(.m) as $ms | $ms | any(.repository==$repo and .revision==$rev and ($own=="true" or (.kind==$k and .path==$b)))' \
+    --arg repo "$repo" --arg rev "$rev" --arg own "$( { [[ -f $m ]] && printf true || printf false; } )" --arg k "$kind" --arg b "$base" >/dev/null 2>/dev/null
 }
 dir_bytes() { [[ -d $1 ]] && du -skL "$1" 2>/dev/null | awk '{print $1*1024}' || printf 0; }
 

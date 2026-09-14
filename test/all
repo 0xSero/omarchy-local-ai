@@ -23,6 +23,10 @@ mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }   # GNU first; BSD s
 cat >"$TMP/bin/nvidia-smi" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
+  # the plugin asks one question now: rows that carry the driver version as a sixth column
+  *",driver_version"*)
+    if [[ -n ${SHIM_GPUS:-} ]]; then sed "s/$/ , ${SHIM_DRIVER:-580.65.06}/" <<<"$SHIM_GPUS"
+    else echo "0, NVIDIA GeForce RTX 4090, 24564, 300, 24264, ${SHIM_DRIVER:-580.65.06}"; fi ;;
   *driver_version*) echo "${SHIM_DRIVER:-580.65.06}" ;;
   *) if [[ -n ${SHIM_GPUS:-} ]]; then printf '%s\n' "$SHIM_GPUS"; else echo "0, NVIDIA GeForce RTX 4090, 24564, 300, 24264"; fi ;;
 esac

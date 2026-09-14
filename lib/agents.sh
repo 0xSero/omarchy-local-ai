@@ -18,15 +18,14 @@ agent_dialect() { # which gateway dialect an agent speaks
 }
 
 agents_json() { # -> {"default":"pi","installed":["pi",...],"launchable":[...]} against the accepted dialects
-  local a def="" installed='[]' launchable='[]' apis
-  apis=$(lread | jq -c '.accepted.apis')
-  for a in "${AGENTS[@]}"; do
-    bin_of "$a" >/dev/null 2>&1 || continue
-    installed=$(jq -c --arg a "$a" '.+[$a]' <<<"$installed")
-    jq -e --arg d "$(agent_dialect "$a")" 'index($d)!=null' <<<"$apis" >/dev/null && launchable=$(jq -c --arg a "$a" '.+[$a]' <<<"$launchable")
-  done
+  local apis def="" found=""
+  apis=$(lread | jq -c '.accepted.apis // []'); apis=${apis:-[]}
+  for a in "${AGENTS[@]}"; do bin_of "$a" >/dev/null 2>&1 && found+="$a "; done   # installed only; one jq pass below splits installed from launchable
   command -v omarchy-default-agent >/dev/null 2>&1 && def=$(omarchy-default-agent 2>/dev/null || true)
-  jq -nc --arg d "${def:-}" --argjson i "$installed" --argjson l "$launchable" '{default:$d,installed:$i,launchable:$l}'
+  jq -nc --arg found "$found" --arg d "${def:-}" --argjson apis "$apis" '
+    ($found|split(" ")|map(select(.!=""))) as $i
+    | {default:$d, installed:$i,
+       launchable:[$i[]|. as $a|select($apis|index((if $a=="claude" then "messages" elif $a=="codex" then "responses" else "chat" end))!=null)]}'
 }
 
 # agent_command <name> <served-model> <key-file> -> prints the argv (NUL-separated) to run in a terminal.
