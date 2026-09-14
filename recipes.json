@@ -950,7 +950,101 @@
         "weights": {
           "subdir": "Gemma-4-12B-it-EXL3-4bpw"
         }
-      }
+      },
+      "recipes": [
+        {
+          "capabilities": {
+            "chat": true,
+            "reasoning": false,
+            "tools": false,
+            "vision": false
+          },
+          "engine": "sglang",
+          "id": "lfm25-26b-bf16-rtx3090-sglang-tp1",
+          "image": {
+            "attestation": null,
+            "provenance": "upstream-published"
+          },
+          "launch": {
+            "arguments": [
+              "-m",
+              "sglang.launch_server",
+              "--model-path",
+              "LiquidAI/LFM2.5-2.6B",
+              "--revision",
+              "a334ee78cd38458bb71eda24109ac42dcec1309d",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "30000",
+              "--tp",
+              "1",
+              "--context-length",
+              "131072",
+              "--mem-fraction-static",
+              "0.90",
+              "--attention-backend",
+              "flashinfer",
+              "--max-running-requests",
+              "4",
+              "--cuda-graph-max-bs-decode",
+              "4",
+              "--enable-cache-report",
+              "--trust-remote-code",
+              "--reasoning-parser",
+              "qwen3-thinking",
+              "--tool-call-parser",
+              "lfm2"
+            ],
+            "capAdd": [],
+            "containerPort": 30000,
+            "entrypoint": "/opt/sglang/bin/python",
+            "environment": {
+              "HF_HOME": "/root/.cache/huggingface"
+            },
+            "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
+            "ipc": null,
+            "mounts": [
+              {
+                "read_only": false,
+                "source": "~/.cache/huggingface",
+                "target": "/root/.cache/huggingface"
+              }
+            ],
+            "networkMode": "bridge",
+            "securityOpt": [],
+            "shm": "16g"
+          },
+          "minDriver": "575.0",
+          "model": {
+            "id": "lfm2-5-2-6b",
+            "name": "LFM2.5-2.6B",
+            "precision": "BF16",
+            "repository": "LiquidAI/LFM2.5-2.6B",
+            "revision": "a334ee78cd38458bb71eda24109ac42dcec1309d",
+            "servedName": "LiquidAI/LFM2.5-2.6B",
+            "sizeGb": 5.024
+          },
+          "serving": {
+            "concurrency": 4,
+            "ctxTokens": 131072
+          },
+          "speed": {
+            "tps": 0
+          },
+          "validated": {
+            "acceptedAt": "2026-09-14T03:11:10Z",
+            "harness": "registry speed sweep lfm25-26b-bf16-rtx3090-sglang-tp1-sweep (status validated), then the plugin's own acceptance on the Omarchy box RTX 3090 (24 GB, driver 610.57.04): chat, messages and responses through the gateway, decode 112 tok/s, prefill 11850 tok/s",
+            "registryStatus": "validated",
+            "sweeps": [
+              "lfm25-26b-bf16-rtx3090-sglang-tp1-sweep"
+            ]
+          },
+          "weights": {
+            "subdir": ""
+          }
+        }
+      ]
     },
     "rtx-3090-ti-24gb": {
       "match": {

@@ -14,7 +14,7 @@
 # Snapshot 8 adds what the command-stack panel renders and nothing the old panel read has moved:
 #   cards      detected GPUs aggregated by identical product (2× RTX 3090 · 48 GB total), each with
 #              its recipe, how many of its cards the selected recipe claims, and how many stay idle
-#   recipes    one entry per detected card type that has a recipe, with onDisk and its card claim
+#   recipes    every validated recipe of every detected card type (recommended first), with onDisk and its card claim
 #   selected   the recipe for the chosen card, with the claims it makes on the card groups
 #   running    now also carries the recipe's name and `older` (a running recipe the file no longer has)
 #   port       the gateway port and whether something that is not ours listens on it
@@ -80,19 +80,25 @@ snapshot_write() {
   [[ -n $rec && -z $gate ]] && ! driver_ok "$driver_have" "$driver_min" && gate="needs NVIDIA driver $driver_min or newer (have ${driver_have:-none})"
   # every recipe a detected card type has, with its disk state and the cards it claims (a recipe
   # without a `cards` count claims one card of its own type)
-  local recs='[]' h r od
+  local recs='[]' h r od all
   while IFS= read -r h; do
     [[ -n $h ]] || continue
-    r=$(recipe_for "$h") || continue; [[ -n $r ]] || continue
-    od=$(recipe_on_disk "$r")
-    recs=$(jq -c --argjson r "$r" --arg h "$h" --argjson od "$od" '. + [{id:$r.id, name:$r.model.name, engine:$r.engine, sizeGb:($r.model.sizeGb//0),
-      ctxTokens:($r.serving.ctxTokens//0), onDisk:$od, hardwareId:$h, cards:($r.cards//1), claims:($r.claims // {($h):($r.cards//1)})}]' <<<"$recs")
+    all=$(recipes_for "$h")
+    while IFS= read -r r; do
+      [[ -n $r ]] || continue
+      od=$(recipe_on_disk "$r")
+      recs=$(jq -c --argjson r "$r" --arg h "$h" --argjson od "$od" --argjson n "$(jq 'length' <<<"$recs")" '. + [{id:$r.id, name:$r.model.name, engine:$r.engine, sizeGb:($r.model.sizeGb//0),
+        ctxTokens:($r.serving.ctxTokens//0), tools:($r.capabilities.tools//false), onDisk:$od, hardwareId:$h, cards:($r.cards//1), claims:($r.claims // {($h):($r.cards//1)}),
+        recommended:(($n|tostring) as $x | true)}]' <<<"$recs")
+    done < <(jq -c '.[]' <<<"$all")
   done < <(jq -r '[.gpus[].hardwareId|select(.!="")]|unique[]' <<<"$match")
+  # the first recipe of each card is the recommended one
+  recs=$(jq -c 'reduce .[] as $r ([]; if any(.[]; .hardwareId==$r.hardwareId) then . + [$r + {recommended:false}] else . + [$r + {recommended:true}] end)' <<<"$recs")
   local pbusy=false; ! $engine_up && ! $answering && port_busy && pbusy=true
   jq -nc --argjson l "$ledger" --argjson rec "${rec:-null}" --argjson match "$match" --arg state "$state" --arg reason "$reason" --arg gate "$gate" \
     --arg hw "$hw_id" --arg served "$served" --arg rr "$running_recipe" --argjson known "$running_known" --argjson dl "$downloaded" \
     --argjson agents "$(agents_json)" --argjson share "$(share_state)" --arg reg "$(registry_commit)" --arg t "$(now)" --arg note "$note" \
-    --argjson recs "$recs" --argjson pbusy "$pbusy" --argjson port "$PORT" --argjson usage "$(usage_windows)" \
+    --argjson recs "$recs" --arg pick "$(recipe_pick)" --argjson pbusy "$pbusy" --argjson port "$PORT" --argjson usage "$(usage_windows)" \
     --argjson reglist "$(jq -c '[.hardware|to_entries[]|{hardwareId:.key, card:((.value.match.name//.key)|gsub("^(NVIDIA GeForce |NVIDIA |GeForce |Intel |AMD Radeon |AMD )";"")), model:(.value.recipe.model.name//""), engine:(.value.recipe.engine//""), sizeGb:(.value.recipe.model.sizeGb//0)}]' "$RECIPES")" '
     def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
     ($recs | map(select(.id==($rec.id // ""))) | .[0]) as $sel
@@ -120,7 +126,7 @@ snapshot_write() {
        reason:$why,
        running:(if $rr=="" then null else {recipeId:$rr, current:$known, older:($known|not), name:(($recs|map(select(.id==$rr))|.[0].name) // $rr)} end),
        apis:$l.accepted.apis, agents:$agents, share:$share,
-       cards:$cards, recipes:$recs,
+       cards:$cards, recipes:$recs, recipePinned:($pick!=""),
        selected:(if $sel==null then null else {recipeId:$sel.id, name:$sel.name, hardwareId:$sel.hardwareId, cards:$sel.cards, claims:$sel.claims, onDisk:$sel.onDisk, sizeGb:$sel.sizeGb} end),
        port:{number:$port, busy:$pbusy},
        stats:{decodeTps:($l.accepted.tps//0), prefillTps:($l.accepted.prefillTps//0), validatedTps:($rec.speed.tps//0),

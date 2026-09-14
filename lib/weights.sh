@@ -41,7 +41,10 @@ weights_plan() { # weights_plan <recipe>: sets WKIND WBASE WEXP WPATTERN, makes 
   WEXP=$(jq -r '((.model.sizeGb//0)*1073741824)|floor' <<<"$r")
   read -r WKIND WBASE < <(weights_dest "$r")
   mkdir_shared "$WBASE"; state_dir; mkdir -p "$(dirname "$(marker_path "$(jq -r .id <<<"$r")")")"
-  local free bytes; free=$(df -Pk "$WBASE" 2>/dev/null | awk 'NR==2{print $4*1024}'); bytes=$(dir_bytes "$WBASE")
+  # in hub mode the base is the whole HF cache, shared with everything else on the machine: measure
+  # this repository's own cache directory, not the cache
+  WMEASURE=$WBASE; [[ $WKIND == hf ]] && WMEASURE="$WBASE/hub/models--$(jq -r '.model.repository' <<<"$r" | sed 's|/|--|g')"
+  local free bytes; free=$(df -Pk "$WBASE" 2>/dev/null | awk 'NR==2{print $4*1024}'); bytes=$(dir_bytes "$WMEASURE")
   if (( WEXP > 0 && ${free:-0} > 0 && free < WEXP - bytes )); then fail "need $(( (WEXP-bytes+1073741823)/1073741824 )) GB free under $WBASE"; return 1; fi
   # a GGUF recipe serves one file out of a repo full of quants: fetch only that file (and any mmproj)
   WPATTERN=""; served=$(jq -r .model.servedName <<<"$r"); [[ $served == *.gguf ]] && WPATTERN="${served##*/}"
@@ -64,7 +67,7 @@ download_host() {
   op download "$id" "downloading weights" 0; log "download: ${cmd[*]}"
   spawn_child "${cmd[@]}" >>"$LOGFILE" 2>&1; pid=$!
   while kill -0 "$pid" 2>/dev/null; do
-    bytes=$(dir_bytes "$WBASE")
+    bytes=$(dir_bytes "${WMEASURE:-$WBASE}")
     if (( WEXP > 0 )); then
       pct=$(( bytes*100/WEXP )); (( pct > 100 )) && pct=100
       detail="$((bytes/1073741824)) / $((WEXP/1073741824)) GB"

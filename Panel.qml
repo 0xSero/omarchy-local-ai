@@ -57,7 +57,10 @@ Panel {
   // it as busy so the click has an immediate effect instead of a dead second while the worker starts.
   property bool pending: false
   readonly property bool working: ["download", "starting", "unload", "share"].indexOf(state) >= 0
-  readonly property bool busy: working || pending
+  // a setting verb in flight (gpu, recipe) guards against a second click but is not "working":
+  // the surface must not flip, reset its path, or turn the next esc into a close
+  readonly property bool settling: pending && lastVerb !== "load" && lastVerb !== "unload" && lastVerb !== "share"
+  readonly property bool busy: working || (pending && !settling)
   property int elapsed: 0
   readonly property int expected: operation.expectedSeconds || 0
   readonly property int progress: operation.percent > 0 ? operation.percent
@@ -84,7 +87,8 @@ Panel {
   // for 20 seconds after a card pick or an agent launch.
   property string lastVerb: ""
   property bool actionDone: false
-  function act(args) { if (busy || action.running) return; lastVerb = args[0]; actionDone = false; pending = true; pendingTimeout.restart(); action.command = [cli].concat(args); action.running = true }
+  property var next: null   // a second verb to run when the current one exits (pick a card, then a recipe)
+  function act(args) { if (busy || pending || action.running) return; lastVerb = args[0]; actionDone = false; pending = true; pendingTimeout.restart(); action.command = [cli].concat(args); action.running = true }
   function take(json) {
     try { snap = JSON.parse(json); localError = ""; if (working || snap.error || (actionDone && lastVerb !== "load" && lastVerb !== "unload")) pending = false; tick() }
     catch (e) { if (json.trim() === "") { localError = "no answer"; pending = false } }
@@ -197,7 +201,8 @@ Panel {
     }
     // idle: state, the claimed card or card group, the next action, the options count
     var c = chosenCard(); var claimed = selected ? selected.cards : 1
-    r.push(row(claimed > 1 ? "cards" : "card", (claimed > 1 ? claimed + " claimed" : (c ? cardLabel(c) : "none")) + " ›", "cards"))
+    var groups = cards.slice().sort(function(a, b) { return (b.chosen ? 1 : 0) - (a.chosen ? 1 : 0) }).map(cardLabel)
+    r.push(row(cardCount > 1 ? "cards" : "card", (claimed > 1 ? claimed + " claimed · " : "") + (groups.length ? groups.join(" · ") : "none") + " ›", "cards"))
     if (selected) r.push(row(selected.onDisk ? "run" : "download + run", selected.onDisk ? "on disk" : gb(selected.sizeGb), "run", { kind: "primary" }))
     else r.push(row("run", "unavailable", "", { disabled: true }))
     r.push(row("options", "3 ›", "options"))
@@ -215,13 +220,16 @@ Panel {
       }
       if (!cards.length) r.push(row("card", "none"))
       if (snap.gpuPinned) r.push(row("auto", "largest card with a recipe", "pick-card:auto"))
-    } else if (view === "recipes") {
-      var card = cardByHw(cardSel); var list = card && card.recipe ? [card.recipe] : []
-      for (i = 0; i < list.length; i++) r.push(row(list[i].name, gb(list[i].sizeGb) + " · " + (list[i].onDisk ? "on disk" : "download") + " · cards: " + list[i].cards, "pick-recipe:" + list[i].hardwareId, { selected: !!selected && selected.recipeId === list[i].id }))
+    } else if (view === "recipes" || view === "models") {
+      var list = view === "recipes" ? recipes.filter(function(x) { return x.hardwareId === cardSel }) : recipes
+      for (i = 0; i < list.length; i++) {
+        var x = list[i], cg = cardByHw(x.hardwareId)
+        r.push(row(x.name, (view === "models" && cg ? cg.name + " · " : "") + gb(x.sizeGb) + " · " + (x.onDisk ? "on disk" : "download") + (x.cards > 1 ? " · cards: " + x.cards : ""),
+          "pick-recipe:" + x.hardwareId + ":" + x.id, { selected: !!selected && selected.recipeId === x.id }))
+      }
       if (!list.length) r.push(row("recipe", "none"))
     } else if (view === "options") {
-      var cc = chosenCard()
-      r.push(row("recipe", (selected ? selected.name : "none") + " ›", cc && cc.recipe ? "recipes:" + cc.hardwareId : "cards"))
+      r.push(row("recipe", (selected ? selected.name : "none") + " · " + recipes.length + " ›", "models"))
       r.push(row("port", String(port)))
       r.push(row("registry", registryList.length + " ›", "registry"))
     } else if (view === "registry") {
@@ -265,7 +273,8 @@ Panel {
   readonly property var actionable: rows.map(function(r, i) { return r.action && !r.disabled ? i : -1 }).filter(function(i) { return i >= 0 }).concat(view === "main" ? [] : [-2])   // -2: the back row
   function pickerCount() {
     if (view === "cards") return cardCount + " · " + cards.length + (cards.length === 1 ? " type" : " types")
-    if (view === "recipes") { var c = cardByHw(cardSel); return c && c.recipe ? "1" : "0" }
+    if (view === "recipes") return String(recipes.filter(function(x) { return x.hardwareId === cardSel }).length)
+    if (view === "models") return String(recipes.length)
     if (view === "options") return "3"
     if (view === "registry") return String(registryList.length)
     if (view === "runtime") return "3"
@@ -281,10 +290,14 @@ Panel {
   function cycleWindow(d) { var w = ["hour", "today", "week"]; tokenWindow = w[((w.indexOf(tokenWindow) + d) % 3 + 3) % 3] }
   function activate(a) {
     var parts = a.split(":"), verb = parts[0]
-    if (verb === "cards" || verb === "options" || verb === "registry" || verb === "runtime" || verb === "agents" || verb === "stats" || verb === "share" || verb === "recovery") enterView(verb)
+    if (verb === "cards" || verb === "options" || verb === "models" || verb === "registry" || verb === "runtime" || verb === "agents" || verb === "stats" || verb === "share" || verb === "recovery") enterView(verb)
     else if (verb === "recipes") { cardSel = parts[1]; enterView("recipes") }
     else if (verb === "pick-card") { act(["gpu", parts[1]]); leaveView() }
-    else if (verb === "pick-recipe") { var c = cardByHw(parts[1]); if (c && !c.chosen) act(["gpu", c.keys[0]]); leaveView() }
+    else if (verb === "pick-recipe") { // the recipe, and the card it belongs to when that is not the chosen one
+      var c = cardByHw(parts[1]); var pick = ["recipe", parts[2]]
+      if (c && !c.chosen) { next = pick; act(["gpu", c.keys[0]]) } else act(pick)
+      leaveView()
+    }
     else if (verb === "pick-agent") { agentPick = parts[1]; leaveView() }
     else if (verb === "run" || verb === "run-again" || verb === "swap" || verb === "update-restart") { if (localError) { refresh(); return } resetPath(); act(["load"]) }
     else if (verb === "stop") { resetPath(); act(["unload"]) }
@@ -310,7 +323,9 @@ Panel {
     command: [root.cli, "snapshot"]
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: { if (text.length <= 262144) root.take(text) } }
   }
-  Process { id: action; onExited: { root.actionDone = true; root.refresh() } }
+  // a setting verb (gpu, recipe, share) is done when its process exits: the card must not swallow
+  // the next keypress while a snapshot is still on its way
+  Process { id: action; onExited: { if (root.next) { var n = root.next; root.next = null; root.lastVerb = n[0]; action.command = [root.cli].concat(n); action.running = true; return } root.actionDone = true; if (root.lastVerb !== "load" && root.lastVerb !== "unload") root.pending = false; root.refresh() } }
   Process { id: agentLaunch; onExited: function(code) { root.refresh(); if (code === 0) root.close() } }
   Process { id: copy }
   Process { id: logOpen; command: ["omarchy-launch-tui", "--app-id=org.omarchy.local-ai-log", "less", "+G", root.stateDir + "/log"] }
@@ -464,9 +479,9 @@ Panel {
     id: orbCanvas
     width: Style.space(66); height: width
     readonly property int cells: 15
-    readonly property real fullRadius: cells / 2 * 0.86
-    readonly property real litRadius: root.ui === "working" && root.state === "download" ? 1.2 + fullRadius * Math.max(0, root.progress) / 100 : fullRadius
-    readonly property int period: root.ui === "working" ? 1800 : root.ui === "ready" ? 4400 : root.ui === "error" ? 3200 : 5800
+    readonly property real fullRadius: cells / 2 * 0.9                    // the lit circle stops short of the clip, so it reads round inside the field
+    readonly property real litRadius: root.ui === "working" && root.state === "download" ? 1.5 + (fullRadius - 1.5) * Math.max(0, root.progress) / 100 : fullRadius
+    readonly property int period: root.ui === "working" ? 1100 : root.ui === "ready" ? 2600 : root.ui === "error" ? 2000 : 3200
     readonly property color light: root.stateColor
     property real phase: 0
     NumberAnimation on phase { running: root.opened; loops: Animation.Infinite; from: 0; to: 1; duration: orbCanvas.period }
@@ -483,14 +498,16 @@ Panel {
         var x = col * px + gap / 2, y = row * px + gap / 2
         ctx.fillStyle = root.orbField
         ctx.beginPath(); ctx.roundedRect(x, y, side, side, corner, corner); ctx.fill()  // the solid field
-        var l = 0
-        if (d <= litRadius + 0.5) {
-          l = 0.92 * (1 - Math.pow(d / (litRadius + 0.5), 2) * 0.55)
-          if (d > litRadius - 0.5) l *= 0.5 + 0.5 * (litRadius + 0.5 - d)
+        // brightest at the centre, a mild quadratic falloff, then a wide band that fades to the
+        // field over the outer 2.6 cells: no hard edge, a soft round light inside the grid
+        var l = 0, edge = litRadius, band = Math.min(2.6, edge)
+        if (d < edge) {
+          l = 1 - Math.pow(d / edge, 2) * 0.4
+          var t = (edge - d) / band; if (t < 1) l *= t * t * (3 - 2 * t)
         }
-        if (l <= 0) continue
+        if (l <= 0.005) continue
         var delay = ((row * 3 + col * 2) % 15) / 15                                  // the shimmer runs across the field
-        var shimmer = 0.91 + 0.09 * Math.sin((phase + delay) * 2 * Math.PI)
+        var shimmer = 0.86 + 0.14 * Math.sin((phase + delay) * 2 * Math.PI)
         ctx.fillStyle = Qt.rgba(light.r, light.g, light.b, l * shimmer)
         ctx.beginPath(); ctx.roundedRect(x, y, side, side, corner, corner); ctx.fill()
       }

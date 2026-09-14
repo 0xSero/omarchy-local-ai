@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # omarchy:summary=Run the validated local model for this GPU and open coding agents on it
-# omarchy:args=<snapshot|load|unload|open-agent [name]|share [--key value]|agent-dir <path>>
+# omarchy:args=<snapshot|load|unload|open-agent [name]|share [--key value]|gpu [key]|recipe [id]|agent-dir <path>>
 #
 # Five verbs. `snapshot` is a pure read that rewrites the state file the panel watches. `load`
 # and `unload` spawn a worker that holds the op lock; everything they do is logged. `open-agent`
@@ -117,7 +117,8 @@ usage() {
   share [--key <value>]  toggle sharing on your tailnet, or replace the key
   agent-dir <path>       directory agents open in (default: where the shell started)
   agent-args <name> [-- flags]  extra flags for one agent when opened from the panel (none to clear)
-  gpu [auto|<backend:index>]  which detected card to use (snapshot lists them); auto = largest card with a recipe'
+  gpu [auto|<backend:index>]  which detected card to use (snapshot lists them); auto = largest card with a recipe
+  recipe [auto|<id>]     which of the validated recipes of the chosen card to run (snapshot lists them); auto = the recommended one'
 }
 
 cmd=${1:-help}; shift || true
@@ -133,6 +134,11 @@ case $cmd in
          *) [[ $1 =~ ^[a-z-]+:[0-9]+$ ]] || { fail "gpu <backend:index>, as listed in the snapshot"; exit 1; }
             state_dir; printf '%s' "$1" >"$STATE/gpu"; log "gpu $1" ;;
        esac; snapshot_write; jq -c '.gpus' "$SNAPSHOT" ;;
+  recipe) case ${1:-} in
+         ""|auto) rm -f "$STATE/recipe-pick"; log "recipe auto" ;;
+         *) [[ $1 =~ ^[a-z0-9][a-z0-9-]*$ ]] && jq -e --arg p "$1" '[.hardware[]|(.recipe.id), (.recipes[]?.id)]|index($p)!=null' "$RECIPES" >/dev/null 2>&1 || { fail "recipe <id>, as listed in the snapshot"; exit 1; }
+            state_dir; printf '%s' "$1" >"$STATE/recipe-pick"; log "recipe $1" ;;
+       esac; snapshot_write; jq -c '.recipes' "$SNAPSHOT" ;;
   agent-dir) [[ -d ${1:-} ]] && { (cd "$1" && pwd) >"$STATE/agent-dir"; log "agent-dir $1"; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;
   _root) # a phase run as root by pkexec (see lib/priv.sh); never spawned by anything but this script's own privileged().
          # Its environment comes from the user's 0600 file, OMARCHY_AI_* assignments only, then this script re-executes itself.

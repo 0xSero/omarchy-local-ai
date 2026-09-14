@@ -40,7 +40,13 @@ match_hardware() {
        gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // ""))}]}' "$RECIPES"
 }
 
-recipe_for() { jq -c --arg h "$1" '.hardware[$h].recipe // empty' "$RECIPES"; }
+# One card can carry more than one validated recipe: `.recipe` is the recommended one, `.recipes[]`
+# the alternates. `omarchy-local-ai recipe <id>` picks one; a pick that is not among the chosen
+# card's recipes is ignored (the card just changed), so the recommended one is the fallback.
+RECIPE_PICK="$STATE/recipe-pick"
+recipe_pick() { printf '%s' "${OMARCHY_AI_RECIPE:-$(cat "$RECIPE_PICK" 2>/dev/null || true)}"; }
+recipes_for() { jq -c --arg h "$1" '[.hardware[$h] | select(.!=null) | (.recipe // empty), (.recipes[]? // empty)]' "$RECIPES"; }   # every recipe of a card, recommended first
+recipe_for() { jq -c --arg h "$1" --arg p "$(recipe_pick)" '.hardware[$h] as $c | if $c==null then empty else (([$c.recipes[]? | select(.id==$p)] | .[0]) // $c.recipe // empty) end' "$RECIPES"; }
 
 # gate_reason <recipe-json> -> one-line refusal on stdout; empty means launchable.
 # Fail closed: anything malformed is refused. This is the trust boundary the marketplace reviewed.

@@ -279,6 +279,23 @@ write_recipes "$(recipe good true asset | jq '.cards=3')"; "$CLI" snapshot >/dev
 [[ $(snap '.cards[0].claimed') == 2 && $(snap .reason) == *"needs 3 cards, 2 detected"* ]] || fail "short claim" "$(snap .reason)"; pass "cards: a recipe needing more cards than the group has is refused with the count"
 write_recipes "$(recipe good true asset)"; unset SHIM_GPUS
 
+# more than one validated recipe per card: the recommended one runs unless one is picked
+write_recipes_alts() { # write_recipes_alts <recommended-json> <alt-json>...
+  local r=$1; shift; local alts='[]'; for a in "$@"; do alts=$(jq -c --argjson a "$a" '.+[$a]' <<<"$alts"); done
+  write_recipes "$r"; jq --argjson alts "$alts" '.hardware["rtx-4090-24gb"].recipes=$alts' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
+}
+write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | jq '.model.name="Alt Small" | .model.sizeGb=0.000001')"
+"$CLI" snapshot >/dev/null
+[[ $(snap '.recipes|length') == 2 && $(snap '.recipes[0].id') == good && $(snap '.recipes[0].recommended') == true && $(snap '.recipes[1].id') == alt-small && $(snap '.recipes[1].recommended') == false && $(snap .selected.recipeId) == good && $(snap .recipePinned) == false ]] || fail "alternates listed" "$(snap .recipes)"; pass "every validated recipe of a detected card is listed, the recommended one first and selected"
+"$CLI" recipe alt-small >/dev/null; [[ $(snap .selected.recipeId) == alt-small && $(snap .model.name) == "Alt Small" && $(snap .recipePinned) == true ]] || fail "recipe pick" "$(snap .selected)"; pass "recipe <id> picks an alternate; model and selected follow it"
+"$CLI" load; [[ $(snap .state) == ready && $(snap .running.recipeId) == alt-small && $(snap '.recipes[1].onDisk') == true ]] || fail "alt runs" "$(snap .state) $(snap .error) $(snap .running)"; pass "load runs the picked recipe and marks it on disk"
+"$CLI" unload >/dev/null
+"$CLI" recipe bogus >/dev/null 2>&1 && fail "bad recipe id accepted"; "$CLI" recipe no-such-recipe >/dev/null 2>&1 && fail "unknown recipe accepted"; pass "recipe refuses ids the file does not carry"
+"$CLI" recipe auto >/dev/null; [[ $(snap .selected.recipeId) == good && $(snap .recipePinned) == false ]] || fail "recipe auto"; pass "recipe auto returns to the recommended one"
+"$CLI" recipe alt-small >/dev/null; write_recipes "$(recipe good true asset)" rtx-3090-24gb; export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3090, 24564, 300, 24264'; "$CLI" snapshot >/dev/null
+[[ $(snap .selected.recipeId) == good ]] || fail "pick of another card ignored" "$(snap .selected)"; pass "a pick that is not among the chosen card's recipes falls back to the recommended one"
+unset SHIM_GPUS; "$CLI" recipe auto >/dev/null; write_recipes "$(recipe good true asset)"
+
 # the port: something that is not ours listening there is a reason, not a mystery
 "$CLI" snapshot >/dev/null; [[ $(snap .port.number) == 12434 && $(snap .port.busy) == false ]] || fail "port free" "$(snap .port)"; pass "port: number and free"
 SHIM_PORT_BUSY=1 "$CLI" snapshot >/dev/null; [[ $(snap .port.busy) == true && $(snap .reason) == *"port 12434 is in use"* ]] || fail "port busy" "$(snap .port) $(snap .reason)"; pass "port: a foreign listener is reported as busy with the reason"
