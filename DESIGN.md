@@ -84,6 +84,15 @@ Per hardware id: `match {backend, vramGb, names[]}` and `recipe`:
   shm, ipc, networkMode, capAdd, securityOpt}`
 - `validated {harness, acceptedAt}`
 
+The file is the floor, not the ceiling: `recipes update` (and the card's
+registry view, and a six-hourly background check from `snapshot`) fetches the
+registry repository's copy over HTTPS from one fixed origin, size-capped,
+schema-checked, accepted only when its `generatedAt` is newer than the file
+in use, kept 0600 under the state dir, and used in place of the vendored one.
+Every recipe is still gated at launch, so a fetched file can add validated
+recipes but never widen what a launch may do. `OMARCHY_AI_RECIPES_URL=`
+turns the fetch off; `OMARCHY_AI_RECIPES` names a file and turns it off too.
+
 Mount sources are one of: `${MODEL_ROOT}/<dir>` (plugin downloads the
 instance there, read-only into the container), `~/.cache/huggingface` (the
 engine fetches into the shared HF cache), `asset/<file>` (registry asset,
@@ -116,8 +125,14 @@ a string. Nothing derived lives in the ledger.
 ### 3. Runtime
 - 3a Weights: the plugin downloads for every recipe (`hf download` into
   `${MODEL_ROOT}/<dir>/<subdir>` or into the HF cache), writes a marker with
-  the revision after a verified download; presence is the marker, not a byte
-  heuristic. Containers never download.
+  the revision after a verified download; presence is the marker plus the
+  bytes it promises (a marker that outlives a deleted directory is dropped and
+  the fetch repeats). Before a download the plugin looks for the weights on
+  the machine (`~/models`, its own model root, the HF cache, `~/.cache/llama.cpp`,
+  `OMARCHY_AI_WEIGHTS_PATHS`), verifies every file against the Hub's tree of
+  the pinned revision (size, then SHA-256 or blob id), and adopts a match by
+  reflink into the layout the engine expects (the recipe's directory, or HF
+  cache blobs plus snapshot links). Containers never download.
 - 3b Driver gate: `recipe.minDriver` in the export (from the image's
   `NVIDIA_REQUIRE_CUDA`), checked against `nvidia-smi` before launch.
 - 3c Assets: config assets are exported inline (base64) in `recipes.json`
@@ -155,10 +170,14 @@ container; running agent sessions lose their endpoint and say so. The
 agent selector lists installed agents whose API dialect the running engine
 serves (see open item 5a).
 
-### 5a. One gateway, always, for every engine (agreed 2026-09-03)
-Every launch is two owned containers: the engine on an internal port and
-the **gateway** on the plugin's port (127.0.0.1:12434), from a tiny attested
-image in `local-ai-images`. The gateway serves OpenAI chat completions,
+### 5a. One gateway, always, for every engine (agreed 2026-09-03; one pair per model since 5.0)
+Every running model is two owned containers: the engine on a private network
+of its own and the **gateway** on 127.0.0.1:<port> (12434 for the first
+model, the next free port for each further one), from a tiny attested image
+in `local-ai-images`. The ledger's `slots` map (recipe id → port, network,
+container names, cards claimed, acceptance) is the list of running models; a
+Start replaces only the slots holding the cards it claims and sets them aside
+until acceptance, so models on other cards keep running. The gateway serves OpenAI chat completions,
 Anthropic Messages, and OpenAI Responses and translates all of them,
 including tool calls and streaming, to the engine's chat completions. It
 runs for every engine, no per-engine special cases, so every agent and the
@@ -207,8 +226,15 @@ it; the key stays for next time. (revised 2026-09-03 evening)
 workers. Workers log to `$STATE/log`.
 
 ### 7. Panel
-Unchanged in shape. Add the "no model for this card" reason and the driver
-refusal text. Poll less: snapshot is cheap once it is a pure read.
+Since 5.0 the card is a tree of three places, home › card › model, with work
+(download, start, stop, share) and error taking the card over in between. The
+tree, every word on it, and every state side by side were designed first
+(2026-09-15) and the QML follows that gallery. `ui.js` turns the snapshot plus
+the navigation state into header, path, rows and a pinned footer as plain
+data; `Panel.qml` draws it and runs the verbs; `CardRow.qml` is the one row
+component, `Orb.qml` the state orb. Rows are one line (a noun and a datum),
+with a second line only for a card type's cells. The card has a 720 px ceiling:
+the list scrolls, the header, path and footer stay.
 
 ### 8. Repo hygiene
 Bash + QML as before; the same isolated shim tests; `make sync` pulls

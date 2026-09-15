@@ -17,6 +17,7 @@ n=0
 pass() { n=$((n+1)); echo "ok $n - $1"; }
 fail() { echo "not ok - $1${2:+: $2}" >&2; exit 1; }
 snap() { jq -r "$1" "$OMARCHY_AI_STATE/snapshot.json"; }
+sha_of_file() { { command -v sha256sum >/dev/null 2>&1 && sha256sum -- "$1" || shasum -a 256 -- "$1"; } | cut -c1-64; }
 mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }   # GNU first; BSD stat has no -c (and GNU stat -f prints instead of failing)
 
 # ---------------------------------------------------------------- shims
@@ -37,10 +38,16 @@ cat >"$TMP/bin/docker" <<'EOF'
 echo "docker $*" >>"$SHIM/docker.log"
 [[ ${OMARCHY_AI_DOCKER:-} == prompt && ${SHIM_ROOT:-} != 1 ]] && { echo "permission denied while trying to connect to the Docker daemon socket" >&2; exit 1; }   # not in the docker group
 case "$1" in
-  network) [[ $2 == inspect ]] && { [[ -f $SHIM/net ]] && { echo 1; exit 0; } || exit 1; }; [[ $2 == create ]] && touch "$SHIM/net"; exit 0 ;;
+  network) nn=${@: -1}; case $2 in inspect) [[ -f $SHIM/net-$nn ]] && { echo 1; exit 0; } || exit 1 ;; create) touch "$SHIM/net-$nn" ;; rm) rm -f "$SHIM/net-$nn" ;; esac; exit 0 ;;
+  ps) for d in "$SHIM"/containers/*/; do [[ -d $d ]] || continue; n=${d%/}; n=${n##*/}; grep -q "^io.omarchy.local-ai=1" "$d/labels" 2>/dev/null && echo "$n"; done; exit 0 ;;
   image) [[ $2 == inspect ]] && { grep -qxF "$3" "$SHIM/images" 2>/dev/null; exit $?; }; exit 0 ;;
   info) [[ -n ${SHIM_DOCKER_DOWN:-} ]] && { echo "$SHIM_DOCKER_DOWN" >&2; exit 1; }; echo "Runtimes: io.containerd.runc.v2 ${SHIM_RUNTIMES:-nvidia} runc"; exit 0 ;;
-  pull) [[ ${SHIM_PULL_FAIL:-} == 1 ]] && { echo "${SHIM_PULL_ERR:-error pulling image configuration: no space left on device}" >&2; exit 1; }; echo "$2" >>"$SHIM/images"; exit 0 ;;
+  pull) [[ ${SHIM_PULL_FAIL:-} == 1 ]] && { echo "${SHIM_PULL_ERR:-error pulling image configuration: no space left on device}" >&2; exit 1; }
+    if [[ -n ${SHIM_PULL_SLOW:-} ]]; then   # docker's own progress lines, at the pace of a real pull
+      echo "layer1: Downloading [>          ]  1.0MB/4.0MB"; sleep "$SHIM_PULL_SLOW"
+      echo "layer1: Downloading [========>    ]  3.0MB/4.0MB"; sleep "$SHIM_PULL_SLOW"
+    fi
+    echo "$2" >>"$SHIM/images"; exit 0 ;;
   run)
     name=""; labels=""; role=""; args=("$@")
     for ((i=0;i<${#args[@]};i++)); do
@@ -49,21 +56,27 @@ case "$1" in
       [[ ${args[$i]} == --entrypoint && ${args[$((i+1))]} == python3 ]] && role=download
     done
     if [[ $role == download ]]; then # the weights downloader: write a fake file into the mounted dir (a partial one first when slow)
-      for ((i=0;i<${#args[@]};i++)); do [[ ${args[$i]} == --volume ]] && { src=${args[$((i+1))]%%:*}; mkdir -p "$src"; [[ -n ${SHIM_DOWNLOAD_SLOW:-} ]] && { head -c 1024 /dev/zero >"$src/model.safetensors"; sleep "$SHIM_DOWNLOAD_SLOW"; }; head -c 4096 /dev/zero >"$src/model.safetensors"; }; done
+      fname=model.safetensors; for a in "${args[@]}"; do [[ $a == HF_PATTERN=* ]] && fname=${a#HF_PATTERN=}; done   # a GGUF recipe fetches its one file
+      for ((i=0;i<${#args[@]};i++)); do [[ ${args[$i]} == --volume ]] && { src=${args[$((i+1))]%%:*}; mkdir -p "$src"; [[ -n ${SHIM_DOWNLOAD_SLOW:-} ]] && { head -c 1024 /dev/zero >"$src/$fname"; sleep "$SHIM_DOWNLOAD_SLOW"; }; head -c 4096 /dev/zero >"$src/$fname"; }; done
       [[ ${SHIM_DOWNLOAD_FAIL:-} == 1 ]] && exit 1; exit 0
     fi
     [[ ${SHIM_RUN_FAIL:-} == "$name" ]] && exit 125
-    mkdir -p "$SHIM/containers/$name"; printf '%s' "$labels" >"$SHIM/containers/$name/labels"; echo running >"$SHIM/containers/$name/state"; exit 0 ;;
+    mkdir -p "$SHIM/containers/$name"; printf '%s' "$labels" >"$SHIM/containers/$name/labels"; echo running >"$SHIM/containers/$name/state"
+    [[ ${SHIM_CRASHLOOP:-} == 1 && $name == *-engine ]] && { echo restarting >"$SHIM/containers/$name/state"; echo 3 >"$SHIM/containers/$name/restarts"; }   # exits at once under --restart: docker keeps it "running"
+    exit 0 ;;
   inspect)
     fmt=""; name=""
     for a in "$@"; do case $a in -f) ;; '{{'*) fmt=$a ;; inspect) ;; *) name=$a ;; esac; done
     [[ -d $SHIM/containers/$name ]] || exit 1
+    st=$(cat "$SHIM/containers/$name/state"); [[ $st == running || $st == restarting ]] && r=true || r=false
     case $fmt in
-      *'|'*) [[ $(cat "$SHIM/containers/$name/state") == running ]] && r=true || r=false; echo "$r|$(grep -E "^io.omarchy.local-ai=" "$SHIM/containers/$name/labels" | head -1 | cut -d= -f2-)|$(grep -E "^io.omarchy.local-ai.recipe=" "$SHIM/containers/$name/labels" | head -1 | cut -d= -f2-)" ;;
+      *Restarting*) [[ $st == restarting ]] && rs=true || rs=false; echo "$r|$rs|$(cat "$SHIM/containers/$name/restarts" 2>/dev/null || echo 0)" ;;
+      *'|'*) echo "$r|$(grep -E "^io.omarchy.local-ai=" "$SHIM/containers/$name/labels" | head -1 | cut -d= -f2-)|$(grep -E "^io.omarchy.local-ai.recipe=" "$SHIM/containers/$name/labels" | head -1 | cut -d= -f2-)" ;;
       *Labels*) key=${fmt#*\"}; key=${key%%\"*}; grep -E "^$key=" "$SHIM/containers/$name/labels" | head -1 | cut -d= -f2- ;;
-      *Running*) [[ $(cat "$SHIM/containers/$name/state") == running ]] && echo true || echo false ;;
+      *Running*) echo "$r" ;;
       *) echo "[]" ;;
     esac; exit 0 ;;
+  logs) printf 'Traceback (most recent call last):\n  File "/x/hub.py", line 1, in download\n    ^^^^\nOSError: [Errno 30] Read-only file system: /models/.cache\n'; exit 0 ;;
   stop) echo stopped >"$SHIM/containers/$2/state"; exit 0 ;;
   start) echo running >"$SHIM/containers/$2/state"; exit 0 ;;
   rename) mv "$SHIM/containers/$2" "$SHIM/containers/$3"; exit 0 ;;
@@ -74,14 +87,20 @@ EOF
 cat >"$TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 # the gateway: healthy when the engine and gateway "containers" run; dialects from SHIM_APIS
-url=${@: -1}; data=""; auth=""; for ((i=1;i<=$#;i++)); do [[ ${!i} == -d ]] && { j=$((i+1)); data=${!j}; }; [[ ${!i} == -H ]] && { j=$((i+1)); h=${!j}; [[ $h == @* ]] && h=$(cat "${h#@}" 2>/dev/null); [[ $h == "Authorization: Bearer "* ]] && auth=${h#Authorization: Bearer }; }; done
+url=${@: -1}
+if [[ $url == */api/models/*/tree/* ]]; then [[ -f $SHIM/tree.json ]] || exit 22; cat "$SHIM/tree.json"; exit 0; fi   # the Hub's file tree of a revision, when a test provides one
+if [[ $url == *recipes.json ]]; then # the registry's copy of the recipe file (SHIM_RECIPES_DOWN: no route)
+  [[ ${SHIM_RECIPES_DOWN:-} == 1 ]] && { echo "curl: (6) Could not resolve host" >&2; exit 6; }
+  out=/dev/stdout; for ((i=1;i<=$#;i++)); do [[ ${!i} == -o ]] && { j=$((i+1)); out=${!j}; }; done; cat "$SHIM/remote-recipes.json" >"$out"; exit 0
+fi
+data=""; auth=""; for ((i=1;i<=$#;i++)); do [[ ${!i} == -d ]] && { j=$((i+1)); data=${!j}; }; [[ ${!i} == -H ]] && { j=$((i+1)); h=${!j}; [[ $h == @* ]] && h=$(cat "${h#@}" 2>/dev/null); [[ $h == "Authorization: Bearer "* ]] && auth=${h#Authorization: Bearer }; }; done
 printf '%s\n' "$*" >>"$SHIM/curl.log"   # this shim's argv is what /proc/<pid>/cmdline would show
 if [[ $auth != "$(cat "$SHIM/../state/gateway.key" 2>/dev/null)" && ${SHIM_KEYLESS_GATEWAY:-} != 1 ]]; then   # the gateway refuses unkeyed requests; -f makes that exit 22
   [[ $* == *'%{http_code}'* ]] && { [[ ${SHIM_FOREIGN_PORT:-} == 1 ]] && { printf 'hello\n200'; exit 0; }; printf '{"error":{"type":"authentication_error","message":"invalid or missing API key"}}\n401'; exit 0; }; exit 22; fi
-[[ $(cat "$SHIM/containers/omarchy-local-ai-engine/state" 2>/dev/null) == running && $(cat "$SHIM/containers/omarchy-local-ai-gateway/state" 2>/dev/null) == running ]] || exit 7
+up=0; for g in "$SHIM"/containers/*-gateway/; do [[ -d $g ]] || continue; n=${g%/}; n=${n##*/}; e=${n%-gateway}-engine; [[ $(cat "$SHIM/containers/$n/state" 2>/dev/null) == running && $(cat "$SHIM/containers/$e/state" 2>/dev/null) == running ]] && up=1; done; (( up )) || exit 7   # some pair answers
 apis=${SHIM_APIS:-chat,messages,responses}
 case $url in
-  */v1/models) echo '{"data":[{"id":"Test-Model"}]}' ;;
+  */v1/models) echo "{\"data\":[{\"id\":\"${SHIM_SERVED:-Test-Model}\"}]}" ;;   # SHIM_SERVED: what the engine calls its model (a GGUF recipe serves a path)
   */v1/chat/completions)
     if [[ $data == *'"tools"'* ]]; then echo '{"choices":[{"message":{"content":null,"tool_calls":[{"function":{"name":"shell","arguments":"{\"command\":\"echo LOCAL_AI_TOOL_OK\"}"}}]}}],"usage":{"completion_tokens":12}}'
     elif [[ $data == *"Count from 1 to 80"* ]]; then # the speed probe: 80 words, usage optional, an optional delay to look like a CPU
@@ -154,18 +173,34 @@ write_recipes() { # write_recipes <recipe-json> [hardware-id]
      gateway:{image:("ghcr.io/x/gateway@sha256:"+$dg)}, assets:{"cfg.yml":"model_name: Test-Model\n"},
      hardware:{($hw):{match:{backend:"nvidia",vramGb:24,names:[($hw|sub("-[0-9]+gb$";"")|gsub("-";""))],name:$hw}, recipe:$r}}}' >"$OMARCHY_AI_RECIPES"
 }
+write_recipes_alts() { # write_recipes_alts <recommended-json> <alt-json>...
+  local r=$1; shift; local alts='[]'; for a in "$@"; do alts=$(jq -c --argjson a "$a" '.+[$a]' <<<"$alts"); done
+  write_recipes "$r"; jq --argjson alts "$alts" '.hardware["rtx-4090-24gb"].recipes=$alts' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
+}
+write_recipes_two() { # write_recipes_two <recipe-json> <hardware-id> <recipe-json> <hardware-id>: two card types, one recipe each
+  write_recipes "$1" "$2"
+  jq --argjson r "$3" --arg hw "$4" '.hardware[$hw]={match:{backend:"nvidia",vramGb:24,names:[($hw|sub("-[0-9]+gb$";"")|gsub("-";""))],name:$hw}, recipe:$r}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
+}
 write_recipes "$(recipe good true asset)"
 
 # ---------------------------------------------------------------- tests
 "$CLI" snapshot >/dev/null
 [[ $(snap .state) == idle ]] || fail "fresh snapshot is idle" "$(snap .state)"; pass "fresh snapshot is idle"
-[[ $(snap .model.name) == "Test Model" ]] || fail "hardware matched the recipe"; pass "hardware match picks the recipe for the detected GPU"
-[[ $(snap .model.downloaded) == false ]] || fail "not downloaded yet"; pass "weights reported absent before any download"
+[[ $(snap .selected.name) == "Test Model" ]] || fail "hardware matched the recipe"; pass "hardware match picks the recipe for the detected GPU"
+[[ $(snap .selected.onDisk) == false ]] || fail "not downloaded yet"; pass "weights reported absent before any download"
 
 "$CLI" load
 [[ $(snap .state) == ready ]] || fail "load reaches ready" "$(snap .state) $(snap .error)"; pass "load: download, start, accept, ready"
+
+# the pull is a step of its own on the card while it runs
+: >"$SHIM/images"   # forget the images so the second load pulls again
+SHIM_PULL_SLOW=2 "$CLI" load & pull_pid=$!
+d=""
+for ((i=0; i<200; i++)); do d=$(snap .operation.detail 2>/dev/null); [[ $d == "pulling image" ]] && break; sleep 0.1; done   # every ledger step costs seconds under the shims on a slow host: wait for the step, up to 20 s
+[[ $d == "pulling image" ]] || fail "pull detail mid-flight" "$d"
+wait "$pull_pid" || fail "load with a slow pull" "$(snap .error)"; pass "an image pull is reported as its own step while it runs"
 [[ -f $OMARCHY_AI_MODEL_ROOT/test/Test-Model/model.safetensors ]] || fail "weights land in the subdir"; pass "weights downloaded into <mount>/<subdir>"
-[[ $(snap .model.downloaded) == true ]] || fail "marker present"; pass "marker records the download"
+[[ $(snap .selected.onDisk) == true ]] || fail "marker present"; pass "marker records the download"
 grep -q -- "--publish 127.0.0.1:12434:12434" "$SHIM/docker.log" || fail "gateway publishes the port"; pass "gateway publishes 127.0.0.1:12434, engine port stays private"
 grep -q -- "--network-alias engine" "$SHIM/docker.log" || fail "engine on the private network"; pass "engine joins the private network as 'engine'"
 grep -q -- "--volume $OMARCHY_AI_STATE/assets/cfg.yml:/app/config.yml:ro" "$SHIM/docker.log" || fail "asset mounted"; pass "config asset written from recipes.json and mounted read-only"
@@ -186,11 +221,12 @@ grep -q -- "$(cat "$OMARCHY_AI_STATE/gateway.key")" "$SHIM/curl.log" && fail "ke
 [[ ! -e $OMARCHY_AI_USER_HOME/.claude.json && ! -e $OMARCHY_AI_USER_HOME/.codex ]] || fail "no user files touched"; pass "no user config files were created or edited"
 "$CLI" open-agent pi >/dev/null; m=$(mode "$OMARCHY_AI_STATE/agents/pi/models.json"); [[ $m == 600 ]] || fail "agent config mode" "$m"; pass "agent launch configs that embed the key are 0600"
 
+engine_runs=$(grep -c "^docker run .*omarchy-local-ai-good-engine" "$SHIM/docker.log")   # the loads so far; share must add none
 "$CLI" share; "$CLI" snapshot >/dev/null
 [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 ]] || fail "share on" "$(snap .share)"; pass "share: on, tailnet URL and key shown"
 grep -q -- "--user $(id -u):$(id -g) --publish 127.0.0.1:12434:12434 .*--publish 100.64.0.7:12434:12434" "$SHIM/docker.log" || fail "gateway published on the tailnet" "$(grep gateway "$SHIM/docker.log" | tail -1)"; pass "share: the gateway is republished on the tailnet address, loopback kept, as this user so it can read the key"
 grep -q "tailscale serve" "$OMARCHY_AI_STATE/log" && fail "tailscale serve used"; [[ $(snap .state) == ready && $(snap .share.error) == "" ]] || fail "ready after share" "$(snap .state) $(snap .share.error)"; pass "share: no tailscale serve, no password, model still ready"
-grep -c "^docker run .*omarchy-local-ai-engine" "$SHIM/docker.log" | grep -qx 1 || fail "engine restarted on share"; pass "share: the engine was not touched"
+[[ $(grep -c "^docker run .*omarchy-local-ai-good-engine" "$SHIM/docker.log") == "$engine_runs" ]] || fail "engine restarted on share"; pass "share: the engine was not touched"
 "$CLI" open-agent pi >/dev/null; oldkey=$(cat "$OMARCHY_AI_STATE/gateway.key")
 "$CLI" share --key "0123456789abcdef0123"; [[ $(cat "$OMARCHY_AI_STATE/gateway.key") == 0123456789abcdef0123 ]] || fail "key replaced"; pass "share --key replaces the key"
 grep -rl -- "$oldkey" "$OMARCHY_AI_STATE" && fail "old key still on disk"; pass "share --key leaves no copy of the old key anywhere in the state"
@@ -212,16 +248,22 @@ grep -q -- "--publish 100.64.0.9:12434:12434" "$SHIM/docker.log" || fail "new ip
 SHIM_TS=newip "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false ]] || fail "share off after newip"
 
 # a second load with the same recipe: no download, previous pair set aside then dropped
+# a marker is a promise about files: when they are gone, so is "on disk", and the next load fetches again
+rm -f "$OMARCHY_AI_MODEL_ROOT/test/Test-Model/model.safetensors"; "$CLI" snapshot >/dev/null
+[[ $(snap .selected.onDisk) == false && $(snap .selected.onDisk) == false ]] || fail "deleted weights still on disk"; pass "weights deleted behind the marker no longer count as on disk"
+"$CLI" load; [[ $(snap .state) == ready && -s $OMARCHY_AI_MODEL_ROOT/test/Test-Model/model.safetensors && $(snap .selected.onDisk) == true ]] || fail "fetch again after deletion" "$(snap .state) $(snap .error)"; pass "load fetches again when the marked weights are gone"
+grep -q "marked complete but the files are gone" "$OMARCHY_AI_STATE/log" || fail "stale marker logged"; pass "the log says the marker was stale"
+
 : >"$SHIM/docker.log"; "$CLI" load
 [[ $(snap .state) == ready ]] || fail "reload ready"; pass "load again: reuses weights and image"
-grep -q "rename omarchy-local-ai-engine omarchy-local-ai-engine-previous" "$SHIM/docker.log" || fail "set aside"; pass "previous pair is set aside during the switch"
-[[ -d $SHIM/containers/omarchy-local-ai-engine-previous && $(cat "$SHIM/containers/omarchy-local-ai-engine-previous/state") == stopped ]] || fail "previous kept" "$(ls $SHIM/containers)"; pass "the previous pair stays set aside, stopped, after acceptance (no second prompt on success)"
-"$CLI" load; [[ ! -d $SHIM/containers/omarchy-local-ai-engine-previous || $(cat "$SHIM/containers/omarchy-local-ai-engine-previous/state") == stopped ]] || fail "stale previous"; pass "the next Start drops the stale pair before setting the current one aside"
+grep -q "rename omarchy-local-ai-good-engine omarchy-local-ai-good-engine-previous" "$SHIM/docker.log" || fail "set aside"; pass "previous pair is set aside during the switch"
+[[ ! -d $SHIM/containers/omarchy-local-ai-good-engine-previous ]] || fail "previous kept" "$(ls $SHIM/containers)"; pass "the replaced pair is dropped once the new one is acceptance (no second prompt on success)"
+"$CLI" load; [[ ! -d $SHIM/containers/omarchy-local-ai-good-engine-previous ]] || fail "stale previous"; pass "the next Start drops the stale pair before setting the current one aside"
 
 # acceptance failure rolls back to the previous pair
 SHIM_REPLY="nope" "$CLI" load
 [[ $(snap .error) == *"chat acceptance failed"* ]] || fail "acceptance failure reported" "$(snap .error)"; pass "failed acceptance reports the reason"
-[[ -d $SHIM/containers/omarchy-local-ai-engine && $(cat "$SHIM/containers/omarchy-local-ai-engine/state") == running ]] || fail "previous restored"; pass "previous pair restored after a failed acceptance"
+[[ -d $SHIM/containers/omarchy-local-ai-good-engine && $(cat "$SHIM/containers/omarchy-local-ai-good-engine/state") == running ]] || fail "previous restored"; pass "previous pair restored after a failed acceptance"
 [[ $(snap .state) == ready ]] || fail "restored previous is ready" "$(snap .state)"; pass "the restored previous model is ready, with the failure shown beside it"
 
 # speed: a timed 80-word reply; the recipe claims 60 tok/s so the floor is 6 tok/s; the shim's usage says 60 tokens
@@ -236,16 +278,33 @@ SHIM_APIS=chat "$CLI" load; [[ $(snap '.agents.launchable|join(",")') == "pi" ]]
 [[ $("$CLI" open-agent claude 2>&1 || true) == *"did not pass acceptance"* ]] || fail "refused agent"; pass "open-agent refuses an agent whose dialect failed"
 
 # unload
-"$CLI" unload; [[ $(snap .state) == idle && ! -d $SHIM/containers/omarchy-local-ai-engine ]] || fail "unload" "$(snap .state)"; pass "unload: containers gone, state idle"
-[[ $(snap .model.downloaded) == true ]] || fail "downloads kept"; pass "unload keeps downloads"
+"$CLI" unload; [[ $(snap .state) == idle && ! -d $SHIM/containers/omarchy-local-ai-good-engine && $(snap '.models|length') == 0 ]] || fail "unload" "$(snap .state)"; pass "unload: containers gone, state idle"
+[[ $(snap .selected.onDisk) == true ]] || fail "downloads kept"; pass "unload keeps downloads"
 [[ -f $OMARCHY_AI_STATE/share.on ]] && fail "share off on unload"; pass "unload turns sharing off"
 
-# adoption: a running owned pair with no ledger is reported ready, not restarted
-"$CLI" load; rm -f "$OMARCHY_AI_STATE/ledger.json"; "$CLI" snapshot >/dev/null
-[[ $(snap .state) == ready && $(snap .running.recipeId) == good ]] || fail "adoption" "$(snap .state)"; pass "an already-running owned recipe is adopted as ready"
-# a running recipe the file no longer carries is still reported, marked not current
-write_recipes "$(recipe other true asset)"; "$CLI" snapshot >/dev/null
-[[ $(snap .running.current) == false ]] || fail "older recipe flagged"; pass "a running recipe from an older registry is flagged, never clobbered"
+# several models at once: one pair per model, each on its own port and network; a Start replaces only the models on its cards
+export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 300, 24264\n1, NVIDIA GeForce RTX 3090, 24564, 300, 24264'
+write_recipes_two "$(recipe good true asset)" rtx-4090-24gb "$(recipe second false dir)" rtx-3090-24gb
+"$CLI" gpu nvidia:0 >/dev/null; "$CLI" load; [[ $(snap .state) == ready ]] || fail "first of two" "$(snap .error)"
+"$CLI" gpu nvidia:1 >/dev/null; : >"$SHIM/docker.log"; "$CLI" load; [[ $(snap .state) == ready ]] || fail "second of two" "$(snap .error)"
+[[ $(snap '.models|length') == 2 && $(snap '[.models[].port]|join(",")') == "12434,12435" && $(snap '[.models[].state]|unique|join(",")') == ready ]] || fail "two models" "$(snap .models)"; pass "two models on two cards run side by side, on 12434 and 12435"
+[[ -d $SHIM/containers/omarchy-local-ai-good-engine && -d $SHIM/containers/omarchy-local-ai-second-engine && -d $SHIM/containers/omarchy-local-ai-second-gateway ]] || fail "own pairs" "$(ls "$SHIM/containers")"; pass "each model has its own engine+gateway pair"
+grep -q -- "--network omarchy-local-ai-second --network-alias engine" "$SHIM/docker.log" && grep -q -- "--publish 127.0.0.1:12435:12434" "$SHIM/docker.log" || fail "own network and port" "$(grep 'docker run' "$SHIM/docker.log" | tail -2)"; pass "the second pair gets its own network and the next port"
+[[ $(snap '[.cards[].claimed]|add') == 2 && $(snap '.selected.running') == true && $(snap '.running.recipeId') == second ]] || fail "claims" "$(snap .cards) $(snap .selected)"; pass "both cards read claimed; the card looks at the selected model"
+argv=$("$CLI" open-agent claude second); out=$(eval "$argv"); [[ $out == *ANTHROPIC_BASE_URL=http://127.0.0.1:12435* ]] || fail "agent on the named model" "$out"; pass "open-agent on a named model uses that model's port"
+argv=$("$CLI" open-agent claude good); out=$(eval "$argv"); [[ $out == *ANTHROPIC_BASE_URL=http://127.0.0.1:12434* ]] || fail "agent on the other model" "$out"; pass "open-agent on the other model uses its port"
+"$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap '[.models[].shareUrl]|join(",")') == "http://box.tail.ts.net:12434,http://box.tail.ts.net:12435" ]] || fail "share both" "$(snap .models)"; pass "share publishes every running model on its own port"
+"$CLI" share
+"$CLI" unload second; [[ $(snap '.models|length') == 1 && $(snap .state) == ready && ! -d $SHIM/containers/omarchy-local-ai-second-engine && -d $SHIM/containers/omarchy-local-ai-good-engine ]] || fail "stop one" "$(snap .state) $(snap .models)"; pass "unload <recipe> stops one model; the other keeps running"
+[[ $("$CLI" unload nope 2>&1 || true) == *"no model nope is running"* ]] || fail "unload unknown"; pass "unload of a model that is not running is refused"
+"$CLI" gpu nvidia:1 >/dev/null; "$CLI" load; [[ $(snap '.models|length') == 2 ]] || fail "second again"
+write_recipes_alts "$(recipe good true asset)" "$(recipe third true asset)"; jq --argjson r "$(recipe second false dir)" '.hardware["rtx-3090-24gb"]={match:{backend:"nvidia",vramGb:24,names:["rtx3090"],name:"rtx-3090-24gb"}, recipe:$r}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
+"$CLI" gpu nvidia:0 >/dev/null; "$CLI" recipe third >/dev/null
+"$CLI" load; [[ $(snap '[.models[].recipeId]|sort|join(",")') == "second,third" && ! -d $SHIM/containers/omarchy-local-ai-good-engine && -d $SHIM/containers/omarchy-local-ai-second-engine ]] || fail "replace one" "$(snap .models) $(ls "$SHIM/containers")"; pass "a Start on a card in use replaces that model only; the other card's model keeps running"
+SHIM_REPLY=nope "$CLI" load; [[ $(snap '[.models[].recipeId]|sort|join(",")') == "second,third" && $(snap '[.models[].state]|unique|join(",")') == ready && $(snap .error) == *"chat acceptance failed"* ]] || fail "rollback keeps both" "$(snap .models) $(snap .error)"; pass "a failed Start on one card restores its model and never touches the other"
+"$CLI" unload; [[ $(snap '.models|length') == 0 && $(snap .state) == idle && -z $(ls "$SHIM/containers" 2>/dev/null) ]] || fail "unload all" "$(ls "$SHIM/containers")"; pass "unload with no model named stops everything"
+"$CLI" recipe auto >/dev/null; "$CLI" gpu auto >/dev/null; export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 300, 24264'; write_recipes "$(recipe good true asset)"
+
 write_recipes "$(recipe good true asset)"; "$CLI" unload
 
 # gate: refused recipes stay visible with the reason
@@ -268,7 +327,7 @@ SHIM_DRIVER=580.65.06 "$CLI" snapshot >/dev/null; [[ $(snap .reason) == "" ]] ||
 
 # unmatched hardware says why
 write_recipes "$(recipe good true asset)" rtx-3090-24gb; "$CLI" snapshot >/dev/null
-[[ $(snap .model) == null && $(snap .reason) == *"no validated recipe for NVIDIA GeForce RTX 4090"* ]] || fail "unmatched" "$(snap .reason)"; pass "unsupported card: no model, and the reason says which card"
+[[ $(snap .selected) == null && $(snap .reason) == *"no validated recipe for NVIDIA GeForce RTX 4090"* ]] || fail "unmatched" "$(snap .reason)"; pass "unsupported card: no model, and the reason says which card"
 
 # what was detected, and choosing a card: two cards, one with a recipe; the largest with a recipe is the default
 write_recipes "$(recipe good true asset)"
@@ -276,8 +335,8 @@ write_recipes "$(recipe good true asset)"
 export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n1, NVIDIA GeForce RTX 4090, 24564, 300, 24264'
 "$CLI" snapshot >/dev/null
 [[ $(snap '.gpus|length') == 2 && $(snap '.gpus[1].chosen') == true && $(snap '.gpus[0].hardwareId') == "" && $(snap .hardwareId) == rtx-4090-24gb ]] || fail "two gpus" "$(snap .gpus)"; pass "two cards: both listed, the 4090 with a recipe is chosen, the 3060 shows it has none"
-"$CLI" gpu nvidia:0 >/dev/null; [[ $(snap '.gpus[0].chosen') == true && $(snap .model) == null && $(snap .reason) == *"no validated recipe for NVIDIA GeForce RTX 3060"* && $(snap .gpuPinned) == true ]] || fail "pin unsupported card" "$(snap .reason)"; pass "gpu <key> pins a card; a pinned card without a recipe says so instead of silently using another"
-"$CLI" gpu auto >/dev/null; [[ $(snap '.gpus[1].chosen') == true && $(snap .hardwareId) == rtx-4090-24gb && $(snap .gpuPinned) == false ]] || fail "gpu auto"; pass "gpu auto returns to the largest card with a recipe"
+"$CLI" gpu nvidia:0 >/dev/null; [[ $(snap '.gpus[0].chosen') == true && $(snap .selected) == null && $(snap .reason) == *"no validated recipe for NVIDIA GeForce RTX 3060"* ]] || fail "pin unsupported card" "$(snap .reason)"; pass "gpu <key> pins a card; a pinned card without a recipe says so instead of silently using another"
+"$CLI" gpu auto >/dev/null; [[ $(snap '.gpus[1].chosen') == true && $(snap .hardwareId) == rtx-4090-24gb ]] || fail "gpu auto"; pass "gpu auto returns to the largest card with a recipe"
 "$CLI" gpu bogus >/dev/null 2>&1 && fail "bad gpu key accepted"; pass "gpu refuses a malformed key"
 unset SHIM_GPUS
 
@@ -293,29 +352,30 @@ rm -f "$TMP/dri"/*; write_recipes "$(recipe good true asset)"
 export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 300, 24264\n1, NVIDIA GeForce RTX 3060, 12288, 100, 12188\n2, NVIDIA GeForce RTX 4090, 24564, 300, 24264'
 "$CLI" snapshot >/dev/null
 [[ $(snap '.cards|length') == 2 && $(snap '.cards[0].name') == "RTX 4090" && $(snap '.cards[0].count') == 2 && $(snap '.cards[0].totalGb') == 48 && $(snap '.cards[0].keys|join(",")') == "nvidia:0,nvidia:2" ]] || fail "aggregate" "$(snap .cards)"; pass "cards: two identical cards aggregate into one group with the total VRAM and both keys"
-[[ $(snap '.cards[0].claimed') == 1 && $(snap '.cards[0].idle') == 1 && $(snap '.cards[0].chosen') == true && $(snap '.cards[1].recipe') == null && $(snap '.cards[1].idle') == 1 ]] || fail "claims" "$(snap .cards)"; pass "cards: a one-card recipe claims one of the two, the other reads idle; a card without a recipe is all idle"
+[[ $(snap '.cards[0].claimed') == 0 && $(snap '.cards[0].idle') == 2 && $(snap '.cards[0].chosen') == true && $(snap '.cards[1].recipe') == null && $(snap '.cards[1].idle') == 1 && $(snap '.selected.keys|join(",")') == "nvidia:0" ]] || fail "claims" "$(snap .cards) $(snap .selected)"; pass "cards: with nothing running every card is idle; the selected one-card recipe plans to claim one of the two"
 [[ $(snap '.selected.recipeId') == good && $(snap '.selected.cards') == 1 && $(snap '.selected.claims["rtx-4090-24gb"]') == 1 && $(snap '.recipes|length') == 1 && $(snap '.recipes[0].onDisk') == true ]] || fail "selected" "$(snap .selected) $(snap .recipes)"; pass "selected names the recipe, its card claim, and the recipes list carries the disk state"
 write_recipes "$(recipe good true asset | jq '.cards=2')"; "$CLI" snapshot >/dev/null
-[[ $(snap '.cards[0].claimed') == 2 && $(snap '.cards[0].idle') == 0 && $(snap '.selected.cards') == 2 && $(snap .reason) == "" ]] || fail "two-card claim" "$(snap .cards)"; pass "cards: a two-card recipe claims both cards of its group"
+[[ $(snap '.selected.keys|join(",")') == "nvidia:0,nvidia:2" && $(snap '.selected.cards') == 2 && $(snap .reason) == "" ]] || fail "two-card claim" "$(snap .selected)"; pass "cards: a two-card recipe plans to claim both cards of its group"
 write_recipes "$(recipe good true asset | jq '.cards=3')"; "$CLI" snapshot >/dev/null
-[[ $(snap '.cards[0].claimed') == 2 && $(snap .reason) == *"needs 3 cards, 2 detected"* ]] || fail "short claim" "$(snap .reason)"; pass "cards: a recipe needing more cards than the group has is refused with the count"
+[[ $(snap .reason) == *"needs 3 cards, 2 detected"* ]] || fail "short claim" "$(snap .reason)"; pass "cards: a recipe needing more cards than the group has is refused with the count"
 write_recipes "$(recipe good true asset)"; unset SHIM_GPUS
 
 # more than one validated recipe per card: the recommended one runs unless one is picked
-write_recipes_alts() { # write_recipes_alts <recommended-json> <alt-json>...
-  local r=$1; shift; local alts='[]'; for a in "$@"; do alts=$(jq -c --argjson a "$a" '.+[$a]' <<<"$alts"); done
-  write_recipes "$r"; jq --argjson alts "$alts" '.hardware["rtx-4090-24gb"].recipes=$alts' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
-}
 write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | jq '.model.name="Alt Small" | .model.sizeGb=0.000001')"
 "$CLI" snapshot >/dev/null
-[[ $(snap '.recipes|length') == 2 && $(snap '.recipes[0].id') == good && $(snap '.recipes[0].recommended') == true && $(snap '.recipes[1].id') == alt-small && $(snap '.recipes[1].recommended') == false && $(snap .selected.recipeId) == good && $(snap .recipePinned) == false ]] || fail "alternates listed" "$(snap .recipes)"; pass "every validated recipe of a detected card is listed, the recommended one first and selected"
-"$CLI" recipe alt-small >/dev/null; [[ $(snap .selected.recipeId) == alt-small && $(snap .model.name) == "Alt Small" && $(snap .recipePinned) == true ]] || fail "recipe pick" "$(snap .selected)"; pass "recipe <id> picks an alternate; model and selected follow it"
+[[ $(snap '.recipes|length') == 2 && $(snap '.recipes[0].id') == good && $(snap '.recipes[0].recommended') == true && $(snap '.recipes[1].id') == alt-small && $(snap '.recipes[1].recommended') == false && $(snap .selected.recipeId) == good ]] || fail "alternates listed" "$(snap .recipes)"; pass "every validated recipe of a detected card is listed, the recommended one first and selected"
+write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | jq '.model.name="Alt Small" | .model.sizeGb=0.000001')" "$(recipe hostipc false dir | jq '.launch.ipc="host"')" "$(recipe hostnet false dir | jq '.launch.networkMode="host"')"
+"$CLI" snapshot >/dev/null; [[ $(snap '[.recipes[].id]|join(",")') == "good,alt-small" ]] || fail "refused not offered" "$(snap '[.recipes[].id]')"; pass "an alternate that needs host IPC or host networking is not offered at all"
+"$CLI" run alt-small nvidia:0; [[ $(snap .state) == ready && $(snap .running.recipeId) == alt-small && $(snap '.gpus[0].chosen') == true && $(grep -c "^.*run alt-small on nvidia:0" "$OMARCHY_AI_STATE/log") -ge 1 ]] || fail "run verb" "$(snap .state) $(snap .error) $(snap .running)"; pass "run <recipe> <gpu> pins the card and the recipe and starts in one verb"
+"$CLI" unload >/dev/null; "$CLI" recipe auto >/dev/null
+write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | jq '.model.name="Alt Small" | .model.sizeGb=0.000001')"
+"$CLI" recipe alt-small >/dev/null; [[ $(snap .selected.recipeId) == alt-small && $(snap .selected.name) == "Alt Small" ]] || fail "recipe pick" "$(snap .selected)"; pass "recipe <id> picks an alternate; model and selected follow it"
 "$CLI" load; [[ $(snap .state) == ready && $(snap .running.recipeId) == alt-small && $(snap '.recipes[1].onDisk') == true ]] || fail "alt runs" "$(snap .state) $(snap .error) $(snap .running)"; pass "load runs the picked recipe and marks it on disk"
 "$CLI" unload >/dev/null
 write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | jq '.model.name="Alt Small" | .model.sizeGb=0.000001')" "$(recipe good-tp2 true asset | jq '.cards=2 | .model.name="Test Model TP2"')"; "$CLI" snapshot >/dev/null
 [[ $(snap '.recipes[2].onDisk') == true && $(snap '.recipes[2].cards') == 2 ]] || fail "shared weights" "$(snap .recipes)"; pass "a variant that shares a downloaded model's weights at the same path is on disk without a download of its own"
 "$CLI" recipe bogus >/dev/null 2>&1 && fail "bad recipe id accepted"; "$CLI" recipe no-such-recipe >/dev/null 2>&1 && fail "unknown recipe accepted"; pass "recipe refuses ids the file does not carry"
-"$CLI" recipe auto >/dev/null; [[ $(snap .selected.recipeId) == good && $(snap .recipePinned) == false ]] || fail "recipe auto"; pass "recipe auto returns to the recommended one"
+"$CLI" recipe auto >/dev/null; [[ $(snap .selected.recipeId) == good ]] || fail "recipe auto"; pass "recipe auto returns to the recommended one"
 "$CLI" recipe alt-small >/dev/null; write_recipes "$(recipe good true asset)" rtx-3090-24gb; export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3090, 24564, 300, 24264'; "$CLI" snapshot >/dev/null
 [[ $(snap .selected.recipeId) == good ]] || fail "pick of another card ignored" "$(snap .selected)"; pass "a pick that is not among the chosen card's recipes falls back to the recommended one"
 unset SHIM_GPUS; "$CLI" recipe auto >/dev/null; write_recipes "$(recipe good true asset)"
@@ -338,14 +398,11 @@ write_recipes "$(recipe good true asset)"; unset SHIM_GPUS
 
 # stats and the running identity
 "$CLI" load; [[ $(snap .state) == ready ]] || fail "ready for stats" "$(snap .error)"
-[[ $(snap .stats.decodeTps) -gt 0 && $(snap .stats.prefillTps) -gt 0 && $(snap .stats.validatedTps) == 60 && $(snap .stats.tokens.today) -gt 0 && $(snap .stats.tokens.week) -ge $(snap .stats.tokens.today) ]] || fail "stats" "$(snap .stats)"; pass "stats: decode and prefill speed measured at acceptance, tokens served counted by window"
-[[ $(snap .running.name) == "Test Model" && $(snap .running.older) == false && $(snap .running.current) == true ]] || fail "running identity" "$(snap .running)"; pass "running carries the recipe's name and is not older"
+[[ $(snap '.models[0].decodeTps') -gt 0 && $(snap '.models[0].prefillTps') -gt 0 && $(snap '.models[0].tokensToday') -gt 0 && $(snap '.models[0].caps.chat') == true ]] || fail "stats" "$(snap .models)"; pass "a model carries its decode and prefill speed from acceptance, the tokens it served today, and its capabilities"
+[[ $(snap .running.name) == "Test Model" ]] || fail "running identity" "$(snap .running)"; pass "running carries the recipe's name"
 write_recipes "$(recipe other true asset)"; "$CLI" snapshot >/dev/null
-[[ $(snap .running.older) == true && $(snap .running.name) == good ]] || fail "older" "$(snap .running)"; pass "a running recipe the file no longer carries is older, named by its id"
-write_recipes_alts "$(recipe other true asset)" "$(recipe good true asset)"; "$CLI" snapshot >/dev/null
-[[ $(snap .running.current) == true && $(snap .running.older) == false && $(snap .selected.recipeId) == other ]] || fail "membership" "$(snap .running) $(snap .selected)"; pass "a running recipe still in the file is current even when another one is selected (that is a swap, not older)"
+[[ $(snap .running.name) == "Test Model" && $(snap .state) == ready ]] || fail "older" "$(snap .running)"; pass "a running recipe the file no longer carries is still reported, named from its slot record"
 write_recipes "$(recipe good true asset)"; "$CLI" unload
-[[ $(snap .registryCount) == 1 && $(snap '.registryList[0].hardwareId') == rtx-4090-24gb ]] || fail "registry list" "$(snap .registryList)"; pass "the registry list names every hardware id the file carries"
 
 # hf-cache recipes download into the cache, not a local dir
 write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI" load
@@ -353,6 +410,57 @@ write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI
 grep -q -- "--volume $(cd "$OMARCHY_AI_HF_HOME" && pwd -P):/root/.cache/huggingface" "$SHIM/docker.log" || fail "hf mount"; pass "hf cache mounted at the recipe's target"
 grep -q "HF_TOKEN" "$OMARCHY_AI_STATE/log" && ! grep -q "hf_secret_token_value" "$OMARCHY_AI_STATE/log" "$SHIM/docker.log" || fail "token in log" "$(grep -h HF_TOKEN "$OMARCHY_AI_STATE/log" "$SHIM/docker.log" | head -2)"; pass "HF_TOKEN reaches the downloader by name; its value is never logged"
 "$CLI" unload
+
+# a single-file recipe whose weights already sit somewhere on the machine: adopted after a checksum, no download
+mkdir -p "$OMARCHY_AI_USER_HOME/models/Some-Quant"; head -c 8192 /dev/urandom >"$OMARCHY_AI_USER_HOME/models/Some-Quant/Test-Model-Q4.gguf"
+sha=$(sha_of_file "$OMARCHY_AI_USER_HOME/models/Some-Quant/Test-Model-Q4.gguf")
+write_recipes "$(recipe ggufadopt false dir | jq -c --arg s "$sha" '.model.servedName="/models/Test-Model-Q4.gguf" | .weights.subdir="" | .model.sha256=$s')"
+: >"$SHIM/docker.log"; SHIM_SERVED=/models/Test-Model-Q4.gguf "$CLI" load
+[[ $(snap .state) == ready ]] || fail "adopt load" "$(snap .state) $(snap .error)"
+grep -q -- "--entrypoint python3" "$SHIM/docker.log" && fail "downloaded despite a verified local copy"
+[[ $(sha_of_file "$OMARCHY_AI_MODEL_ROOT/test/Test-Model-Q4.gguf") == "$sha" && $(snap .selected.onDisk) == true ]] || fail "adopted file" "$(ls -la "$OMARCHY_AI_MODEL_ROOT/test" 2>&1)"; pass "a verified copy of a GGUF found under ~/models is adopted without a download"
+grep -q "adopted $OMARCHY_AI_USER_HOME/models/Some-Quant as .* (1 files, verified against org/test@" "$OMARCHY_AI_STATE/log" || fail "adoption logged"; pass "the log names the adopted copy and what it was verified against"
+# the same name with other bytes (an older quant) is refused and the pinned file is fetched instead
+"$CLI" unload; rm -rf "$OMARCHY_AI_MODEL_ROOT/test" "$OMARCHY_AI_STATE/weights/ggufadopt.json"
+head -c 8192 /dev/urandom >"$OMARCHY_AI_USER_HOME/models/Some-Quant/Test-Model-Q4.gguf"
+: >"$SHIM/docker.log"; SHIM_SERVED=/models/Test-Model-Q4.gguf "$CLI" load
+[[ $(snap .state) == ready ]] || fail "refused-copy load" "$(snap .state) $(snap .error)"
+grep -q -- "--entrypoint python3" "$SHIM/docker.log" || fail "no download after a refused copy"
+grep -q "checksum differs from the pinned file" "$OMARCHY_AI_STATE/log" || fail "refusal logged"; pass "a same-named file with another checksum is refused and the pinned file is fetched"
+"$CLI" unload; rm -rf "$OMARCHY_AI_USER_HOME/models" "$OMARCHY_AI_MODEL_ROOT/test" "$OMARCHY_AI_STATE/weights/ggufadopt.json"
+
+# a whole directory you already have (a safetensors model under ~/models) is verified file by file against the
+# Hub's tree of the pinned revision and adopted: into the recipe's directory, or into the HF cache's own layout
+blob_sha1() { { printf 'blob %d\0' "$(wc -c <"$1" | tr -d ' ')"; cat "$1"; } | { command -v sha1sum >/dev/null 2>&1 && sha1sum || shasum -a 1; } | cut -c1-40; }
+mk_tree() { # mk_tree <dir>: the Hub's answer for that directory's files (large ones as LFS, small ones as plain blobs)
+  local f rel; echo "["; local first=1
+  for f in "$1"/*; do rel=${f##*/}; [[ $first == 1 ]] || echo ","; first=0
+    if [[ $(wc -c <"$f" | tr -d ' ') -gt 1000 ]]; then printf '{"type":"file","path":"%s","size":%s,"oid":"%s","lfs":{"oid":"%s","size":%s}}' "$rel" "$(wc -c <"$f" | tr -d ' ')" "$(blob_sha1 "$f")" "$(sha_of_file "$f")" "$(wc -c <"$f" | tr -d ' ')"
+    else printf '{"type":"file","path":"%s","size":%s,"oid":"%s","lfs":null}' "$rel" "$(wc -c <"$f" | tr -d ' ')" "$(blob_sha1 "$f")"; fi
+  done; echo "]"
+}
+mkdir -p "$OMARCHY_AI_USER_HOME/models/My-Model"; head -c 65536 /dev/urandom >"$OMARCHY_AI_USER_HOME/models/My-Model/model.safetensors"; echo '{"arch":"test"}' >"$OMARCHY_AI_USER_HOME/models/My-Model/config.json"; echo "# docs" >"$OMARCHY_AI_USER_HOME/models/My-Model/README.md"
+mk_tree "$OMARCHY_AI_USER_HOME/models/My-Model" >"$SHIM/tree.json"
+write_recipes "$(recipe dirmodel false dir)"; : >"$SHIM/docker.log"; "$CLI" load
+[[ $(snap .state) == ready && $(snap .selected.onDisk) == true ]] || fail "dir adopt load" "$(snap .state) $(snap .error)"
+grep -q -- "--entrypoint python3" "$SHIM/docker.log" && fail "downloaded despite a verified local directory"
+[[ $(sha_of_file "$OMARCHY_AI_MODEL_ROOT/test/Test-Model/model.safetensors") == $(sha_of_file "$OMARCHY_AI_USER_HOME/models/My-Model/model.safetensors") && -f $OMARCHY_AI_MODEL_ROOT/test/Test-Model/config.json && ! -e $OMARCHY_AI_MODEL_ROOT/test/Test-Model/README.md ]] || fail "dir adopted" "$(ls -la "$OMARCHY_AI_MODEL_ROOT/test/Test-Model" 2>&1)"; pass "a safetensors directory under ~/models is verified against the Hub tree and adopted into the recipe's directory, docs left out"
+grep -q "adopted $OMARCHY_AI_USER_HOME/models/My-Model as .* (2 files, verified against org/test@" "$OMARCHY_AI_STATE/log" || fail "dir adoption logged"; pass "the log names the adopted directory and what it was verified against"
+"$CLI" unload; rm -rf "$OMARCHY_AI_MODEL_ROOT/test" "$OMARCHY_AI_STATE/weights/dirmodel.json"
+# the same directory for a hub-layout recipe lands in the HF cache as blobs and snapshot links, so the engine finds it without a fetch
+write_recipes "$(recipe hubmodel false hf)"; : >"$SHIM/docker.log"; "$CLI" load
+[[ $(snap .state) == ready && $(snap .selected.onDisk) == true ]] || fail "hub adopt load" "$(snap .state) $(snap .error)"
+grep -q -- "--entrypoint python3" "$SHIM/docker.log" && fail "downloaded despite a verified local directory (hub layout)"
+snapdir="$OMARCHY_AI_HF_HOME/hub/models--org--test/snapshots/$rev"
+[[ -L $snapdir/model.safetensors && -L $snapdir/config.json && $(sha_of_file "$snapdir/model.safetensors") == $(sha_of_file "$OMARCHY_AI_USER_HOME/models/My-Model/model.safetensors") && -f $OMARCHY_AI_HF_HOME/hub/models--org--test/blobs/$(sha_of_file "$OMARCHY_AI_USER_HOME/models/My-Model/model.safetensors") ]] || fail "hub layout" "$(ls -laR "$OMARCHY_AI_HF_HOME/hub" 2>&1 | head -20)"; pass "a hub-layout recipe gets the copy as HF cache blobs plus snapshot links for the pinned revision"
+"$CLI" unload; rm -rf "$OMARCHY_AI_HF_HOME/hub/models--org--test" "$OMARCHY_AI_STATE/weights/hubmodel.json"
+# one edited small file (a changed config.json) is enough to refuse the directory
+echo '{"arch":"edited"}' >"$OMARCHY_AI_USER_HOME/models/My-Model/config.json"
+write_recipes "$(recipe dirmodel2 false dir)"; : >"$SHIM/docker.log"; "$CLI" load
+[[ $(snap .state) == ready ]] || fail "refused-dir load" "$(snap .state) $(snap .error)"
+grep -q -- "--entrypoint python3" "$SHIM/docker.log" || fail "no download after a refused directory"
+grep -q "config.json is missing or its size differs\|config.json's content differs" "$OMARCHY_AI_STATE/log" || fail "dir refusal logged"; pass "a directory with one differing file is refused and the pinned files are fetched"
+"$CLI" unload; rm -rf "$OMARCHY_AI_USER_HOME/models" "$OMARCHY_AI_MODEL_ROOT/test" "$OMARCHY_AI_STATE/weights/dirmodel2.json" "$SHIM/tree.json" "$OMARCHY_AI_STATE/trees"
 
 # lock: a second load while busy is refused without touching the running op
 write_recipes "$(recipe good true asset)"
@@ -364,7 +472,6 @@ wait $holder; "$CLI" snapshot >/dev/null; [[ $(snap .state) == error && $(snap .
 # progress: a successful Start records how long it took, and the next Start reports against it
 "$CLI" load; [[ $(jq -r .lastStartSeconds "$OMARCHY_AI_STATE/ledger.json") =~ ^[0-9]+$ ]] || fail "lastStartSeconds recorded"; pass "a successful Start records its duration for the next progress bar"
 jq '.lastStartSeconds=100 | .op={name:"starting",recipeId:"good",pid:0,startedAt:"2000-01-01T00:00:00Z",detail:"loading the model",percent:0}' "$OMARCHY_AI_STATE/ledger.json" >"$TMP/l.json" && mv "$TMP/l.json" "$OMARCHY_AI_STATE/ledger.json"
-( source "$ROOT/lib/common.sh"; source "$ROOT/lib/recipes.sh"; source "$ROOT/lib/share.sh"; source "$ROOT/lib/runtime.sh"; [[ $(start_percent) == 95 ]] ) || fail "start_percent caps at 95"; pass "engine-load progress is elapsed over the last Start, capped below done"
 ( sleep 2 ) & holder=$!; jq --argjson p "$holder" '.op.pid=$p' "$OMARCHY_AI_STATE/ledger.json" >"$TMP/l.json" && mv "$TMP/l.json" "$OMARCHY_AI_STATE/ledger.json"
 "$CLI" snapshot >/dev/null; [[ $(snap .operation.expectedSeconds) == 100 ]] || fail "expectedSeconds" "$(snap .operation)"; pass "snapshot carries the expected duration while starting"
 wait $holder; "$CLI" unload
@@ -385,7 +492,6 @@ jq '.share={key:"leaked-old-key"}' "$OMARCHY_AI_STATE/ledger.json" >"$TMP/l.json
 rm -f "$OMARCHY_AI_STATE/gateway.recipe.json"   # a gateway started by an older plugin: the recipe is recovered from the running container
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == true && $(snap .share.url) == http://box.tail.ts.net:12434 && $(snap .state) == ready ]] || fail "share after refusal" "$(snap .share) $(snap .state)"; pass "share works after an earlier refusal and for a gateway started by an older plugin"
 "$CLI" share; "$CLI" snapshot >/dev/null; [[ $(snap .share.active) == false && $(snap .state) == ready ]] || fail "share off after refusal"; pass "share off leaves the model ready"
-[[ $(snap .lastStartSeconds) =~ ^[0-9]+$ ]] || fail "lastStartSeconds in snapshot"; pass "snapshot carries the last Start duration for the Start label"
 "$CLI" unload
 
 # a gateway that serves without the key never becomes ready
@@ -443,13 +549,38 @@ echo '{"broken":' >"$TMP/broken.json"; out=$(OMARCHY_AI_RECIPES="$TMP/broken.jso
 [[ $(jq -r .state <<<"$out") == error && $(jq -r .error <<<"$out") == *"recipes.json"* ]] || fail "broken recipes" "$out"; pass "a broken recipes.json still prints an error state for the card"
 # a worker that dies on something unforeseen leaves a reason, not a silent idle or a stale "starting"
 
-SHIM_RUN_FAIL=omarchy-local-ai-engine OMARCHY_AI_MODEL_ROOT=/nonexistent-root/x "$CLI" load 2>/dev/null || true
+SHIM_RUN_FAIL=omarchy-local-ai-good-engine OMARCHY_AI_MODEL_ROOT=/nonexistent-root/x "$CLI" load 2>/dev/null || true
 [[ $(snap .error) != "" ]] || fail "unexpected death recorded" "$(snap .state) '$(snap .error)'"; pass "an unforeseen worker failure leaves a reason (and the previous model, when there was one)"
 
 # failures during start are logged and rolled back
-SHIM_RUN_FAIL=omarchy-local-ai-engine "$CLI" load
+SHIM_RUN_FAIL=omarchy-local-ai-good-engine "$CLI" load
 [[ $(snap .error) == *"engine failed to start"* || $(snap .error) == *"engine exited"* ]] || fail "start failure" "$(snap .state) $(snap .error)"
-[[ $(cat "$SHIM/containers/omarchy-local-ai-engine/state") == running && $(cat "$SHIM/containers/omarchy-local-ai-gateway/state") == running && ! -d $SHIM/containers/omarchy-local-ai-engine-previous ]] || fail "start failure rollback" "$(ls "$SHIM/containers")"; pass "engine start failure is reported (the previous model restored when there was one)"
+[[ $(cat "$SHIM/containers/omarchy-local-ai-good-engine/state") == running && $(cat "$SHIM/containers/omarchy-local-ai-good-gateway/state") == running && ! -d $SHIM/containers/omarchy-local-ai-good-engine-previous ]] || fail "start failure rollback" "$(ls "$SHIM/containers")"; pass "engine start failure is reported (the previous model restored when there was one)"
 grep -q "rollback" "$OMARCHY_AI_STATE/log" || fail "logged"; pass "every worker step is in the log"
+
+# an engine that crashes at once under docker's restart policy is caught in seconds, with its last line, and rolled back
+SHIM_CRASHLOOP=1 OMARCHY_AI_TIMEOUT=60 "$CLI" load
+[[ $(snap .error) == *"engine keeps crashing: OSError: [Errno 30] Read-only file system"* ]] || fail "crash loop" "$(snap .state) $(snap .error)"   # the previous model is back, so the state is ready with the reason beside it
+[[ $(cat "$SHIM/containers/omarchy-local-ai-good-engine/state") == running && ! -d $SHIM/containers/omarchy-local-ai-good-engine-previous ]] || fail "crash loop rollback" "$(ls "$SHIM/containers")"; pass "a crash-looping engine is reported with its last log line and the previous model comes back"
+
+# dynamic recipes: the vendored file is the floor, a newer registry copy is fetched and used, a stale or broken one is not
+R_VENDORED="$ROOT/recipes.json"
+RS() { OMARCHY_AI_RECIPES= OMARCHY_AI_RECIPES_URL=https://example.invalid/plugin/recipes.json "$CLI" "$@"; }
+out=$(RS recipes); [[ $(jq -r .source <<<"$out") == vendored && $(jq -r .file <<<"$out") == "$R_VENDORED" ]] || fail "vendored by default" "$out"; pass "recipes: the vendored file is in use until a newer one is fetched"
+jq -c '.generatedAt="2099-01-01T00:00:00Z" | .registryCommit="feedface00000000000000000000000000000000"' "$R_VENDORED" >"$SHIM/remote-recipes.json"
+out=$(RS recipes update); [[ $out == "recipes: updated to registry feedface0000"* && -f $OMARCHY_AI_STATE/recipes.json && $(mode "$OMARCHY_AI_STATE/recipes.json") == 600 ]] || fail "refresh adopts a newer file" "$out"; pass "recipes update: a newer registry file is fetched, kept 0600 in the state dir, and used"
+out=$(RS recipes); [[ $(jq -r .source <<<"$out") == live && $(jq -r .registryCommit <<<"$out") == feedface* ]] || fail "live in use" "$out"
+[[ $(OMARCHY_AI_RECIPES= "$CLI" snapshot | jq -r '.registryFile.source + " " + .registry') == "live feedface00000000000000000000000000000000" ]] || fail "snapshot names the live file"; pass "the snapshot says which file is in use and its registry commit"
+jq -c '.generatedAt="2000-01-01T00:00:00Z"' "$R_VENDORED" >"$SHIM/remote-recipes.json"
+out=$(RS recipes update); [[ $out == "recipes: live is current"* && $(jq -r .registryCommit "$OMARCHY_AI_STATE/recipes.json") == feedface* ]] || fail "older file ignored" "$out"; pass "recipes update: an older registry file is ignored"
+echo '{"schemaVersion":"omarchy-local-ai/recipes/1","hardware":"nope"}' >"$SHIM/remote-recipes.json"
+out=$(RS recipes update 2>/dev/null) && fail "broken file accepted"; [[ $out == "recipes: the fetched file is not a recipes file"* && $(jq -r .registryCommit "$OMARCHY_AI_STATE/recipes.json") == feedface* ]] || fail "broken file refused" "$out"; pass "recipes update: a file that is not a recipes file is refused and the live copy stays"
+out=$(SHIM_RECIPES_DOWN=1 RS recipes update 2>/dev/null) && fail "no route accepted"; [[ $out == "recipes: could not fetch the registry"* ]] || fail "no route reported" "$out"; pass "recipes update: no route is a sentence, nothing changes"
+out=$(OMARCHY_AI_RECIPES= OMARCHY_AI_RECIPES_URL= "$CLI" recipes update); [[ $out == "recipes: refresh is off"* ]] || fail "refresh off" "$out"; pass "OMARCHY_AI_RECIPES_URL= turns the refresh off"
+rm -f "$OMARCHY_AI_STATE/recipes.json"; jq -c '.generatedAt="2099-06-01T00:00:00Z" | .registryCommit="feedface00000000000000000000000000000000"' "$R_VENDORED" >"$SHIM/remote-recipes.json"
+OMARCHY_AI_RECIPES= OMARCHY_AI_RECIPES_URL=https://example.invalid/r/recipes.json OMARCHY_AI_RECIPES_TTL=0 "$CLI" snapshot >/dev/null
+for ((i=0; i<50; i++)); do [[ -f $OMARCHY_AI_STATE/recipes.json ]] && break; sleep 0.1; done   # the fetch is detached from the snapshot
+[[ $(jq -r .generatedAt "$OMARCHY_AI_STATE/recipes.json" 2>/dev/null) == 2099-06-01T00:00:00Z ]] || fail "snapshot did not refresh"; pass "snapshot refreshes in the background once the TTL has passed"
+rm -f "$OMARCHY_AI_STATE/recipes.json" "$OMARCHY_AI_STATE/recipes.checked"
 
 echo "1..$n"

@@ -24,7 +24,7 @@ Click the new bar icon, press **Start**. The card names the model chosen for you
 
 ## How it works
 
-1. **Start** downloads the model validated for your card, pulls its engine image, proves the model answers (correct model, keyed, fast enough, all three API dialects, a real tool call), and serves it on `127.0.0.1:12434`.
+1. **Start** downloads the model validated for the card you picked, pulls its engine image, proves the model answers (correct model, keyed, fast enough, all three API dialects, a real tool call), and serves it on `127.0.0.1:12434`. Start another recipe on another card and it runs alongside on the next port; the card lists every running model with its own open-agent and stop.
 2. **Open agent** starts any installed coding agent on it: claude, codex, pi, omp, opencode, ori, grok, agy, hermes, copilot, crush. The endpoint and key travel in the agent's environment. Nothing of yours under `~/.config` is read or written.
 3. **Share on Tailscale** publishes the same keyed endpoint on your tailnet address. One click, no `tailscale serve`, no root.
 
@@ -44,15 +44,17 @@ The card is the whole interface; the same verbs exist on the command line.
 
 ```
 omarchy-local-ai snapshot                    the state the card renders
-omarchy-local-ai load | unload               start (downloading if needed) | stop, keep downloads
-omarchy-local-ai open-agent [name]           open an agent on the running model
+omarchy-local-ai load | unload [recipe]      start the selected recipe (downloading if needed) | stop one model, or all
+omarchy-local-ai open-agent [name] [recipe]  open an agent on a running model
 omarchy-local-ai share [--key <value>|-]     toggle tailnet sharing; replace the key (- reads stdin)
 omarchy-local-ai gpu [auto|<backend:index>]  which detected card to use
+omarchy-local-ai recipe [auto|<id>]          which validated recipe of that card to run
+omarchy-local-ai recipes [update]            the recipe file in use; update fetches a newer one from the registry
 omarchy-local-ai agent-dir <path>            the directory agents open in
 omarchy-local-ai agent-args <name> [-- …]    extra flags for one agent
 ```
 
-State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights: `~/.cache/omarchy/local-ai/` or the Hugging Face cache.
+State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights: `~/.cache/omarchy/local-ai/` or the Hugging Face cache. Weights you already have under `~/models`, the Hugging Face cache, or the directories in `OMARCHY_AI_WEIGHTS_PATHS` (colon-separated) are verified file by file against the pinned revision and used, no download.
 
 ## Security
 

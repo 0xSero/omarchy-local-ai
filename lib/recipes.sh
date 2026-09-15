@@ -1,9 +1,47 @@
 #!/usr/bin/env bash
 # The vendored recipe file, the hardware match, and the safety gate. Sourced; do not run.
 
-RECIPES="${OMARCHY_AI_RECIPES:-$HERE/../recipes.json}"
-
-recipes_ok() { jq -e '.schemaVersion=="omarchy-local-ai/recipes/1" and (.hardware|type=="object") and (.gateway.image|type=="string" and test("@sha256:[0-9a-f]{64}$"))' "$RECIPES" >/dev/null 2>&1; }
+# The vendored file is the floor: what the release shipped and the marketplace reviewed. A newer
+# copy is fetched from the registry repository (one fixed HTTPS origin, size-capped, schema-checked,
+# accepted only when its generatedAt is newer than what is in use), kept 0600 under the state dir,
+# and used in its place. Every recipe is still re-gated at launch (gate_reason), so a fetched file
+# can add validated recipes but cannot widen what a launch may do. OMARCHY_AI_RECIPES_URL= disables.
+RECIPES_VENDORED="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/recipes.json"
+RECIPES_LIVE="$STATE/recipes.json"
+RECIPES_URL="${OMARCHY_AI_RECIPES_URL-https://raw.githubusercontent.com/0xSero/local-ai-registry/main/plugin/recipes.json}"
+RECIPES_TTL="${OMARCHY_AI_RECIPES_TTL:-21600}"   # seconds between checks: six hours
+recipes_ok_file() { jq -e '.schemaVersion=="omarchy-local-ai/recipes/1" and (.hardware|type=="object") and (.gateway.image|type=="string" and test("@sha256:[0-9a-f]{64}$")) and (.generatedAt|type=="string")' "$1" >/dev/null 2>&1; }
+recipes_generated() { jq -r '.generatedAt // ""' "$1" 2>/dev/null; }
+recipes_select() { # the file in use: an explicit one, else the live copy when it is valid and newer than the vendored one
+  if [[ -n ${OMARCHY_AI_RECIPES:-} ]]; then printf '%s' "$OMARCHY_AI_RECIPES"; return; fi
+  if [[ -f $RECIPES_LIVE ]] && recipes_ok_file "$RECIPES_LIVE" && [[ $(recipes_generated "$RECIPES_LIVE") > $(recipes_generated "$RECIPES_VENDORED") ]]; then printf '%s' "$RECIPES_LIVE"; else printf '%s' "$RECIPES_VENDORED"; fi
+}
+RECIPES=$(recipes_select)
+recipes_source() { [[ $RECIPES == "$RECIPES_LIVE" ]] && printf live || printf vendored; }
+recipes_ok() { recipes_ok_file "$RECIPES"; }
+recipes_count() { jq -r '[.hardware[] | .recipe, (.recipes[]?)] | length' "$RECIPES" 2>/dev/null || printf 0; }
+# recipes_refresh: fetch the registry's copy; adopt it when it is valid and newer. Prints one line.
+recipes_refresh() {
+  [[ -n $RECIPES_URL ]] || { printf 'recipes: refresh is off (OMARCHY_AI_RECIPES_URL is empty)\n'; return 0; }
+  state_dir; local tmp="$RECIPES_LIVE.tmp.$$" err rc=0; date -u +%s >"$STATE/recipes.checked"
+  if ! err=$(curl -fsSL --max-time 20 --max-filesize 8388608 --proto =https -o "$tmp" "$RECIPES_URL" 2>&1); then
+    rm -f "$tmp"; log "recipes: fetch failed: ${err:-no route}"; printf 'recipes: could not fetch the registry (%s); keeping %s\n' "${err:-no route}" "$(recipes_source)"; return 1
+  fi
+  if ! recipes_ok_file "$tmp"; then rm -f "$tmp"; log "recipes: the fetched file is not a recipes file; kept $(recipes_source)"; printf 'recipes: the fetched file is not a recipes file; keeping %s\n' "$(recipes_source)"; return 1; fi
+  local got have; got=$(recipes_generated "$tmp"); have=$(recipes_generated "$RECIPES")
+  if [[ ! $got > $have ]]; then rm -f "$tmp"; printf 'recipes: %s is current (registry %s, %s)\n' "$(recipes_source)" "$(registry_commit | cut -c1-12)" "$have"; return 0; fi
+  chmod 600 "$tmp"; mv "$tmp" "$RECIPES_LIVE"; RECIPES=$RECIPES_LIVE
+  log "recipes: refreshed to registry $(registry_commit) ($got, $(recipes_count) recipes)"
+  printf 'recipes: updated to registry %s (%s, %s recipes)\n' "$(registry_commit | cut -c1-12)" "$got" "$(recipes_count)"
+}
+recipes_autorefresh() { # from snapshot: at most one detached fetch per TTL, never on the card's critical path
+  [[ -n $RECIPES_URL && -z ${OMARCHY_AI_RECIPES:-} ]] || return 0
+  local last=0; last=$(cat "$STATE/recipes.checked" 2>/dev/null || printf 0); [[ $last =~ ^[0-9]+$ ]] || last=0
+  (( $(date -u +%s) - last >= RECIPES_TTL )) || return 0
+  state_dir; date -u +%s >"$STATE/recipes.checked"   # claimed now, so concurrent snapshots do not all fetch
+  if command -v setsid >/dev/null 2>&1; then setsid "$SELF" recipes update >/dev/null 2>>"$LOGFILE" </dev/null & disown
+  else "$SELF" recipes update >/dev/null 2>>"$LOGFILE" </dev/null & disown; fi
+}
 registry_commit() { jq -r '.registryCommit' "$RECIPES"; }
 gateway_image() { jq -r '.gateway.image // empty' "$RECIPES"; }
 
@@ -37,7 +75,8 @@ match_hardware() {
                elif ($gpus|length)==0 then "no supported GPU detected"
                else ("no validated recipe for "+(($use // $gpus[0]).product)+" yet") end),
        pinned:($pinned!=null),
-       gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // ""))}]}' "$RECIPES"
+       gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // "")), tempC:(.tempC // null), utilPct:(.utilPct // null),
+                       usedGb:(if .usedMiB==null then null else ((.usedMiB/1024*10|round)/10) end)}]}' "$RECIPES"
 }
 
 # One card can carry more than one validated recipe: `.recipe` is the recommended one, `.recipes[]`
@@ -45,7 +84,10 @@ match_hardware() {
 # card's recipes is ignored (the card just changed), so the recommended one is the fallback.
 RECIPE_PICK="$STATE/recipe-pick"
 recipe_pick() { printf '%s' "${OMARCHY_AI_RECIPE:-$(cat "$RECIPE_PICK" 2>/dev/null || true)}"; }
-recipes_for() { jq -c --arg h "$1" '[.hardware[$h] | select(.!=null) | (.recipe // empty), (.recipes[]? // empty)]' "$RECIPES"; }   # every recipe of a card, recommended first
+# offered(): the shape checks of gate_reason a file can fail on its own (host networking or IPC, extra
+# capabilities, a weakened profile): such a recipe is not offered at all rather than refused at Start
+OFFERED='select(((.launch.networkMode//"bridge")=="bridge") and ((.launch.ipc//"")!="host") and (((.launch.capAdd//[])|length)==0) and (((.launch.securityOpt//[])|length)==0))'
+recipes_for() { jq -c --arg h "$1" "[.hardware[\$h] | select(.!=null) | (.recipe // empty), (.recipes[]? // empty | $OFFERED)]" "$RECIPES"; }   # every recipe of a card, recommended first; a refused alternate is left out, a refused recommendation stays with its reason
 # claimed_indexes <recipe-json> <match-json> -> {"indexes":[..],"backends":[..],"short":""}: every card the
 # recipe claims (claims per hardware id, or `cards` of its own type), resolved to device indexes:
 # the chosen card first, then the other cards of that type in device order. `short` names the
@@ -54,16 +96,16 @@ claimed_indexes() {
   jq -nc --argjson r "$1" --argjson m "$2" '
     ($r.claims // {($m.hardwareId): ($r.cards // 1)}) as $claims
     | ($claims | length) as $groups
-    | reduce ($claims | to_entries[]) as $c ({indexes:[], backends:[], short:""};
+    | reduce ($claims | to_entries[]) as $c ({indexes:[], backends:[], keys:[], short:""};
         ([$m.gpus[] | select(.hardwareId == $c.key)] | sort_by(if .chosen then 0 else 1 end)) as $pool
         | if ($pool|length) < $c.value then
             .short = (if .short != "" then .short else "recipe needs \($c.value) \(if $groups > 1 then $c.key + " " else "" end)cards, \($pool|length) detected" end)
-          else .indexes += ($pool[:$c.value] | map(.index)) | .backends += ($pool[:$c.value] | map(.backend)) end)
+          else .indexes += ($pool[:$c.value] | map(.index)) | .backends += ($pool[:$c.value] | map(.backend)) | .keys += ($pool[:$c.value] | map(.key)) end)
     | .backends |= unique
     | if .short == "" and (.backends|length) > 1 then .short = "recipe claims cards of different backends" else . end'
 }
-recipe_known() { jq -e --arg id "$1" '[.hardware[] | .recipe.id, (.recipes[]?.id)] | index($id) != null' "$RECIPES" >/dev/null 2>&1; }   # the file carries this recipe id, for any card
-recipe_for() { jq -c --arg h "$1" --arg p "$(recipe_pick)" '.hardware[$h] as $c | if $c==null then empty else (([$c.recipes[]? | select(.id==$p)] | .[0]) // $c.recipe // empty) end' "$RECIPES"; }
+recipe_by_id() { jq -c --arg id "$1" '[.hardware[] | .recipe, (.recipes[]?)] | map(select(.id==$id)) | .[0] // null' "$RECIPES"; }   # the file's recipe of that id, or null
+recipe_for() { jq -c --arg h "$1" --arg p "$(recipe_pick)" ".hardware[\$h] as \$c | if \$c==null then empty else (([\$c.recipes[]? | $OFFERED | select(.id==\$p)] | .[0]) // \$c.recipe // empty) end" "$RECIPES"; }
 
 # gate_reason <recipe-json> -> one-line refusal on stdout; empty means launchable.
 # Fail closed: anything malformed is refused. This is the trust boundary the marketplace reviewed.
