@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# omarchy:summary=Run the validated local model for this GPU and open coding agents on it
-# omarchy:args=<snapshot|load|unload|open-agent [name]|share [--key value]|agent-dir <path>>
+# omarchy:summary=Run the validated local models for this machine's GPUs and open coding agents on them
+# omarchy:args=<snapshot|load|unload [recipe]|open-agent [name] [recipe]|share [--key value]|gpu [key]|recipe [id]|recipes [update]|agent-dir <path>>
 #
-# Five verbs. `snapshot` is a pure read that rewrites the state file the panel watches. `load`
-# and `unload` spawn a worker that holds the op lock; everything they do is logged. `open-agent`
-# launches an agent with the endpoint in its environment. `share` toggles the tailnet route.
+# `snapshot` is a pure read that rewrites the state file the panel watches. `load` and `unload`
+# spawn a worker that holds the op lock; everything they do is logged. `open-agent` launches an
+# agent with a running model's endpoint in its environment. `share` toggles the tailnet route.
+# Several models run at once, one engine+gateway pair each (lib/runtime.sh); a Start replaces only
+# the models on the cards it claims.
 set -euo pipefail
 HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")")" && pwd)
 SELF="$HERE/$(basename "${BASH_SOURCE[0]}")"
@@ -33,18 +35,18 @@ if [[ -n $missing ]]; then broken="missing tool:$missing (sudo pacman -S$missing
 elif ! recipes_ok; then broken="recipes.json is missing or broken: reinstall the plugin"; fi
 if [[ -n ${broken:-} ]]; then
   fail "$broken" || :
-  [[ ${1:-snapshot} == snapshot ]] && printf '{"state":"error","error":"%s","operation":{},"model":null,"reason":"","share":{},"agents":{}}\n' "$broken"
+  [[ ${1:-snapshot} == snapshot ]] && printf '{"state":"error","error":"%s","operation":{},"model":null,"reason":"","share":{},"agents":{},"models":[]}\n' "$broken"
   exit 1
 fi
 
-spawn() { # spawn <op-name> <worker-verb>: detach a worker; it takes the lock itself and reports through the ledger
-  local name=$1; shift; state_dir
+spawn() { # spawn <op-name> <recipe-id> <worker-verb> [args]: detach a worker; it takes the lock itself and reports through the ledger
+  local name=$1 rid=$2; shift 2; state_dir
   if [[ ${OMARCHY_AI_FOREGROUND:-0} == 1 ]]; then "$SELF" "$@" >/dev/null 2>>"$LOGFILE" || true; return; fi
   # the worker is its own session so closing the panel's process never kills it; its pid goes into
   # the ledger right away so the panel turns busy on the next snapshot, not a second later
   if command -v setsid >/dev/null 2>&1; then setsid "$SELF" "$@" >/dev/null 2>>"$LOGFILE" </dev/null & disown
   else "$SELF" "$@" >/dev/null 2>>"$LOGFILE" </dev/null & disown; fi
-  op_pending "$name" "$!"
+  op_pending "$name" "$!" "$rid"
 }
 
 current_recipe() { # the one recipe for this machine, gated; prints json or fails out loud
@@ -54,9 +56,15 @@ current_recipe() { # the one recipe for this machine, gated; prints json or fail
   r=$(recipe_for "$id") || return 1
   r=$(jq -c --argjson m "$m" '. + {gpuIndex:$m.gpu.index, match:{backend:$m.gpu.backend}}' <<<"$r")
   gate=$(gate_reason "$r"); [[ -z $gate ]] || { fail "recipe refused: $gate"; return 1; }
+  local ci; ci=$(claimed_indexes "$r" "$m"); [[ $(jq -r .short <<<"$ci") == "" ]] || { fail "$(jq -r .short <<<"$ci")"; return 1; }
+  r=$(jq -c --argjson ci "$ci" '. + {gpuIndexes:$ci.indexes, gpuKeys:$ci.keys}' <<<"$r")
   driver_ok "$(jq -r .driver <<<"$m")" "$(jq -r '.minDriver // ""' <<<"$r")" \
     || { fail "needs NVIDIA driver $(jq -r .minDriver <<<"$r") or newer"; return 1; }
   printf '%s\n' "$r"
+}
+slot_recipe() { # slot_recipe <recipe-id> -> the recipe a slot was started from, as recorded; fails when there is no such slot
+  [[ -s $STATE/slots/$1.json ]] || { fail "no model $1 is running"; return 1; }
+  cat "$STATE/slots/$1.json"
 }
 
 w_load() {
@@ -74,10 +82,16 @@ w_load() {
     fi
   fi
   op download "$id" "checking" 0
+  if weights_marked "$r" && ! weights_files_ok "$r"; then log "weights for $id are marked complete but the files are gone; fetching again"; rm -f "$(marker_path "$id")"; fi
   local need=0; weights_present "$r" || need=1
+  if (( need )) && weights_find "$r"; then need=0; fi   # a verified copy elsewhere on this machine, adopted: no download
   weights_plan "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
   mount_dirs "$r"; write_assets "$r"; ensure_key
-  printf '%s\n' "$r" >"$STATE/recipe.json"; printf '%s\n' "$r" >"$STATE/gateway.recipe.json"
+  # the slot this model gets, and the models it replaces (the ones on its cards); the recipe file carries both into the phase
+  r=$(slot_plan "$r" 2>"$STATE/gate.err") || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
+  mkdir -p "$STATE/slots"; printf '%s\n' "$r" >"$STATE/recipe.json"
+  local victims; victims=$(jq -r '[.victims[]? | select(.id != $id) | .name] | join(", ")' --arg id "$id" <<<"$r")
+  [[ -z $victims ]] || log "start $id replaces $victims (same cards)"
   if (( need )) && host_hf >/dev/null; then # the host's own hf, as this user, no docker and no prompt
     download_host "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"; weights_mark "$r"; need=0
   fi
@@ -85,47 +99,84 @@ w_load() {
   # every docker call of this Start in one phase: images, weights when still needed, set aside, engine, gateway
   PHASE_EXPECT_BYTES=$WEXP PHASE_WEIGHTS_DIR=$WBASE phase_run start download "$id" "$STATE/recipe.json" "$need" || oops "$PHASE_REASON"
   (( need )) && weights_mark "$r"
+  # listed from now on, unverified until accepted; an earlier run's record and file stay aside for a rollback
+  local was; was=$(slot_of "$id"); [[ -f $STATE/slots/$id.json ]] && command cp -f "$STATE/slots/$id.json" "$STATE/slots/$id.json.prev"
+  slot_record "$r"; printf '%s\n' "$r" >"$STATE/slots/$id.json"; slots_file
   if ! accept "$r" 2>"$STATE/accept.err"; then
     local why; why=$(sed -n '$s/^local-ai: //p' "$STATE/accept.err" 2>/dev/null); [[ -n $why ]] || why="engine failed to start (see $LOGFILE)"
     log "rollback: $why"; op starting "$id" "rolling back" 0
-    privileged restore >"$STATE/phase.out" 2>>"$LOGFILE" || why+="; the previous model could not be restored (see $LOGFILE)"
-    oops "$why"
+    # the failed engine's own last lines, before rollback removes it: the reason lives there
+    if docker_direct; then { echo "--- engine log before rollback ($id)"; docker logs --tail 80 "$(jq -r .slot.engine <<<"$r")" 2>&1 | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true; fi
+    privileged restore "$STATE/recipe.json" >"$STATE/phase.out" 2>>"$LOGFILE" || why+="; the previous model could not be restored (see $LOGFILE)"
+    # the new slot is gone; a replaced earlier run of this recipe is back under the same name, with its own record
+    if [[ -n $was ]]; then lwrite '.slots[$id]=$o' --arg id "$id" --argjson o "$was"; [[ -f $STATE/slots/$id.json.prev ]] && mv -f "$STATE/slots/$id.json.prev" "$STATE/slots/$id.json"
+    else slot_forget "$id"; rm -f "$STATE/slots/$id.json"; fi
+    slots_file; oops "$why"
   fi
-  # the previous pair stays set aside (stopped) until the next Start or Stop drops it: no second prompt on success
+  # the replaced models are gone for good; their records go with them
+  local v; while IFS= read -r v; do [[ -n $v && $v != "$id" ]] && { slot_forget "$v"; rm -f "$STATE/slots/$v.json"; }; done < <(jq -r '.victims[]?.id' <<<"$r")
+  # behind a prompt the set-aside pairs stay, stopped, until the next Start or Stop drops them: no second prompt on success
+  if docker_direct; then drop_previous; fi; rm -f "$STATE/slots/$id.json.prev"; slots_file
   # how long Start took from the first container step to accepted: the next Start's progress bar
   lwrite '.lastStartSeconds=($s|tonumber)' --arg s "$((SECONDS - t0))"
   op_done; log "ready $id"
 }
 
-w_unload() {
+w_unload() { # w_unload [recipe-id]: one model, or every model when no id is given
   guard || { log "error: another operation is running"; exit 1; }
   trap worker_exit EXIT
+  local id=${1:-} r
+  if [[ -n $id ]]; then
+    r=$(slot_recipe "$id") || oops "no model $id is running"
+    op unload "$id" "stopping $(jq -r '.model.name // .id' <<<"$r")" 0
+    printf '%s\n' "$r" >"$STATE/recipe.json"
+    docker_direct || op unload "$id" "waiting for your password" 0
+    privileged stop "$STATE/recipe.json" >"$STATE/phase.out" 2>>"$LOGFILE" || { why=$(grep '^reason ' "$STATE/phase.out" | tail -1 | cut -c8-); oops "${why:-Stop failed (see $LOGFILE)}"; }
+    slot_forget "$id"; rm -f "$STATE/slots/$id.json"; slots_file
+    [[ $(lread | jq '.slots | length') -gt 0 ]] || share_forget
+    op_done; log "unloaded $id"; return
+  fi
   op unload "" "stopping" 0
   docker_direct || op unload "" "waiting for your password" 0
   privileged stop >"$STATE/phase.out" 2>>"$LOGFILE" || { why=$(grep '^reason ' "$STATE/phase.out" | tail -1 | cut -c8-); oops "${why:-Stop failed (see $LOGFILE)}"; }
-  share_forget   # only once the published gateway is really gone
-  lwrite '.accepted={recipeId:"",servedModel:"",registry:"",apis:[]}'
+  share_forget   # only once the published gateways are really gone
+  lwrite '.slots={}'; rm -rf "$STATE/slots"; slots_file
   op_done; log "unloaded"
 }
 
 usage() {
   echo 'Usage: omarchy-local-ai <command>
-  snapshot               refresh and print the state the panel renders
-  load                   download if needed, then start the model for this GPU
-  unload                 stop the model; keep downloads
-  open-agent [name]      open an installed coding agent on the running model
-  share [--key <value>]  toggle sharing on your tailnet, or replace the key
-  agent-dir <path>       directory agents open in (default: where the shell started)
+  snapshot                    refresh and print the state the panel renders
+  load                        download if needed, then start the selected recipe (models on other cards keep running)
+  run <recipe> [gpu]          pick the recipe (and the card) and start it, in one go, as the run row on the card does
+  unload [recipe]             stop one model, or every model; or stop a running download (partial weights stay)
+  open-agent [name] [recipe]  open an installed coding agent on a running model
+  share [--key <value>|-]     toggle sharing of every running model on your tailnet, or replace the key
+  agent-dir <path>            directory agents open in (default: where the shell started)
   agent-args <name> [-- flags]  extra flags for one agent when opened from the panel (none to clear)
-  gpu [auto|<backend:index>]  which detected card to use (snapshot lists them); auto = largest card with a recipe'
+  gpu [auto|<backend:index>]  which detected card to start on (snapshot lists them); auto = largest card with a recipe
+  recipe [auto|<id>]          which of the validated recipes of the chosen card to run (snapshot lists them); auto = the recommended one
+  recipes [update]            which recipe file is in use (vendored or fetched from the registry); update fetches a newer one now'
 }
 
 cmd=${1:-help}; shift || true
 case $cmd in
-  snapshot) snapshot_write; cat "$SNAPSHOT" ;;
-  load) [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1; spawn download _worker-load ;;
-  unload) [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1; spawn unload _worker-unload ;;
-  open-agent) snapshot_write; open_agent "${1:-}" 2>"$STATE/agent.err" || { m=$(sed -n '$s/^local-ai: //p' "$STATE/agent.err"); refuse "${m:-agent launch failed (see $LOGFILE)}"; exit 1; } ;;
+  snapshot) recipes_autorefresh; snapshot_write; cat "$SNAPSHOT" ;;
+  load) [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1; lock_wait; spawn download "$(recipe_pick)" _worker-load ;;
+  run) # run <recipe> [gpu]: the card's one click; the picks are written without a snapshot each, the Start makes the one that matters
+       [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1
+       [[ ${1:-} =~ ^[a-z0-9][a-z0-9-]*$ ]] && jq -e --arg p "$1" '[.hardware[]|(.recipe.id), (.recipes[]?.id)]|index($p)!=null' "$RECIPES" >/dev/null 2>&1 || { fail "run <recipe> [gpu], as listed in the snapshot"; exit 1; }
+       state_dir
+       if [[ -n ${2:-} ]]; then [[ $2 =~ ^[a-z-]+:[0-9]+$ ]] || { fail "run <recipe> [backend:index]"; exit 1; }; printf '%s' "$2" >"$STATE/gpu"; fi
+       printf '%s' "$1" >"$STATE/recipe-pick"; log "run $1${2:+ on $2}"
+       lock_wait; spawn download "$1" _worker-load ;;
+  unload) p=$(busy_pid)
+          if [[ -n $p ]]; then [[ $(lread | jq -r .op.name) == download ]] || { fail "another operation is running"; exit 1; }; cancel_download "$p"
+          else
+            if [[ -n ${1:-} ]]; then [[ $1 =~ ^[a-z0-9][a-z0-9-]*$ ]] && lread | jq -e --arg id "$1" '.slots[$id] != null' >/dev/null || { refuse "no model $1 is running"; exit 1; }; fi
+            lock_wait; spawn unload "${1:-}" _worker-unload "${1:-}"
+          fi ;;
+  open-agent) snapshot_write; open_agent "${1:-}" "${2:-}" 2>"$STATE/agent.err" || { m=$(sed -n '$s/^local-ai: //p' "$STATE/agent.err"); refuse "${m:-agent launch failed (see $LOGFILE)}"; exit 1; } ;;
   share) guard || exit 1; share_toggle "$@" ;;
   agent-args) [[ -n ${1:-} ]] && printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$1" || { fail "agent-args <agent> [-- flags...], one of: ${AGENTS[*]}"; exit 1; }; n=$1; shift; [[ ${1:-} == -- ]] && shift; mkdir -p "$STATE/agents/args"; if (( $# )); then printf '%s\0' "$@" >"$STATE/agents/args/$n"; else rm -f "$STATE/agents/args/$n"; fi; log "agent-args $n: $*" ;;
   gpu) case ${1:-} in
@@ -133,6 +184,16 @@ case $cmd in
          *) [[ $1 =~ ^[a-z-]+:[0-9]+$ ]] || { fail "gpu <backend:index>, as listed in the snapshot"; exit 1; }
             state_dir; printf '%s' "$1" >"$STATE/gpu"; log "gpu $1" ;;
        esac; snapshot_write; jq -c '.gpus' "$SNAPSHOT" ;;
+  recipes) case ${1:-} in
+         update) recipes_refresh; rc=$?; snapshot_write; exit $rc ;;
+         "") jq -c --arg s "$(recipes_source)" --arg f "$RECIPES" '{source:$s, file:$f, registryCommit, generatedAt, hardware:(.hardware|length), recipes:([.hardware[]|.recipe,(.recipes[]?)]|length)}' "$RECIPES" ;;
+         *) fail "recipes [update]"; exit 1 ;;
+       esac ;;
+  recipe) case ${1:-} in
+         ""|auto) rm -f "$STATE/recipe-pick"; log "recipe auto" ;;
+         *) [[ $1 =~ ^[a-z0-9][a-z0-9-]*$ ]] && jq -e --arg p "$1" '[.hardware[]|(.recipe.id), (.recipes[]?.id)]|index($p)!=null' "$RECIPES" >/dev/null 2>&1 || { fail "recipe <id>, as listed in the snapshot"; exit 1; }
+            state_dir; printf '%s' "$1" >"$STATE/recipe-pick"; log "recipe $1" ;;
+       esac; snapshot_write; jq -c '.recipes' "$SNAPSHOT" ;;
   agent-dir) [[ -d ${1:-} ]] && { (cd "$1" && pwd) >"$STATE/agent-dir"; log "agent-dir $1"; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;
   _root) # a phase run as root by pkexec (see lib/priv.sh); never spawned by anything but this script's own privileged().
          # Its environment comes from the user's 0600 file, OMARCHY_AI_* assignments only, then this script re-executes itself.
@@ -157,7 +218,7 @@ case $cmd in
          fi
          shift 2; p=$1; shift; "phase_$p" "$@" ;;
   _worker-load) w_load ;;
-  _worker-unload) w_unload ;;
+  _worker-unload) w_unload "${1:-}" ;;
   help|-h|--help) usage ;;
   *) usage >&2; exit 2 ;;
 esac

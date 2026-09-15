@@ -3,8 +3,11 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-// One model, one button, one agent picker, one share toggle. Renders purely from the
-// snapshot file the controller writes; nothing here knows a model name, a flag, or a color.
+import "ui.js" as Ui
+// The card: a recessed state slab (orb, state word, title) over rows on a raised body, a pinned
+// footer for the verbs. Three places: home (cards and what runs on them), a card type (how many,
+// which recipe), a running model (its numbers, agent, share, stop). Work and error take the whole
+// card over. ui.js decides what the rows are; this file draws them and runs the verbs.
 Panel {
   id: root
   moduleName: "sero.local-ai"
@@ -17,117 +20,107 @@ Panel {
   readonly property string cli: sourceDir + "/bin/omarchy-local-ai"
   readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/omarchy/local-ai"
 
-  property var snap: ({ state: "uninitialized", operation: {}, model: null, reason: "", share: {}, agents: {}, error: "" })
-  readonly property string state: snap.state || "uninitialized"
-  readonly property var model: snap.model || null
-  readonly property var operation: snap.operation || ({})
-  readonly property var share: snap.share || ({})
-  readonly property var agentList: (snap.agents && snap.agents.launchable) || []
-  // pending: a verb was just issued and no snapshot has confirmed the worker yet. The panel treats
-  // it as busy so the click has an immediate effect instead of a dead second while the worker starts.
-  property bool pending: false
-  readonly property bool working: ["download", "starting", "unload", "share"].indexOf(state) >= 0
-  readonly property bool busy: working || pending
-  property int elapsed: 0
-  readonly property int expected: operation.expectedSeconds || 0
-  readonly property int progress: operation.percent > 0 ? operation.percent
-    : (expected > 0 && elapsed > 0 ? Math.min(95, Math.round(elapsed * 100 / expected)) : 0)
-  readonly property bool loaded: state === "ready"
-  readonly property bool hasRunning: !!snap.running
-  readonly property string defaultAgent: (snap.agents && snap.agents.default) || ""
-  readonly property var gpus: snap.gpus || []
-  readonly property var gpuSel: gpus.filter(function(g) { return g.chosen })[0] || null
-  property bool gpusOpen: false
-  function gpuLabel(g) { return g.product.replace(/^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )/, "") + (g.vramGb ? " " + g.vramGb + " GB" : "") }
-  function gpuLine() {
-    if (!gpuSel) return gpus.length === 0 ? "none detected" : gpus.length + " detected, none chosen"
-    return (gpus.length > 1 ? (gpus.indexOf(gpuSel) + 1) + "/" + gpus.length + " · " : "") + gpuLabel(gpuSel)
-  }
-  readonly property string homeDir: Quickshell.env("HOME") || ""
-  function tilde(p) { return homeDir && p.indexOf(homeDir) === 0 ? "~" + p.slice(homeDir.length) : p }
+  // ---------------------------------------------------------------- the locked palette: matte black, fills not borders, sharp corners
+  readonly property color popupBg: "#1a1a1a"
+  readonly property color popupLine: "#2e2e2e"
+  readonly property color ink: "#f5f5f5"
+  readonly property color fg: "#bebebe"
+  readonly property color dim: "#8a8a8d"
+  readonly property color faint: "#555555"
+  readonly property color urgent: "#D35F5F"
+  readonly property color accent: "#e68e0d"
+  readonly property color orbField: "#4b4b4b"
+  readonly property color recessed: Qt.rgba(0, 0, 0, 0.24)
+  readonly property color restFill: Util.alpha(ink, 0.04)
+  readonly property color hoverFill: Util.alpha(ink, 0.08)
+  readonly property color selectedFill: Util.alpha(ink, 0.16)
+  readonly property color hairline: Util.alpha(ink, 0.07)
+  readonly property string mono: bar ? bar.fontFamily : Style.font.family
+
+  // ---------------------------------------------------------------- snapshot and navigation
+  property var snap: ({ state: "uninitialized", operation: {}, models: [], cards: [], recipes: [], gpus: [], share: {}, agents: {}, reason: "", error: "" })
+  property var path: ["home"]           // home › card › model
+  readonly property string view: path[path.length - 1]
+  property string hw: ""                // the card type open
+  property int count: 1                 // how many of it
+  property string pick: ""              // the recipe picked
+  property string slotSel: ""           // the running model open
   property string agentPick: ""
-  property bool agentsOpen: false
-  readonly property string agentSel: agentPick !== "" ? agentPick
-    : (agentList.indexOf(defaultAgent) >= 0 ? defaultAgent : (agentList.length > 0 ? agentList[0] : ""))
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
-  readonly property color dim: Util.alpha(foreground, 0.55)
-
-  function refresh() { if (!poll.running) poll.running = true }
-  // load and unload hand off to a worker, so pending lasts until a snapshot shows it (or the
-  // timeout); every other verb finishes when its process exits, and the card must not stay dead
-  // for 20 seconds after a GPU pick or an agent launch.
-  property string lastVerb: ""
-  property bool actionDone: false
-  function act(args) { if (busy || action.running) return; lastVerb = args[0]; actionDone = false; pending = true; pendingTimeout.restart(); action.command = [cli].concat(args); action.running = true }
+  property bool agentOpen: false
+  property bool copied: false
+  property string toast: ""
   property string localError: ""
-  function take(json) {
-    try { snap = JSON.parse(json); localError = ""; if (working || snap.error || (actionDone && lastVerb !== "load" && lastVerb !== "unload")) pending = false; tick() }
-    catch (e) { if (json.trim() === "") { localError = "the plugin did not answer (see " + stateDir + "/log)"; pending = false } }
-  }
-  function tick() {
-    var t = Date.parse(operation.startedAt || "")
-    elapsed = working && !isNaN(t) ? Math.max(0, Math.round((Date.now() - t) / 1000)) : 0
-  }
-  function mmss(s) { return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60) }
-  // the running pair may belong to another recipe than the card's (a different card was picked,
-  // or the vendored file moved on): the card names its recipe, and says a different model is up
-  readonly property bool otherRunning: hasRunning && !!snap.running && !snap.running.current
-  function title() {
-    if (otherRunning) return "Older model running"
-    if (model) return model.name
-    return "Local AI"
-  }
-  function status() {
-    if (localError) return localError
-    if (snap.error && !pending) return snap.error
-    if (pending && !working) return spinner() + " starting"
-    if (busy) return spinner() + " " + (operation.detail || state)
-      + (elapsed > 0 ? " · " + mmss(elapsed) + (expected > 0 ? " of about " + mmss(expected) : "") : "")
-      + (progress > 0 ? " · " + progress + "%" : "")
-    if (snap.reason) return snap.reason
-    if (otherRunning) return "a different model is running · Start replaces it"
-    if (loaded && model) return model.engine + " · " + Math.round(model.ctxTokens / 1024) + "K context"
-    return ""
-  }
-  property int spin: 0
-  function spinner() { return ["|", "/", "-", "\\"][spin] }
-  readonly property int lastStart: snap.lastStartSeconds || 0
-  function startLabel() {
-    if (!model) return "Start"
-    var label = !model.downloaded && model.sizeGb > 0 ? "Start · " + model.sizeGb + " GB" : "Start"
-    return lastStart > 0 && model.downloaded ? label + " · usually " + mmss(lastStart) : label
-  }
-  // The launch is its own process: the panel closes only when the terminal actually opened, and a
-  // refusal (no model, wedged launcher) stays on screen instead of vanishing with the panel.
-  function openAgent() {
-    if (!loaded || agentSel === "" || busy || action.running || agentLaunch.running) return
-    agentLaunch.command = [cli, "open-agent", agentSel]; agentLaunch.running = true
-  }
+  property bool pending: false          // a verb was issued and no snapshot has confirmed it yet
+  property string lastVerb: ""
+  property var queue: []                // verbs to run after the current one exits
+  property int elapsed: 0
+  property int cursor: 0
+  readonly property var ui: Ui.build({ snap: snap, view: view, hw: hw, count: count, pick: pick, slotSel: slotSel, agentPick: agentPick, agentOpen: agentOpen, copied: copied, pending: pending, lastVerb: lastVerb, elapsed: elapsed, localError: localError })
+  readonly property string tone: ui.tone
+  readonly property color toneColor: tone === "work" ? accent : tone === "error" ? urgent : tone === "ready" ? ink : dim
+  readonly property bool working: tone === "work"
+  readonly property var all: ui.rows.concat(ui.foot)
+  readonly property var actionable: all.map(function(r, i) { return r.action && !r.disabled ? i : -1 }).filter(function(i) { return i >= 0 })
+  readonly property int cursorAt: actionable.length ? actionable[Math.min(cursor, actionable.length - 1)] : -1
 
-  // The controller rewrites the snapshot after every step; watching the file is what makes
-  // progress live. The timer catches reality changing outside an operation.
-  FileView {
-    id: snapshotFile
-    path: root.stateDir + "/snapshot.json"
-    watchChanges: true
-    onFileChanged: reload()
-    onLoaded: root.take(text())
+  function take(json) {
+    try { var s = JSON.parse(json), busyNow = ["download", "starting", "unload", "share"].indexOf(s.state) >= 0, newError = !!s.error && s.error !== snap.error; freed(snap, s); snap = s; localError = ""; if (busyNow || newError || (actionDone && ["run", "load", "unload", "share"].indexOf(lastVerb) < 0)) pending = false; tick() }   // the snapshot, not our own pending flag, decides when pending ends
+    catch (e) { if (json.trim() === "") { localError = "no answer"; pending = false } }
   }
-  Process {
-    id: poll
-    command: [root.cli, "snapshot"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: { if (text.length <= 262144) root.take(text) } }
+  function freed(before, after) { // a model that left while we were stopping: say which card came free
+    var gone = (before.models || []).filter(function(m) { return m.state !== "stopped" && !(after.models || []).some(function(n) { return n.recipeId === m.recipeId && n.state !== "stopped" }) })
+    if (gone.length && (lastVerb === "unload" || before.state === "unload")) { var c = Ui.cardOfKeys(before, gone[0].keys); say((c ? c.name : "card") + " " + gone[0].keys.map(function(k) { return "#" + k.split(":")[1] }).join(" ") + " · freed") }
   }
-  Process { id: action; onExited: { root.actionDone = true; root.refresh() } }
+  function tick() { var t = Date.parse((snap.operation || {}).startedAt || ""); elapsed = working && !isNaN(t) ? Math.max(0, Math.round((Date.now() - t) / 1000)) : 0 }
+  function say(t) { toast = t; toastTimer.restart() }
+  function refresh() { if (!poll.running) poll.running = true }
+  function go(v) { var p = path.slice(); p.push(v); path = p; cursor = 0; agentOpen = false }
+  function back() { if (path.length > 1) { var p = path.slice(); p.pop(); path = p } cursor = 0; agentOpen = false }
+  function home() { path = ["home"]; cursor = 0; agentOpen = false }
+  // verbs hand off to the controller one at a time; run, load, unload and share are done when a snapshot
+  // shows their worker, the rest when the process exits
+  property bool actionDone: false
+  function act(args) { if (action.running) { queue = queue.concat([args]); return } lastVerb = args[0]; actionDone = false; pending = true; pendingTimeout.restart(); action.command = [cli].concat(args); action.running = true }
+  function activate(a) {
+    if (!a) return
+    var s = a.split(":"), v = s[0]
+    if (v === "back") back()
+    else if (v === "card") { hw = s[1]; count = 1; pick = ""; go("card") }
+    else if (v === "count") { count = parseInt(s[1], 10) || 1; pick = "" }
+    else if (v === "pick") pick = s[1]
+    else if (v === "model") { slotSel = s[1]; home(); go("model") }
+    else if (v === "run") { if (working) return; var g = Ui.cardByHw(snap, hw), free = g ? Ui.freeKeys(snap, g) : []; home(); act(["run", s[1], free[0] || (g ? g.keys[0] : "")].filter(function(x) { return x !== "" })) }
+    else if (v === "run-again") { if (working) return; home(); act(["load"]) }
+    else if (v === "refresh") { localError = ""; refresh() }
+    else if (v === "stop") { if (working) return; home(); act(["unload", s[1]]) }
+    else if (v === "stop-download") { if (action.running) return; lastVerb = "unload"; actionDone = false; action.command = [cli, "unload"]; action.running = true }
+    else if (v === "agent-toggle") agentOpen = !agentOpen
+    else if (v === "agent") { agentPick = s[1]; agentOpen = false }
+    else if (v === "open-agent") { if (agentLaunch.running) return; agentLaunch.command = [cli, "open-agent", s[1], s[2]]; agentLaunch.running = true; say(s[1] + " · " + (Ui.modelById(snap, s[2]) || { name: "" }).name) }
+    else if (v === "share") { if (working) return; act(["share"]) }
+    else if (v === "copy") { var m = Ui.modelById(snap, s[1]); if (copy.running || !m) return; copy.command = ["bash", "-c", "command -v wl-copy >/dev/null 2>&1 || exit 127; printf %s \"$1\" | wl-copy", "_", m.shareUrl]; copy.running = true }
+    else if (v === "log") { logOpen.running = true; say("log · open") }
+  }
+  function moveCursor(d) { if (actionable.length) cursor = ((cursor + d) % actionable.length + actionable.length) % actionable.length }
+  function cursorRow() { return cursorAt >= 0 ? all[cursorAt] : null }
+
+  // ---------------------------------------------------------------- the controller
+  FileView { path: root.stateDir + "/snapshot.json"; watchChanges: true; onFileChanged: reload(); onLoaded: root.take(text()) }
+  Process { id: poll; command: [root.cli, "snapshot"]; stdout: StdioCollector { waitForEnd: true; onStreamFinished: { if (text.length <= 262144) root.take(text) } } }
+  Process { id: action; onExited: { if (root.queue.length) { var n = root.queue[0]; root.queue = root.queue.slice(1); root.lastVerb = n[0]; root.pending = true; pendingTimeout.restart(); action.command = [root.cli].concat(n); action.running = true; return } root.actionDone = true; if (["run", "load", "unload", "share"].indexOf(root.lastVerb) < 0) root.pending = false; root.refresh() } }
   Process { id: agentLaunch; onExited: function(code) { root.refresh(); if (code === 0) root.close() } }
-  // Poll fast while something runs, whether or not the panel is open, so the bar icon starts and
-  // stops moving with the operation; slow when idle. The file watch above makes this a backstop.
+  Process { id: copy; onExited: function(code) { if (code === 0) { root.copied = true; copiedTimer.restart(); root.say("link copied") } else root.say(code === 127 ? "wl-copy · missing" : "copy · failed") } }
+  Process { id: logOpen; command: ["omarchy-launch-tui", "--app-id=org.omarchy.local-ai-log", "less", "+G", root.stateDir + "/log"] }
   Timer { interval: root.pending ? 1000 : root.working ? 2000 : root.opened ? 10000 : 60000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.refresh() }
   Timer { id: pendingTimeout; interval: 20000; onTriggered: root.pending = false }
   Timer { interval: 1000; running: root.working; repeat: true; triggeredOnStart: true; onTriggered: root.tick() }
-  Timer { interval: 140; running: root.busy && root.opened; repeat: true; onTriggered: root.spin = (root.spin + 1) % 4 }
-
-  onOpenedChanged: if (opened) refresh()
+  Timer { id: toastTimer; interval: 3500; onTriggered: root.toast = "" }
+  Timer { id: copiedTimer; interval: 1400; onTriggered: root.copied = false }
+  // the share toggle finishes with the link on the clipboard
+  onSnapChanged: { if (lastVerb === "share" && slotSel !== "" && view === "model" && !working) { var m = Ui.modelById(snap, slotSel); if (m && m.shareUrl) { lastVerb = ""; activate("copy:" + slotSel) } } }
+  onOpenedChanged: { if (opened) { refresh(); if (!working) home() } }
+  onToneChanged: { if (tone === "error" || (tone === "work" && lastVerb !== "share")) home(); cursor = 0 }
+  onViewChanged: cursor = 0
 
   IpcHandler {
     target: root.ipcTarget
@@ -136,44 +129,20 @@ Panel {
     function toggle(): void { root.toggle() }
     function load(): string { root.act(["load"]); return "ok" }
     function unload(): string { root.act(["unload"]); return "ok" }
-    function agent(): string { root.openAgent(); return "ok" }
     function refresh(): string { root.refresh(); return "ok" }
+    function activate(a: string): string { root.activate(a); return root.tone + ":" + root.view }   // any row action, for scripts and tests
   }
 
   BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    iconComponent: Component {
-      Item {
-        // The ring is the model's place; the dot inside grows with progress and breathes while
-        // working, so a glance at the bar says how far along a Start is. Full dot = ready,
-        // urgent ring = error, hollow = idle.
-        Rectangle {
-          id: ring
-          anchors.centerIn: parent; width: Style.space(9); height: width; radius: width / 2
-          color: "transparent"
-          border.width: Math.max(1, Style.space(1))
-          border.color: root.state === "error" ? (root.bar ? root.bar.urgent : root.foreground) : root.foreground
-          opacity: root.loaded ? 0 : 1
-          Behavior on opacity { NumberAnimation { duration: 400 } }
-        }
-        Rectangle {
-          id: dot
-          anchors.centerIn: parent
-          readonly property real fill: root.loaded ? 1 : root.busy ? Math.max(0.3, root.progress / 100) : 0
-          width: ring.width * fill; height: width; radius: width / 2
-          color: root.foreground
-          Behavior on width { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
-          SequentialAnimation on opacity {
-            running: root.busy; loops: Animation.Infinite; alwaysRunToEnd: true
-            NumberAnimation { to: 0.3; duration: 600; easing.type: Easing.InOutSine } NumberAnimation { to: 1; duration: 600; easing.type: Easing.InOutSine }
-          }
-        }
-      }
-    }
-    tooltipText: "Local AI · " + root.title()
-    onPressed: function(code) { if (code === Qt.RightButton && root.loaded) root.openAgent(); else root.toggle() }
+    iconComponent: Component { Item { Rectangle { // the bar mark: one square. faint idle, ink ready, accent blinking while working, urgent on error
+      anchors.centerIn: parent; width: Style.space(8); height: width
+      color: root.tone === "ready" ? (root.bar ? root.bar.foreground : root.ink) : root.tone === "work" ? root.accent : root.tone === "error" ? (root.bar ? root.bar.urgent : root.urgent) : Util.alpha(root.bar ? root.bar.foreground : root.ink, 0.4)
+      SequentialAnimation on opacity { running: root.working; loops: Animation.Infinite; alwaysRunToEnd: true; NumberAnimation { to: 0.3; duration: 500 } NumberAnimation { to: 1; duration: 500 } } } } }
+    tooltipText: "Local AI · " + root.ui.title
+    onPressed: root.toggle()
   }
 
   KeyboardPanel {
@@ -183,113 +152,99 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keys
-    contentWidth: panel.fittedContentWidth(Style.space(220))
+    padding: 0
+    borderSpec: Border.flat(root.popupLine, 1)
+    contentWidth: panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(content.implicitHeight)
-    PanelKeyCatcher {
+    readonly property real ceiling: Style.space(720)   // the card never grows past this: the list scrolls, the rest stays put
+    Rectangle { anchors.fill: parent; color: root.popupBg }
+    Item {
       id: keys
       anchors.fill: parent
-      onActivateRequested: { if (root.loaded) root.openAgent(); else if (root.model && !root.snap.reason) root.act(["load"]) }
-      onCloseRequested: root.close()
-      onTabRequested: function(direction) { root.switchPanel(direction) }
+      focus: true
+      Keys.priority: Keys.BeforeItem
+      Keys.onPressed: function(event) {
+        var k = event.key, r = root.cursorRow()
+        if (k === Qt.Key_Escape) { if (root.view !== "home") root.back(); else root.close() }
+        else if (k === Qt.Key_Tab || k === Qt.Key_Backtab) root.switchPanel((event.modifiers & Qt.ShiftModifier) || k === Qt.Key_Backtab ? -1 : 1)
+        else if (k === Qt.Key_Down || event.text === "j") root.moveCursor(1)
+        else if (k === Qt.Key_Up || event.text === "k") root.moveCursor(-1)
+        else if (k === Qt.Key_Return || k === Qt.Key_Enter) { if (r) root.activate(r.action) }
+        else if ((k === Qt.Key_Left || k === Qt.Key_Right) && root.view === "card") { var g = Ui.cardByHw(root.snap, root.hw), n = g ? Ui.freeKeys(root.snap, g).length : 1; root.count = Math.max(1, Math.min(n, root.count + (k === Qt.Key_Right ? 1 : -1))); root.pick = "" }
+        else if (k === Qt.Key_Backspace && root.view !== "home") root.back()
+        else return
+        event.accepted = true
+      }
       Column {
         id: content
-        anchors.left: parent.left
-        anchors.right: parent.right
-        spacing: Style.space(10)
-        // The top of the card is a field of pixels, edge to edge, with a circle lit inside it: the
-        // bar icon at card size. Idle, the circle is a faint disc in a fainter grid. Working, it
-        // pulses fast and fills row by row as the download lands. Ready, it breathes slowly.
-        // One Canvas, repainted only while the card is open and something is moving.
-        Canvas {
-          id: orb
-          width: parent.width; height: Math.round(cell * rows)
-          readonly property int cols: 28
-          readonly property int rows: 9                                              // odd: a centre row
-          readonly property real cell: width / cols
-          readonly property real fill: root.loaded ? 1 : root.progress / 100
-          readonly property bool pulsing: root.opened && (root.busy || root.loaded)
-          readonly property bool working: root.busy
-          readonly property color ink: root.state === "error" && root.bar ? root.bar.urgent : root.foreground
-          property real phase: 0
-          NumberAnimation on phase { running: orb.pulsing; loops: Animation.Infinite; from: 0; to: 1; duration: root.busy ? 1100 : 3000 }
-          onPhaseChanged: requestPaint()
-          onFillChanged: requestPaint()
-          onPulsingChanged: requestPaint()
-          onWorkingChanged: requestPaint()
-          onInkChanged: requestPaint()
-          onWidthChanged: requestPaint()
-          onPaint: {
-            var ctx = getContext("2d"); ctx.clearRect(0, 0, width, height)
-            var px = cell, gap = Math.max(1, px * 0.28), side = px - gap, corner = side * 0.28
-            var cx = cols / 2, cy = rows / 2
-            var breath = pulsing ? 0.5 - 0.5 * Math.cos(phase * 2 * Math.PI) : 0        // 0..1, eased both ways
-            var radius = (rows / 2) * (pulsing ? 0.72 + 0.28 * breath : 0.86)         // in cells
-            var peak = root.loaded ? 0.7 + 0.3 * breath : (root.busy ? 0.55 + 0.25 * breath : 0.34)
-            function dot(col, row, a) {
-              var x = col * px + gap / 2, y = row * px + gap / 2
-              ctx.fillStyle = Qt.rgba(ink.r, ink.g, ink.b, a)
-              ctx.beginPath(); ctx.roundedRect(x, y, side, side, corner, corner); ctx.fill()
-            }
-            for (var row = 0; row < rows; row++) {
-              var lit = (rows - row) / rows <= fill
-              for (var col = 0; col < cols; col++) {
-                var dx = col + 0.5 - cx, dy = row + 0.5 - cy, d = Math.sqrt(dx * dx + dy * dy)
-                if (d > radius + 0.5) { dot(col, row, 0.07); continue }                  // the field
-                var glow = 1 - Math.pow(d / (radius + 0.5), 2) * 0.55                    // brightest at the centre
-                var a = peak * glow * (lit ? 1 : 0.4)
-                if (d > radius - 0.5) a *= 0.5 + 0.5 * (radius + 0.5 - d)              // soft rim
-                dot(col, row, Math.max(a, 0.07))
+        anchors.left: parent.left; anchors.right: parent.right
+        spacing: 0
+        Rectangle { // ---- the state slab
+          id: slab
+          width: parent.width; color: root.recessed; implicitHeight: Math.max(Style.space(104), slabRow.implicitHeight + Style.space(32))
+          Row {
+            id: slabRow
+            anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; anchors.margins: Style.space(16); spacing: Style.space(14)
+            Orb { id: orb; p: root; anchors.verticalCenter: parent.verticalCenter }
+            Column {
+              width: parent.width - orb.width - parent.spacing; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(3)
+              Text { text: root.ui.eyebrow; color: root.toneColor; font.family: root.mono; font.pixelSize: Style.fontPx(0.75); font.bold: true; font.letterSpacing: Style.fontPx(0.75) * 0.14; font.capitalization: Font.AllUppercase; textFormat: Text.PlainText }
+              Text { width: parent.width; text: root.ui.title; color: root.ink; font.family: root.mono; font.pixelSize: Style.fontPx(1.583); font.bold: true; font.letterSpacing: -Style.fontPx(1.583) * 0.03; elide: Text.ElideRight; maximumLineCount: 1; textFormat: Text.PlainText }
+              Text { width: parent.width; visible: text !== ""; text: root.ui.sub; color: root.dim; font.family: root.mono; font.pixelSize: Style.font.caption; elide: Text.ElideRight; textFormat: Text.PlainText }
+              Row { // the load steps
+                visible: root.ui.steps >= 0; spacing: Style.space(6)
+                Repeater { model: ["weights", "image", "engine", "check"]
+                  Text { required property string modelData; required property int index; text: (index ? "› " : "") + modelData; color: index === root.ui.steps ? root.accent : index < root.ui.steps ? root.dim : root.faint; font.family: root.mono; font.pixelSize: Style.fontPx(0.75); font.letterSpacing: Style.fontPx(0.75) * 0.06; textFormat: Text.PlainText } }
               }
             }
           }
         }
-        Text { width: parent.width; textFormat: Text.PlainText; text: root.title(); color: root.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.heading; font.weight: Font.Medium; elide: Text.ElideRight }
-        Text { width: parent.width; textFormat: Text.PlainText; visible: root.status() !== ""; text: root.status(); color: (root.snap.error || root.localError) ? (root.bar ? root.bar.urgent : root.foreground) : root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap; maximumLineCount: 3 }
-        // What was detected, and which card the recipe is for. One card is a plain line; more than
-        // one is a picker, since the person may want the smaller card left free or a different one tried.
-        Text { visible: root.gpus.length <= 1; width: parent.width; textFormat: Text.PlainText; text: "GPU · " + root.gpuLine(); color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight }
-        Link { visible: root.gpus.length > 1; enabled: !root.busy; text: "GPU · " + root.gpuLine() + (root.gpusOpen ? "  ^" : "  v"); onTriggered: root.gpusOpen = !root.gpusOpen }
-        Column {
-          visible: root.gpusOpen && root.gpus.length > 1; width: parent.width; spacing: Style.space(6)
-          Repeater {
-            model: root.gpus
-            Link { required property var modelData; width: content.width; text: "  " + root.gpuLabel(modelData) + (modelData.hardwareId ? "" : " · no validated recipe"); opacity: modelData.chosen ? 1 : 0.7; onTriggered: { root.gpusOpen = false; root.act(["gpu", modelData.key]) } }
-          }
-          Link { visible: !!root.snap.gpuPinned; width: content.width; text: "  auto (largest card with a recipe)"; onTriggered: { root.gpusOpen = false; root.act(["gpu", "auto"]) } }
-        }
-        Link { visible: (!root.loaded && (!root.busy || root.state === "download" || root.state === "starting")) || root.otherRunning || (!!root.snap.error && !root.busy); enabled: !root.busy && !!root.model && root.snap.reason === ""; text: root.loaded && !root.otherRunning ? "Restart" : root.startLabel(); onTriggered: root.act(["load"]) }
-        Link { visible: root.loaded && root.agentList.length > 0; text: "Open agent · " + root.agentSel + (root.agentsOpen ? "  ^" : "  v"); onTriggered: root.agentsOpen = !root.agentsOpen }
-        Text { visible: root.loaded && root.agentList.length === 0; width: parent.width; textFormat: Text.PlainText; text: "No installed agent can use this model"; color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall }
-        Column {
-          visible: root.agentsOpen && root.loaded; width: parent.width; spacing: Style.space(6)
-          Repeater {
-            model: root.agentList
-            Link { required property var modelData; width: content.width; text: "  " + modelData; onTriggered: { root.agentPick = modelData; root.agentsOpen = false; root.openAgent() } }
+        Item { // ---- the path, with back in it
+          id: crumb
+          visible: root.ui.path.length > 1; width: parent.width; height: visible ? Style.space(38) : 0
+          Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: root.hairline }
+          Row {
+            anchors.left: parent.left; anchors.leftMargin: Style.space(12); anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(8)
+            Rectangle { width: Style.space(26); height: Style.space(22); color: backMouse.containsMouse ? root.hoverFill : root.restFill; opacity: root.working ? 0.4 : 1
+              Text { anchors.centerIn: parent; text: "‹"; color: root.fg; font.family: root.mono; font.pixelSize: Style.font.body; textFormat: Text.PlainText }
+              MouseArea { id: backMouse; anchors.fill: parent; hoverEnabled: true; enabled: !root.working; cursorShape: Qt.PointingHandCursor; onClicked: root.back() } }
+            Repeater { model: root.ui.path
+              Text { required property var modelData; required property int index; anchors.verticalCenter: parent.verticalCenter; text: (index ? "›  " : "") + modelData.n; color: index === root.ui.path.length - 1 ? root.fg : root.faint; font.family: root.mono; font.pixelSize: Style.font.caption; textFormat: Text.PlainText } }
           }
         }
-        Link { visible: root.loaded && !!root.share.available; enabled: !root.busy; text: root.share.active ? "Stop sharing" : "Share on Tailscale"; onTriggered: root.act(["share"]) }
-        Text { visible: root.loaded && !!root.share.error; width: parent.width; textFormat: Text.PlainText; text: root.share.error || ""; color: root.bar ? root.bar.urgent : root.foreground; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WordWrap; maximumLineCount: 3 }
-        Text { visible: root.loaded && !!root.share.active; width: parent.width; textFormat: Text.PlainText; text: (root.share.url || "") + "\nkey in " + root.tilde(root.share.keyFile || ""); color: root.dim; font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAnywhere }
-        Link { visible: root.loaded || root.hasRunning || root.state === "starting"; enabled: !root.busy; text: "Stop"; onTriggered: root.act(["unload"]) }
+        Flickable { // ---- the rows: the one part that scrolls
+          id: body
+          width: parent.width
+          readonly property real room: panel.ceiling - slab.height - crumb.height - foot.height - toastBox.height   // what the ceiling leaves for this part
+          height: Math.max(Style.space(60), Math.min(list.implicitHeight + Style.space(24), room))
+          contentHeight: list.implicitHeight + Style.space(24); clip: true; boundsBehavior: Flickable.StopAtBounds
+          Column {
+            id: list
+            anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: Style.space(12); spacing: Style.space(6)
+            Repeater { id: rowsRep; model: root.ui.rows
+              CardRow { required property var modelData; required property int index; r: modelData; p: root; width: list.width; cursor: index === root.cursorAt } }
+          }
+          function reveal(i) { // keep the cursor row in view
+            var it = rowsRep.itemAt(i); if (!it) return
+            var y = it.y + Style.space(12), h = it.height
+            if (y < contentY) contentY = Math.max(0, y - Style.space(12)); else if (y + h > contentY + height) contentY = Math.min(contentHeight - height, y + h - height + Style.space(12))
+          }
+          Connections { target: root; function onCursorAtChanged() { if (root.cursorAt >= 0 && root.cursorAt < root.ui.rows.length) body.reveal(root.cursorAt) } }
+        }
+        Column { // ---- the footer: the verbs, pinned
+          id: foot
+          visible: root.ui.foot.length > 0; width: parent.width; spacing: 0
+          Rectangle { width: parent.width; height: 1; color: root.hairline; visible: body.contentHeight > body.height }
+          Column { anchors.left: parent.left; anchors.right: parent.right; anchors.margins: Style.space(12); spacing: Style.space(6); topPadding: Style.space(6); bottomPadding: Style.space(12)
+            Repeater { model: root.ui.foot
+              CardRow { required property var modelData; required property int index; r: modelData; p: root; width: parent.width; cursor: root.ui.rows.length + index === root.cursorAt } } }
+        }
+        Rectangle { // ---- a word that passes
+          id: toastBox
+          visible: root.toast !== ""; width: parent.width; height: visible ? Style.space(28) : 0; color: root.recessed
+          Text { anchors.left: parent.left; anchors.leftMargin: Style.space(12); anchors.verticalCenter: parent.verticalCenter; text: root.toast; color: root.dim; font.family: root.mono; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
+        }
       }
     }
-  }
-  component Link: Item {
-    signal triggered()
-    property alias text: label.text
-    property alias enabled: mouse.enabled
-    implicitWidth: label.implicitWidth
-    implicitHeight: label.implicitHeight
-    Rectangle { // rows are the only chrome the panel has; a hover wash says they are buttons
-      anchors.fill: parent; radius: Style.space(2)
-      color: mouse.containsMouse && mouse.enabled ? Util.alpha(root.foreground, 0.1) : "transparent"
-    }
-    Text {
-      id: label
-      width: parent.width; textFormat: Text.PlainText
-      color: root.foreground; opacity: mouse.enabled ? 1 : 0.32
-      font.family: root.bar.fontFamily; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight
-    }
-    MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: parent.triggered() }
   }
 }

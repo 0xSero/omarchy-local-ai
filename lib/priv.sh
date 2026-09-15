@@ -65,11 +65,20 @@ toolkit_install() { # the NVIDIA container runtime, from Omarchy's own package m
 }
 phase_toolkit() { toolkit_install || { printf 'reason the NVIDIA container toolkit could not be set up (see %s)\n' "$LOGFILE"; return 1; }; }
 
+# slot_ok <recipe-json>: the slot a phase is asked to run, re-checked by root: our container and network names, a port of ours
+slot_ok() {
+  local r=$1 p
+  jq -e --arg c "$CTR" --arg n "$NET" '
+    (.slot.port | type == "number") and (.slot.port >= 1024 and .slot.port <= 65535)
+    and ((.slot.engine | test("^" + $c + "(-[a-z0-9-]+)?-engine$")) and (.slot.gateway | test("^" + $c + "(-[a-z0-9-]+)?-gateway$")) and (.slot.net | test("^" + $n + "(-[a-z0-9-]+)?$")))
+    and (all(.victims[]?; (.engine | test("^" + $c + "(-[a-z0-9-]+)?-engine$")) and (.gateway | test("^" + $c + "(-[a-z0-9-]+)?-gateway$"))))' >/dev/null <<<"$r"
+}
 phase_start() { # phase_start <recipe-file> <download 0|1>: images, weights when asked, set aside, engine, gateway
   local r id why; r=$(pinned_read "$1" "${OMARCHY_AI_RECIPE_SHA:-}") || { printf '%s\n' "$r"; return 1; }; id=$(jq -r .id <<<"$r")
   # what root is about to run is re-checked here, not trusted from the user's file
   [[ $RUN_AS =~ ^[0-9]+:[0-9]+$ ]] || { printf 'reason internal: the user id did not reach the root phase\n'; return 1; }
   why=$(gate_reason "$r"); [[ -z $why ]] || { printf 'reason recipe refused: %s\n' "$why"; return 1; }
+  slot_ok "$r" || { printf 'reason recipe refused: the slot is not one of ours\n'; return 1; }
   echo "step checking docker"
   if ! why=$(docker_ok "$(jq -r .match.backend <<<"$r")"); then
     if [[ $why == *"NVIDIA container toolkit"* && -n ${OMARCHY_AI_ROOT_PHASE:-} ]]; then   # a root phase can set it up; the user side asks for one prompt instead
@@ -77,24 +86,39 @@ phase_start() { # phase_start <recipe-file> <download 0|1>: images, weights when
       why=$(docker_ok "$(jq -r .match.backend <<<"$r")") || { printf 'reason %s\n' "$why"; return 1; }
     else printf 'reason %s\n' "$why"; return 1; fi
   fi
-  echo "step pulling image"
   ensure_image "$(jq -r .launch.image <<<"$r")" "$id" || return 1
   ensure_image "$(gateway_image)" "$id" || return 1
   if [[ ${2:-0} == 1 ]]; then echo "step downloading weights"; download_run "$r" || return 1; fi
   echo "step setting aside the previous model"
   drop_previous
-  set_aside || { printf 'reason could not set aside the running containers\n'; return 1; }
+  set_aside "$r" || { printf 'reason could not set aside the running containers\n'; return 1; }
   echo "step starting"
-  start_pair "$r" || { restore_previous || true; printf 'reason engine failed to start (see %s)\n' "$LOGFILE"; return 1; }   # the previous model comes back in this same prompt
+  start_pair "$r" || { restore_previous "$r" || true; printf 'reason engine failed to start (see %s)\n' "$LOGFILE"; return 1; }   # the replaced models come back in this same prompt
 }
-phase_restore() { restore_previous || { printf 'reason the previous model could not be restored (see %s)\n' "$LOGFILE"; return 1; }; }
-phase_stop() { stop_all || { printf 'reason the containers could not be removed (see %s)\n' "$LOGFILE"; return 1; }; }
-phase_restart_gateway() { # phase_restart_gateway <recipe-file>: the gateway alone, with a fresh publish list
-  local r; r=$(pinned_read "$1" "${OMARCHY_AI_GATEWAY_RECIPE_SHA:-}") || { printf '%s\n' "$r"; return 1; }
-  exists "$GATEWAY" && owned "$GATEWAY" && docker rm -f "$GATEWAY" >/dev/null 2>&1
-  start_gateway "$r" && return 0
-  if [[ -f $SHARE_MARK ]]; then rm -f "$SHARE_MARK"; start_gateway "$r" >/dev/null 2>&1 || true; fi   # back to loopback in this same prompt
-  printf 'reason the gateway did not start (see %s)\n' "$LOGFILE"; return 1
+phase_restore() { # phase_restore <recipe-file>: the new pair goes, the models it replaced come back
+  local r; r=$(pinned_read "$1" "${OMARCHY_AI_RECIPE_SHA:-}") || { printf '%s\n' "$r"; return 1; }
+  slot_ok "$r" || { printf 'reason recipe refused: the slot is not one of ours\n'; return 1; }
+  restore_previous "$r" || { printf 'reason the previous model could not be restored (see %s)\n' "$LOGFILE"; return 1; }
+}
+phase_drop() { drop_previous; }   # a Start that succeeded: the replaced pairs go
+phase_stop() { # phase_stop [recipe-file]: one model's pair, or every container of ours
+  if [[ -n ${1:-} ]]; then
+    local r; r=$(pinned_read "$1" "${OMARCHY_AI_RECIPE_SHA:-}") || { printf '%s\n' "$r"; return 1; }
+    slot_ok "$r" || { printf 'reason recipe refused: the slot is not one of ours\n'; return 1; }
+    stop_slot "$r" || { printf 'reason the containers could not be removed (see %s)\n' "$LOGFILE"; return 1; }; return 0
+  fi
+  stop_all || { printf 'reason the containers could not be removed (see %s)\n' "$LOGFILE"; return 1; }
+}
+phase_restart_gateway() { # phase_restart_gateway <slots-file>: every model's gateway alone, with a fresh publish list
+  local all r n i g; all=$(pinned_read "$1" "${OMARCHY_AI_GATEWAY_RECIPE_SHA:-}") || { printf '%s\n' "$all"; return 1; }
+  n=$(jq 'length' <<<"$all") || { printf 'reason the slots file is not a list\n'; return 1; }
+  for ((i=0; i<n; i++)); do
+    r=$(jq -c ".[$i]" <<<"$all"); slot_ok "$r" || { printf 'reason recipe refused: the slot is not one of ours\n'; return 1; }
+    g=$(jq -r .slot.gateway <<<"$r"); exists "$g" && owned "$g" && docker rm -f "$g" >/dev/null 2>&1
+    start_gateway "$r" && continue
+    if [[ -f $SHARE_MARK ]]; then rm -f "$SHARE_MARK"; start_gateway "$r" >/dev/null 2>&1 || true; fi   # back to loopback in this same prompt
+    printf 'reason the gateway did not start (see %s)\n' "$LOGFILE"; return 1
+  done
 }
 
 # The user's side of a phase: run it, keep the card current, collect the outcome.
@@ -113,6 +137,8 @@ phase_run() {
       detail="$((bytes/1073741824)) / $((exp/1073741824)) GB"
       if (( POLL > 0 && bytes > prev && prev > 0 )); then rate=$(( (bytes - prev) / POLL )); eta=$(( (exp - bytes) / rate )); (( eta < 0 )) && eta=0; detail+=" · about $((eta/60))m$((eta%60))s left"; fi
       prev=$bytes; op download "$id" "$detail" "$pct"
+    elif [[ $step == *"|"* && ${step##*|} =~ ^[0-9]+$ && $step != "$last" ]]; then
+      op download "$id" "${step%%|*}" "${step##*|}"   # a phase that reports its own percent inline
     elif [[ -n $step && $step != "$last" ]]; then
       case $step in starting|"setting aside the previous model") op starting "$id" "$step" 0 ;; *) op download "$id" "$step" 0 ;; esac
     fi

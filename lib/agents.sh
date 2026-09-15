@@ -7,7 +7,7 @@
 # dialect failed acceptance are hidden; the rest are the agents Omarchy itself knows how to launch.
 
 AGENTS=(pi omp opencode ori claude codex grok agy hermes copilot crush)
-ENDPOINT="http://127.0.0.1:$PORT"
+ENDPOINT="http://127.0.0.1:$PORT"   # open_agent points it at the model's own port before building the command
 
 agent_dialect() { # which gateway dialect an agent speaks
   case $1 in
@@ -17,16 +17,14 @@ agent_dialect() { # which gateway dialect an agent speaks
   esac
 }
 
-agents_json() { # -> {"default":"pi","installed":["pi",...],"launchable":[...]} against the accepted dialects
-  local a def="" installed='[]' launchable='[]' apis
-  apis=$(lread | jq -c '.accepted.apis')
-  for a in "${AGENTS[@]}"; do
-    bin_of "$a" >/dev/null 2>&1 || continue
-    installed=$(jq -c --arg a "$a" '.+[$a]' <<<"$installed")
-    jq -e --arg d "$(agent_dialect "$a")" 'index($d)!=null' <<<"$apis" >/dev/null && launchable=$(jq -c --arg a "$a" '.+[$a]' <<<"$launchable")
-  done
+agents_json() { # agents_json <apis-json> -> {"default":"pi","installed":["pi",...],"launchable":[...]} against a model's accepted dialects
+  local apis=${1:-[]} def="" found=""
+  for a in "${AGENTS[@]}"; do bin_of "$a" >/dev/null 2>&1 && found+="$a "; done   # installed only; one jq pass below splits installed from launchable
   command -v omarchy-default-agent >/dev/null 2>&1 && def=$(omarchy-default-agent 2>/dev/null || true)
-  jq -nc --arg d "${def:-}" --argjson i "$installed" --argjson l "$launchable" '{default:$d,installed:$i,launchable:$l}'
+  jq -nc --arg found "$found" --arg d "${def:-}" --argjson apis "$apis" '
+    ($found|split(" ")|map(select(.!=""))) as $i
+    | {default:$d, installed:$i,
+       launchable:[$i[]|. as $a|select($apis|index((if $a=="claude" then "messages" elif $a=="codex" then "responses" else "chat" end))!=null)]}'
 }
 
 # agent_command <name> <served-model> <key-file> -> prints the argv (NUL-separated) to run in a terminal.
@@ -94,14 +92,16 @@ agent_command() {
   esac
 }
 
-open_agent() { # open_agent [name]: default agent when omitted; refuses out loud when not ready
-  local name=${1:-} snap model key
+open_agent() { # open_agent [name] [recipe]: default agent when omitted, the model the card looks at when no recipe is named; refuses out loud
+  local name=${1:-} which=${2:-} snap model key m
   snap=$(cat "$SNAPSHOT" 2>/dev/null || printf '{}')
-  [[ $(jq -r '.state' <<<"$snap") == ready ]] || { fail "load a model first"; return; }
+  if [[ -n $which ]]; then m=$(jq -c --arg id "$which" '[.models[]? | select(.recipeId == $id)] | .[0] // null' <<<"$snap")
+  else m=$(jq -c '(.running.recipeId // "") as $id | [.models[]? | select(.recipeId == $id)] | .[0] // null' <<<"$snap"); fi
+  [[ $m != null && $(jq -r .state <<<"$m") == ready ]] || { fail "load a model first"; return; }
   [[ -n $name ]] || { name=$(jq -r '.agents.default // ""' <<<"$snap"); name=${name:-pi}; }
-  jq -e --arg a "$name" '.agents.launchable|index($a)!=null' <<<"$snap" >/dev/null \
+  jq -e --arg a "$name" '.launchable|index($a)!=null' <<<"$m" >/dev/null \
     || { fail "$name cannot use this model: its API dialect did not pass acceptance"; return; }
-  model=$(jq -r '.model.servedName' <<<"$snap")
+  model=$(jq -r '.servedModel' <<<"$m"); ENDPOINT="http://127.0.0.1:$(jq -r .port <<<"$m")"
   local -a argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(agent_command "$name" "$model" "$KEY_FILE") || return 1
   # the person's own flags for this agent (`omarchy-local-ai agent-args <name> -- <flags>`), e.g. a yolo mode
   if [[ -s $STATE/agents/args/$name ]]; then while IFS= read -r -d '' v; do argv+=("$v"); done <"$STATE/agents/args/$name"; fi

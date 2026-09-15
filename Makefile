@@ -6,7 +6,7 @@ REGISTRY ?= ..
 
 sync:
 	python3 $(REGISTRY)/scripts/export_plugin_recipes.py --out recipes.json
-	@jq -r '"recipes.json: \(.hardware|length) hardware ids from registry \(.registryCommit[:12])"' recipes.json
+	@jq -r '"recipes.json: \(.hardware|length) hardware ids from registry \(.registryCommit[:12]), \([.hardware[] | (.recipe.id), (.recipes[]?.id)] | length) recipes"' recipes.json
 
 test:
 	bash test/all

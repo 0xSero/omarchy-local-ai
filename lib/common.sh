@@ -2,7 +2,9 @@
 # Paths, the ledger, the lock, and logging. Sourced by omarchy-local-ai; do not run.
 #
 # Everything the plugin persists lives in $STATE:
-#   ledger.json    the only authoritative state: current op, last error, last accepted recipe
+#   ledger.json    the only authoritative state: current op, last error, the running models (slots) and their acceptance
+#   slots/<id>.json the recipe each running model was started from, with its slot (port, network, container names)
+#   gateway.recipe.json  every slot's recipe in one array: what a gateway restart (share on/off) republishes
 #   gateway.key    the one secret; it lives in this file only, never in the ledger, the snapshot, or the log
 #   snapshot.json  the derived read model the panel watches (rewritten, never edited)
 #   log            every worker step, for "refusal out loud" beyond the one-line error
@@ -24,7 +26,7 @@ CTR="${OMARCHY_AI_CONTAINER:-omarchy-local-ai}"     # engine: $CTR-engine, gatew
 LEDGER="$STATE/ledger.json"
 SNAPSHOT="$STATE/snapshot.json"
 LOGFILE="$STATE/log"
-LEDGER_EMPTY='{"schemaVersion":"omarchy-local-ai/ledger/1","op":{"name":"","recipeId":"","pid":0,"startedAt":"","detail":"","percent":0},"error":"","accepted":{"recipeId":"","servedModel":"","registry":"","apis":[]},"lastStartSeconds":0}'
+LEDGER_EMPTY='{"schemaVersion":"omarchy-local-ai/ledger/2","op":{"name":"","recipeId":"","pid":0,"startedAt":"","detail":"","percent":0},"error":"","slots":{},"lastStartSeconds":0}'
 
 # Everything under $STATE is private to this user: the directory is 0700 and every file the plugin
 # writes there is 0600, because the state carries agent launch configs that embed the gateway key.
@@ -50,7 +52,7 @@ canon() { # canonicalize, resolving symlinks even for not-yet-existing leaf path
 }
 
 # ---------------------------------------------------------------- ledger
-lread() { [[ -f $LEDGER ]] && cat "$LEDGER" || printf '%s\n' "$LEDGER_EMPTY"; }
+lread() { if [[ -f $LEDGER ]]; then cat "$LEDGER"; else printf '%s\n' "$LEDGER_EMPTY"; fi; }
 sha_of() { printf '%s' "$1" | { command -v sha256sum >/dev/null 2>&1 && sha256sum || shasum -a 256; } | cut -c1-64; }   # of a string
 deadline() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }   # <secs> <cmd...>: a probe that hangs must not hang the card
 HAVE_FLOCK=0; command -v flock >/dev/null 2>&1 && HAVE_FLOCK=1   # Omarchy has util-linux; the mkdir path is for tests elsewhere
@@ -68,7 +70,15 @@ op() { lwrite '.op={name:$n,recipeId:$r,pid:($p|tonumber),startedAt:(if .op.star
   --arg n "$1" --arg r "$2" --arg p "$$" --arg t "$(now)" --arg d "${3:-}" --arg c "${4:-0}"; log "op $1 ${3:-}"; snapshot_write; }
 # op_pending <name> <pid>: the parent verb records the worker it just spawned so the very next
 # snapshot is busy; the worker overwrites this with its own op as soon as it holds the lock.
-op_pending() { lwrite '.op=(if .op.pid==0 then {name:$n,recipeId:"",pid:($p|tonumber),startedAt:$t,detail:"starting",percent:0} else .op end) | .error=""' --arg n "$1" --arg p "$2" --arg t "$(now)"; snapshot_write; }   # never over a worker that already wrote
+op_pending() {
+  lwrite '.op=(if .op.pid==0 then {name:$n,recipeId:$r,pid:($p|tonumber),startedAt:$t,detail:"starting",percent:0} else .op end) | .error=""' --arg n "$1" --arg p "$2" --arg r "${3:-}" --arg t "$(now)"   # never over a worker that already wrote
+  sleep 0.2; kill -0 "$2" 2>/dev/null || lwrite 'if .op.pid==($p|tonumber) and .op.detail=="starting" then .op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0} | .error=(if .error=="" then "the worker could not start (see the log)" else .error end) else . end' --arg p "$2"   # gone before its first word: its refusal stands, not a phantom op
+  snapshot_write
+}
+lock_wait() { # a finished worker still holds the lock while it writes its last snapshot; a verb gives it a moment rather than tripping over it
+  local i; ((HAVE_FLOCK)) || return 0; state_dir
+  for ((i=0; i<50; i++)); do ( exec 9>"$STATE/op.lock"; flock -n 9 ) 2>/dev/null && return 0; sleep 0.1; done; return 0
+}
 op_done() { lwrite '.op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0} | .error=""'; snapshot_write; } # a finished op supersedes any refusal written while it ran
 oops() { log "error: $1"; lwrite '.error=$e | .op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0}' --arg e "$1"; snapshot_write; exit 1; }
 
@@ -96,6 +106,7 @@ guard() {
 # shows a reason instead of a stale "starting" or a silent idle. Also drops the mkdir lock.
 worker_exit() {
   local rc=$? p; p=$(lread | jq -r '.op.pid')
+  if [[ -f $STATE/cancel ]]; then [[ -n ${LOCKD:-} ]] && rm -rf "$LOCKD"; return 0; fi   # asked to stop: the canceller records the outcome
   if [[ $p == "$$" ]]; then
     log "error: worker exited unexpectedly (status $rc) during $(lread | jq -r '.op.name'): $(lread | jq -r '.op.detail')"
     lwrite '.error=$e | .op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0}' --arg e "stopped unexpectedly while $(lread | jq -r '.op.detail') (see $LOGFILE)"

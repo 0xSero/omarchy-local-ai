@@ -46,34 +46,34 @@ tailnet_self() { # -> {ip,dns,online}; empty ip when tailscale is off. IPv4 firs
 }
 share_wanted() { [[ -f $SHARE_MARK ]]; }
 bind_addr() { [[ $1 == *:* ]] && printf '[%s]' "$1" || printf '%s' "$1"; }   # IPv6 literals need brackets
-share_publish_argv() { # extra `docker run` words for the gateway while sharing is on; nothing otherwise
+share_publish_argv() { # share_publish_argv <port>: extra `docker run` words for a gateway while sharing is on; nothing otherwise
   share_wanted || return 0
   local ip; ip=$(tailnet_self | jq -r .ip); [[ -n $ip ]] || return 0
-  printf '%s' "$ip" >"$SHARE_MARK"   # the address the gateway was published on, for share_state
-  printf '%s\0' --publish "$(bind_addr "$ip"):$PORT:12434"
+  printf '%s' "$ip" >"$SHARE_MARK"   # the address the gateways were published on, for share_state
+  printf '%s\0' --publish "$(bind_addr "$ip"):${1:-$PORT}:12434"
 }
 
 # The key is never part of share_state: the snapshot is the panel's read model and the panel shows
 # only non-secret state. The card names the key file; agents read it at launch.
-share_state() { # -> {available,active,url,keyFile,error}; read from tailscale and docker each time, never cached
-  local self ip dns online active=false url="" err bound; err=$(cat "$SHARE_ERROR" 2>/dev/null || true)
+share_state() { # share_state [port] -> {available,active,url,keyFile,error} for one model's gateway; read from tailscale and docker each time, never cached
+  local self ip dns online active=false url="" err bound port=${1:-$PORT}; err=$(cat "$SHARE_ERROR" 2>/dev/null || true)
   self=$(tailnet_self); ip=$(jq -r .ip <<<"$self"); dns=$(jq -r .dns <<<"$self"); online=$(jq -r .online <<<"$self")
   if [[ -z $ip ]]; then jq -nc --arg k "$KEY_FILE" --arg e "$err" '{available:false,active:false,url:"",keyFile:$k,error:$e}'; return; fi
-  if share_wanted && gateway_up; then
+  if share_wanted && gateway_up "$port"; then
     bound=$(cat "$SHARE_MARK" 2>/dev/null || true)
     if [[ -z $bound || $bound == "$ip" ]]; then active=true
     elif [[ -z $err ]]; then err="tailnet address changed; share again"; fi   # the gateway still binds the old one
   fi
   [[ $online == true || -n $err ]] || err="tailscale is not connected"
-  url="http://$(bind_addr "${dns:-$ip}"):$PORT"
+  url="http://$(bind_addr "${dns:-$ip}"):$port"
   jq -nc --argjson a "$active" --arg u "$url" --arg k "$KEY_FILE" --arg e "$err" '{available:true,active:$a,url:$u,keyFile:$k,error:$e}'
 }
 
-share_on() { state_dir; : >"$SHARE_MARK"; restart_gateway; }
-share_off() { # the marker goes only when the published gateway is really replaced; otherwise the card keeps saying shared
+share_on() { state_dir; : >"$SHARE_MARK"; restart_gateways; }
+share_off() { # the marker goes only when the published gateways are really replaced; otherwise the card keeps saying shared
   local was; was=$(cat "$SHARE_MARK" 2>/dev/null || true); rm -f "$SHARE_MARK"
   gateway_up || return 0
-  restart_gateway || { printf '%s' "$was" >"$SHARE_MARK"; return 1; }
+  restart_gateways || { printf '%s' "$was" >"$SHARE_MARK"; return 1; }
 }
 share_forget() { rm -f "$SHARE_MARK"; }
 docker_last_error() { # the last line docker wrote to the log, trimmed to what a card can show
