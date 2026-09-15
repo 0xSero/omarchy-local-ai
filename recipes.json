@@ -1,14 +1,11 @@
 {
   "assets": {
-    "gemma-4-12b-it-exl3-4bpw-tabbyapi-config.yml": "network:\n  host: 127.0.0.1\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Gemma-4-12B-it-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 131073\n  cache_size: 557056\n  cache_mode: Q6\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 4\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
     "gemma4-nvfp4-sglang-engine-patch.diff": "--- /tmp/gemma4_unified.py.orig\t2026-08-23 20:25:26.703455135 +0000\n+++ python/sglang/srt/models/gemma4_unified.py\t2026-08-23 20:35:46.352246434 +0000\n@@ -70,7 +70,12 @@\n\n     def __init__(self, config):\n         super().__init__()\n-        patch_dim = config.model_patch_size**2 * 3  # 48*48*3 = 6912\n+        model_patch_size = getattr(config, \"model_patch_size\", None)\n+        if model_patch_size is None:\n+            # NVFP4 republished configs carry patch_size*pooling_kernel_size\n+            # (16*3=48) instead of the flattened model_patch_size field.\n+            model_patch_size = config.patch_size * getattr(config, \"pooling_kernel_size\", 1)\n+        patch_dim = model_patch_size**2 * 3  # 48*48*3 = 6912\n         mm_embed_dim = config.mm_embed_dim\n\n         self.patch_ln1 = nn.LayerNorm(patch_dim)\n@@ -110,7 +115,11 @@\n\n     def __init__(self, multimodal_config, text_config):\n         super().__init__()\n-        self.multimodal_hidden_size = multimodal_config.output_proj_dims\n+        self.multimodal_hidden_size = getattr(\n+            multimodal_config,\n+            \"audio_embed_dim\",\n+            multimodal_config.output_proj_dims,\n+        )\n         self.text_hidden_size = text_config.hidden_size\n         self.embedding_pre_projection_norm = Gemma4RMSNorm(\n             self.multimodal_hidden_size,\n@@ -190,7 +199,8 @@\n         )\n\n         text_tie = getattr(text_config, \"tie_word_embeddings\", True)\n-        if self.pp_group.world_size == 1 and text_tie:\n+        self.lm_head_is_tied = self.pp_group.world_size == 1 and text_tie\n+        if self.lm_head_is_tied:\n             self.lm_head = self.language_model.embed_tokens\n         elif self.pp_group.is_last_rank:\n             self.lm_head = ParallelLMHead(\n",
     "gemma412bit-exl3-4bpw-128k-q6-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Gemma-4-12B-it-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 131072\n  cache_size: 131072\n  cache_mode: Q6\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
-    "ornith15-35b-a3b-exl3-4bpw-tabbyapi-config.yml": "network:\n  host: 127.0.0.1\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Ornith-1.5-35B-A3B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 131073\n  cache_size: 532480\n  cache_mode: Q6\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 4\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
-    "qwen359b-exl3-4bpw-128k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.5-9B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 131072\n  cache_size: 131072\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
-    "qwen359b-exl3-4bpw-256k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.5-9B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 262144\n  cache_size: 262144\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
-    "qwen38-b70-llamacpp-entrypoint.sh": "#!/usr/bin/env bash\nset -e\nsource /opt/intel/oneapi/setvars.sh --force >/dev/null 2>&1\n\nMODELS_DIR=\"${MODELS_DIR:-/models}\"\nGPU_COUNT=\"${GPU_COUNT:-2}\"        # 1 or 2 Arc Pro B70s\nCTX_SIZE=\"${CTX_SIZE:-262144}\"     # default for 2 GPUs; 1 GPU defaults to 131072\nPARALLEL=\"${PARALLEL:-1}\"\nBATCH=\"${BATCH:-8192}\"\nUBATCH=\"${UBATCH:-8192}\"\nPORT=\"${PORT:-8010}\"\nENABLE_MTP=\"${ENABLE_MTP:-0}\"\nENABLE_VISION=\"${ENABLE_VISION:-0}\"\n\nif [ \"$GPU_COUNT\" = \"1\" ]; then\n    DEVICE_ARGS=(--device SYCL0)\n    CTX_SIZE=\"${CTX_SIZE_OVERRIDE:-131072}\"\nelse\n    DEVICE_ARGS=(--device SYCL0,SYCL1 --split-mode tensor --tensor-split 1,1)\n    CTX_SIZE=\"${CTX_SIZE_OVERRIDE:-$CTX_SIZE}\"\nfi\n\n# Download + verify the pinned target model on first run\nTARGET=\"$MODELS_DIR/$MODEL_FILE\"\nif [ ! -f \"$TARGET\" ]; then\n    echo \"[entrypoint] downloading $MODEL_REPO/$MODEL_FILE @$MODEL_REV ...\"\n    hf download \"$MODEL_REPO\" \"$MODEL_FILE\" --revision \"$MODEL_REV\" --local-dir \"$MODELS_DIR\"\nfi\necho \"$MODEL_SHA256  $TARGET\" | sha256sum -c - || { echo \"[entrypoint] SHA-256 mismatch!\"; exit 1; }\n\n# Optional MTP draft sidecar (speculative decoding)\nDRAFT_ARGS=()\nif [ \"$ENABLE_MTP\" = \"1\" ]; then\n    if [ ! -f \"$MODELS_DIR/$MTP_FILE\" ]; then\n        hf download \"$MODEL_REPO\" \"$MTP_FILE\" --revision \"$MODEL_REV\" --local-dir \"$MODELS_DIR\"\n    fi\n    DRAFT_ARGS=(--spec-type draft-mtp --model-draft \"$MODELS_DIR/$MTP_FILE\" --spec-draft-n-max \"${SPEC_DRAFT_N_MAX:-8}\" --spec-draft-threads \"${DRAFT_THREADS:-16}\" --spec-draft-poll 1 --spec-draft-ngl \"${DRAFT_NGL:-0}\" --spec-draft-device \"${DRAFT_DEVICE:-SYCL0}\")\nfi\n\n# Optional vision projector (image input; encoder on CPU — GPU offload hangs the xe driver)\nMM_ARGS=()\nif [ \"$ENABLE_VISION\" = \"1\" ]; then\n    if [ ! -f \"$MODELS_DIR/$MMPROJ_FILE\" ]; then\n        hf download \"$MODEL_REPO\" \"$MMPROJ_FILE\" --revision \"$MODEL_REV\" --local-dir \"$MODELS_DIR\"\n    fi\n    MM_ARGS=(--no-mmproj-offload --mmproj \"$MODELS_DIR/$MMPROJ_FILE\")\nfi\n\n# Lab runtime environment (b70-optimization-lab qwen38-27b-q4km-tp2 config.env)\nexport UR_L0_USE_IMMEDIATE_COMMANDLISTS=1\nexport UR_L0_V2_FORCE_DISABLE_COPY_OFFLOAD=1\nexport GGML_SYCL_COMM_SINGLE_KERNEL=1\nexport GGML_META_FUSE_ALLREDUCE_ADD=1\nexport GGML_META_FUSE_ALLREDUCE_ADD_RMS_MUL=1\nexport GGML_SYCL_COMM_FUSED_Q8=1\nexport GGML_SYCL_FUSED_SWIGLU_Q8=1\nexport GGML_SYCL_FUSED_ATTN_Q8=1\nexport GGML_SYCL_FUSED_GDN_Q8=1\nexport GGML_SYCL_FUSED_GDN_BETA_SIGMOID=1\nexport GGML_SYCL_FUSED_CONCAT_STATE=1\nexport GGML_SYCL_FUSED_GDN_STATE_IO=1\nexport GGML_SYCL_FUSED_CONV_STATE_IO=1\nexport GGML_SYCL_COMM_DIRECT_Q8=2\nexport GGML_SYCL_FUSED_ROPE_SET_ROWS=1\nexport GGML_SYCL_COMM_REDUCE_VEC4=1\nexport GGML_SYCL_FUSED_QK_NORM_ROPE=1\nexport GGML_SYCL_FUSED_CONV_SILU_L2=1\nexport GGML_SYCL_FUSE_EXT=31\n# Quality guards (verified coherent on the JIT build):\n# - FATTN_MMA=0: joint_matrix unavailable under oneAPI 2025.3 JIT\n# - Q4K reorder-family OFF: expects the lab AOT build's reordered layout,\n#   produces corrupted output on stock ggml-org weights under JIT\nexport GGML_SYCL_FATTN_MMA=0\nexport GGML_SYCL_MMQ_Q4K_REORDER=1\nexport GGML_SYCL_FUSED_MMVQ_SWIGLU_Q4K=1\nexport GGML_SYCL_FUSED_MMVQ_PAIR=0\nexport GGML_SYCL_FUSED_MMVQ_PAIR_GDN=0\nexport GGML_SYCL_FUSED_MMVQ_TRIPLE_ATTN=0\nexport GGML_SYCL_FUSED_MMVQ_TRIPLE_GDN=0\nexport GGML_SYCL_FUSED_MMVQ_QUAD_GDN=0\n\nexec /build/llama.cpp/build-sycl/bin/llama-server \\\n    --model \"$TARGET\" \\\n    \"${MM_ARGS[@]}\" \\\n    \"${DRAFT_ARGS[@]}\" \\\n    --host 0.0.0.0 --port \"$PORT\" \\\n    \"${DEVICE_ARGS[@]}\" \\\n    --gpu-layers 99 \\\n    --flash-attn on \\\n    --batch-size \"$BATCH\" \\\n    --ubatch-size \"$UBATCH\" \\\n    --cache-type-k f16 \\\n    --cache-type-v f16 \\\n    --cache-ram 0 \\\n    --ctx-checkpoints 0 \\\n    --fit off \\\n    --reasoning off \\\n    --threads \"${THREADS:-8}\" \\\n    --poll 50 \\\n    --ctx-size \"$CTX_SIZE\" \\\n    --parallel \"$PARALLEL\" \\\n    --metrics\n",
-    "qwen3827b-exl3-4bpw-128k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.8-27B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 131072\n  cache_size: 131072\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
-    "qwen3827b-exl3-4bpw-256k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.8-27B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 262144\n  cache_size: 262144\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n"
+    "qwen359b-exl3-4bpw-128k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.5-9B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 131072\n  cache_size: 131072\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n  # Qwen3.5/3.8 think before answering; split that into reasoning_content instead of leaking it as text\n  reasoning: true\n  start_in_reasoning: auto\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
+    "qwen359b-exl3-4bpw-256k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.5-9B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 262144\n  cache_size: 262144\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n  # Qwen3.5/3.8 think before answering; split that into reasoning_content instead of leaking it as text\n  reasoning: true\n  start_in_reasoning: auto\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
+    "qwen3827b-exl3-4bpw-128k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.8-27B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 131072\n  cache_size: 131072\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n  # Qwen3.5/3.8 think before answering; split that into reasoning_content instead of leaking it as text\n  reasoning: true\n  start_in_reasoning: auto\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
+    "qwen3827b-exl3-4bpw-256k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.8-27B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 262144\n  cache_size: 262144\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n  # Qwen3.5/3.8 think before answering; split that into reasoning_content instead of leaking it as text\n  reasoning: true\n  start_in_reasoning: auto\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n"
   },
   "gateway": {
     "image": "ghcr.io/0xsero/gateway@sha256:a4d529170473cb9e1c96012edf79ba6b06a0100aa7b3ccf584a25c03aa3e4478",
@@ -20,7 +17,7 @@
       "workflow": "https://github.com/0xSero/local-ai-images/actions/runs/33771944172"
     }
   },
-  "generatedAt": "2026-09-13T06:17:13Z",
+  "generatedAt": "2026-09-15T22:45:18Z",
   "hardware": {
     "intel-arc-pro-b70-32gb": {
       "match": {
@@ -38,7 +35,6 @@
           "tools": true,
           "vision": false
         },
-        "cards": 1,
         "engine": "llama-cpp",
         "id": "qwen38-q4km-arcb70-llamacpp-tp1",
         "image": {
@@ -123,208 +119,7 @@
         "weights": {
           "subdir": ""
         }
-      },
-      "recipes": [
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": true,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 2,
-          "engine": "sglang",
-          "id": "qwen36-35b-a3b-layered-fp8-arcb70-sglang-tp2",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "--model-path",
-              "Qwen/Qwen3.6-35B-A3B",
-              "--revision",
-              "995ad96eacd98c81ed38be0c5b274b04031597b0",
-              "--tp",
-              "2",
-              "--dtype",
-              "float16",
-              "--quantization",
-              "fp8",
-              "--load-format",
-              "layered_fp8",
-              "--attention-backend",
-              "intel_xpu",
-              "--trust-remote-code",
-              "--mem-fraction-static",
-              "0.9",
-              "--max-mamba-cache-size",
-              "64",
-              "--page-size",
-              "64",
-              "--mamba-scheduler-strategy",
-              "extra_buffer",
-              "--reasoning-parser",
-              "qwen3",
-              "--enable-cache-report",
-              "--enable-metrics",
-              "--host",
-              "0.0.0.0",
-              "--port",
-              "30000"
-            ],
-            "capAdd": [
-              "SYS_PTRACE"
-            ],
-            "containerPort": 30000,
-            "entrypoint": null,
-            "environment": {
-              "HF_HOME": "/root/.cache/huggingface",
-              "LOAD_FORMAT": "layered_fp8",
-              "MEM_FRACTION_STATIC": "0.9",
-              "MODEL_PATH": "Qwen/Qwen3.6-35B-A3B",
-              "PORT": "30000",
-              "SGLANG_MAMBA_CONV_DTYPE": "float16",
-              "SGLANG_MAMBA_SSM_DTYPE": "float32",
-              "SGLANG_XPU_ENABLE_GRAPH": "1",
-              "SGLANG_XPU_ESIMD_DECODE": "1",
-              "SGLANG_XPU_ESIMD_MOE": "1",
-              "SGLANG_XPU_ESIMD_MOE_PREFILL": "1",
-              "SGLANG_XPU_FA_ESIMD_QKV": "1",
-              "SGLANG_XPU_GDN_ESIMD": "0",
-              "SGLANG_XPU_GDN_EXTEND_ESIMD": "0",
-              "SGLANG_XPU_GDN_FAST_PATH": "1",
-              "SGLANG_XPU_PREFILL_DPAS": "1",
-              "TP_SIZE": "2",
-              "ZE_AFFINITY_MASK": "0,1"
-            },
-            "image": "ghcr.io/0xsero/qwen36-b70-sglang@sha256:d027487a07e4391562b4460da72bc78008be129d44af540148787e02e3045c08",
-            "ipc": "host",
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "/dev/dri/by-path",
-                "target": "/dev/dri/by-path"
-              },
-              {
-                "read_only": false,
-                "source": "~/.cache/huggingface",
-                "target": "/root/.cache/huggingface"
-              }
-            ],
-            "networkMode": "bridge",
-            "securityOpt": [
-              "seccomp=unconfined"
-            ],
-            "shm": "16g"
-          },
-          "minDriver": "",
-          "model": {
-            "id": "qwen3-6-35b-a3b",
-            "name": "Qwen3.6-35B-A3B",
-            "precision": "online FP8 weights with FP16 activations",
-            "repository": "Qwen/Qwen3.6-35B-A3B",
-            "revision": "995ad96eacd98c81ed38be0c5b274b04031597b0",
-            "servedName": "Qwen3.6-35B-A3B",
-            "sizeGb": 66.98
-          },
-          "serving": {
-            "concurrency": 8,
-            "ctxTokens": 8192,
-            "kvTokens": 0
-          },
-          "speed": {
-            "tps": 116
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": false,
-            "tools": true,
-            "vision": true
-          },
-          "cards": 2,
-          "engine": "llama-cpp",
-          "id": "qwen38-q4km-arcb70-llamacpp-tp2",
-          "image": {
-            "attestation": null,
-            "provenance": "self-built"
-          },
-          "launch": {
-            "arguments": [],
-            "capAdd": [],
-            "containerPort": 8010,
-            "entrypoint": "/entrypoint.sh",
-            "environment": {
-              "BATCH": "8192",
-              "DRAFT_NGL": "0",
-              "DRAFT_THREADS": "16",
-              "ENABLE_MTP": "1",
-              "ENABLE_VISION": "1",
-              "GPU_COUNT": "2",
-              "PARALLEL": "4",
-              "SPEC_DRAFT_N_MAX": "5",
-              "THREADS": "16",
-              "UBATCH": "8192"
-            },
-            "image": "ghcr.io/0xsero/qwen38-b70@sha256:5f3f585ca62976993dd6aa998efb4680f74ce49d6c8499a77bd612241bafd4b9",
-            "ipc": "host",
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "asset/qwen38-b70-llamacpp-entrypoint.sh",
-                "target": "/entrypoint.sh"
-              },
-              {
-                "read_only": true,
-                "source": "/dev/dri/by-path",
-                "target": "/dev/dri/by-path"
-              },
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/qwen38-b70",
-                "target": "/models"
-              }
-            ],
-            "networkMode": "bridge",
-            "securityOpt": [],
-            "shm": "8g"
-          },
-          "minDriver": "",
-          "model": {
-            "id": "qwen3-8-27b",
-            "name": "Qwen3.8-27B",
-            "precision": "Q4_K_M",
-            "repository": "ggml-org/Qwen3.8-27B-GGUF",
-            "revision": "0669b98607d47046c7c2b3f801011d54a08cfccf",
-            "servedName": "/models/Qwen3.8-27B-Q4_K_M.gguf",
-            "sizeGb": 19
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 65536,
-            "kvTokens": 262144
-          },
-          "speed": {
-            "tps": 51
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        }
-      ]
+      }
     },
     "mi300x-192gb": {
       "match": {
@@ -342,7 +137,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "qwen38-27b-fp8-mi300x-sglang-tp1",
         "image": {
@@ -441,7 +235,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "lfm25-26b-bf16-mi300x-sglang-tp1",
           "image": {
@@ -529,7 +322,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "ornith15-35b-a3b-bf16-mi300x-sglang-tp1",
           "image": {
@@ -638,7 +430,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm25-26b-bf16-rtx2000ada-sglang-tp1",
         "image": {
@@ -724,74 +515,7 @@
         "weights": {
           "subdir": ""
         }
-      },
-      "recipes": [
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": false,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 1,
-          "engine": "tabbyapi",
-          "id": "gemma-4-12b-it-exl3-3bpw-rtx2000ada-tabbyapi-tp1",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "main.py",
-              "--config",
-              "/app/config.yml"
-            ],
-            "capAdd": [],
-            "containerPort": 5000,
-            "entrypoint": "/opt/venv/bin/python3",
-            "environment": {
-              "NVIDIA_VISIBLE_DEVICES": "all"
-            },
-            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:ffa8388f310d3c8a2727c66d14a76bb663fdb99a2a49e68a43c3bebb5a3e53f1",
-            "ipc": null,
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/gemma-4-12b-it-exl3-3bpw",
-                "target": "/workspace/models"
-              }
-            ],
-            "networkMode": "host",
-            "securityOpt": [],
-            "shm": "8g"
-          },
-          "minDriver": "535.0",
-          "model": {
-            "id": "gemma-4-12b-it",
-            "name": "Gemma-4-12B-it",
-            "precision": "3 bpw",
-            "repository": "turboderp/gemma-4-12B-it-exl3",
-            "revision": "38309570753c5fde71a818feb513b1e09a81fc18",
-            "servedName": "Gemma-4-12B-it-EXL3-3bpw",
-            "sizeGb": 6.971
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 557056
-          },
-          "speed": {
-            "tps": 0
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        }
-      ]
+      }
     },
     "rtx-3060-12gb": {
       "match": {
@@ -809,7 +533,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx3060-tabbyapi-tp1",
         "image": {
@@ -871,8 +594,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-3060-ti-8gb": {
       "match": {
@@ -890,7 +612,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm2526b-bf16-rtx3060ti-sglang-tp1",
         "image": {
@@ -972,8 +693,7 @@
         "weights": {
           "subdir": ""
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-3070-8gb": {
       "match": {
@@ -991,7 +711,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm2526b-bf16-rtx3070-sglang-tp1",
         "image": {
@@ -1073,8 +792,7 @@
         "weights": {
           "subdir": ""
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-3070-ti-8gb": {
       "match": {
@@ -1092,7 +810,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm2526b-bf16-rtx3070ti-sglang-tp1",
         "image": {
@@ -1183,7 +900,6 @@
             "tools": null,
             "vision": null
           },
-          "cards": 1,
           "engine": "llama.cpp",
           "id": "lfm25-8b-a1b-q4km-rtx3070ti-llamacpp-tp1",
           "image": {
@@ -1266,7 +982,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm2526b-bf16-rtx3080-sglang-tp1",
         "image": {
@@ -1357,7 +1072,6 @@
             "tools": null,
             "vision": null
           },
-          "cards": 1,
           "engine": "llama.cpp",
           "id": "lfm25-8b-a1b-q4km-rtx3080-llamacpp-tp1",
           "image": {
@@ -1440,7 +1154,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx3080ti-tabbyapi-tp1",
         "image": {
@@ -1511,7 +1224,6 @@
             "tools": null,
             "vision": null
           },
-          "cards": 1,
           "engine": "llama.cpp",
           "id": "qwen35-9b-q4km-rtx3080ti-llamacpp-tp1",
           "image": {
@@ -1594,7 +1306,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "gemma412b-exl3-4bpw-rtx3090-tabbyapi-tp1",
         "image": {
@@ -1665,77 +1376,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
-          "engine": "tabbyapi",
-          "id": "gemma-4-12b-it-exl3-4bpw-rtx3090-tabbyapi-tp1",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "main.py",
-              "--config",
-              "/app/config.yml"
-            ],
-            "capAdd": [],
-            "containerPort": 5000,
-            "entrypoint": "/opt/venv/bin/python3",
-            "environment": {
-              "NVIDIA_VISIBLE_DEVICES": "all"
-            },
-            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:ffa8388f310d3c8a2727c66d14a76bb663fdb99a2a49e68a43c3bebb5a3e53f1",
-            "ipc": null,
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/gemma-4-12b-it-exl3-4bpw",
-                "target": "/workspace/models"
-              },
-              {
-                "read_only": true,
-                "source": "asset/gemma-4-12b-it-exl3-4bpw-tabbyapi-config.yml",
-                "target": "/app/config.yml"
-              }
-            ],
-            "networkMode": "host",
-            "securityOpt": [],
-            "shm": "8g"
-          },
-          "minDriver": "535.0",
-          "model": {
-            "id": "gemma-4-12b-it",
-            "name": "Gemma-4-12B-it",
-            "precision": "4 bpw",
-            "repository": "turboderp/gemma-4-12B-it-exl3",
-            "revision": "e8d17ffbe696accdba72a47dac858d7e880d709e",
-            "servedName": "Gemma-4-12B-it-EXL3-4bpw",
-            "sizeGb": 8.37
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 557056
-          },
-          "speed": {
-            "tps": 0
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": false,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 1,
           "engine": "sglang",
           "id": "lfm25-26b-bf16-rtx3090-sglang-tp1",
           "image": {
@@ -1821,81 +1461,10 @@
         {
           "capabilities": {
             "chat": true,
-            "reasoning": true,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 1,
-          "engine": "tabbyapi",
-          "id": "ornith15-35b-a3b-exl3-4bpw-rtx3090-tabbyapi-tp1",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "main.py",
-              "--config",
-              "/app/config.yml"
-            ],
-            "capAdd": [],
-            "containerPort": 5000,
-            "entrypoint": "/opt/venv/bin/python3",
-            "environment": {
-              "NVIDIA_VISIBLE_DEVICES": "all"
-            },
-            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:ffa8388f310d3c8a2727c66d14a76bb663fdb99a2a49e68a43c3bebb5a3e53f1",
-            "ipc": null,
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/ornith15-35b-a3b",
-                "target": "/workspace/models"
-              },
-              {
-                "read_only": true,
-                "source": "asset/ornith15-35b-a3b-exl3-4bpw-tabbyapi-config.yml",
-                "target": "/app/config.yml"
-              }
-            ],
-            "networkMode": "host",
-            "securityOpt": [],
-            "shm": "8g"
-          },
-          "minDriver": "535.0",
-          "model": {
-            "id": "ornith-1-5-35b-a3b",
-            "name": "Ornith-1.5-35B-A3B",
-            "precision": "4 bpw",
-            "repository": "ultimatechris/Ornith-1.5-35B-A3B-EXL3-4bpw",
-            "revision": "875ac67dae8e793770396908c575c507f4cd5f75",
-            "servedName": "Ornith-1.5-35B-A3B-EXL3-4bpw",
-            "sizeGb": 18.47
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 532480
-          },
-          "speed": {
-            "tps": 0
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
             "reasoning": false,
             "tools": true,
             "vision": false
           },
-          "cards": 1,
           "engine": "vllm",
           "id": "qwen36-gptq-int4-rtx3090-vllm-tp1",
           "image": {
@@ -1983,7 +1552,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "vllm",
           "id": "qwen38-awq-int4-rtx3090-vllm-tp1",
           "image": {
@@ -2063,358 +1631,6 @@
           "weights": {
             "subdir": ""
           }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": false,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 2,
-          "engine": "vllm",
-          "id": "qwen36-gptq-int4-rtx3090-vllm-tp2",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream-published"
-          },
-          "launch": {
-            "arguments": [
-              "--model",
-              "Twu31/Qwen3.6-35B-A3B-GPTQ-INT4-W4A16-LowLatency",
-              "--revision",
-              "d14fd7339b09364ea2aabc542ea20f7dccd97ca1",
-              "--served-model-name",
-              "Qwen3.6-35B",
-              "--tensor-parallel-size",
-              "2",
-              "--max-model-len",
-              "131072",
-              "--max-num-seqs",
-              "8",
-              "--kv-cache-dtype",
-              "fp8",
-              "--gpu-memory-utilization",
-              "0.97",
-              "--enable-auto-tool-choice",
-              "--tool-call-parser",
-              "qwen3_xml",
-              "--reasoning-parser",
-              "qwen3"
-            ],
-            "capAdd": [],
-            "containerPort": 8000,
-            "entrypoint": null,
-            "environment": {
-              "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
-            },
-            "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
-            "ipc": "host",
-            "mounts": [
-              {
-                "read_only": false,
-                "source": "~/.cache/huggingface",
-                "target": "/root/.cache/huggingface"
-              },
-              {
-                "read_only": false,
-                "source": "${CACHE_ROOT}/vllm",
-                "target": "/root/.cache/vllm"
-              }
-            ],
-            "networkMode": "bridge",
-            "securityOpt": [],
-            "shm": "32g"
-          },
-          "minDriver": "570.0",
-          "model": {
-            "id": "qwen3-6-35b-a3b",
-            "name": "Qwen3.6-35B-A3B",
-            "precision": "INT4 W4A16",
-            "repository": "Twu31/Qwen3.6-35B-A3B-GPTQ-INT4-W4A16-LowLatency",
-            "revision": "d14fd7339b09364ea2aabc542ea20f7dccd97ca1",
-            "servedName": "Qwen3.6-35B",
-            "sizeGb": 20
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 0
-          },
-          "speed": {
-            "tps": 460
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": false,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 2,
-          "engine": "vllm",
-          "id": "qwen38-awq-int4-rtx3090-vllm-tp2",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream-published"
-          },
-          "launch": {
-            "arguments": [
-              "--model",
-              "cyankiwi/Qwen3.8-27B-AWQ-INT4",
-              "--revision",
-              "63768c10df38c0395e12ef49edac1bd539eaeeea",
-              "--served-model-name",
-              "Qwen3.8-27B",
-              "--tensor-parallel-size",
-              "2",
-              "--max-model-len",
-              "131072",
-              "--max-num-seqs",
-              "8",
-              "--kv-cache-dtype",
-              "fp8",
-              "--gpu-memory-utilization",
-              "0.97",
-              "--enable-auto-tool-choice",
-              "--tool-call-parser",
-              "qwen3_xml",
-              "--reasoning-parser",
-              "qwen3"
-            ],
-            "capAdd": [],
-            "containerPort": 8000,
-            "entrypoint": null,
-            "environment": {
-              "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
-            },
-            "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
-            "ipc": "host",
-            "mounts": [
-              {
-                "read_only": false,
-                "source": "~/.cache/huggingface",
-                "target": "/root/.cache/huggingface"
-              },
-              {
-                "read_only": false,
-                "source": "${CACHE_ROOT}/vllm",
-                "target": "/root/.cache/vllm"
-              }
-            ],
-            "networkMode": "bridge",
-            "securityOpt": [],
-            "shm": "32g"
-          },
-          "minDriver": "570.0",
-          "model": {
-            "id": "qwen3-8-27b",
-            "name": "Qwen3.8-27B",
-            "precision": "INT4 W4A16",
-            "repository": "cyankiwi/Qwen3.8-27B-AWQ-INT4",
-            "revision": "63768c10df38c0395e12ef49edac1bd539eaeeea",
-            "servedName": "Qwen3.8-27B",
-            "sizeGb": 20
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 0
-          },
-          "speed": {
-            "tps": 111
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": true,
-            "tools": true,
-            "vision": true
-          },
-          "cards": 4,
-          "engine": "vllm",
-          "id": "qwen36-gptq-int4-rtx3090-vllm-tp4",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream-published"
-          },
-          "launch": {
-            "arguments": [
-              "--model",
-              "Twu31/Qwen3.6-35B-A3B-GPTQ-INT4-W4A16-LowLatency",
-              "--revision",
-              "d14fd7339b09364ea2aabc542ea20f7dccd97ca1",
-              "--served-model-name",
-              "Qwen3.6-35B",
-              "--tensor-parallel-size",
-              "4",
-              "--max-model-len",
-              "131072",
-              "--max-num-seqs",
-              "16",
-              "--kv-cache-dtype",
-              "fp8",
-              "--gpu-memory-utilization",
-              "0.94",
-              "--enable-auto-tool-choice",
-              "--tool-call-parser",
-              "qwen3_xml",
-              "--reasoning-parser",
-              "qwen3"
-            ],
-            "capAdd": [],
-            "containerPort": 8000,
-            "entrypoint": null,
-            "environment": {
-              "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
-            },
-            "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
-            "ipc": "host",
-            "mounts": [
-              {
-                "read_only": false,
-                "source": "~/.cache/huggingface",
-                "target": "/root/.cache/huggingface"
-              },
-              {
-                "read_only": false,
-                "source": "${CACHE_ROOT}/vllm",
-                "target": "/root/.cache/vllm"
-              }
-            ],
-            "networkMode": "bridge",
-            "securityOpt": [],
-            "shm": "32g"
-          },
-          "minDriver": "570.0",
-          "model": {
-            "id": "qwen3-6-35b-a3b",
-            "name": "Qwen3.6-35B-A3B",
-            "precision": "INT4 W4A16",
-            "repository": "Twu31/Qwen3.6-35B-A3B-GPTQ-INT4-W4A16-LowLatency",
-            "revision": "d14fd7339b09364ea2aabc542ea20f7dccd97ca1",
-            "servedName": "Qwen3.6-35B",
-            "sizeGb": 20
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 0
-          },
-          "speed": {
-            "tps": 506
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": true,
-            "tools": true,
-            "vision": true
-          },
-          "cards": 4,
-          "engine": "vllm",
-          "id": "qwen38-awq-int4-rtx3090-vllm-tp4",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream-published"
-          },
-          "launch": {
-            "arguments": [
-              "--model",
-              "cyankiwi/Qwen3.8-27B-AWQ-INT4",
-              "--revision",
-              "63768c10df38c0395e12ef49edac1bd539eaeeea",
-              "--served-model-name",
-              "Qwen3.8-27B",
-              "--tensor-parallel-size",
-              "4",
-              "--max-model-len",
-              "131072",
-              "--max-num-seqs",
-              "16",
-              "--kv-cache-dtype",
-              "fp8",
-              "--gpu-memory-utilization",
-              "0.94",
-              "--enable-auto-tool-choice",
-              "--tool-call-parser",
-              "qwen3_xml",
-              "--reasoning-parser",
-              "qwen3"
-            ],
-            "capAdd": [],
-            "containerPort": 8000,
-            "entrypoint": null,
-            "environment": {
-              "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
-            },
-            "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
-            "ipc": "host",
-            "mounts": [
-              {
-                "read_only": false,
-                "source": "~/.cache/huggingface",
-                "target": "/root/.cache/huggingface"
-              },
-              {
-                "read_only": false,
-                "source": "${CACHE_ROOT}/vllm",
-                "target": "/root/.cache/vllm"
-              }
-            ],
-            "networkMode": "bridge",
-            "securityOpt": [],
-            "shm": "32g"
-          },
-          "minDriver": "570.0",
-          "model": {
-            "id": "qwen3-8-27b",
-            "name": "Qwen3.8-27B",
-            "precision": "INT4 W4A16",
-            "repository": "cyankiwi/Qwen3.8-27B-AWQ-INT4",
-            "revision": "63768c10df38c0395e12ef49edac1bd539eaeeea",
-            "servedName": "Qwen3.8-27B",
-            "sizeGb": 20
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 0
-          },
-          "speed": {
-            "tps": 214
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
         }
       ]
     },
@@ -2434,7 +1650,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "gemma412b-exl3-4bpw-rtx3090ti-tabbyapi-tp1",
         "image": {
@@ -2505,7 +1720,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "vllm",
           "id": "qwen38-awq-int4-rtx3090ti-vllm-tp1",
           "image": {
@@ -2593,7 +1807,6 @@
             "tools": null,
             "vision": false
           },
-          "cards": 1,
           "engine": "tabbyapi",
           "id": "qwen3827b-exl3-4bpw-rtx3090ti-tabbyapi-tp1",
           "image": {
@@ -2674,7 +1887,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx4000ada-tabbyapi-tp1",
         "image": {
@@ -2745,7 +1957,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "lfm25-26b-bf16-rtx4000ada-sglang-tp1",
           "image": {
@@ -2850,7 +2061,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm2526b-bf16-rtx4060-sglang-tp1",
         "image": {
@@ -2932,8 +2142,7 @@
         "weights": {
           "subdir": ""
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-4060-ti-16gb": {
       "match": {
@@ -2951,7 +2160,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx4060ti-tabbyapi-tp1",
         "image": {
@@ -3013,8 +2221,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-4060-ti-8gb": {
       "match": {
@@ -3032,7 +2239,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm2526b-bf16-rtx4060ti-sglang-tp1",
         "image": {
@@ -3114,8 +2320,7 @@
         "weights": {
           "subdir": ""
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-4070-12gb": {
       "match": {
@@ -3133,7 +2338,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx4070-tabbyapi-tp1",
         "image": {
@@ -3195,8 +2399,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-4070-super-12gb": {
       "match": {
@@ -3214,7 +2417,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx4070super-tabbyapi-tp1",
         "image": {
@@ -3276,8 +2478,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-4070-ti-12gb": {
       "match": {
@@ -3295,7 +2496,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx4070ti-tabbyapi-tp1",
         "image": {
@@ -3366,7 +2566,6 @@
             "tools": null,
             "vision": null
           },
-          "cards": 1,
           "engine": "llama.cpp",
           "id": "qwen35-9b-q4km-rtx4070ti-llamacpp-tp1",
           "image": {
@@ -3449,7 +2648,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx4070tisuper-tabbyapi-tp1",
         "image": {
@@ -3511,8 +2709,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-4080-16gb": {
       "match": {
@@ -3530,7 +2727,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx4080-tabbyapi-tp1",
         "image": {
@@ -3601,7 +2797,6 @@
             "tools": null,
             "vision": null
           },
-          "cards": 1,
           "engine": "llama.cpp",
           "id": "qwen35-9b-q4km-rtx4080-llamacpp-tp1",
           "image": {
@@ -3684,7 +2879,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx4080super-tabbyapi-tp1",
         "image": {
@@ -3755,7 +2949,6 @@
             "tools": null,
             "vision": null
           },
-          "cards": 1,
           "engine": "llama.cpp",
           "id": "qwen35-9b-q4km-rtx4080super-llamacpp-tp1",
           "image": {
@@ -3838,7 +3031,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "gemma412b-exl3-4bpw-rtx4090-tabbyapi-tp1",
         "image": {
@@ -3909,77 +3101,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
-          "engine": "tabbyapi",
-          "id": "gemma-4-12b-it-exl3-4bpw-rtx4090-tabbyapi-tp1",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "main.py",
-              "--config",
-              "/app/config.yml"
-            ],
-            "capAdd": [],
-            "containerPort": 5000,
-            "entrypoint": "/opt/venv/bin/python3",
-            "environment": {
-              "NVIDIA_VISIBLE_DEVICES": "all"
-            },
-            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:ffa8388f310d3c8a2727c66d14a76bb663fdb99a2a49e68a43c3bebb5a3e53f1",
-            "ipc": null,
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/gemma-4-12b-it-exl3-4bpw",
-                "target": "/workspace/models"
-              },
-              {
-                "read_only": true,
-                "source": "asset/gemma-4-12b-it-exl3-4bpw-tabbyapi-config.yml",
-                "target": "/app/config.yml"
-              }
-            ],
-            "networkMode": "host",
-            "securityOpt": [],
-            "shm": "8g"
-          },
-          "minDriver": "535.0",
-          "model": {
-            "id": "gemma-4-12b-it",
-            "name": "Gemma-4-12B-it",
-            "precision": "4 bpw",
-            "repository": "turboderp/gemma-4-12B-it-exl3",
-            "revision": "e8d17ffbe696accdba72a47dac858d7e880d709e",
-            "servedName": "Gemma-4-12B-it-EXL3-4bpw",
-            "sizeGb": 8.37
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 557056
-          },
-          "speed": {
-            "tps": 0
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": false,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 1,
           "engine": "sglang",
           "id": "lfm25-26b-bf16-rtx4090-sglang-tp1",
           "image": {
@@ -4065,81 +3186,10 @@
         {
           "capabilities": {
             "chat": true,
-            "reasoning": true,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 1,
-          "engine": "tabbyapi",
-          "id": "ornith15-35b-a3b-exl3-4bpw-rtx4090-tabbyapi-tp1",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "main.py",
-              "--config",
-              "/app/config.yml"
-            ],
-            "capAdd": [],
-            "containerPort": 5000,
-            "entrypoint": "/opt/venv/bin/python3",
-            "environment": {
-              "NVIDIA_VISIBLE_DEVICES": "all"
-            },
-            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:ffa8388f310d3c8a2727c66d14a76bb663fdb99a2a49e68a43c3bebb5a3e53f1",
-            "ipc": null,
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/ornith15-35b-a3b",
-                "target": "/workspace/models"
-              },
-              {
-                "read_only": true,
-                "source": "asset/ornith15-35b-a3b-exl3-4bpw-tabbyapi-config.yml",
-                "target": "/app/config.yml"
-              }
-            ],
-            "networkMode": "host",
-            "securityOpt": [],
-            "shm": "8g"
-          },
-          "minDriver": "535.0",
-          "model": {
-            "id": "ornith-1-5-35b-a3b",
-            "name": "Ornith-1.5-35B-A3B",
-            "precision": "4 bpw",
-            "repository": "ultimatechris/Ornith-1.5-35B-A3B-EXL3-4bpw",
-            "revision": "875ac67dae8e793770396908c575c507f4cd5f75",
-            "servedName": "Ornith-1.5-35B-A3B-EXL3-4bpw",
-            "sizeGb": 18.47
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 532480
-          },
-          "speed": {
-            "tps": 0
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
             "reasoning": false,
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "vllm",
           "id": "qwen38-awq-int4-rtx4090-vllm-tp1",
           "image": {
@@ -4227,7 +3277,6 @@
             "tools": null,
             "vision": false
           },
-          "cards": 1,
           "engine": "tabbyapi",
           "id": "qwen3827b-exl3-4bpw-rtx4090-tabbyapi-tp1",
           "image": {
@@ -4308,7 +3357,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm2526b-bf16-rtx5060-sglang-tp1",
         "image": {
@@ -4390,8 +3438,7 @@
         "weights": {
           "subdir": ""
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-5060-ti-16gb": {
       "match": {
@@ -4409,7 +3456,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx5060ti-tabbyapi-tp1",
         "image": {
@@ -4471,8 +3517,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-5060-ti-8gb": {
       "match": {
@@ -4490,7 +3535,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "lfm2526b-bf16-rtx5060ti-sglang-tp1",
         "image": {
@@ -4572,8 +3616,7 @@
         "weights": {
           "subdir": ""
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-5070-12gb": {
       "match": {
@@ -4591,7 +3634,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx5070-tabbyapi-tp1",
         "image": {
@@ -4653,8 +3695,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-5070-ti-16gb": {
       "match": {
@@ -4672,7 +3713,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx5070ti-tabbyapi-tp1",
         "image": {
@@ -4734,8 +3774,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-5080-16gb": {
       "match": {
@@ -4753,7 +3792,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen359b-exl3-4bpw-rtx5080-tabbyapi-tp1",
         "image": {
@@ -4815,8 +3853,7 @@
         "weights": {
           "subdir": "Qwen3.5-9B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-5090-32gb": {
       "match": {
@@ -4834,7 +3871,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen3827b-exl3-4bpw-rtx5090-tabbyapi-tp1",
         "image": {
@@ -4905,7 +3941,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "gemma-4-12b-it-nvfp4-rtx5090-sglang-tp1",
           "image": {
@@ -4974,7 +4009,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "lfm25-26b-bf16-rtx5090-sglang-tp1",
           "image": {
@@ -5064,7 +4098,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "ornith15-35b-a3b-nvfp4-rtx5090-sglang-tp1",
           "image": {
@@ -5169,7 +4202,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen3827b-exl3-4bpw-rtx6000ada-tabbyapi-tp1",
         "image": {
@@ -5231,8 +4263,7 @@
         "weights": {
           "subdir": "Qwen3.8-27B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-a6000-48gb": {
       "match": {
@@ -5250,7 +4281,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen3827b-exl3-4bpw-rtxa6000-tabbyapi-tp1",
         "image": {
@@ -5312,8 +4342,7 @@
         "weights": {
           "subdir": "Qwen3.8-27B-EXL3-4bpw"
         }
-      },
-      "recipes": []
+      }
     },
     "rtx-pro-4000-blackwell-24gb": {
       "match": {
@@ -5331,7 +4360,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "gemma412b-exl3-4bpw-rtxpro4000-tabbyapi-tp1",
         "image": {
@@ -5402,77 +4430,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
-          "engine": "tabbyapi",
-          "id": "gemma-4-12b-it-exl3-4bpw-rtxpro4000-tabbyapi-tp1",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "main.py",
-              "--config",
-              "/app/config.yml"
-            ],
-            "capAdd": [],
-            "containerPort": 5000,
-            "entrypoint": "/opt/venv/bin/python3",
-            "environment": {
-              "NVIDIA_VISIBLE_DEVICES": "all"
-            },
-            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:ffa8388f310d3c8a2727c66d14a76bb663fdb99a2a49e68a43c3bebb5a3e53f1",
-            "ipc": null,
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/gemma-4-12b-it-exl3-4bpw",
-                "target": "/workspace/models"
-              },
-              {
-                "read_only": true,
-                "source": "asset/gemma-4-12b-it-exl3-4bpw-tabbyapi-config.yml",
-                "target": "/app/config.yml"
-              }
-            ],
-            "networkMode": "host",
-            "securityOpt": [],
-            "shm": "8g"
-          },
-          "minDriver": "535.0",
-          "model": {
-            "id": "gemma-4-12b-it",
-            "name": "Gemma-4-12B-it",
-            "precision": "4 bpw",
-            "repository": "turboderp/gemma-4-12B-it-exl3",
-            "revision": "e8d17ffbe696accdba72a47dac858d7e880d709e",
-            "servedName": "Gemma-4-12B-it-EXL3-4bpw",
-            "sizeGb": 8.37
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 557056
-          },
-          "speed": {
-            "tps": 0
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": false,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 1,
           "engine": "sglang",
           "id": "lfm25-26b-bf16-rtxpro4000-sglang-tp1",
           "image": {
@@ -5554,76 +4511,6 @@
           "weights": {
             "subdir": ""
           }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": true,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 1,
-          "engine": "tabbyapi",
-          "id": "ornith15-35b-a3b-exl3-4bpw-rtxpro4000-tabbyapi-tp1",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "main.py",
-              "--config",
-              "/app/config.yml"
-            ],
-            "capAdd": [],
-            "containerPort": 5000,
-            "entrypoint": "/opt/venv/bin/python3",
-            "environment": {
-              "NVIDIA_VISIBLE_DEVICES": "all"
-            },
-            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:ffa8388f310d3c8a2727c66d14a76bb663fdb99a2a49e68a43c3bebb5a3e53f1",
-            "ipc": null,
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/ornith15-35b-a3b",
-                "target": "/workspace/models"
-              },
-              {
-                "read_only": true,
-                "source": "asset/ornith15-35b-a3b-exl3-4bpw-tabbyapi-config.yml",
-                "target": "/app/config.yml"
-              }
-            ],
-            "networkMode": "host",
-            "securityOpt": [],
-            "shm": "8g"
-          },
-          "minDriver": "535.0",
-          "model": {
-            "id": "ornith-1-5-35b-a3b",
-            "name": "Ornith-1.5-35B-A3B",
-            "precision": "4 bpw",
-            "repository": "ultimatechris/Ornith-1.5-35B-A3B-EXL3-4bpw",
-            "revision": "875ac67dae8e793770396908c575c507f4cd5f75",
-            "servedName": "Ornith-1.5-35B-A3B-EXL3-4bpw",
-            "sizeGb": 18.47
-          },
-          "serving": {
-            "concurrency": 4,
-            "ctxTokens": 131072,
-            "kvTokens": 532480
-          },
-          "speed": {
-            "tps": 0
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
         }
       ]
     },
@@ -5643,7 +4530,6 @@
           "tools": null,
           "vision": false
         },
-        "cards": 1,
         "engine": "tabbyapi",
         "id": "qwen3827b-exl3-4bpw-rtxpro4500-tabbyapi-tp1",
         "image": {
@@ -5714,7 +4600,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "gemma-4-12b-it-nvfp4-rtxpro4500-sglang-tp1",
           "image": {
@@ -5783,7 +4668,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "lfm25-26b-bf16-rtxpro4500-sglang-tp1",
           "image": {
@@ -5873,7 +4757,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "ornith15-35b-a3b-nvfp4-rtxpro4500-sglang-tp1",
           "image": {
@@ -5978,7 +4861,6 @@
           "tools": false,
           "vision": false
         },
-        "cards": 1,
         "engine": "sglang",
         "id": "qwen38-27b-nvfp4-rtxpro6000-sglang-tp1",
         "image": {
@@ -6071,7 +4953,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "gemma-4-12b-it-nvfp4-rtxpro6000-sglang-tp1",
           "image": {
@@ -6140,7 +5021,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "lfm25-26b-bf16-rtxpro6000-sglang-tp1",
           "image": {
@@ -6232,7 +5112,6 @@
             "tools": false,
             "vision": false
           },
-          "cards": 1,
           "engine": "sglang",
           "id": "ornith15-35b-a3b-nvfp4-rtxpro6000-sglang-tp1",
           "image": {
@@ -6318,115 +5197,10 @@
           "weights": {
             "subdir": ""
           }
-        },
-        {
-          "capabilities": {
-            "chat": true,
-            "reasoning": true,
-            "tools": false,
-            "vision": false
-          },
-          "cards": 4,
-          "engine": "vllm",
-          "id": "glm52-exl3-rtxpro6000-vllm-tp4",
-          "image": {
-            "attestation": null,
-            "provenance": "upstream"
-          },
-          "launch": {
-            "arguments": [
-              "-lc",
-              "mkdir -p /tmp/glm52-candidate && cp /usr/local/bin/serve-glm52-v19.sh /usr/local/bin/serve-glm52-v16.sh /usr/local/bin/glm52-pcie-runtime-env.sh /usr/local/bin/glm52-dcp-prefill-policy.sh /usr/local/bin/glm52-pcie-calibration.py /tmp/glm52-candidate/ && sed -i \"s|exec /usr/local/bin/serve-glm52-v16.sh|exec /tmp/glm52-candidate/serve-glm52-v16.sh|\" /tmp/glm52-candidate/serve-glm52-v19.sh && sed -i \"s/export VLLM_ENABLE_PCIE_ALLREDUCE=1/export VLLM_ENABLE_PCIE_ALLREDUCE=0/\" /tmp/glm52-candidate/glm52-pcie-runtime-env.sh && export GLM52_SERVER=/tmp/glm52-candidate/serve-glm52-v19.sh && exec /usr/local/bin/serve-gilded-gnosis.sh"
-            ],
-            "capAdd": [],
-            "containerPort": 8000,
-            "entrypoint": null,
-            "environment": {
-              "ASYNC_SCHEDULING": "0",
-              "B12X_PCIE_DMA": "0",
-              "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
-              "DCP": "4",
-              "DCP_BACKEND": "ag_rs",
-              "DCP_CKV_GATHER": "auto",
-              "DCP_CKV_GATHER_MAX_TOKENS": "16384",
-              "DCP_CKV_PREFETCH_DEPTH": "auto",
-              "DCP_INDEXER_SHARDS": "auto",
-              "DCP_KV_CACHE_INTERLEAVE_SIZE": "1",
-              "DCP_QUERY_SPLIT": "auto",
-              "DCP_TOPK_OWNER_MERGE": "auto",
-              "GPUS": "0,1,2,3",
-              "GPU_MEMORY_UTILIZATION": "0.95",
-              "GRAPH": "56",
-              "KV_FP8_ROPE": "1",
-              "LMCACHE_MODE": "off",
-              "MAX_BATCHED_TOKENS": "3072",
-              "MAX_MODEL_LEN": "262144",
-              "MAX_NUM_SEQS": "8",
-              "MODEL": "/model",
-              "MODEL_FAMILY": "glm52-exl3",
-              "MTP": "6",
-              "MTP_DRAFT_SAMPLE_METHOD": "greedy",
-              "MTP_MOE_BACKEND": "triton",
-              "NCCL_IB_DISABLE": "1",
-              "NCCL_P2P_LEVEL": "SYS",
-              "NCCL_PROTO": "LL,LL128,Simple",
-              "PCIE_CALIBRATION": "off",
-              "SERVED_MODEL_NAME": "glm-5.2",
-              "TORCH_CUDA_ARCH_LIST": "12.0a",
-              "TP": "4",
-              "VLLM_DISABLED_KERNELS": "MarlinFP8ScaledMMLinearKernel",
-              "VLLM_DISABLE_SHARED_EXPERTS_STREAM": "0",
-              "VLLM_ENABLE_PCIE_ALLREDUCE": "0",
-              "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "1",
-              "VLLM_USE_B12X_DCP_A2A": "0"
-            },
-            "image": "voipmonitor/vllm:gilded-gnosis-v20-vllmb46c3aa-si35aebc6-fi801d57a-cu132-20260730-r12@sha256:bcd65c13076b00cf7804001ce70085453de958b082897b9674a26d9fab4d436a",
-            "ipc": "host",
-            "mounts": [
-              {
-                "read_only": true,
-                "source": "${MODEL_ROOT}/GLM-5.2-EXL3-TR3-3.0bpw",
-                "target": "/model"
-              },
-              {
-                "read_only": false,
-                "source": "${CACHE_ROOT}/cache_glm52_exl3_text",
-                "target": "/cache"
-              }
-            ],
-            "networkMode": "bridge",
-            "securityOpt": [],
-            "shm": "32g"
-          },
-          "minDriver": "",
-          "model": {
-            "id": "glm-5-2",
-            "name": "GLM-5.2",
-            "precision": "3.0 bpw",
-            "repository": "brandonmusic/GLM-5.2-EXL3-TR3-3.0bpw",
-            "revision": "677eaa98b41b9f06abaad03953659c2872c22ce3",
-            "servedName": "glm-5.2",
-            "sizeGb": 294.8
-          },
-          "serving": {
-            "concurrency": 8,
-            "ctxTokens": 262144,
-            "kvTokens": 1136384
-          },
-          "speed": {
-            "tps": 403
-          },
-          "validated": {
-            "acceptedAt": null,
-            "harness": null
-          },
-          "weights": {
-            "subdir": ""
-          }
         }
       ]
     }
   },
-  "registryCommit": "eed42a078bf584354867e30760c1a7ea281ba994",
+  "registryCommit": "261777d3244c6e5e1f26f80d7cc82accba0172fe",
   "schemaVersion": "omarchy-local-ai/recipes/1"
 }
