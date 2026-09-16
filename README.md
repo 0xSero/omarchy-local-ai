@@ -20,7 +20,7 @@
 omarchy plugin add https://github.com/0xSero/omarchy-local-ai.git --enable
 ```
 
-Click the new bar icon, press **Start**. The card names the model chosen for your GPU and its download size before anything lands on disk. When it says **ready**, the model has passed every check below.
+Click the new bar icon, choose a free GPU group and recipe, then press **Run**. The card shows the download size, context and capabilities before launch. When it says **ready**, the model has passed its acceptance checks.
 
 ## How it works
 
@@ -28,7 +28,7 @@ Click the new bar icon, press **Start**. The card names the model chosen for you
 2. **Open agent** starts any installed coding agent on it: claude, codex, pi, omp, opencode, ori, grok, agy, hermes, copilot, crush. The endpoint and key travel in the agent's environment. Nothing of yours under `~/.config` is read or written.
 3. **Share on Tailscale** publishes the same keyed endpoint on your tailnet address. One click, no `tailscale serve`, no root.
 
-Every detected GPU is listed; the largest card with a recipe is the default and any can be picked. Anything the plugin cannot do is a sentence on the card, never a dead button.
+Each GPU group lists its running models underneath; occupied GPUs are marked **locked**. Select a model for its stats, agent and Stop controls, or a free GPU group to start another model. Click **full screen** or press **F11** for more space; **compact** or **Escape** returns to the smaller panel. Actions stay visible while the contents scroll.
 
 ## Requirements
 
@@ -36,7 +36,7 @@ Every detected GPU is listed; the largest card with a recipe is the default and 
 - **An NVIDIA GPU (8 GB and up) or an Intel Arc Pro B70.** The NVIDIA container toolkit is installed for you inside that same prompt when missing.
 - Optional: `tailscale` for sharing, `hf` for faster downloads.
 
-No model to pick, no config file, no API key to make.
+No config file or API key to make.
 
 ## Commands
 
@@ -59,7 +59,7 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 ## Security
 
 - **Recipes are gated before anything runs.** Digest-pinned image, pinned model revision, no host IPC, no extra capabilities, no weakened security profile, mounts canonicalized and confined to the plugin's two cache roots.
-- **Two containers, private network.** The engine is never reachable from the host; only the gateway listens, on loopback, and it requires a key on every request.
+- **Two containers and a private network per model.** The engine is never reachable from the host; only the gateway listens, on loopback, and it requires a key on every request.
 - **The key lives in one 0600 file** and enters no process argument, ledger, snapshot, or log.
 - **Root does what you asked and nothing else.** Behind the password prompt the plugin's own script runs one batched phase; it takes your identity from pkexec, derives every path from your home, and verifies its inputs against hashes carried on the prompt's own command line.
 - Six rounds of security review on the marketplace listing; the fixes are in the commit history.

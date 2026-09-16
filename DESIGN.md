@@ -233,8 +233,11 @@ tree, every word on it, and every state side by side were designed first
 the navigation state into header, path, rows and a pinned footer as plain
 data; `Panel.qml` draws it and runs the verbs; `CardRow.qml` is the one row
 component, `Orb.qml` the state orb. Rows are one line (a noun and a datum),
-with a second line only for a card type's cells. The card has a 720 px ceiling:
-the list scrolls, the header, path and footer stay.
+with a second line only for a card type's cells. Home nests each running model
+under its GPU group and labels occupied GPUs locked. The compact card fits the screen
+with a 720 px ceiling; full-screen mode uses the available area beside the bar.
+The list scrolls while the header, path and footer stay. The header control or
+F11 toggles the size without changing navigation; Escape returns to compact first.
 
 ### 8. Repo hygiene
 Bash + QML as before; the same isolated shim tests; `make sync` pulls
