@@ -6,3 +6,6 @@ tmp-mockups/
 .claude/
 test/rented-results/
 dist/
+# the wiki site is built from wiki/*.md by wiki/build.py, and by .github/workflows/pages.yml
+# before publishing, so the generated file is never committed
+wiki/index.html

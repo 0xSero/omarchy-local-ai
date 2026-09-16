@@ -5,3 +5,4 @@
 /Makefile export-ignore
 /.gitignore export-ignore
 /.gitattributes export-ignore
+/wiki export-ignore
