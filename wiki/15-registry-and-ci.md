@@ -121,14 +121,22 @@ committed, so what is published is always the markdown in that commit and no gen
 
 ### `traffic.yml` — daily
 
-GitHub keeps clone and view traffic for 14 days; this records it so installs accumulate. Every day at
-03:17 UTC (and on demand) it checks out the **`stats` branch**, writes
-`traffic/clones.<date>.json` and `traffic/views.<date>.json` from the API, aggregates
-`traffic/clones-daily.json` and `traffic/summary.json`, and pushes to `stats`. It never touches `main`.
-It needs `secrets.TRAFFIC_TOKEN` — a token of the repository owner with push access, because the
-workflow's own token cannot read the traffic API.
+GitHub keeps clone and view traffic for 14 days, and the referrer/path breakdown as a rolling snapshot
+with no daily buckets — none of it is retrievable once it rolls off. Every day at 03:17 UTC (and on
+demand) this checks out the **`stats` branch**, writes `traffic/clones.<date>.json`,
+`traffic/views.<date>.json`, `traffic/referrers.<date>.json`, `traffic/paths.<date>.json` and
+`traffic/repo.<date>.json` from the API, aggregates `traffic/clones-daily.json` and
+`traffic/views-daily.json` (one row per day, the newest reading of a day winning, because GitHub
+revises the last day or two as data settles) plus `traffic/summary.json`, then pushes to `stats`. It
+never touches `main`. It needs `secrets.TRAFFIC_TOKEN` — a token of the repository owner with push
+access, because the workflow's own token cannot read the traffic API.
 
-Every `omarchy plugin add` is a clone, so `clones-daily.json` is the closest thing to an install count.
+`traffic/summary.json` is the whole count in one file: stars, forks, watchers and open issues, clone
+and view totals with each series' peak day and rolling 14-day uniques, and the current referrer and
+path breakdowns. Only `uniques_14d` counts *people*: `daily_uniques_sum` adds a cloner once per day
+they cloned, so it overcounts anyone who cloned twice. Every `omarchy plugin add` is a clone, so
+`clones` is the closest thing to an install count — not the release assets, which are the suite's own
+archive and no one's download channel.
 
 ## Versioning
 
