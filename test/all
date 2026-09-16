@@ -603,6 +603,13 @@ SHIM_CONTEXT=262144 "$CLI" load
 [[ $(snap .state) == ready && $(snap '.models[0].caps.video') == true && $(snap '.models[0].caps.reasoning') == null ]] || fail "media acceptance" "$(snap .error)"; pass "vision and video pass through the gateway and unknown capabilities stay unknown"
 "$CLI" open-agent pi >/dev/null
 jq -e '.providers["omarchy-local"].models[0] | .contextWindow==262144 and .input==["text","image"]' "$OMARCHY_AI_STATE/agents/pi/models.json" >/dev/null || fail "agent metadata"; pass "Pi receives the real 256K context and image input support"
+cp "$TMP/bin/pi" "$TMP/bin/omp"
+mkdir -p "$OMARCHY_AI_STATE/agents/omp"
+printf 'providers: {stale: {baseUrl: "http://127.0.0.1:9999/v1"}}\n' >"$OMARCHY_AI_STATE/agents/omp/models.yml"
+"$CLI" open-agent omp >/dev/null
+jq -e '.providers["omarchy-local"] | .baseUrl=="http://127.0.0.1:12434/v1" and .models[0].id=="Test-Model" and .models[0].contextWindow==262144' "$OMARCHY_AI_STATE/agents/omp/models.yml" >/dev/null || fail "OMP retained stale model config"
+[[ $(mode "$OMARCHY_AI_STATE/agents/omp/models.yml") == 600 ]] || fail "OMP config mode"; pass "OMP refreshes migrated YAML config when launching a different model"
+jq -e '.providers["omarchy-local"].models[0].compat.supportsReasoningParams == false' "$OMARCHY_AI_STATE/agents/omp/models.yml" >/dev/null || fail "OMP overrides engine reasoning defaults"; pass "OMP leaves reasoning parameters to the engine defaults"
 "$CLI" unload >/dev/null
 SHIM_MEDIA_REPLY=Blue "$CLI" load
 [[ $(snap .state) == error && $(snap .error) == *"vision acceptance failed"* ]] || fail "bad vision accepted" "$(snap .error)"; pass "incorrect image output fails readiness"

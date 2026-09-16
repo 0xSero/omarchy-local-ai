@@ -51,6 +51,9 @@ Notes that are not cosmetic:
 - **`pi`/`omp` get the recipe's real context and image support**, not a hardcoded 128K:
   `contextWindow` comes from the model's `ctxTokens`, and `input` becomes `["text","image"]` when the
   model passed vision acceptance. Costs are declared as zero, because they are.
+- **`omp` leaves reasoning settings to the model's defaults.** Its generated config suppresses
+  inferred reasoning parameters; it does not disable the model's reasoning. Both `models.json`
+  and OMP's preferred `models.yml` are refreshed on launch so an earlier model cannot stay selected.
 - The per-agent config files are 0600 and live under `$STATE/agents/`, never under your config.
 
 ## How the key stays out of `argv`

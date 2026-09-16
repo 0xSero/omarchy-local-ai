@@ -64,10 +64,15 @@ agent_command() {
       # pi reads providers from its agent dir; a plugin-owned dir keeps the user's own untouched.
       # omp also wants a config.yml there, or it opens its first-run wizard.
       local dir="$STATE/agents/$name"; mkdir -p "$dir"
-      jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" --argjson ctx "$context" --argjson vision "$vision" \
-        '{providers:{"omarchy-local":{baseUrl:$u,apiKey:$k,api:"openai-completions",models:[{id:$m,name:($m+" · local"),contextWindow:$ctx,input:(if $vision then ["text","image"] else ["text"] end),cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}]}}}' \
+      # OMP infers reasoning settings from model names; leave those to the engine's defaults.
+      jq -nc --arg a "$name" --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" --argjson ctx "$context" --argjson vision "$vision" \
+        '{providers:{"omarchy-local":{baseUrl:$u,apiKey:$k,api:"openai-completions",models:[({id:$m,name:($m+" · local"),contextWindow:$ctx,input:(if $vision then ["text","image"] else ["text"] end),cost:{input:0,output:0,cacheRead:0,cacheWrite:0}} + (if $a=="omp" then {compat:{supportsReasoningParams:false}} else {} end))]}}}' \
         >"$dir/models.json"
-      [[ $name == omp ]] && printf 'modelRoles:\n  default: omarchy-local/%s\nsetupVersion: 2\n' "$model" >"$dir/config.yml"
+      if [[ $name == omp ]]; then
+        # OMP migrates JSON once, then prefers models.yml on subsequent launches.
+        cp "$dir/models.json" "$dir/models.yml"
+        printf 'modelRoles:\n  default: omarchy-local/%s\nsetupVersion: 2\n' "$model" >"$dir/config.yml"
+      fi
       printf '%s\0' env "PI_CODING_AGENT_DIR=$dir" "OMP_CODING_AGENT_DIR=$dir" "$bin" --provider omarchy-local --model "$model" ;;
     crush)
       # crush takes providers from XDG config only, not from OPENAI_BASE_URL, and its XDG data file pins the

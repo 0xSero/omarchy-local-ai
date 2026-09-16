@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "5.0.2",
+  "version": "5.0.3",
   "author": "0xSero",
   "license": "MIT",
   "description": "Run validated local models from the Omarchy bar. Start several at once, each on its own GPU group; occupied cards read locked. Every recipe states its context, chat, vision, video, tools and reasoning before launch. Open any installed coding agent on a running model, with nothing written to your config, then share the same keyed endpoint on your tailnet. Speed, tokens today, KV capacity and GPU telemetry sit on the card, compact or full screen. NVIDIA and Intel Arc, no docker group needed.",

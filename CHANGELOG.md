@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.0.3] - 2026-09-16
+
+### Fixed
+- OMP uses the serving model's default reasoning settings instead of inferring an unsupported effort from its name. Refresh its migrated YAML configuration on every launch so switching models uses the selected model and endpoint.
+- Pin the corrected gateway: rejected streaming requests retain their HTTP status and error body instead of appearing as successful empty streams.
+
 ## [5.0.2] - 2026-09-16
 
 ### Fixed
