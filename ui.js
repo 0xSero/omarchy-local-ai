@@ -36,6 +36,7 @@ function cardByHw(snap, hw) { var cs = snap.cards || []; for (var i = 0; i < cs.
 function cardOfKeys(snap, keys) { var cs = snap.cards || []; for (var i = 0; i < cs.length; i++) if (keys.length && cs[i].keys.indexOf(keys[0]) >= 0) return cs[i]; return null }
 function gpu(snap, key) { var gs = snap.gpus || []; for (var i = 0; i < gs.length; i++) if (gs[i].key === key) return gs[i]; return null }
 function freeKeys(snap, c) { return c.keys.filter(function(k) { return !holder(snap, k) }) }
+function freest(snap, keys) { return keys.slice().sort(function(a, b) { var ga = gpu(snap, a) || {}, gb = gpu(snap, b) || {}; return ((gb.vramGb || 0) - (gb.usedGb || 0)) - ((ga.vramGb || 0) - (ga.usedGb || 0)) })[0] || "" }   // the display card carries the desktop: start elsewhere when there is an elsewhere
 function fits(snap, c, n) { return (snap.recipes || []).filter(function(r) { return r.hardwareId === c.hardwareId && r.cards === n }) }
 function where(snap, m) { var c = cardOfKeys(snap, m.keys); return (m.cards > 1 ? m.cards + "× " : "") + (c ? c.name : "card") }
 function workKeys(snap) { // the cards a running op touches: the model it stops, or the claim of the recipe it starts
@@ -131,8 +132,8 @@ function build(c) {
       o.rows.push({ type: "stat", stat: [{ k: "decode", v: String(m.decodeTps || 0), u: "tok/s" }, { k: "prefill", v: m.prefillTps > 0 ? String(m.prefillTps) : "n/a", u: m.prefillTps > 0 ? "tok/s" : "" }], label: "", value: "", action: "", kind: "" })
       o.rows.push({ type: "stat", stat: [{ k: "tokens today", v: kmg(m.tokensToday || 0), u: "" }, { k: "kv cache", v: m.kvTokens > 0 ? kb(m.kvTokens) : "n/a", u: m.ctxTokens > 0 ? kb(m.ctxTokens) + " ctx" : "" }], label: "", value: "", action: "", kind: "" })
       o.rows.push(row(where(snap, m), ":" + m.port, "", { cells: m.keys.map(function(k) { var g = gpu(snap, k) || {}; var t = []
-        if (g.tempC !== null && g.tempC !== undefined) t.push(g.tempC + "°"); if (g.utilPct !== null && g.utilPct !== undefined) t.push(g.utilPct + "%"); if (g.usedGb !== null && g.usedGb !== undefined) t.push(g.usedGb + " / " + g.vramGb + " GB")
-        return { text: "#" + k.split(":")[1] + (t.length ? " · " + t.join(" · ") : ""), mark: "used" } }) }))
+        if (g.tempC !== null && g.tempC !== undefined) t.push(g.tempC + "°"); if (g.utilPct !== null && g.utilPct !== undefined) t.push(g.utilPct + "%"); if (g.usedGb !== null && g.usedGb !== undefined) t.push(Math.round(g.usedGb) + "/" + g.vramGb + "G")
+        return { text: "#" + k.split(":")[1] + (t.length ? " " + t.join(" ") : ""), mark: "used" } }) }))
       var caps = m.caps || {}
       o.rows.push(row("can", "", "", { chips: ["chat", "vision", "tools", "reasoning"].map(function(x) { return { text: x, off: !caps[x] } }) }))
       var agents = m.launchable || [], a = agents.indexOf(c.agentPick) >= 0 ? c.agentPick : (agents.indexOf((snap.agents || {}).default) >= 0 ? snap.agents.default : agents[0] || "")

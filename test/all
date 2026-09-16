@@ -62,7 +62,7 @@ case "$1" in
     fi
     [[ ${SHIM_RUN_FAIL:-} == "$name" ]] && exit 125
     mkdir -p "$SHIM/containers/$name"; printf '%s' "$labels" >"$SHIM/containers/$name/labels"; echo running >"$SHIM/containers/$name/state"
-    [[ ${SHIM_CRASHLOOP:-} == 1 && $name == *-engine ]] && { echo restarting >"$SHIM/containers/$name/state"; echo 3 >"$SHIM/containers/$name/restarts"; }   # exits at once under --restart: docker keeps it "running"
+    [[ ${SHIM_CRASHLOOP:-} == 1 && $name == *-engine && ( -z ${SHIM_CRASHLOOP_UNLESS:-} || "$*" != *"$SHIM_CRASHLOOP_UNLESS"* ) ]] && { echo restarting >"$SHIM/containers/$name/state"; echo 3 >"$SHIM/containers/$name/restarts"; }   # exits at once under --restart: docker keeps it "running"
     exit 0 ;;
   inspect)
     fmt=""; name=""
@@ -76,7 +76,7 @@ case "$1" in
       *Running*) echo "$r" ;;
       *) echo "[]" ;;
     esac; exit 0 ;;
-  logs) printf 'Traceback (most recent call last):\n  File "/x/hub.py", line 1, in download\n    ^^^^\nOSError: [Errno 30] Read-only file system: /models/.cache\n'; exit 0 ;;
+  logs) [[ -n ${SHIM_LOGS:-} ]] && { printf '%s\n' "$SHIM_LOGS"; exit 0; }; printf 'Traceback (most recent call last):\n  File "/x/hub.py", line 1, in download\n    ^^^^\nOSError: [Errno 30] Read-only file system: /models/.cache\n'; exit 0 ;;
   stop) echo stopped >"$SHIM/containers/$2/state"; exit 0 ;;
   start) echo running >"$SHIM/containers/$2/state"; exit 0 ;;
   rename) mv "$SHIM/containers/$2" "$SHIM/containers/$3"; exit 0 ;;
@@ -368,6 +368,15 @@ write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | j
 "$CLI" snapshot >/dev/null; [[ $(snap '[.recipes[].id]|join(",")') == "good,alt-small" ]] || fail "refused not offered" "$(snap '[.recipes[].id]')"; pass "an alternate that needs host IPC or host networking is not offered at all"
 "$CLI" run alt-small nvidia:0; [[ $(snap .state) == ready && $(snap .running.recipeId) == alt-small && $(snap '.gpus[0].chosen') == true && $(grep -c "^.*run alt-small on nvidia:0" "$OMARCHY_AI_STATE/log") -ge 1 ]] || fail "run verb" "$(snap .state) $(snap .error) $(snap .running)"; pass "run <recipe> <gpu> pins the card and the recipe and starts in one verb"
 "$CLI" unload >/dev/null; "$CLI" recipe auto >/dev/null
+write_recipes "$(recipe capped false dir | jq '.launch.arguments=["main.py","--gpu-memory-utilization","0.97","--max-model-len","40960"]')"
+export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 4000, 20564'   # the desktop holds 4 GB of this card
+"$CLI" load; [[ $(snap .state) == ready ]] && grep -q -- "--gpu-memory-utilization 0.83" "$SHIM/docker.log" || fail "memory cap" "$(snap .state) $(grep -o -- '--gpu-memory-utilization [0-9.]*' "$SHIM/docker.log" | tail -1)"; pass "a vLLM memory share above what the card has free is lowered to what is free (24564 MiB total, 4000 used: 0.83)"
+grep -q "gpu memory utilization 0.97 lowered to 0.83" "$OMARCHY_AI_STATE/log" || fail "cap logged"; pass "the lowered share is logged with its reason"
+"$CLI" unload >/dev/null
+# the context no longer fits next to the weights: vLLM names the length that does, and the Start is retried once at that length
+SHIM_CRASHLOOP=1 SHIM_CRASHLOOP_UNLESS="--max-model-len 37632" SHIM_LOGS="(EngineCore pid=1) ValueError: To serve at least one request with the model's max seq len (40960), 1.44 GiB KV cache is needed, which is larger than the available KV cache memory (1.33 GiB). Based on the available memory, the estimated maximum model length is 37700. Try increasing gpu_memory_utilization" OMARCHY_AI_TIMEOUT=60 "$CLI" load
+[[ $(snap .state) == ready && $(snap '.models[0].ctxTokens') == 37632 ]] && grep -q -- "--max-model-len 37632" "$SHIM/docker.log" && grep -q "retrying capped with a 37632-token context" "$OMARCHY_AI_STATE/log" || fail "fit retry" "$(snap .state) $(snap .error) $(snap '.models[0].ctxTokens')"; pass "a start that dies on the KV cache check is retried once with the context vLLM said fits, rounded to 256, and the model reports that context"
+"$CLI" unload >/dev/null; unset SHIM_GPUS
 write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | jq '.model.name="Alt Small" | .model.sizeGb=0.000001')"
 "$CLI" recipe alt-small >/dev/null; [[ $(snap .selected.recipeId) == alt-small && $(snap .selected.name) == "Alt Small" ]] || fail "recipe pick" "$(snap .selected)"; pass "recipe <id> picks an alternate; model and selected follow it"
 "$CLI" load; [[ $(snap .state) == ready && $(snap .running.recipeId) == alt-small && $(snap '.recipes[1].onDisk') == true ]] || fail "alt runs" "$(snap .state) $(snap .error) $(snap .running)"; pass "load runs the picked recipe and marks it on disk"

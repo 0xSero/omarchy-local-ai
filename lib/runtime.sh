@@ -103,8 +103,25 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
   while IFS= read -r v; do a+=(--env "$v"); done < <(jq -r '.launch.environment|to_entries[]?|"\(.key)=\(.value)"' <<<"$r")
   v=$(jq -r '.launch.entrypoint//empty' <<<"$r"); [[ -n $v ]] && a+=(--entrypoint "$v")
   a+=("$(jq -r .launch.image <<<"$r")")
-  while IFS= read -r v; do a+=("$v"); done < <(jq -r '.launch.arguments[]?' <<<"$r")
+  local cap; cap=$(memory_cap "$r"); local prev=""
+  while IFS= read -r v; do
+    # a validated recipe asks for the share of the card it had on a bare machine; on a card that also
+    # drives the desktop (Hyprland holds gigabytes) that share is not there, so it is lowered to what is free
+    if [[ $prev == --gpu-memory-utilization && -n $cap ]] && awk -v v="$v" -v c="$cap" 'BEGIN{exit !(v>c)}'; then log "gpu memory utilization $v lowered to $cap: that is what is free on the card"; v=$cap; fi
+    a+=("$v"); prev=$v
+  done < <(jq -r '.launch.arguments[]?' <<<"$r")
   printf '%s\0' "${a[@]}"
+}
+fit_length() { # fit_length <recipe-id> -> the context length vLLM said the card can hold, from the engine log saved before the last rollback of this recipe; empty when it said nothing
+  local n; n=$(awk -v id="$1" '$0 == "--- engine log before rollback (" id ")" {f=1; v=""} f && match($0, /estimated maximum model length is [0-9]+/) {v=substr($0, RSTART+34, RLENGTH-34)} /^--- end engine log/ {f=0} END {print v}' "$LOGFILE" 2>/dev/null)
+  [[ $n =~ ^[0-9]+$ ]] && (( n >= 2048 )) || return 0
+  printf '%s' $(( n / 256 * 256 ))
+}
+memory_cap() { # memory_cap <recipe> -> the largest --gpu-memory-utilization the claimed NVIDIA cards can honour right now (two decimals), or empty
+  local r=$1; [[ $(jq -r .match.backend <<<"$r") == nvidia ]] || return 0
+  hardware_json | jq -r --argjson idx "$(jq -c '.gpuIndexes // [.gpuIndex]' <<<"$r")" '
+    [.gpus[] | select(.backend=="nvidia" and (.index as $i | $idx | index($i)) != null and .freeMiB != null and .totalMiB > 0)
+     | (.freeMiB / .totalMiB * 100 | floor) / 100] | if length == 0 then empty else (min | if . < 0.1 then 0.1 else . end) end'
 }
 
 gateway_argv() { # gateway_argv <recipe>

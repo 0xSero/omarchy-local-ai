@@ -89,7 +89,7 @@ Panel {
     else if (v === "count") { count = parseInt(s[1], 10) || 1; pick = "" }
     else if (v === "pick") pick = s[1]
     else if (v === "model") { slotSel = s[1]; home(); go("model") }
-    else if (v === "run") { if (working) return; var g = Ui.cardByHw(snap, hw), free = g ? Ui.freeKeys(snap, g) : []; home(); act(["run", s[1], free[0] || (g ? g.keys[0] : "")].filter(function(x) { return x !== "" })) }
+    else if (v === "run") { if (working) return; var g = Ui.cardByHw(snap, hw), free = g ? Ui.freeKeys(snap, g) : []; home(); act(["run", s[1], Ui.freest(snap, free) || (g ? g.keys[0] : "")].filter(function(x) { return x !== "" })) }
     else if (v === "run-again") { if (working) return; home(); act(["load"]) }
     else if (v === "refresh") { localError = ""; refresh() }
     else if (v === "stop") { if (working) return; home(); act(["unload", s[1]]) }

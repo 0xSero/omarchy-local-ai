@@ -96,23 +96,34 @@ w_load() {
     download_host "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"; weights_mark "$r"; need=0
   fi
   t0=$SECONDS
-  # every docker call of this Start in one phase: images, weights when still needed, set aside, engine, gateway
-  PHASE_EXPECT_BYTES=$WEXP PHASE_WEIGHTS_DIR=$WBASE phase_run start download "$id" "$STATE/recipe.json" "$need" || oops "$PHASE_REASON"
-  (( need )) && weights_mark "$r"
-  # listed from now on, unverified until accepted; an earlier run's record and file stay aside for a rollback
-  local was; was=$(slot_of "$id"); [[ -f $STATE/slots/$id.json ]] && command cp -f "$STATE/slots/$id.json" "$STATE/slots/$id.json.prev"
-  slot_record "$r"; printf '%s\n' "$r" >"$STATE/slots/$id.json"; slots_file
-  if ! accept "$r" 2>"$STATE/accept.err"; then
-    local why; why=$(sed -n '$s/^local-ai: //p' "$STATE/accept.err" 2>/dev/null); [[ -n $why ]] || why="engine failed to start (see $LOGFILE)"
+  local attempt=1 fit was why
+  while :; do
+    # every docker call of this Start in one phase: images, weights when still needed, set aside, engine, gateway
+    PHASE_EXPECT_BYTES=$WEXP PHASE_WEIGHTS_DIR=$WBASE phase_run start download "$id" "$STATE/recipe.json" "$need" || oops "$PHASE_REASON"
+    (( need )) && weights_mark "$r"; need=0
+    # listed from now on, unverified until accepted; an earlier run's record and file stay aside for a rollback
+    was=$(slot_of "$id"); [[ -f $STATE/slots/$id.json ]] && command cp -f "$STATE/slots/$id.json" "$STATE/slots/$id.json.prev"
+    slot_record "$r"; printf '%s\n' "$r" >"$STATE/slots/$id.json"; slots_file
+    accept "$r" 2>"$STATE/accept.err" && break
+    why=$(sed -n '$s/^local-ai: //p' "$STATE/accept.err" 2>/dev/null); [[ -n $why ]] || why="engine failed to start (see $LOGFILE)"
     log "rollback: $why"; op starting "$id" "rolling back" 0
     # the failed engine's own last lines, before rollback removes it: the reason lives there
-    if docker_direct; then { echo "--- engine log before rollback ($id)"; docker logs --tail 80 "$(jq -r .slot.engine <<<"$r")" 2>&1 | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true; fi
+    if docker_direct; then { echo "--- engine log before rollback ($id)"; docker logs --tail 400 "$(jq -r .slot.engine <<<"$r")" 2>&1 | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true; fi
     privileged restore "$STATE/recipe.json" >"$STATE/phase.out" 2>>"$LOGFILE" || why+="; the previous model could not be restored (see $LOGFILE)"
     # the new slot is gone; a replaced earlier run of this recipe is back under the same name, with its own record
     if [[ -n $was ]]; then lwrite '.slots[$id]=$o' --arg id "$id" --argjson o "$was"; [[ -f $STATE/slots/$id.json.prev ]] && mv -f "$STATE/slots/$id.json.prev" "$STATE/slots/$id.json"
     else slot_forget "$id"; rm -f "$STATE/slots/$id.json"; fi
-    slots_file; oops "$why"
-  fi
+    slots_file
+    # a validated context that no longer fits next to the weights (the card also drives the desktop, or its
+    # share was lowered): vLLM says what does fit, and the Start is tried once more at that length
+    fit=$(fit_length "$id")
+    if (( attempt == 1 )) && [[ -n $fit ]] && jq -e '.launch.arguments | index("--max-model-len") != null' <<<"$r" >/dev/null; then
+      r=$(jq -c --argjson n "$fit" '.launch.arguments |= (index("--max-model-len") as $i | .[$i+1] = ($n|tostring)) | .serving.ctxTokens = $n | .serving.kvTokens = $n' <<<"$r")
+      printf '%s\n' "$r" >"$STATE/recipe.json"; log "retrying $id with a $fit-token context: what the card holds next to the weights"
+      op starting "$id" "retrying with a $fit-token context" 0; attempt=2; continue
+    fi
+    oops "$why"
+  done
   # the replaced models are gone for good; their records go with them
   local v; while IFS= read -r v; do [[ -n $v && $v != "$id" ]] && { slot_forget "$v"; rm -f "$STATE/slots/$v.json"; }; done < <(jq -r '.victims[]?.id' <<<"$r")
   # behind a prompt the set-aside pairs stay, stopped, until the next Start or Stop drops them: no second prompt on success

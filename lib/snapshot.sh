@@ -68,11 +68,11 @@ models_json() {
     else mstate=stopped; note="stopped outside the plugin; press Start or Stop"; fi
     apis=$(jq -c '.accepted.apis // []' <<<"$s")
     out=$(jq -c --argjson s "$s" --arg id "$id" --arg st "$mstate" --arg note "$note" --arg served "$served" --argjson agents "$(agents_json "$apis")" --argjson share "$(share_state "$port")" \
-      --argjson rec "$(recipe_by_id "$id")" --argjson today "$(usage_today "$id")" \
+      --argjson rec "$(cat "$STATE/slots/$id.json" 2>/dev/null || recipe_by_id "$id")" --argjson today "$(usage_today "$id")" \
       '. + [{recipeId:$id, name:($s.name // $id), port:$s.port, endpoint:("http://127.0.0.1:"+($s.port|tostring)+"/v1"), keys:($s.keys // []), cards:(($s.keys // []) | length),
              state:$st, note:$note, servedModel:(if $served != "" then $served else ($s.accepted.servedModel // "") end), apis:($s.accepted.apis // []),
              caps:(($rec.capabilities // {}) | {chat:(.chat//false), vision:(.vision//false), tools:(.tools//false), reasoning:(.reasoning//false)}),
-             ctxTokens:($rec.serving.ctxTokens // 0), kvTokens:($rec.serving.kvTokens // $rec.serving.ctxTokens // 0), tokensToday:$today,
+             ctxTokens:($rec.serving.ctxTokens // 0), kvTokens:(if ($rec.serving.kvTokens // 0) > 0 then $rec.serving.kvTokens else ($rec.serving.ctxTokens // 0) end), tokensToday:$today,
              decodeTps:($s.accepted.tps // 0), prefillTps:($s.accepted.prefillTps // 0), acceptedAt:($s.accepted.at // ""), startedAt:($s.startedAt // ""),
              launchable:$agents.launchable, shareUrl:(if $share.active then $share.url else "" end), engine:$s.engine, gateway:$s.gateway}]' <<<"$out")
   done < <(jq -r '.slots | keys[]' <<<"$ledger")
@@ -122,7 +122,7 @@ snapshot_write() {
       [[ -n $r ]] || continue
       od=$(recipe_on_disk "$r"); local pb=0; [[ $od == false ]] && pb=$(weights_partial_bytes "$r")
       recs=$(jq -c --argjson r "$r" --arg h "$h" --argjson od "$od" --argjson pb "${pb:-0}" '. + [{id:$r.id, name:$r.model.name, engine:$r.engine, sizeGb:($r.model.sizeGb//0), precision:($r.model.precision//""),
-        ctxTokens:($r.serving.ctxTokens//0), kvTokens:($r.serving.kvTokens // $r.serving.ctxTokens // 0),
+        ctxTokens:($r.serving.ctxTokens//0), kvTokens:(if ($r.serving.kvTokens // 0) > 0 then $r.serving.kvTokens else ($r.serving.ctxTokens // 0) end),
         caps:(($r.capabilities // {}) | {chat:(.chat//false), vision:(.vision//false), tools:(.tools//false), reasoning:(.reasoning//false)}),
         onDisk:$od, partialBytes:$pb, hardwareId:$h, cards:($r.cards//1), claims:($r.claims // {($h):($r.cards//1)})}]' <<<"$recs")
     done < <(jq -c '.[]' <<<"$all")
