@@ -71,6 +71,19 @@ The release that made the repository match what it ships:
 single-model ledger migration, the parsed pull percent, the windowed token counters) and the reasoning
 for each removal.
 
+### 5.0.2 — 2026-09-16 (`66e200a`, tagged)
+
+The release that gave the marketplace listing its picture and its words back. `5.0.1` had removed both,
+and the marketplace reads both from the listed commit — publishing it would have replaced the v4 image
+with nothing and kept a v4 paragraph under a v5 card:
+
+- **`preview.png` is back in the repository root** — 1600×900, cut from a live capture of the v5 card
+  by `docs/preview.py`. The generator finds the panel by its own background colour, so a capture at any
+  resolution works, and a line that no longer fits the text column fails the build instead of clipping.
+- **`manifest.json`'s `description`** is what the listing prints, and it now describes the card as it
+  is: several models at once on separate GPU groups, context and capabilities stated before launch,
+  agents with nothing written to config, the keyed tailnet endpoint, and the stats on the card.
+
 ## The 2026-09-16 consolidation
 
 The work had grown four copies of this repository across two machines, with `main` and `panel-v5`
