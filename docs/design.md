@@ -17,7 +17,7 @@ Three parts, one job:
   hardware id on the exact card and exports the file the plugin vendors.
 - **Controller** (bash, `bin/omarchy-local-ai` + `lib/`): turns that recipe
   into a running, verified container and reports state.
-- **Panel** (QML, `Panel.qml`): renders the snapshot and issues the verbs.
+- **Panel** (QML, `ui/Panel.qml`): renders the snapshot and issues the verbs.
 
 ## Scope (Sero, 2026-09-02)
 
@@ -229,10 +229,10 @@ workers. Workers log to `$STATE/log`.
 Since 5.0 the card is a tree of three places, home › card › model, with work
 (download, start, stop, share) and error taking the card over in between. The
 tree, every word on it, and every state side by side were designed first
-(2026-09-15) and the QML follows that gallery. `ui.js` turns the snapshot plus
+(2026-09-15) and the QML follows that gallery. `ui/ui.js` turns the snapshot plus
 the navigation state into header, path, rows and a pinned footer as plain
-data; `Panel.qml` draws it and runs the verbs; `CardRow.qml` is the one row
-component, `Orb.qml` the state orb. Rows are one line (a noun and a datum),
+data; `ui/Panel.qml` draws it and runs the verbs; `ui/CardRow.qml` is the one row
+component, `ui/Orb.qml` the state orb. Rows are one line (a noun and a datum),
 with a second line only for a card type's cells. Home nests each running model
 under its GPU group and labels occupied GPUs locked. The compact card fits the screen
 with a 720 px ceiling; full-screen mode uses the available area beside the bar.
@@ -261,3 +261,11 @@ version and the changelog section, and publishes the GitHub release. The marketp
 request (omacom/omarchy-plugin-marketplace) targets that tagged commit and nothing else, so what
 the marketplace verifies is always a release. Patch for fixes, minor for behaviour, major for a
 change to what the card does or to the state files.
+
+## Release contents
+
+`make bundle` packages only the manifest, recipe catalog, license and files in
+`bin/`, `lib/` and `ui/`. The release workflow uploads that archive after
+`make test` unpacks and tests it. Development tests and docs remain in their
+own directories in the repository; they are not installed from the bundle.
+Tiny multimodal acceptance payloads are embedded in `lib/runtime.sh`.

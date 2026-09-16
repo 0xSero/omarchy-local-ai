@@ -1,18 +1,6 @@
-<p align="center">
-  <img src="media/logo-256.png" width="112" height="112" alt="">
-</p>
-<h1 align="center">Local AI for Omarchy</h1>
-<p align="center">
-  The model validated for your GPU, one button on the bar.
-</p>
-<p align="center">
-  <a href="https://omarchyplugins.com/plugin.html?id=sero.local-ai"><img alt="Omarchy marketplace" src="https://img.shields.io/badge/omarchy-marketplace-111?style=flat-square"></a>
-  <a href="https://github.com/0xSero/omarchy-local-ai/releases"><img alt="release" src="https://img.shields.io/github/v/release/0xSero/omarchy-local-ai?style=flat-square&color=111"></a>
-  <a href="https://github.com/0xSero/omarchy-local-ai/actions/workflows/test.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/0xSero/omarchy-local-ai/test.yml?style=flat-square&label=tests&color=111"></a>
-  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-111?style=flat-square"></a>
-</p>
+# Local AI for Omarchy
 
-![How it works](preview.png)
+Run validated local models, open coding agents and share endpoints from the Omarchy bar.
 
 ## Install
 
@@ -67,7 +55,7 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 ## How we know it works
 
 - 29 NVIDIA recipes ran the plugin's own Start path on rented cards, RTX 3060 through RTX 6000 Ada ([per-card logs](test/rented-results/)).
-- The Intel Arc Pro B70 recipe runs daily on a mixed RTX 3090 + B70 host, where [every feature was recorded](media/features.mp4) (4 min) and [eight agents shared one model](media/demo.mp4) (6 min).
+- Qwen TP2 has been checked on the mixed RTX 3090 and Arc Pro B70 host with 256K context.
 - The shimmed tests cover the gate, download, start, acceptance, rollback, agents, sharing, key handling, and the no-docker-group path: `make test`, no GPU needed (Bash 4+ and Node.js).
 
 ## Remove
@@ -80,7 +68,11 @@ rm -rf ~/.cache/omarchy/local-ai ~/.local/state/omarchy/local-ai   # optional
 
 ## Development
 
-Recipes come from the [local-ai registry](https://github.com/0xSero/local-ai-registry): `make sync REGISTRY=../local-ai-registry` regenerates `recipes.json`, and CI fails if the file and its recorded commit disagree. [`DESIGN.md`](DESIGN.md) is the design; [`demo/`](demo/README.md) has the recordings and brand assets (`media/logo.svg`, `media/logo-mark.svg`); `python3 test/rented.py --list` is the rented-GPU harness.
+Recipes come from the [local-ai registry](https://github.com/0xSero/local-ai-registry): `make sync REGISTRY=../local-ai-registry` regenerates `recipes.json`. [The design](docs/design.md) documents the controller; `python3 test/rented.py --list` is the rented-GPU harness.
+
+Source layout: `ui/` contains the panel, `bin/` the entry point, `lib/` the controller, `test/` the checks, and `docs/` the design.
+
+`make bundle` builds `dist/omarchy-local-ai-<version>.tar.gz` from an explicit list of runtime files plus the license. `make test` unpacks that archive and runs the controller and UI checks against it. GitHub releases attach the same tested bundle; tests, docs, build files and recordings are excluded.
 
 MIT. Self-built images carry a build attestation you can verify with `gh attestation verify`.
 

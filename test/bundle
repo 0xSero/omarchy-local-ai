@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Verify the shipped artifact, not files available only in a development checkout.
+set -euo pipefail
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+make bundle
+bundle="dist/omarchy-local-ai-$(jq -r .version manifest.json).tar.gz"
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+while IFS= read -r file; do
+  case "$file" in
+    manifest.json|recipes.json|LICENSE|bin/omarchy-local-ai|lib/*.sh|ui/*.qml|ui/ui.js) ;;
+    *) echo "Unexpected release file: $file" >&2; exit 1 ;;
+  esac
+done < <(tar -tzf "$bundle")
+tar -xzf "$bundle" -C "$work"
+[[ -f "$work/$(jq -r .entryPoints.barWidget "$work/manifest.json")" ]]
+bash test/all "$work"
+node test/ui.cjs "$work"
+echo "Runtime bundle: verified"

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ui = {};
-vm.runInNewContext(fs.readFileSync(__dirname + '/../ui.js', 'utf8').replace(/^\.pragma library\s*/, ''), ui);
+vm.runInNewContext(fs.readFileSync((process.argv[2] || __dirname + '/..') + '/ui/ui.js', 'utf8').replace(/^\.pragma library\s*/, ''), ui);
 const chips = ui.capabilities({chat: true, vision: true, video: true, tools: false}).chips;
 assert.equal(chips.find(x => x.text === 'video').off, false);
 assert.equal(chips.find(x => x.text === 'tools').off, true);

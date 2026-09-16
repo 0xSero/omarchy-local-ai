@@ -1,6 +1,13 @@
 # Changelog
 
-Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `DESIGN.md`.
+Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
+
+## [5.0.1] - 2026-09-16
+
+### Fixed
+- Remove demo recordings, recording scripts, logos and the obsolete preview from the repository. Embed the tiny vision/video readiness inputs in the controller so those checks need no loose media files.
+- Keep UI source in `ui/` and design documentation in `docs/`.
+- Publish a runtime-only archive and run the full test suite against its unpacked contents. Exclude development files from source archives as well.
 
 ## [5.0.0] - 2026-09-16
 
