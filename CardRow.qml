@@ -53,7 +53,7 @@ Item {
     Repeater { model: r.tabs || []
       Rectangle { required property var modelData; width: tabText.implicitWidth + Style.space(20); height: Style.space(26); color: modelData.on ? p.ink : p.restFill
         Text { id: tabText; anchors.centerIn: parent; text: modelData.text; color: modelData.on ? p.popupBg : p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; textFormat: Text.PlainText }
-        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: p.activate(modelData.action) } } }
+        MouseArea { anchors.fill: parent; z: 1; cursorShape: Qt.PointingHandCursor; onClicked: p.activate(modelData.action) } } }
   }
   Row { // line two: cells (one per physical card) or chips (capabilities, the share address)
     visible: hasLine2; anchors.left: parent.left; anchors.leftMargin: pad; anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(10); spacing: Style.space(6)
@@ -63,7 +63,7 @@ Item {
         width: cellText.implicitWidth + Style.space(14) + (isCell && modelData.mark !== "" ? Style.space(12) : 0); height: Style.space(20); color: modelData.off ? "transparent" : p.restFill
         Rectangle { visible: parent.isCell && modelData.mark !== ""; x: Style.space(7); anchors.verticalCenter: parent.verticalCenter; width: Style.space(7); height: width; color: parent.markColor; border.width: modelData.mark === "free" ? 1 : 0; border.color: p.faint }
         Text { id: cellText; anchors.right: parent.right; anchors.rightMargin: Style.space(7); anchors.verticalCenter: parent.verticalCenter; text: modelData.text; color: modelData.off ? p.faint : modelData.mark === "used" || modelData.action ? p.fg : p.dim; font.strikeout: !!modelData.off; font.family: p.mono; font.pixelSize: Style.fontPx(0.8); textFormat: Text.PlainText }
-        MouseArea { anchors.fill: parent; enabled: !!modelData.action; cursorShape: Qt.PointingHandCursor; onClicked: p.activate(modelData.action) } } }
+        MouseArea { anchors.fill: parent; z: 1; enabled: !!modelData.action; cursorShape: Qt.PointingHandCursor; onClicked: p.activate(modelData.action) } } }
   }
   Row { // two figures
     visible: r.type === "stat"; anchors.fill: parent; spacing: Style.space(4)
@@ -79,5 +79,5 @@ Item {
     id: wrapped; visible: r.type === "text"; anchors.left: parent.left; anchors.right: parent.right; anchors.margins: pad; anchors.verticalCenter: parent.verticalCenter
     text: r.label + " · " + r.value; color: r.urgent ? p.urgent : p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; wrapMode: Text.WrapAtWordBoundaryOrAnywhere; textFormat: Text.PlainText
   }
-  MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; enabled: actionable; cursorShape: actionable ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: p.activate(r.action) }
+  MouseArea { id: mouse; anchors.fill: parent; z: -1; hoverEnabled: true; enabled: actionable; cursorShape: actionable ? Qt.PointingHandCursor : Qt.ArrowCursor; onClicked: p.activate(r.action) }
 }

@@ -1,6 +1,6 @@
 # sync:  regenerate recipes.json from a registry checkout (its export stamps the commit)
 # check: tests plus a recipes.json sanity check
-REGISTRY ?= ..
+REGISTRY ?= ../local-ai-registry
 
 .PHONY: sync check test
 
@@ -10,6 +10,7 @@ sync:
 
 test:
 	bash test/all
+	node test/ui.cjs
 
 check: test
 	@jq -e '.schemaVersion=="omarchy-local-ai/recipes/1" and (.registryCommit|test("^[0-9a-f]{40}$$")) and (.gateway.image|test("@sha256:[0-9a-f]{64}$$")) and (.hardware|length>0)' recipes.json >/dev/null \

@@ -67,7 +67,7 @@ match_hardware() {
         | $g + {hardwareId:$id, key:($g.backend+":"+($g.index|tostring)), order:$gi.key,
                 vramGb:(if $g.totalMiB==null then null else (($g.totalMiB/1024)+0.5|floor) end)}] as $gpus
     | ([$gpus[]|select(.key==$pick)]|.[0]) as $pinned
-    | ([$gpus[]|select(.hardwareId!="")] | sort_by(-.totalMiB, .order) | .[0]) as $auto
+    | ([$gpus[]|select(.hardwareId!="")] | sort_by(-.totalMiB, -(.freeMiB // 0), .order) | .[0]) as $auto
     | ($pinned // $auto) as $use
     | {hardwareId:($use.hardwareId // ""), driver:($hw.driver // ""),
        gpu:(if $use==null then null else ($use|del(.hardwareId,.key,.order,.vramGb,.chosen)) end),

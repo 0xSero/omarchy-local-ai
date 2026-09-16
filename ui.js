@@ -14,12 +14,18 @@ function kmg(n) { return n >= 1e6 ? (Math.round(n / 1e5) / 10) + "M" : n >= 1e3 
 function mmss(s) { return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60) }
 function row(label, value, action, o) { o = o || {}; o.type = o.type || "row"; o.label = label; o.value = value || ""; o.action = action || ""; o.kind = o.kind || ""; return o }
 function sec(t) { return { type: "sec", label: t, value: "", action: "", kind: "" } }
+function capabilities(caps) {
+  caps = caps || {}
+  return row("can", "", "", { chips: ["chat", "vision", "video", "tools", "reasoning"].map(function(x) {
+    return { text: x + (caps[x] == null ? " ?" : ""), off: caps[x] !== true }
+  }) })
+}
 
 // the eyebrow word for what the controller is doing, and which load step that is
 var STEP = { weights: 0, image: 1, engine: 2, check: 3 }
 function opWord(snap) {
   var st = snap.state, d = snap.operation.detail || ""
-  if (st === "download") return "downloading"
+  if (st === "download") return /weights|download|GB|copy/i.test(d) ? "downloading" : /pull/i.test(d) ? "pulling" : "starting"   // the controller's "download" op also covers the checks before a start
   if (st === "unload") return "stopping"
   if (st === "share") return "sharing"
   if (/pulling/.test(d)) return "pulling"
@@ -36,6 +42,7 @@ function cardByHw(snap, hw) { var cs = snap.cards || []; for (var i = 0; i < cs.
 function cardOfKeys(snap, keys) { var cs = snap.cards || []; for (var i = 0; i < cs.length; i++) if (keys.length && cs[i].keys.indexOf(keys[0]) >= 0) return cs[i]; return null }
 function gpu(snap, key) { var gs = snap.gpus || []; for (var i = 0; i < gs.length; i++) if (gs[i].key === key) return gs[i]; return null }
 function freeKeys(snap, c) { return c.keys.filter(function(k) { return !holder(snap, k) }) }
+function freest(snap, keys) { return keys.slice().sort(function(a, b) { var ga = gpu(snap, a) || {}, gb = gpu(snap, b) || {}; return ((gb.vramGb || 0) - (gb.usedGb || 0)) - ((ga.vramGb || 0) - (ga.usedGb || 0)) })[0] || "" }   // the display card carries the desktop: start elsewhere when there is an elsewhere
 function fits(snap, c, n) { return (snap.recipes || []).filter(function(r) { return r.hardwareId === c.hardwareId && r.cards === n }) }
 function where(snap, m) { var c = cardOfKeys(snap, m.keys); return (m.cards > 1 ? m.cards + "× " : "") + (c ? c.name : "card") }
 function workKeys(snap) { // the cards a running op touches: the model it stops, or the claim of the recipe it starts
@@ -91,7 +98,7 @@ function build(c) {
     var who = recipeById(snap, op.recipeId) || modelById(snap, op.recipeId) || (snap.selected ? { name: snap.selected.name } : { name: "Local AI" })
     var r = recipeById(snap, op.recipeId) || { sizeGb: 0 }
     o.tone = "work"; o.eyebrow = w; o.title = who.name
-    o.sub = w === "downloading" ? "weights" + (op.percent > 0 && r.sizeGb ? " · " + gb(op.percent / 100 * r.sizeGb) + " of " + gb(r.sizeGb) : "") : (op.detail || { pulling: "engine image", starting: "engine warming", checking: "acceptance", stopping: "containers coming down", sharing: "gateway restarting on the tailnet" }[w])
+    o.sub = w === "downloading" && op.percent > 0 && r.sizeGb ? "weights · " + gb(op.percent / 100 * r.sizeGb) + " of " + gb(r.sizeGb) : (op.detail || { downloading: "weights", pulling: "engine image", starting: "engine warming", checking: "acceptance", stopping: "containers coming down", sharing: "gateway restarting on the tailnet" }[w])
     if (w !== "stopping" && w !== "sharing") { o.steps = opStep(w); var hw = r.hardwareId ? cardByHw(snap, r.hardwareId) : null; if (hw) o.path.push({ n: hw.name.toLowerCase(), v: "card" }) }
     else { var wm = modelById(snap, op.recipeId); o.path.push({ n: (wm ? wm.name : who.name).toLowerCase(), v: "model" }) }
     o.path.push({ n: w, v: "work" })
@@ -131,10 +138,9 @@ function build(c) {
       o.rows.push({ type: "stat", stat: [{ k: "decode", v: String(m.decodeTps || 0), u: "tok/s" }, { k: "prefill", v: m.prefillTps > 0 ? String(m.prefillTps) : "n/a", u: m.prefillTps > 0 ? "tok/s" : "" }], label: "", value: "", action: "", kind: "" })
       o.rows.push({ type: "stat", stat: [{ k: "tokens today", v: kmg(m.tokensToday || 0), u: "" }, { k: "kv cache", v: m.kvTokens > 0 ? kb(m.kvTokens) : "n/a", u: m.ctxTokens > 0 ? kb(m.ctxTokens) + " ctx" : "" }], label: "", value: "", action: "", kind: "" })
       o.rows.push(row(where(snap, m), ":" + m.port, "", { cells: m.keys.map(function(k) { var g = gpu(snap, k) || {}; var t = []
-        if (g.tempC !== null && g.tempC !== undefined) t.push(g.tempC + "°"); if (g.utilPct !== null && g.utilPct !== undefined) t.push(g.utilPct + "%"); if (g.usedGb !== null && g.usedGb !== undefined) t.push(g.usedGb + " / " + g.vramGb + " GB")
-        return { text: "#" + k.split(":")[1] + (t.length ? " · " + t.join(" · ") : ""), mark: "used" } }) }))
-      var caps = m.caps || {}
-      o.rows.push(row("can", "", "", { chips: ["chat", "vision", "tools", "reasoning"].map(function(x) { return { text: x, off: !caps[x] } }) }))
+        if (g.tempC !== null && g.tempC !== undefined) t.push(g.tempC + "°"); if (g.utilPct !== null && g.utilPct !== undefined) t.push(g.utilPct + "%"); if (g.usedGb !== null && g.usedGb !== undefined) t.push(Math.round(g.usedGb) + "/" + g.vramGb + "G")
+        return { text: "#" + k.split(":")[1] + (t.length ? " " + t.join(" ") : ""), mark: "used" } }) }))
+      o.rows.push(capabilities(m.caps))
       var agents = m.launchable || [], a = agents.indexOf(c.agentPick) >= 0 ? c.agentPick : (agents.indexOf((snap.agents || {}).default) >= 0 ? snap.agents.default : agents[0] || "")
       if (agents.length) {
         o.rows.push(row("agent", a + (c.agentOpen ? " ▴" : " ▾"), "agent-toggle"))
@@ -163,6 +169,10 @@ function build(c) {
       var dup = {}; list.forEach(function(r) { dup[r.name] = (dup[r.name] || 0) + 1 })   // two recipes of one model: say which
       list.forEach(function(r) { o.rows.push(row(dup[r.name] > 1 && r.precision ? r.name + " · " + r.precision : r.name, r.running ? "running" : r.onDisk ? gb(r.sizeGb) + " · on disk" : r.partialBytes > 0 ? gb(r.partialBytes / 1073741824) + " of " + gb(r.sizeGb) + " · resume" : gb(r.sizeGb) + " · download", "pick:" + r.id, { selected: c.pick === r.id })) })
       var p = recipeById(snap, c.pick)
+      if (p && p.hardwareId === g.hardwareId && p.cards === n) {
+        o.rows.push(row("context", p.ctxTokens > 0 ? kb(p.ctxTokens) + " per request" : "unknown"))
+        o.rows.push(capabilities(p.caps))
+      }
       if (p && p.running) o.foot.push(row("open", p.name, "model:" + p.id, { kind: "primary" }))
       else if (p && p.hardwareId === g.hardwareId && p.cards === n) o.foot.push(row(p.onDisk ? "run" : p.partialBytes > 0 ? "resume + run" : "download " + gb(p.sizeGb) + " + run", p.name, "run:" + p.id + ":" + n, { kind: "primary" }))
       else o.foot.push(row("run", "pick a recipe", "", { disabled: true }))

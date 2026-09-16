@@ -12,6 +12,7 @@ export OMARCHY_AI_USER_HOME="$TMP/home" OMARCHY_AI_STATE="$TMP/state" OMARCHY_AI
   OMARCHY_AI_FOREGROUND=1 OMARCHY_AI_NO_HOST_HF=1 OMARCHY_AI_DOCKER=direct SHIM="$TMP/shim" OMARCHY_AI_DRI_PATH="$TMP/dri" \
   PATH="$TMP/bin:/usr/bin:/bin"   # shims plus the base system only; the developer's own agents must not leak in
 mkdir -p "$TMP/bin" "$TMP/home" "$SHIM"
+ln -s "$BASH" "$TMP/bin/bash"
 ln -s "$(PATH="$PATH:/opt/homebrew/bin:/usr/local/bin" command -v jq)" "$TMP/bin/jq"
 n=0
 pass() { n=$((n+1)); echo "ok $n - $1"; }
@@ -62,7 +63,7 @@ case "$1" in
     fi
     [[ ${SHIM_RUN_FAIL:-} == "$name" ]] && exit 125
     mkdir -p "$SHIM/containers/$name"; printf '%s' "$labels" >"$SHIM/containers/$name/labels"; echo running >"$SHIM/containers/$name/state"
-    [[ ${SHIM_CRASHLOOP:-} == 1 && $name == *-engine ]] && { echo restarting >"$SHIM/containers/$name/state"; echo 3 >"$SHIM/containers/$name/restarts"; }   # exits at once under --restart: docker keeps it "running"
+    [[ ${SHIM_CRASHLOOP:-} == 1 && $name == *-engine && ( -z ${SHIM_CRASHLOOP_UNLESS:-} || "$*" != *"$SHIM_CRASHLOOP_UNLESS"* ) ]] && { echo restarting >"$SHIM/containers/$name/state"; echo 3 >"$SHIM/containers/$name/restarts"; }   # exits at once under --restart: docker keeps it "running"
     exit 0 ;;
   inspect)
     fmt=""; name=""
@@ -76,7 +77,7 @@ case "$1" in
       *Running*) echo "$r" ;;
       *) echo "[]" ;;
     esac; exit 0 ;;
-  logs) printf 'Traceback (most recent call last):\n  File "/x/hub.py", line 1, in download\n    ^^^^\nOSError: [Errno 30] Read-only file system: /models/.cache\n'; exit 0 ;;
+  logs) [[ -n ${SHIM_LOGS:-} ]] && { printf '%s\n' "$SHIM_LOGS"; exit 0; }; printf 'Traceback (most recent call last):\n  File "/x/hub.py", line 1, in download\n    ^^^^\nOSError: [Errno 30] Read-only file system: /models/.cache\n'; exit 0 ;;
   stop) echo stopped >"$SHIM/containers/$2/state"; exit 0 ;;
   start) echo running >"$SHIM/containers/$2/state"; exit 0 ;;
   rename) mv "$SHIM/containers/$2" "$SHIM/containers/$3"; exit 0 ;;
@@ -100,9 +101,10 @@ if [[ $auth != "$(cat "$SHIM/../state/gateway.key" 2>/dev/null)" && ${SHIM_KEYLE
 up=0; for g in "$SHIM"/containers/*-gateway/; do [[ -d $g ]] || continue; n=${g%/}; n=${n##*/}; e=${n%-gateway}-engine; [[ $(cat "$SHIM/containers/$n/state" 2>/dev/null) == running && $(cat "$SHIM/containers/$e/state" 2>/dev/null) == running ]] && up=1; done; (( up )) || exit 7   # some pair answers
 apis=${SHIM_APIS:-chat,messages,responses}
 case $url in
-  */v1/models) echo "{\"data\":[{\"id\":\"${SHIM_SERVED:-Test-Model}\"}]}" ;;   # SHIM_SERVED: what the engine calls its model (a GGUF recipe serves a path)
+  */v1/models) echo "{\"data\":[{\"max_model_len\":${SHIM_CONTEXT:-0},\"id\":\"${SHIM_SERVED:-Test-Model}\"}]}" ;;   # SHIM_SERVED: what the engine calls its model (a GGUF recipe serves a path)
   */v1/chat/completions)
-    if [[ $data == *'"tools"'* ]]; then echo '{"choices":[{"message":{"content":null,"tool_calls":[{"function":{"name":"shell","arguments":"{\"command\":\"echo LOCAL_AI_TOOL_OK\"}"}}]}}],"usage":{"completion_tokens":12}}'
+    if [[ $data == *'What single color fills'* ]]; then echo "{\"choices\":[{\"message\":{\"content\":\"${SHIM_MEDIA_REPLY:-Red}\"}}]}"
+    elif [[ $data == *'"tools"'* ]]; then echo '{"choices":[{"message":{"content":null,"tool_calls":[{"function":{"name":"shell","arguments":"{\"command\":\"echo LOCAL_AI_TOOL_OK\"}"}}]}}],"usage":{"completion_tokens":12}}'
     elif [[ $data == *"Count from 1 to 80"* ]]; then # the speed probe: 80 words, usage optional, an optional delay to look like a CPU
       [[ -n ${SHIM_SLOW:-} ]] && sleep "$SHIM_SLOW"
       words=$(seq -s ' ' 1 80)
@@ -368,6 +370,15 @@ write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | j
 "$CLI" snapshot >/dev/null; [[ $(snap '[.recipes[].id]|join(",")') == "good,alt-small" ]] || fail "refused not offered" "$(snap '[.recipes[].id]')"; pass "an alternate that needs host IPC or host networking is not offered at all"
 "$CLI" run alt-small nvidia:0; [[ $(snap .state) == ready && $(snap .running.recipeId) == alt-small && $(snap '.gpus[0].chosen') == true && $(grep -c "^.*run alt-small on nvidia:0" "$OMARCHY_AI_STATE/log") -ge 1 ]] || fail "run verb" "$(snap .state) $(snap .error) $(snap .running)"; pass "run <recipe> <gpu> pins the card and the recipe and starts in one verb"
 "$CLI" unload >/dev/null; "$CLI" recipe auto >/dev/null
+write_recipes "$(recipe capped false dir | jq '.launch.arguments=["main.py","--gpu-memory-utilization","0.97","--max-model-len","40960"]')"
+export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 4000, 20564'   # the desktop holds 4 GB of this card
+"$CLI" load; [[ $(snap .state) == ready ]] && grep -q -- "--gpu-memory-utilization 0.83" "$SHIM/docker.log" || fail "memory cap" "$(snap .state) $(grep -o -- '--gpu-memory-utilization [0-9.]*' "$SHIM/docker.log" | tail -1)"; pass "a vLLM memory share above what the card has free is lowered to what is free (24564 MiB total, 4000 used: 0.83)"
+grep -q "gpu memory utilization 0.97 lowered to 0.83" "$OMARCHY_AI_STATE/log" || fail "cap logged"; pass "the lowered share is logged with its reason"
+"$CLI" unload >/dev/null
+# A context that does not fit must fail instead of silently changing the selected recipe.
+SHIM_CRASHLOOP=1 SHIM_CRASHLOOP_UNLESS="--max-model-len 37632" SHIM_LOGS="(EngineCore pid=1) ValueError: To serve at least one request with the model's max seq len (40960), 1.44 GiB KV cache is needed, which is larger than the available KV cache memory (1.33 GiB). Based on the available memory, the estimated maximum model length is 37700. Try increasing gpu_memory_utilization" OMARCHY_AI_TIMEOUT=60 "$CLI" load
+[[ $(snap .state) == error && $(snap .error) == *"max seq len (40960)"* ]] && ! grep -q -- "--max-model-len 37632" "$SHIM/docker.log" || fail "silent context downgrade" "$(snap .state) $(snap .error)"; pass "an out-of-memory launch fails with its reason and never silently downgrades context"
+"$CLI" unload >/dev/null; unset SHIM_GPUS
 write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | jq '.model.name="Alt Small" | .model.sizeGb=0.000001')"
 "$CLI" recipe alt-small >/dev/null; [[ $(snap .selected.recipeId) == alt-small && $(snap .selected.name) == "Alt Small" ]] || fail "recipe pick" "$(snap .selected)"; pass "recipe <id> picks an alternate; model and selected follow it"
 "$CLI" load; [[ $(snap .state) == ready && $(snap .running.recipeId) == alt-small && $(snap '.recipes[1].onDisk') == true ]] || fail "alt runs" "$(snap .state) $(snap .error) $(snap .running)"; pass "load runs the picked recipe and marks it on disk"
@@ -582,5 +593,21 @@ OMARCHY_AI_RECIPES= OMARCHY_AI_RECIPES_URL=https://example.invalid/r/recipes.jso
 for ((i=0; i<50; i++)); do [[ -f $OMARCHY_AI_STATE/recipes.json ]] && break; sleep 0.1; done   # the fetch is detached from the snapshot
 [[ $(jq -r .generatedAt "$OMARCHY_AI_STATE/recipes.json" 2>/dev/null) == 2099-06-01T00:00:00Z ]] || fail "snapshot did not refresh"; pass "snapshot refreshes in the background once the TTL has passed"
 rm -f "$OMARCHY_AI_STATE/recipes.json" "$OMARCHY_AI_STATE/recipes.checked"
+
+# A recipe's published context and media claims must survive the gateway and agent configuration.
+"$CLI" unload >/dev/null
+write_recipes "$(recipe multimodal true asset | jq '.serving.ctxTokens=262144 | .capabilities += {vision:true,video:true,reasoning:null}')"
+SHIM_CONTEXT=131072 "$CLI" load
+[[ $(snap .state) == error && $(snap .error) == *"runtime context 131072 is below"* ]] || fail "context mismatch accepted" "$(snap .error)"; pass "a runtime advertising less context than the recipe fails acceptance"
+SHIM_CONTEXT=262144 "$CLI" load
+[[ $(snap .state) == ready && $(snap '.models[0].caps.video') == true && $(snap '.models[0].caps.reasoning') == null ]] || fail "media acceptance" "$(snap .error)"; pass "vision and video pass through the gateway and unknown capabilities stay unknown"
+"$CLI" open-agent pi >/dev/null
+jq -e '.providers["omarchy-local"].models[0] | .contextWindow==262144 and .input==["text","image"]' "$OMARCHY_AI_STATE/agents/pi/models.json" >/dev/null || fail "agent metadata"; pass "Pi receives the real 256K context and image input support"
+"$CLI" unload >/dev/null
+SHIM_MEDIA_REPLY=Blue "$CLI" load
+[[ $(snap .state) == error && $(snap .error) == *"vision acceptance failed"* ]] || fail "bad vision accepted" "$(snap .error)"; pass "incorrect image output fails readiness"
+write_recipes "$(recipe multimodal true asset | jq '.capabilities += {vision:false,video:true}')"
+SHIM_MEDIA_REPLY=Blue "$CLI" load
+[[ $(snap .state) == error && $(snap .error) == *"video acceptance failed"* ]] || fail "bad video accepted" "$(snap .error)"; pass "incorrect video output fails readiness"
 
 echo "1..$n"

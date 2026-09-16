@@ -17,7 +17,7 @@ jobs:
           [[ $m == "$v" ]] || { echo "manifest.json says $m, tag says $v"; exit 1; }
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag is not on main"; exit 1; }
       - name: tests
-        run: ./test/all
+        run: make test
       - name: notes from the changelog
         run: |
           v=${GITHUB_REF_NAME#v}

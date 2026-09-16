@@ -68,7 +68,7 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 
 - 29 NVIDIA recipes ran the plugin's own Start path on rented cards, RTX 3060 through RTX 6000 Ada ([per-card logs](test/rented-results/)).
 - The Intel Arc Pro B70 recipe runs daily on a mixed RTX 3090 + B70 host, where [every feature was recorded](media/features.mp4) (4 min) and [eight agents shared one model](media/demo.mp4) (6 min).
-- 112 shimmed tests cover the gate, download, start, acceptance, rollback, agents, sharing, key handling, and the no-docker-group path: `bash test/all`, no GPU needed.
+- The shimmed tests cover the gate, download, start, acceptance, rollback, agents, sharing, key handling, and the no-docker-group path: `make test`, no GPU needed (Bash 4+ and Node.js).
 
 ## Remove
 
@@ -83,3 +83,14 @@ rm -rf ~/.cache/omarchy/local-ai ~/.local/state/omarchy/local-ai   # optional
 Recipes come from the [local-ai registry](https://github.com/0xSero/local-ai-registry): `make sync REGISTRY=../local-ai-registry` regenerates `recipes.json`, and CI fails if the file and its recorded commit disagree. [`DESIGN.md`](DESIGN.md) is the design; [`demo/`](demo/README.md) has the recordings and brand assets (`media/logo.svg`, `media/logo-mark.svg`); `python3 test/rented.py --list` is the rented-GPU harness.
 
 MIT. Self-built images carry a build attestation you can verify with `gh attestation verify`.
+
+### Visual checks from a Mac
+
+Capture the actual Quickshell panel over SSH, without Moonlight's video stream:
+
+```sh
+./test/visual omarchy --output HDMI-A-3 --action card:rtx-3090-24gb --action count:2 --action pick:qwen38-awq-int4-rtx3090-vllm-tp2 --save /tmp/local-ai.jpg
+open /tmp/local-ai.jpg
+```
+
+Use the output containing the panel (`ssh omarchy hyprctl monitors` lists outputs); a Sunshine virtual output can differ from the physical panel output. `--action model:<recipe-id>` captures a running model. The helper only navigates, never starts or stops a model. Images come from the live desktop, so this checks the deployed QML and registry together. `make test` additionally checks the UI's row data and prevents loss of context and capability fields.

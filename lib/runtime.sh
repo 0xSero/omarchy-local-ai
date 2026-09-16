@@ -103,8 +103,20 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
   while IFS= read -r v; do a+=(--env "$v"); done < <(jq -r '.launch.environment|to_entries[]?|"\(.key)=\(.value)"' <<<"$r")
   v=$(jq -r '.launch.entrypoint//empty' <<<"$r"); [[ -n $v ]] && a+=(--entrypoint "$v")
   a+=("$(jq -r .launch.image <<<"$r")")
-  while IFS= read -r v; do a+=("$v"); done < <(jq -r '.launch.arguments[]?' <<<"$r")
+  local cap; cap=$(memory_cap "$r"); local prev=""
+  while IFS= read -r v; do
+    # a validated recipe asks for the share of the card it had on a bare machine; on a card that also
+    # drives the desktop (Hyprland holds gigabytes) that share is not there, so it is lowered to what is free
+    if [[ $prev == --gpu-memory-utilization && -n $cap ]] && awk -v v="$v" -v c="$cap" 'BEGIN{exit !(v>c)}'; then log "gpu memory utilization $v lowered to $cap: that is what is free on the card"; v=$cap; fi
+    a+=("$v"); prev=$v
+  done < <(jq -r '.launch.arguments[]?' <<<"$r")
   printf '%s\0' "${a[@]}"
+}
+memory_cap() { # memory_cap <recipe> -> the largest --gpu-memory-utilization the claimed NVIDIA cards can honour right now (two decimals), or empty
+  local r=$1; [[ $(jq -r .match.backend <<<"$r") == nvidia ]] || return 0
+  hardware_json | jq -r --argjson idx "$(jq -c '.gpuIndexes // [.gpuIndex]' <<<"$r")" '
+    [.gpus[] | select(.backend=="nvidia" and (.index as $i | $idx | index($i)) != null and .freeMiB != null and .totalMiB > 0)
+     | (.freeMiB / .totalMiB * 100 | floor) / 100] | if length == 0 then empty else (min | if . < 0.1 then 0.1 else . end) end'
 }
 
 gateway_argv() { # gateway_argv <recipe>
@@ -175,17 +187,21 @@ engine_last_line() { docker logs --tail 40 "$1" 2>&1 | grep -v '^[[:space:]]*$' 
 # accept <recipe>: the model is what the recipe says, all three dialects answer through the slot's gateway,
 # a tool call works when the recipe claims tools, and decode speed is not a CPU fallback.
 accept() {
-  local r=$1 id want served reply deadline=$((SECONDS+TIMEOUT)) t0 t1 toks tps floor apis='[]' engine
+  local r=$1 id want served reply deadline=$((SECONDS+TIMEOUT)) t0 t1 toks tps floor apis='[]' engine models context expected
   local PORT; PORT=$(jq -r .slot.port <<<"$r"); engine=$(jq -r .slot.engine <<<"$r")   # every probe below goes to this slot
   id=$(jq -r .id <<<"$r"); want=$(jq -r .model.servedName <<<"$r")
   while :; do
-    served=$(api models 5 2>/dev/null | jq -r '.data[0].id // empty' || true)
+    models=$(api models 5 2>/dev/null || true)
+    served=$(jq -r '.data[0].id // empty' <<<"$models" 2>/dev/null || true)
     [[ -n $served ]] && break
     (( SECONDS < deadline )) || { fail "engine did not answer within ${TIMEOUT}s"; return 1; }
     if docker_direct; then engine_alive "$engine" || return 1; fi   # behind a prompt, the deadline decides
     op starting "$id" "loading the model" 0; sleep "$POLL"
   done
   [[ $served == "$want" || $want == */* && $served == *"${want##*/}"* ]] || { fail "served model $served is not $want"; return 1; }
+  context=$(jq -r '.data[0] | .max_model_len // .meta.n_ctx // 0' <<<"$models")
+  expected=$(jq -r '.serving.ctxTokens // 0' <<<"$r")
+  (( context == 0 || context >= expected )) || { fail "runtime context $context is below the recipe's $expected tokens"; return 1; }
   # a gateway that cannot read its key file serves keyless without a word; sharing that on a
   # tailnet is the one thing this plugin must never do, so an unkeyed request has to be refused
   if curl -fsS --max-time 10 --max-filesize 1048576 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
@@ -249,7 +265,20 @@ accept() {
     reply=$(post chat/completions "$(jq -nc --arg m "$served" --argjson t "$tools" '{model:$m,stream:false,tools:$t,tool_choice:"auto",messages:[{role:"user",content:"Use the shell tool to run: echo LOCAL_AI_TOOL_OK"}]}')") || { fail "tool-call request failed"; return 1; }
     jq -e '[(.choices[0].message.tool_calls//[])[]|select(.function.name=="shell" and ((.function.arguments//"")|contains("LOCAL_AI_TOOL_OK")))]|length>0' >/dev/null <<<"$reply" || { fail "tool-call acceptance failed"; return 1; }
   fi
-  lwrite '.slots[$id].accepted={servedModel:$s,registry:$g,apis:$a,tps:($t|tonumber),prefillTps:($p|tonumber),at:$when}' --arg id "$id" --arg s "$served" --arg g "$(registry_commit)" --argjson a "$apis" --arg t "$tps" --arg p "$prefill" --arg when "$(now)"
+  local capability kind mime file data
+  for capability in vision video; do
+    [[ $(jq -r --arg c "$capability" '.capabilities[$c] // false' <<<"$r") == true ]] || continue
+    if [[ $capability == vision ]]; then kind=image; mime=image/png; file=probe-red.png
+    else kind=video; mime=video/mp4; file=probe-red.mp4; fi
+    op starting "$id" "$capability acceptance" 0
+    data="data:$mime;base64,$(base64 <"$HERE/../media/$file" | tr -d '\n')"
+    reply=$(post chat/completions "$(jq -nc --arg m "$served" --arg kind "$kind" --arg data "$data" '
+      {model:$m,stream:false,max_tokens:64,chat_template_kwargs:{enable_thinking:false},messages:[{role:"user",content:[
+        {type:"text",text:("What single color fills this "+$kind+"? Answer one word.")},
+        {type:($kind+"_url"),($kind+"_url"):{url:$data}}]}]}')") || { fail "$capability request failed"; return 1; }
+    jq -e '(.choices[0].message.content // "") | ascii_downcase | test("\\bred\\b")' <<<"$reply" >/dev/null || { fail "$capability acceptance failed"; return 1; }
+  done
+  lwrite '.slots[$id].accepted={servedModel:$s,registry:$g,apis:$a,tps:($t|tonumber),prefillTps:($p|tonumber),contextTokens:$ctx,at:$when}' --arg id "$id" --arg s "$served" --arg g "$(registry_commit)" --argjson a "$apis" --arg t "$tps" --arg p "$prefill" --argjson ctx "$context" --arg when "$(now)"
   log "accepted $id served=$served port=$PORT tps=$tps prefill=$prefill apis=$apis"
 }
 

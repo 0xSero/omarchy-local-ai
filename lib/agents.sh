@@ -36,7 +36,7 @@ with_key() { # with_key <VAR>... : the stage, then the caller appends the agent'
   printf '%s\0' bash -c 'k=$(cat "$1") || exit 1; shift; while [[ $1 != -- ]]; do export "$1=$k"; shift; done; shift; exec "$@"' omarchy-local-ai-agent "$KEY_FILE" "$@" --
 }
 agent_command() {
-  local name=$1 model=$2 key_file=$3 bin cfg key
+  local name=$1 model=$2 key_file=$3 context=${4:-131072} vision=${5:-false} bin cfg key
   bin=$(bin_of "$name") || { fail "$name is not installed"; return; }
   key=$(cat "$key_file")   # for the files written below only; it goes into no argument
   case $name in
@@ -64,8 +64,8 @@ agent_command() {
       # pi reads providers from its agent dir; a plugin-owned dir keeps the user's own untouched.
       # omp also wants a config.yml there, or it opens its first-run wizard.
       local dir="$STATE/agents/$name"; mkdir -p "$dir"
-      jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" \
-        '{providers:{"omarchy-local":{baseUrl:$u,apiKey:$k,api:"openai-completions",models:[{id:$m,name:($m+" · local"),input:["text"],cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}]}}}' \
+      jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" --argjson ctx "$context" --argjson vision "$vision" \
+        '{providers:{"omarchy-local":{baseUrl:$u,apiKey:$k,api:"openai-completions",models:[{id:$m,name:($m+" · local"),contextWindow:$ctx,input:(if $vision then ["text","image"] else ["text"] end),cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}]}}}' \
         >"$dir/models.json"
       [[ $name == omp ]] && printf 'modelRoles:\n  default: omarchy-local/%s\nsetupVersion: 2\n' "$model" >"$dir/config.yml"
       printf '%s\0' env "PI_CODING_AGENT_DIR=$dir" "OMP_CODING_AGENT_DIR=$dir" "$bin" --provider omarchy-local --model "$model" ;;
@@ -75,8 +75,8 @@ agent_command() {
       local dir="$STATE/agents/crush/crush"; mkdir -p "$dir"
       # a mise shim would reinstall crush under the new data home: launch the real binary instead
       [[ $bin == */mise/shims/* ]] && command -v mise >/dev/null 2>&1 && bin=$(mise which crush 2>/dev/null || printf '%s' "$bin")
-      jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" \
-        '{providers:{"omarchy-local":{type:"openai",name:"Omarchy Local",base_url:$u,api_key:$k,models:[{id:$m,name:$m,context_window:131072,default_max_tokens:8192}]}},models:{large:{provider:"omarchy-local",model:$m},small:{provider:"omarchy-local",model:$m}}}' \
+      jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" --argjson ctx "$context" \
+        '{providers:{"omarchy-local":{type:"openai",name:"Omarchy Local",base_url:$u,api_key:$k,models:[{id:$m,name:$m,context_window:$ctx,default_max_tokens:8192}]}},models:{large:{provider:"omarchy-local",model:$m},small:{provider:"omarchy-local",model:$m}}}' \
         >"$dir/crush.json"
       with_key OPENAI_API_KEY
       printf '%s\0' env "XDG_CONFIG_HOME=$STATE/agents/crush" "XDG_DATA_HOME=$STATE/agents/crush" "$bin" ;;
@@ -102,7 +102,7 @@ open_agent() { # open_agent [name] [recipe]: default agent when omitted, the mod
   jq -e --arg a "$name" '.launchable|index($a)!=null' <<<"$m" >/dev/null \
     || { fail "$name cannot use this model: its API dialect did not pass acceptance"; return; }
   model=$(jq -r '.servedModel' <<<"$m"); ENDPOINT="http://127.0.0.1:$(jq -r .port <<<"$m")"
-  local -a argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(agent_command "$name" "$model" "$KEY_FILE") || return 1
+  local -a argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(agent_command "$name" "$model" "$KEY_FILE" "$(jq -r '.ctxTokens // 131072' <<<"$m")" "$(jq -r '.caps.vision // false' <<<"$m")") || return 1
   # the person's own flags for this agent (`omarchy-local-ai agent-args <name> -- <flags>`), e.g. a yolo mode
   if [[ -s $STATE/agents/args/$name ]]; then while IFS= read -r -d '' v; do argv+=("$v"); done <"$STATE/agents/args/$name"; fi
   log "open-agent $name"
