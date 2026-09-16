@@ -14,8 +14,14 @@ against the tree, and the pages workflow runs it before publishing.
 | **Ledger / snapshot / recipes schema** | `omarchy-local-ai/ledger/2`, `…/snapshot/10`, `…/recipes/1` |
 | **Published** | <https://0xsero.github.io/omarchy-local-ai/> |
 
-Signed in and reading this on GitHub Pages? Then the commit above is the one the site was built
-from: `git log -1 --format=%h` on `main` should match.
+These pages describe code, so the check is on the code:
+
+```bash
+git log -1 --format=%h -- bin lib ui manifest.json recipes.json
+```
+
+On `main` that prints the commit above. A commit that only touches `wiki/` changes what these pages
+say without changing what they describe, so it leaves that hash alone.
 
 This is the plugin only. The data it consumes comes from a second repository, `0xSero/local-ai-registry`
 (see [15 — Registry and CI](15-registry-and-ci.md)).
