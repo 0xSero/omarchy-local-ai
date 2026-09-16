@@ -144,6 +144,7 @@ FOREIGN = {
 NOT_SHIPPED = {
     "test/rented-results/",              # created by test/rented.py; gitignored
     "dist/",                             # created by make bundle; gitignored
+    "wiki/index.html",                   # created by wiki/build.py; gitignored, and built in CI
 }
 ALLOW = {
     "port 12434 is in use by something else",          # source: port \($port) is in use by something else
