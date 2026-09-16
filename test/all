@@ -3,7 +3,7 @@
 # curl, nvidia-smi, tailscale, and hf, so the whole load/accept/rollback/unload path runs on any
 # machine with bash and jq. TAP-flavored: first failure ends the file. No GPU, no daemon, no network.
 set -euo pipefail
-ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)   # -P: the CLI resolves itself with readlink -f, so a checkout reached through a symlink must compare equal
 CLI="$ROOT/bin/omarchy-local-ai"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 export OMARCHY_AI_USER_HOME="$TMP/home" OMARCHY_AI_STATE="$TMP/state" OMARCHY_AI_RECIPES="$TMP/recipes.json" \
