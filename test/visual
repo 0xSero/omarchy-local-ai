@@ -21,7 +21,7 @@ if not re.fullmatch(r"[A-Za-z0-9_.@-]+", a.host) or a.host.startswith("-"):
 for action in a.action:
     if not re.fullmatch(r"(?:home|back|(?:card|count|pick|model):[a-z0-9-]+)", action):
         p.error("only home/back/card/count/pick/model navigation is supported")
-remote = 'export XDG_RUNTIME_DIR=/run/user/$(id -u); '
+remote = 'set -e; export XDG_RUNTIME_DIR=/run/user/$(id -u); '
 remote += 'export WAYLAND_DISPLAY=$(basename "$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" | head -1)"); '
 ipc = "quickshell ipc --any-display -p /usr/share/omarchy/shell call sero.local-ai "
 remote += ipc + "open >/dev/null; "
