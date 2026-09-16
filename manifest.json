@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "author": "0xSero",
   "license": "MIT",
   "description": "Run validated local models on NVIDIA and Intel Arc GPUs. Run several models on separate GPU groups, open coding agents, and share keyed endpoints on your tailnet. See live performance, context and capabilities in a compact or full-screen view.",
@@ -11,7 +11,7 @@
   ],
   "activation": "on-demand",
   "entryPoints": {
-    "barWidget": "Panel.qml"
+    "barWidget": "ui/Panel.qml"
   },
   "barWidget": {
     "displayName": "Local AI",
