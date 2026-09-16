@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.0.2] - 2026-09-16
+
+### Fixed
+- The marketplace listing gets its image and its words back. `preview.png` returns to the repository root, cut from a live capture of the v5 card by `docs/preview.py`, and `manifest.json` carries a description that names what the card actually does. 5.0.1 removed the preview and the old description, which would have published a listing with no image and a v4 paragraph.
+
 ## [5.0.1] - 2026-09-16
 
 ### Fixed

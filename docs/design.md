@@ -262,6 +262,20 @@ request (omacom/omarchy-plugin-marketplace) targets that tagged commit and nothi
 the marketplace verifies is always a release. Patch for fixes, minor for behaviour, major for a
 change to what the card does or to the state files.
 
+## The listing image
+
+The marketplace renders one image per listing — the detail page at up to 1600 px, the browse card at
+up to 720 — and it reads that image from `preview.png` in the repository root **at the tagged commit
+the update request targets**. A release that drops it publishes a listing with no picture, and the
+listing's description is `manifest.json`'s `description` at that same commit. So `preview.png` and
+the description travel with the release, not with the submission.
+
+`docs/preview.py` builds the image from a full-screen capture of the open card (`test/visual`
+captures one over SSH): it finds the panel by its own background colour, so any resolution works,
+and fails loudly rather than clipping when a line no longer fits the text column.
+
+    python3 docs/preview.py --shot capture.png --out preview.png
+
 ## Release contents
 
 `make bundle` packages only the manifest, recipe catalog, license and files in
