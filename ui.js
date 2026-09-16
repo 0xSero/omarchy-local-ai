@@ -19,7 +19,7 @@ function sec(t) { return { type: "sec", label: t, value: "", action: "", kind: "
 var STEP = { weights: 0, image: 1, engine: 2, check: 3 }
 function opWord(snap) {
   var st = snap.state, d = snap.operation.detail || ""
-  if (st === "download") return "downloading"
+  if (st === "download") return /weights|download|GB|copy/i.test(d) ? "downloading" : /pull/i.test(d) ? "pulling" : "starting"   // the controller's "download" op also covers the checks before a start
   if (st === "unload") return "stopping"
   if (st === "share") return "sharing"
   if (/pulling/.test(d)) return "pulling"
@@ -92,7 +92,7 @@ function build(c) {
     var who = recipeById(snap, op.recipeId) || modelById(snap, op.recipeId) || (snap.selected ? { name: snap.selected.name } : { name: "Local AI" })
     var r = recipeById(snap, op.recipeId) || { sizeGb: 0 }
     o.tone = "work"; o.eyebrow = w; o.title = who.name
-    o.sub = w === "downloading" ? "weights" + (op.percent > 0 && r.sizeGb ? " · " + gb(op.percent / 100 * r.sizeGb) + " of " + gb(r.sizeGb) : "") : (op.detail || { pulling: "engine image", starting: "engine warming", checking: "acceptance", stopping: "containers coming down", sharing: "gateway restarting on the tailnet" }[w])
+    o.sub = w === "downloading" && op.percent > 0 && r.sizeGb ? "weights · " + gb(op.percent / 100 * r.sizeGb) + " of " + gb(r.sizeGb) : (op.detail || { downloading: "weights", pulling: "engine image", starting: "engine warming", checking: "acceptance", stopping: "containers coming down", sharing: "gateway restarting on the tailnet" }[w])
     if (w !== "stopping" && w !== "sharing") { o.steps = opStep(w); var hw = r.hardwareId ? cardByHw(snap, r.hardwareId) : null; if (hw) o.path.push({ n: hw.name.toLowerCase(), v: "card" }) }
     else { var wm = modelById(snap, op.recipeId); o.path.push({ n: (wm ? wm.name : who.name).toLowerCase(), v: "model" }) }
     o.path.push({ n: w, v: "work" })

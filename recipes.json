@@ -17,7 +17,7 @@
       "workflow": "https://github.com/0xSero/local-ai-images/actions/runs/33771944172"
     }
   },
-  "generatedAt": "2026-09-15T22:45:19Z",
+  "generatedAt": "2026-09-16T10:24:40Z",
   "hardware": {
     "intel-arc-pro-b70-32gb": {
       "match": {
@@ -5650,6 +5650,6 @@
       ]
     }
   },
-  "registryCommit": "e3ece11a8317fd381e1c416ea51256eab6fe4ca9",
+  "registryCommit": "5f8c33ec895e19932aa5205dd74e7761d5606537",
   "schemaVersion": "omarchy-local-ai/recipes/1"
 }
