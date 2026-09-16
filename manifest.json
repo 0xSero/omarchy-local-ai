@@ -5,7 +5,7 @@
   "version": "5.0.0",
   "author": "0xSero",
   "license": "MIT",
-  "description": "Run the model validated for your GPU as one button on the bar. Start downloads it, proves it works, and serves it; Open agent starts any coding agent on it (claude, codex, pi, opencode, crush, and more) with nothing written to your config; Share puts the same keyed endpoint on your tailnet in one click. Every detected GPU is listed and any can be picked. 34 validated recipes for NVIDIA and Intel Arc, two Docker containers only this plugin touches, and every refusal spelled out on the card.",
+  "description": "Run validated local models on NVIDIA and Intel Arc GPUs. Run several models on separate GPU groups, open coding agents, and share keyed endpoints on your tailnet. See live performance, context and capabilities in a compact or full-screen view.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "Local AI",
-    "description": "One model for your GPU: Start, Stop, pick a card, open an agent on it, share it on your tailnet.",
+    "description": "Run local models, see which GPUs are locked, open agents and share endpoints on your tailnet.",
     "category": "AI",
     "aliases": [
       "local-ai",

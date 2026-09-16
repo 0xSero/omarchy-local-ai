@@ -46,6 +46,7 @@ Panel {
   property string pick: ""              // the recipe picked
   property string slotSel: ""           // the running model open
   property string agentPick: ""
+  property bool expanded: false
   property bool agentOpen: false
   property bool copied: false
   property string toast: ""
@@ -84,7 +85,9 @@ Panel {
   function activate(a) {
     if (!a) return
     var s = a.split(":"), v = s[0]
-    if (v === "back") back()
+    if (v === "expand") expanded = !expanded
+    else if (v === "home") home()
+    else if (v === "back") back()
     else if (v === "card") { hw = s[1]; count = 1; pick = ""; go("card") }
     else if (v === "count") { count = parseInt(s[1], 10) || 1; pick = "" }
     else if (v === "pick") pick = s[1]
@@ -154,9 +157,10 @@ Panel {
     focusTarget: keys
     padding: 0
     borderSpec: Border.flat(root.popupLine, 1)
-    contentWidth: panel.fittedContentWidth(Style.space(360))
+    contentWidth: root.expanded ? panel.availableCardWidth : panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(content.implicitHeight)
-    readonly property real ceiling: Style.space(720)   // the card never grows past this: the list scrolls, the rest stays put
+    readonly property real ceiling: panel.fittedContentHeight(root.expanded ? panel.availableCardHeight : Style.space(720)) - panel.verticalContentInset
+    // Fit the scrolling body to the screen as well as the compact panel cap.
     Rectangle { anchors.fill: parent; color: root.popupBg }
     Item {
       id: keys
@@ -165,7 +169,8 @@ Panel {
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
         var k = event.key, r = root.cursorRow()
-        if (k === Qt.Key_Escape) { if (root.view !== "home") root.back(); else root.close() }
+        if (k === Qt.Key_F11) root.expanded = !root.expanded
+        else if (k === Qt.Key_Escape) { if (root.expanded) root.expanded = false; else if (root.view !== "home") root.back(); else root.close() }
         else if (k === Qt.Key_Tab || k === Qt.Key_Backtab) root.switchPanel((event.modifiers & Qt.ShiftModifier) || k === Qt.Key_Backtab ? -1 : 1)
         else if (k === Qt.Key_Down || event.text === "j") root.moveCursor(1)
         else if (k === Qt.Key_Up || event.text === "k") root.moveCursor(-1)
@@ -179,6 +184,18 @@ Panel {
         id: content
         anchors.left: parent.left; anchors.right: parent.right
         spacing: 0
+        Item {
+          id: sizeControl
+          width: parent.width; height: Style.space(32)
+          Text { anchors.left: parent.left; anchors.leftMargin: Style.space(16); anchors.verticalCenter: parent.verticalCenter; text: "local ai"; color: root.dim; font.family: root.mono; font.pixelSize: Style.font.caption }
+          Rectangle {
+            anchors.right: parent.right; anchors.rightMargin: Style.space(12); anchors.verticalCenter: parent.verticalCenter
+            width: sizeLabel.implicitWidth + Style.space(16); height: Style.space(26)
+            color: sizeMouse.containsMouse ? root.hoverFill : root.restFill
+            Text { id: sizeLabel; anchors.centerIn: parent; text: root.expanded ? "compact ↙" : "full screen ↗"; color: root.fg; font.family: root.mono; font.pixelSize: Style.font.caption }
+            MouseArea { id: sizeMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.activate("expand") }
+          }
+        }
         Rectangle { // ---- the state slab
           id: slab
           width: parent.width; color: root.recessed; implicitHeight: Math.max(Style.space(104), slabRow.implicitHeight + Style.space(32))
@@ -215,14 +232,14 @@ Panel {
         Flickable { // ---- the rows: the one part that scrolls
           id: body
           width: parent.width
-          readonly property real room: panel.ceiling - slab.height - crumb.height - foot.height - toastBox.height   // what the ceiling leaves for this part
-          height: Math.max(Style.space(60), Math.min(list.implicitHeight + Style.space(24), room))
+          readonly property real room: panel.ceiling - sizeControl.height - slab.height - crumb.height - foot.height - toastBox.height   // what the ceiling leaves for this part
+          height: Math.max(0, root.expanded ? room : Math.min(list.implicitHeight + Style.space(24), room))
           contentHeight: list.implicitHeight + Style.space(24); clip: true; boundsBehavior: Flickable.StopAtBounds
           Column {
             id: list
             anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: Style.space(12); spacing: Style.space(6)
             Repeater { id: rowsRep; model: root.ui.rows
-              CardRow { required property var modelData; required property int index; r: modelData; p: root; width: list.width; cursor: index === root.cursorAt } }
+              CardRow { required property var modelData; required property int index; r: modelData; p: root; x: r.child ? Style.space(18) : 0; width: list.width - x; cursor: index === root.cursorAt } }
           }
           function reveal(i) { // keep the cursor row in view
             var it = rowsRep.itemAt(i); if (!it) return

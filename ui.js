@@ -73,16 +73,21 @@ function cells(c, group, work) {
     if (work && keys.indexOf(k) >= 0 && word === "stopping") return { text: "freeing", mark: "freeing" }
     if (work && keys.indexOf(k) >= 0 && word !== "sharing") return { text: "claimed", mark: "claimed" }
     if (m && m.state === "error") return { text: "crashed", mark: "crashed" }
-    if (m) return { text: m.name, mark: "used" }
+    if (m) return { text: "#" + k.split(":")[1] + " locked", mark: "used" }
     return { text: "free" + (g && g.tempC !== null && g.tempC !== undefined ? " · " + g.tempC + "°" : ""), mark: "free" }
   })
 }
-function cardRows(c, work) {
-  var snap = c.snap, out = [sec("cards")], cs = snap.cards || []
+function cardRows(c, work, nested) {
+  var snap = c.snap, out = [sec("gpus")], cs = snap.cards || []
   for (var i = 0; i < cs.length; i++) { var g = cs[i], free = freeKeys(snap, g).length, held = g.keys.length - free
     var n = fits(snap, g, 1).length + fits(snap, g, 2).length, can = !work && free > 0 && held === 0 && n > 0   // a type with a model on it is reached through that model
-    out.push(row(g.count + "× " + g.name, work ? g.totalGb + " GB" : can ? n + (n === 1 ? " recipe ›" : " recipes ›") : held ? held + " in use" : n ? "" : "no recipe",
-      can ? "card:" + g.hardwareId : "", { cells: cells(c, g, work), disabled: !work && !can && held === 0 })) }
+    out.push(row(g.count + "× " + g.name, work ? g.totalGb + " GB" : can ? n + (n === 1 ? " recipe ›" : " recipes ›") : held ? held + " locked" : n ? "" : "no recipe",
+      can ? "card:" + g.hardwareId : "", { cells: cells(c, g, work), disabled: !work && !can && held === 0 }))
+    if (nested) models(snap).filter(function(m) { return m.keys.some(function(k) { return g.keys.indexOf(k) >= 0 }) }).forEach(function(m) {
+      out.push(row(m.name, m.state === "error" ? "crashed ›" : m.state !== "ready" ? m.state + " ›" : (m.decodeTps || 0) + " tok/s ›", "model:" + m.recipeId,
+        { child: true, urgent: m.state !== "ready", cells: [{ text: ":" + m.port + (m.shareUrl ? " · shared" : ""), mark: "" }] }))
+    })
+  }
   if (!cs.length) out.push(row("card", "none", "", { urgent: true }))
   return out
 }
@@ -184,8 +189,6 @@ function build(c) {
   else { var used = ms.reduce(function(a, m) { return a + m.cards }, 0)
     o.tone = crashed.length ? "error" : "ready"; o.eyebrow = crashed.length ? "crashed" : "ready"; o.title = ms.length === 1 ? ms[0].name : ms.length + " models"
     o.sub = "on " + used + " of " + total + " cards" + (ms.some(function(m) { return m.shareUrl }) ? " · shared" : "") }
-  o.rows = cardRows(c, false)
-  if (ms.length) { o.rows.push(sec("running"))
-    ms.forEach(function(m) { o.rows.push(row(m.name, m.state === "error" ? "crashed ›" : m.state !== "ready" ? m.state + " ›" : (m.decodeTps || 0) + " tok/s ›", "model:" + m.recipeId, { urgent: m.state !== "ready", cells: [{ text: where(snap, m) + " · :" + m.port + (m.shareUrl ? " · shared" : ""), mark: "" }] })) }) }
+  o.rows = cardRows(c, false, true)
   return o
 }
