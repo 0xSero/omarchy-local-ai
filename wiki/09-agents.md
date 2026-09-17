@@ -39,7 +39,7 @@ to the model it was launched for, never to "the" model.
 | `pi`, `omp` | `models.json` in a plugin-owned agent dir | written into that file | `PI_CODING_AGENT_DIR` / `OMP_CODING_AGENT_DIR`; `--provider omarchy-local --model <m>`. `omp` also gets a `config.yml` so it skips its first-run wizard |
 | `crush` | `crush/crush.json` under `XDG_CONFIG_HOME` | written into that file | `XDG_DATA_HOME` moved too, because crush's data file pins the last chosen model over its config; a mise shim is resolved to the real binary so a mise reinstall cannot hijack it |
 | `copilot` | `COPILOT_PROVIDER_BASE_URL=$ENDPOINT/v1` | `COPILOT_PROVIDER_API_KEY` | `--model <m>` |
-| `grok` | `GROK_CLI_CHAT_PROXY_BASE_URL=$ENDPOINT/v1` | `XAI_API_KEY` | — |
+| `grok` | custom model in plugin-owned `GROK_HOME/config.toml` | `XAI_API_KEY`, referenced by `env_key` | `--model omarchy-local`; served model and context come from the selected recipe |
 | `hermes`, `ori`, `agy`, others | `OPENAI_BASE_URL` **and** `OPENAI_API_BASE` | `OPENAI_API_KEY` | `OPENAI_MODEL=<m>` |
 
 Notes that are not cosmetic:
@@ -48,6 +48,8 @@ Notes that are not cosmetic:
   this API key?" for every new key and *remember* a refusal; `ANTHROPIC_AUTH_TOKEN` is its documented
   form for gateways and is used as-is. The gateway accepts `Authorization: Bearer`.
 - **`opencode` keeps the key out of its config text** by having the config reference `{env:…}`.
+- **OpenCode and Codex receive the selected context window.** OpenCode and Crush also receive the selected model's image support. The gateway preserves images in Chat, Messages and Responses requests, including Messages tool results.
+- **Grok uses its custom-model configuration**, so a saved cloud model or OAuth token cannot override the local selection. Its private config leaves reasoning and sampling settings unset.
 - **`pi`/`omp` get the recipe's real context and image support**, not a hardcoded 128K:
   `contextWindow` comes from the model's `ctxTokens`, and `input` becomes `["text","image"]` when the
   model passed vision acceptance. Costs are declared as zero, because they are.

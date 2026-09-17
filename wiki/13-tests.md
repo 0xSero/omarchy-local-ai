@@ -1,7 +1,21 @@
 # 13 — Tests
 
-Three harnesses, three questions: does the shipped logic behave (shims), does the model really run on
-the real card (rented), does the panel really look right (visual).
+Four harnesses: shipped controller logic, real coding agents, GPU recipe qualification, and native panel captures.
+
+## `test/agents` — installed agents against ready local models
+
+Run on the inference host after loading the models to test:
+
+```bash
+python3 test/agents --out "$HOME/agent-check-$(date +%Y%m%d-%H%M%S)"
+python3 test/agents --out "$HOME/agent-check-pi" --agents pi --features text tools vision
+```
+
+Use `--plugin` for a different checkout or installed plugin, `--state` for its state directory, and repeat `--recipe <id>` to select ready recipes. The script does not load models or install agents. It tests only installed, launchable agents and capabilities advertised by each ready model; it does not qualify other registry recipes.
+
+Each case uses the real launcher with an isolated state and work directory. A loopback tracing proxy verifies the selected model and records HTTP outcomes without logging authentication headers. Tests require the actual final response, and file tests also verify the resulting file. A failed tool call keeps the case failed even if the final answer succeeds. Agent notices are recorded separately as diagnostics.
+
+The output contains `results.json`, per-case transcripts and API responses, plus generated test inputs. It is private and must be outside the repository. Exit status is nonzero when any case fails. This exercises real inference and file tools; it is separate from UI acceptance and a finite pass is not a guarantee of error-free model output.
 
 ## `make test` — the suite, run against the shipped archive
 
@@ -30,7 +44,7 @@ No GPU, no docker, **no network**: it shims every external command and drives th
 Needs `bash` and `jq`; the UI checks need Node.
 
 `test/all` is TAP-flavoured: `ok <n> - <what>` per assertion, `not ok` plus a diagnostic and an
-immediate exit on the first failure, and a final `1..<n>` plan. It currently ends at `1..176`.
+immediate exit on the first failure, and a final `1..<n>` plan.
 
 ### Isolation
 

@@ -53,11 +53,11 @@ agent_command() {
       printf '%s\0' "$bin" \
         -c "model_providers.local.name=Omarchy Local" -c "model_providers.local.base_url=$ENDPOINT/v1" \
         -c "model_providers.local.wire_api=responses" -c "model_providers.local.env_key=LOCAL_AI_KEY" \
-        -c "model_provider=local" -c "model=$model" ;;
+        -c "model_provider=local" -c "model=$model" -c "model_context_window=$context" ;;
     opencode)
       # opencode resolves {env:NAME} inside its config, so the key stays out of the config text too
-      cfg=$(jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" \
-        '{"$schema":"https://opencode.ai/config.json",provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:"{env:OMARCHY_LOCAL_AI_KEY}"},models:{($m):{name:$m}}}}}')
+      cfg=$(jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --argjson ctx "$context" --argjson vision "$vision" \
+        '{"$schema":"https://opencode.ai/config.json",provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:"{env:OMARCHY_LOCAL_AI_KEY}"},models:{($m):{name:$m,limit:{context:$ctx,output:$ctx},modalities:{input:(if $vision then ["text","image"] else ["text"] end),output:["text"]}}}}}}')
       with_key OMARCHY_LOCAL_AI_KEY
       printf '%s\0' env "OPENCODE_CONFIG_CONTENT=$cfg" "$bin" --model "omarchy-local/$model" ;;
     pi|omp)
@@ -79,9 +79,11 @@ agent_command() {
       # last chosen model over the config: give it a plugin-owned config and data home
       local dir="$STATE/agents/crush/crush"; mkdir -p "$dir"
       # a mise shim would reinstall crush under the new data home: launch the real binary instead
-      [[ $bin == */mise/shims/* ]] && command -v mise >/dev/null 2>&1 && bin=$(mise which crush 2>/dev/null || printf '%s' "$bin")
-      jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" --argjson ctx "$context" \
-        '{providers:{"omarchy-local":{type:"openai",name:"Omarchy Local",base_url:$u,api_key:$k,models:[{id:$m,name:$m,context_window:$ctx,default_max_tokens:8192}]}},models:{large:{provider:"omarchy-local",model:$m},small:{provider:"omarchy-local",model:$m}}}' \
+      if { [[ $bin == */mise/shims/* ]] || grep -Iq 'mise.*crush' "$bin"; } && command -v mise >/dev/null 2>&1; then
+        bin=$(mise which crush 2>/dev/null || printf '%s' "$bin")
+      fi
+      jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --arg k "$key" --argjson ctx "$context" --argjson vision "$vision" \
+        '{providers:{"omarchy-local":{type:"openai",name:"Omarchy Local",base_url:$u,api_key:$k,models:[{id:$m,name:$m,context_window:$ctx,default_max_tokens:8192,supports_attachments:$vision}]}},models:{large:{provider:"omarchy-local",model:$m},small:{provider:"omarchy-local",model:$m}}}' \
         >"$dir/crush.json"
       with_key OPENAI_API_KEY
       printf '%s\0' env "XDG_CONFIG_HOME=$STATE/agents/crush" "XDG_DATA_HOME=$STATE/agents/crush" "$bin" ;;
@@ -89,8 +91,13 @@ agent_command() {
       with_key COPILOT_PROVIDER_API_KEY
       printf '%s\0' env "COPILOT_PROVIDER_BASE_URL=$ENDPOINT/v1" "$bin" --model "$model" ;;
     grok)
+      local dir="$STATE/agents/grok"; mkdir -p "$dir"
+      # A chat-proxy override still selects Grok's cloud catalog and OAuth token.
+      # Use its custom-model config so both the model and authentication are local.
+      printf '[models]\ndefault = "omarchy-local"\n[features]\nremote_fetch = false\nmanaged_config = false\ntelemetry = false\n[model.omarchy-local]\nmodel = %s\nname = "Omarchy Local"\nbase_url = %s\nenv_key = "XAI_API_KEY"\napi_backend = "chat_completions"\ncontext_window = %s\n' \
+        "$(jq -Rn --arg v "$model" '$v')" "$(jq -Rn --arg v "$ENDPOINT/v1" '$v')" "$context" >"$dir/config.toml"
       with_key XAI_API_KEY
-      printf '%s\0' env "GROK_CLI_CHAT_PROXY_BASE_URL=$ENDPOINT/v1" "$bin" ;;
+      printf '%s\0' env "GROK_HOME=$dir" "$bin" --model omarchy-local ;;
     *) # OpenAI-compatible by convention: hermes, ori, agy read the standard variables
       with_key OPENAI_API_KEY
       printf '%s\0' env "OPENAI_BASE_URL=$ENDPOINT/v1" "OPENAI_API_BASE=$ENDPOINT/v1" "OPENAI_MODEL=$model" "$bin" ;;

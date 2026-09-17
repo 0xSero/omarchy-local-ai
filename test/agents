@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""Run installed agents through the real launcher, tracing only local inference."""
+from pathlib import Path
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import argparse, http.client, json, os, re, shlex, shutil, signal, struct, subprocess, threading, time, uuid, zlib
+
+os.umask(0o077)
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--out', type=Path, required=True, help='private evidence directory outside the repository')
+parser.add_argument('--plugin', type=Path, default=Path(__file__).resolve().parents[1])
+parser.add_argument('--state', type=Path, default=Path.home()/'.local/state/omarchy/local-ai')
+parser.add_argument('--agents', nargs='+')
+parser.add_argument('--features', nargs='+', choices=['text', 'tools', 'vision'], default=['text', 'tools', 'vision'])
+parser.add_argument('--recipe', action='append', default=[])
+parser.add_argument('--timeout', type=int, default=300)
+args = parser.parse_args()
+ROOT = args.out.expanduser().resolve()
+if ROOT.is_relative_to(args.plugin.resolve()): parser.error('--out must be outside the plugin repository')
+ROOT.mkdir(parents=True, exist_ok=False)
+SOURCE = args.state.expanduser().resolve()
+CLI = args.plugin.expanduser().resolve()/'bin/omarchy-local-ai'
+SNAP = json.loads(subprocess.check_output([str(CLI), 'snapshot'], env=dict(os.environ, OMARCHY_AI_STATE=str(SOURCE)), text=True, timeout=45))
+(ROOT/'before.json').write_text(json.dumps(SNAP, indent=2))
+# A tiny two-color PNG, generated without media dependencies or loose fixtures.
+def png_chunk(kind, data):
+    return struct.pack('>I', len(data))+kind+data+struct.pack('>I', zlib.crc32(kind+data)&0xffffffff)
+pixels = b''.join(b'\0'+bytes((0,0,255))*96+bytes((255,255,0))*96 for _ in range(96))
+(ROOT/'colors.png').write_bytes(b'\x89PNG\r\n\x1a\n'+png_chunk(b'IHDR',struct.pack('>IIBBBBB',192,96,8,2,0,0,0))+png_chunk(b'IDAT',zlib.compress(pixels))+png_chunk(b'IEND',b''))
+LOCK = threading.Lock()
+RESULTS = []
+
+def flags(agent, prompt, project):
+    if agent in ('pi','omp'):
+        return ['--mode','json','--no-session','--no-extensions','--no-skills','-p',prompt]
+    if agent == 'claude':
+        return ['-p',prompt,'--output-format','json','--no-session-persistence','--max-turns','8','--permission-mode','acceptEdits','--allowedTools','Read,Edit,Write,Bash']
+    if agent == 'codex':
+        return ['exec','--ignore-user-config','--json','--ephemeral','--skip-git-repo-check','--sandbox','workspace-write',prompt]
+    if agent == 'opencode':
+        return ['run','--format','json','--pure','--auto',prompt]
+    if agent == 'grok':
+        return ['-p',prompt,'--output-format','json','--max-turns','8','--no-subagents','--permission-mode','acceptEdits']
+    if agent == 'copilot':
+        return ['-p',prompt,'--output-format','json','--allow-all-tools','--disable-builtin-mcps','--no-custom-instructions','--no-auto-update','--no-remote-export']
+    if agent == 'crush':
+        return ['run','--quiet',prompt]
+    raise ValueError(agent)
+
+def response_text(raw):
+    texts=[]
+    for line in raw.decode(errors='replace').splitlines():
+        line=line.removeprefix('data: ').strip()
+        try: obj=json.loads(line)
+        except ValueError: continue
+        for choice in obj.get('choices',[]):
+            m=choice.get('delta',choice.get('message',{}))
+            if isinstance(m.get('content'),str):texts.append(m['content'])
+        delta=obj.get('delta',{})
+        if isinstance(delta,dict) and delta.get('type')=='text_delta':texts.append(delta.get('text',''))
+        if obj.get('type')=='response.output_text.delta':texts.append(obj.get('delta',''))
+        if isinstance(obj.get('content'),list):
+            texts.extend(b.get('text','') for b in obj['content'] if isinstance(b,dict) and b.get('type')=='text')
+    return ''.join(texts)
+
+def run(agent, model, feature='text'):
+    label=model['recipeId']+'-'+agent+'-'+feature
+    case=ROOT/label;case.mkdir(parents=True,exist_ok=True)
+    (case/'result.json').unlink(missing_ok=True)
+    project=case/'project';project.mkdir(exist_ok=True)
+    state=case/'state';state.mkdir(exist_ok=True)
+    marker='CHECK_'+uuid.uuid4().hex[:12]
+    (project/'input.txt').write_text(marker+'\n')
+    if feature=='text':prompt=f'Reply with exactly {marker}. Do not use tools. Do not modify files.'
+    elif feature=='vision':
+        shutil.copyfile(ROOT/'colors.png',project/'colors.png')
+        prompt='Name the two colors in the attached image, from left to right. Answer with only the two color names.'
+        if agent in ('claude','grok','crush'):prompt='Use your image-capable file reader to view ./colors.png. '+prompt.replace('attached image','image')+' Do not inspect pixels programmatically, use network, or delegate.'
+    else:prompt='Work only in the current directory. Read input.txt using a tool. Write its exact contents to output.txt using a file tool or shell command. Read output.txt to verify it. Reply with the exact contents only. Do not use network or delegate.'
+    requests=[]
+    class Proxy(BaseHTTPRequestHandler):
+        def log_message(self,*a):pass
+        def do_GET(self):self.forward()
+        def do_POST(self):self.forward()
+        def forward(self):
+            body=self.rfile.read(int(self.headers.get('Content-Length',0)))
+            try:d=json.loads(body) if body else {}
+            except ValueError:d={}
+            n=len(requests);rec={'path':self.path,'model':d.get('model'),'stream':d.get('stream'),'tools':len(d.get('tools',[])),'reasoning_effort':d.get('reasoning_effort'),'reasoning':d.get('reasoning'),'chat_template_kwargs':d.get('chat_template_kwargs'),'tool_results':sum(1 for m in d.get('messages',[]) if m.get('role')=='tool' or isinstance(m.get('content'),list) and any(b.get('type')=='tool_result' for b in m['content'] if isinstance(b,dict))) + sum(1 for m in d.get('input',[]) if isinstance(m,dict) and m.get('type')=='function_call_output') if isinstance(d.get('input',[]),list) else 0}
+            rec.update({k:d[k] for k in ('max_tokens','max_completion_tokens','max_output_tokens') if k in d})
+            requests.append(rec)
+            port=model['port']
+            conn=http.client.HTTPConnection('127.0.0.1',port,timeout=300)
+            try:
+                headers={k:v for k,v in self.headers.items() if k.lower() not in ('host','connection','content-length','accept-encoding')}
+                conn.request(self.command,self.path,body,headers)
+                up=conn.getresponse();rec['status']=up.status
+                self.send_response(up.status)
+                for k,v in up.getheaders():
+                    if k.lower() not in ('transfer-encoding','connection'):self.send_header(k,v)
+                self.send_header('Connection','close');self.end_headers()
+                data=[]
+                while chunk:=up.read1(65536):
+                    data.append(chunk)
+                    try:self.wfile.write(chunk);self.wfile.flush()
+                    except (BrokenPipeError,ConnectionResetError):break
+                raw=b''.join(data);(case/f'response-{n}.txt').write_bytes(raw)
+                rec['text']=response_text(raw)
+                if up.status>=400:rec['error']=raw.decode(errors='replace')[:1800]
+            except Exception as e:rec['transport_error']=type(e).__name__+': '+str(e)
+            finally:conn.close();self.close_connection=True
+    server=ThreadingHTTPServer(('127.0.0.1',0),Proxy)
+    server.daemon_threads=False  # finish tracing in-flight requests before scoring
+    threading.Thread(target=server.serve_forever,daemon=True).start()
+    snap=json.loads(json.dumps(SNAP))
+    for m in snap['models']:
+        if m['recipeId']==model['recipeId']:m['port']=server.server_port
+    (state/'snapshot.json').write_text(json.dumps(snap))
+    ledger=json.loads((SOURCE/'ledger.json').read_text())
+    ledger['slots']={model['recipeId']:ledger['slots'][model['recipeId']]}
+    ledger['slots'][model['recipeId']]['port']=server.server_port
+    (state/'ledger.json').write_text(json.dumps(ledger))
+    shutil.copytree(SOURCE/'slots',state/'slots',dirs_exist_ok=True)
+    shutil.copyfile(SOURCE/'gateway.key',state/'gateway.key')
+    env=os.environ.copy();env.update(OMARCHY_AI_STATE=str(state),OMARCHY_AI_FOREGROUND='1',NO_COLOR='1',CI='1')
+    start=time.monotonic();code=-1;error=''
+    try:
+        command=subprocess.check_output([str(CLI),'open-agent',agent,model['recipeId']],env=env,text=True,timeout=25)
+        argv=shlex.split(command.strip())+flags(agent,prompt,project)
+        if feature=='vision':
+            if agent in ('pi','omp'):argv+=['@'+str(project/'colors.png')]
+            elif agent=='codex':argv+=['--image',str(project/'colors.png')]
+            elif agent=='opencode':argv+=['--file',str(project/'colors.png')]
+            elif agent=='copilot':argv+=['--attachment',str(project/'colors.png')]
+        with (case/'agent.log').open('w') as log:
+            p=subprocess.Popen(argv,cwd=project,env=env,stdout=log,stderr=log,stdin=subprocess.DEVNULL,start_new_session=True)
+            try:code=p.wait(timeout=args.timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(p.pid,signal.SIGTERM)
+                try:p.wait(timeout=5)
+                except subprocess.TimeoutExpired:os.killpg(p.pid,signal.SIGKILL);p.wait()
+                error=f'agent timed out after {args.timeout}s'
+    except Exception as e:error=type(e).__name__+': '+str(e)
+    finally:server.shutdown();server.server_close()
+    text=''.join(r.get('text','') for r in requests)
+    inference=[r for r in requests if r.get('model')]
+    output=project/'output.txt'
+    expected=bool(re.search(r'blue\W+(?:and\W+)?yellow',text.lower())) if feature=='vision' else marker in text
+    passed=code==0 and expected and bool(inference) and all(r.get('status')==200 and r.get('model')==model['servedModel'] for r in inference)
+    if feature=='tools':passed=passed and output.exists() and output.read_text().strip()==marker and any(r.get('tool_results',0)>0 for r in requests)
+    tool_errors=[]; agent_parts=[]; diagnostics=[]
+    def inspect_event(e):
+        if not isinstance(e,dict):return
+        item=e.get('item',{})
+        kind=e.get('type')
+        if kind in ('error','turn.failed','session.error') or e.get('is_error') is True: tool_errors.append(e)
+        if kind=='item.completed' and item.get('type')=='error': diagnostics.append(item.get('message',''))
+        if kind=='item.completed' and item.get('type')=='agent_message': agent_parts.append(item.get('text',''))
+        if kind=='text': agent_parts.append(e.get('part',{}).get('text',''))
+        if kind=='result' and isinstance(e.get('result'),str): agent_parts.append(e['result'])
+        if kind=='assistant.message': agent_parts.append(e.get('data',{}).get('content',''))
+        if kind=='message_end' and e.get('message',{}).get('role')=='assistant':
+            m=e['message'];agent_parts.extend(b.get('text','') for b in m.get('content',[]) if b.get('type')=='text')
+            if m.get('stopReason')=='error': tool_errors.append(m)
+        if kind=='item.completed' and item.get('type')=='command_execution':
+            if item.get('exit_code') not in (None,0) or re.search(r'command not found|No such file or directory|Permission denied', item.get('aggregated_output','')): tool_errors.append(item)
+        if e.get('type')=='tool_execution_end' and e.get('isError'):tool_errors.append(e)
+        if e.get('type')=='tool.execution_complete' and e.get('data',{}).get('success') is False:tool_errors.append(e)
+    if (case/'agent.log').exists():
+        for line in (case/'agent.log').read_text(errors='replace').splitlines():
+            try:inspect_event(json.loads(line))
+            except ValueError:pass
+    log_text=(case/'agent.log').read_text(errors='replace') if (case/'agent.log').exists() else ''
+    if agent=='grok':
+        try: agent_parts.append(json.JSONDecoder().raw_decode(log_text[log_text.index('{'):])[0].get('text',''))
+        except (ValueError,KeyError): pass
+    if agent=='crush':agent_parts.append(log_text)
+    final_text=''.join(x for x in agent_parts if isinstance(x,str))
+    final_ok=bool(re.search(r'blue\W+(?:and\W+)?yellow',final_text.lower())) if feature=='vision' else marker in final_text
+    result=dict(case=label,agent=agent,recipe=model['recipeId'],feature=feature,passed=passed and final_ok and not tool_errors,completed=passed and final_ok,tool_errors=tool_errors,diagnostics=diagnostics,exit=code,seconds=round(time.monotonic()-start,2),error=error,requests=requests)
+    if not result['passed']:result['log_tail']=(case/'agent.log').read_text(errors='replace')[-2500:] if (case/'agent.log').exists() else ''
+    (case/'result.json').write_text(json.dumps(result,indent=2))
+    with LOCK:
+        RESULTS.append(result);(ROOT/'results.json').write_text(json.dumps(RESULTS,indent=2))
+        print(json.dumps(result),flush=True)
+
+if __name__=='__main__':
+    models=[m for m in SNAP['models'] if m['state']=='ready' and (not args.recipe or m['recipeId'] in args.recipe)]
+    if not models: parser.error('no selected model is ready')
+    agents=args.agents or SNAP['agents']['installed']
+    unknown=set(agents)-set(SNAP['agents']['installed'])
+    if unknown: parser.error('agents are not installed: '+', '.join(sorted(unknown)))
+    for model in models:
+        for agent in agents:
+            if agent not in model['launchable']: continue
+            for feature in args.features:
+                if feature=='vision' and not model['caps'].get('vision'): continue
+                if feature=='tools' and not model['caps'].get('tools'): continue
+                run(agent, model, feature)
+    raise SystemExit(0 if RESULTS and all(r['passed'] for r in RESULTS) else 1)

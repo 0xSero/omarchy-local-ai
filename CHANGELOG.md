@@ -2,6 +2,17 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.0.4] - 2026-09-16
+
+### Fixed
+- Preserve image attachments through the Claude Messages and Codex Responses gateway routes, including images returned by Claude's file reader.
+- Configure Grok as a custom local model with the selected model, endpoint, context and key. A cloud proxy override could retain Grok's cloud model and OAuth credentials.
+- Pass image support to OpenCode and Crush, and the selected context window to OpenCode and Codex.
+- Resolve Crush's installed binary before changing its configuration directory, including Omarchy's mise install wrapper.
+
+### Added
+- `test/agents` exercises installed agents against ready models with real text, file read/write/verification and image requests. Evidence stays outside the repository; failed tool calls remain failures even when an agent recovers.
+
 ## [5.0.3] - 2026-09-16
 
 ### Fixed
