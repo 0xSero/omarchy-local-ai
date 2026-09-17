@@ -2,6 +2,14 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.0.6] - 2026-09-17
+
+### Fixed
+- The README's rented-card link pointed at `test/rented-results/`, which is measurement data and lives outside the repository; the wiki named the wrong manifest version and library count, and overstated what a GitHub source archive carries; `docs/preview.py` hardcoded one home directory in its font lookup.
+
+### Internal
+- `agent_dialect()` and `container_recipe()` were defined and called nowhere; removed.
+
 ## [5.0.5] - 2026-09-16
 
 ### Fixed
