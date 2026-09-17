@@ -169,6 +169,7 @@ from. A free group's action is `card:<hardwareId>`.
 
 ```
 v5.1.1 + 3 for your card ›     a newer release, and three recipes for the cards detected
+registry ›                     a newer registry copy that changes recipes without adding any
 current · checked 2h ago ›     nothing staged; pressing it re-checks
 ```
 

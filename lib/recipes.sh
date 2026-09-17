@@ -26,11 +26,15 @@ recipes_fetch() { # recipes_fetch <dest>: one validated copy of the registry's f
   [[ -n $RECIPES_URL ]] || { printf 'refresh is off (OMARCHY_AI_RECIPES_URL is empty)'; return 1; }
   if ! err=$(curl -fsSL --max-time 20 --max-filesize 8388608 --proto =https -o "$tmp" "$RECIPES_URL" 2>&1); then rm -f "$tmp"; printf 'could not fetch the registry (%s)' "${err:-no route}"; return 1; fi
   if ! recipes_ok_file "$tmp"; then rm -f "$tmp"; printf 'the fetched file is not a recipes file'; return 1; fi
-  chmod 600 "$tmp"; mv -f "$tmp" "$dest"
+  chmod 600 "$tmp" && mv -f "$tmp" "$dest"
 }
 recipes_staged_newer() { [[ -s $RECIPES_NEXT ]] && recipes_ok_file "$RECIPES_NEXT" && [[ $(recipes_generated "$RECIPES_NEXT") > $(recipes_generated "$RECIPES") ]]; }
-recipes_apply() { # adopt the staged copy; prints one line
-  mv -f "$RECIPES_NEXT" "$RECIPES_LIVE"; RECIPES=$RECIPES_LIVE
+recipes_apply() { # adopt the staged copy. Prints one line; a copy that is no longer newer is discarded.
+  local tmp="$RECIPES_LIVE.tmp.$$" have
+  mv -f "$RECIPES_NEXT" "$tmp" || return 1   # claim it first, so what is checked below is what is adopted
+  have=$(recipes_generated "$RECIPES")
+  if ! recipes_ok_file "$tmp" || [[ ! $(recipes_generated "$tmp") > $have ]]; then rm -f "$tmp"; printf 'recipes: the staged copy is no longer newer than %s\n' "$(recipes_source)"; return 1; fi
+  mv -f "$tmp" "$RECIPES_LIVE"; RECIPES=$RECIPES_LIVE
   log "recipes: applied registry $(registry_commit) ($(recipes_generated "$RECIPES"), $(recipes_count) recipes)"
   printf 'recipes: updated to registry %s (%s, %s recipes)\n' "$(registry_commit | cut -c1-12)" "$(recipes_generated "$RECIPES")" "$(recipes_count)"
 }

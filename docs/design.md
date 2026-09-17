@@ -86,6 +86,13 @@ release and the count of new recipes for the cards actually detected. Nothing st
 registry file and then updates the harness through Omarchy's own `omarchy plugin update <id> --yes`,
 so plugin installation stays the platform's job, not ours.
 
+Two constraints the implementation carries, both found in review. The staged copy is adopted only if it
+is *still* newer than the file it replaces — the applier claims the staged file first and validates
+what it actually holds, so a background check racing an update cannot downgrade the file in use. And
+recipe files reach jq as `--slurpfile` inputs, never as arguments: the published `recipes.json` is
+already past the 128 KiB cap Linux puts on one argument, so passing its contents would fail every
+snapshot on Omarchy while passing cleanly on a Mac.
+
 This replaces 5.0's `recipes_autorefresh`, which fetched and adopted silently every six hours. The
 trade is deliberate and it is the conservative direction: what a user runs is the vendored file the
 marketplace reviewed until they say otherwise, and a fetched file still passes `gate_reason` recipe
@@ -106,6 +113,12 @@ that one file in the browser.
 What GitHub cannot give is per-user usage: raw content fetches are not counted and there is no
 per-event log for views or downloads. So "who ran which recipe" is not answerable without client
 telemetry, which is out of scope on purpose.
+
+Two things the recorder must not do, both from review (2026-09-17): it must fail loudly rather than
+publish numbers it did not get (hence `pipefail` — jq happily turns an error body into zeroed
+counters), and a step that dies must not lose the day's traffic. The second is free: every per-day
+file is a *window*, and the aggregations group by day across all files taking the maximum reading, so
+the next successful run re-records a day this one missed.
 
 ## The vendored file contract (`recipes.json`)
 

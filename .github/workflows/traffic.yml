@@ -21,7 +21,7 @@ jobs:
           GH_TOKEN: "${{ secrets.TRAFFIC_TOKEN }}"   # traffic + GraphQL need a token of the owner, not the workflow token
           REPO: "${{ github.repository }}"
         run: |
-          set -e
+          set -eo pipefail   # a failing gh must fail the step: jq would otherwise turn an error body into zeros
           git config user.name traffic-bot; git config user.email traffic@users.noreply.github.com
           git checkout -B stats
           mkdir -p traffic

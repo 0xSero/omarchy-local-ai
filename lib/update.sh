@@ -16,32 +16,38 @@ UPSTREAM_TTL="${OMARCHY_AI_UPDATE_TTL:-21600}"   # seconds between checks: six h
 plugin_version() { jq -r '.version // ""' "$PLUGIN_MANIFEST" 2>/dev/null || true; }
 plugin_id() { jq -r '.id // ""' "$PLUGIN_MANIFEST" 2>/dev/null || true; }
 version_newer() { [[ -n $1 && -n $2 && $1 != "$2" ]] && [[ $(printf '%s\n%s\n' "$2" "$1" | sort -V | tail -1) == "$1" ]]; }   # $1 is newer than $2
-# upstream_json: the snapshot's `update` object. Pure: reads the files the check left behind, never the network.
+# upstream_json: the snapshot's `update` object. Pure, and size-safe: both recipe files reach jq as
+# `--slurpfile` inputs, never as arguments — the published recipes.json is well past the 128 KiB
+# ceiling Linux puts on a single argument, so passing its contents as one would break every snapshot.
 upstream_json() {
-  local cur latest next='null'
+  local cur latest next_file=$RECIPES_NEXT
   cur=$(plugin_version)
   latest=$(jq -r '.version // ""' "$MANIFEST_REMOTE" 2>/dev/null || true)
   version_newer "$latest" "$cur" || latest=""
-  [[ -s $RECIPES_NEXT ]] && next=$(cat "$RECIPES_NEXT")
+  [[ -s $RECIPES_NEXT ]] || next_file=/dev/null   # an empty slurp is [] and reads as no staged copy
   jq -nc --arg cur "$cur" --arg latest "$latest" --arg hw "${1:-}" \
      --arg on "$([[ -n $MANIFEST_URL || -n $RECIPES_URL ]] && printf 1 || printf '')" \
-     --argjson cur_r "$(cat "$RECIPES")" --argjson next "$next" '
-    def ids($f): [($f.hardware // {})[] | ((.recipe // empty), (.recipes[]? // empty)) | .id] | unique;
-    def mine($f): [($f.hardware[$hw]? // {}) | ((.recipe // empty), (.recipes[]? // empty)) | .id];
-    (ids($next) - ids($cur_r)) as $new
+     --arg staged "$(if recipes_staged_newer; then printf 1; fi)" \
+     --slurpfile cur_r "$RECIPES" --slurpfile next "$next_file" '
+    def ids($f): [((($f // {}).hardware // {})[]) | ((.recipe // empty), (.recipes[]? // empty)) | .id] | unique;
+    def mine($f): [((((($f // {}).hardware // {})[$hw]) // {})) | ((.recipe // empty), (.recipes[]? // empty)) | .id];
+    ($cur_r[0]) as $cur_f
+    | ($next[0] // null) as $nxt
+    | (ids($nxt) - ids($cur_f)) as $new
     | {enabled:($on!=""), plugin:{current:$cur, latest:$latest},
-       recipes:{generatedAt:($next.generatedAt // ""), commit:($next.registryCommit // ""), new:($new|length),
-                relevant:(if $hw=="" then 0 else ([$new[] | select(. as $id | mine($next) | index($id))] | length) end)}}'
+       recipes:{staged:($staged!=""), generatedAt:($nxt.generatedAt // ""), commit:($nxt.registryCommit // ""),
+                new:($new|length),
+                relevant:(if $hw=="" then 0 else ([$new[] | select(. as $id | mine($nxt) | index($id))] | length) end)}}'
 }
 upstream_check() { # fetch both upstream files; stage the registry copy, adopt nothing
   local why tmp
   state_dir; date -u +%s >"$UPSTREAM_CHECKED"
   if why=$(recipes_fetch "$RECIPES_NEXT"); then log "upstream: staged registry $(recipes_generated "$RECIPES_NEXT")"
-  else log "upstream: registry: $why"; fi
+  else log "upstream: registry: $why"; printf 'update: registry: %s\n' "$why"; fi
   [[ -n $MANIFEST_URL ]] || return 0
   tmp="$MANIFEST_REMOTE.tmp.$$"
   if curl -fsSL --max-time 20 --max-filesize 65536 --proto =https -o "$tmp" "$MANIFEST_URL" 2>>"$LOGFILE" && jq -e '.version|type=="string"' "$tmp" >/dev/null 2>&1; then chmod 600 "$tmp"; mv -f "$tmp" "$MANIFEST_REMOTE"
-  else rm -f "$tmp"; log "upstream: no plugin manifest from $MANIFEST_URL"; fi
+  else rm -f "$tmp"; log "upstream: no plugin manifest from $MANIFEST_URL"; printf 'update: no plugin manifest from %s\n' "$MANIFEST_URL"; fi
 }
 upstream_autocheck() { # from snapshot: at most one detached check per TTL, never on the card's critical path
   [[ -z ${OMARCHY_AI_RECIPES:-} && ${OMARCHY_AI_UPDATE:-1} != 0 ]] || return 0

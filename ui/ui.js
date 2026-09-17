@@ -77,6 +77,7 @@ function updateRows(snap) {
   var bits = []
   if (p.latest) bits.push("v" + p.latest)
   if (r.new > 0) bits.push(r.relevant > 0 ? r.relevant + " for your card" : r.new + (r.new === 1 ? " recipe" : " recipes"))
+  else if (r.staged) bits.push("registry")   // a newer file that changes recipes without adding any
   if (bits.length) return [row("update", bits.join(" + ") + " ›", "update", { kind: "primary" })]
   var checked = ((snap.registryFile || {}).checkedAt || 0)
   return [row("updates", "current" + (checked ? " · checked " + ago(checked) : "") + " ›", "update-check")]

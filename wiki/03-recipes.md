@@ -202,10 +202,12 @@ check is never on the card's critical path, and it adopts nothing: it writes the
 `$STATE/recipes.next.json` and the plugin's remote manifest to `$STATE/manifest.remote.json`.
 
 `recipes_staged_newer` compares the staged copy's `generatedAt` with the file in use. The snapshot
-carries the result as `update.recipes.{generatedAt, commit, new, relevant}`, where `relevant` counts
-the new recipes belonging to the cards actually detected. **Nothing is adopted until
-`omarchy-local-ai update`** — the card's update row — runs: it applies the staged registry file, then
-updates the harness through `omarchy plugin update <id> --yes`.
+carries the result as `update.recipes.{staged, generatedAt, commit, new, relevant}`: `staged` is true
+when a valid newer copy is waiting — so a registry change that fixes a recipe without adding one is
+still offered — and the two counters are the recipe ids it adds and, among them, the ones belonging
+to the cards actually detected. **Nothing is adopted until `omarchy-local-ai update`** — the card's
+update row — runs: it applies the staged registry file, then updates the harness through
+`omarchy plugin update <id> --yes`.
 
 ## `make sync`: where the file comes from
 

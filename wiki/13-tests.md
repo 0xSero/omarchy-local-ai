@@ -95,7 +95,7 @@ Recipes are then mutated per test with `jq` — `.launch.networkMode="host"`, `.
 `.launch.mounts[0].source="${MODEL_ROOT}/../../etc"`, and so on — which is how the gate's refusals are
 exercised without inventing a second file format.
 
-### What the 188 assertions cover
+### What the 190 assertions cover
 
 **Happy path and its report.** A fresh snapshot is idle; hardware matches the recipe; weights are
 absent before any download; `load` reaches `ready`; the pull appears as its own step; weights land in
@@ -156,7 +156,8 @@ one new recipe in total and one for the detected card, plus the newer release; `
 staged file (it becomes `live`) and reaches the harness through `omarchy plugin update sero.local-ai
 --yes`, which the suite proves by its shim's log; with both sides in step the card says it is current.
 `update --check` fetches and stages without adopting, and still stages the recipes when the manifest
-has no route.
+has no route; a newer copy that changes recipes without adding an id still reads as staged, and a
+recipes file past Linux's 128 KiB argument ceiling still produces a snapshot.
 
 **Prompt mode** (socket unwritable). The card's refresh makes no docker call; a Start from nothing is
 **one** pkexec for images, weights and both containers; the gateway runs as the uid pkexec reports and

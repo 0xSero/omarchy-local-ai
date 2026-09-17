@@ -617,6 +617,20 @@ out=$(US snapshot)
 rm -f "$OMARCHY_AI_STATE/recipes.next.json" "$OMARCHY_AI_STATE/manifest.remote.json" "$OMARCHY_AI_STATE/upstream.checked"
 out=$(SHIM_MANIFEST_DOWN=1 US update --check) || fail "update --check failed when the manifest had no route" "$out"
 [[ -f $OMARCHY_AI_STATE/recipes.next.json && ! -f $OMARCHY_AI_STATE/manifest.remote.json ]] || fail "--check did not stage the recipes alone" "$(ls "$OMARCHY_AI_STATE")"; pass "update --check stages what it can reach: with no route to the plugin manifest the recipes still stage"
+
+# a registry copy that fixes existing recipes without adding any id must still be offerable
+jq -c '.generatedAt="2099-12-01T00:00:00Z" | .registryCommit="cafebabe00000000000000000000000000000000"' "$OMARCHY_AI_STATE/recipes.json" >"$SHIM/remote-recipes.json"
+US update --check >/dev/null
+out=$(US snapshot)
+[[ $(jq -r '.update.recipes.new' <<<"$out") == 0 && $(jq -r '.update.recipes.staged' <<<"$out") == true ]] || fail "a staged copy with no new ids is not offered" "$(jq -c .update.recipes <<<"$out")"; pass "a newer registry copy with no new recipe ids still reads as staged"
+
+# Linux caps a single argument at 128 KiB; recipes.json is already past that, so the snapshot must
+# never pass a recipe file to jq as an argument
+jq -c '.pad=("x"*200000)' "$R_VENDORED" >"$TMP/fat.json"
+(( $(wc -c <"$TMP/fat.json") > 131072 )) || fail "the fat fixture is not past the ceiling"
+rm -f "$OMARCHY_AI_STATE/recipes.next.json"
+out=$(OMARCHY_AI_RECIPES="$TMP/fat.json" OMARCHY_AI_MANIFEST_URL= "$CLI" snapshot) || fail "snapshot failed on a recipes file past 128 KiB"
+[[ $(jq -r '.registryFile.generatedAt' <<<"$out") == 2026-09-17T00:03:37Z && $(jq -r '.update.recipes|has("relevant")' <<<"$out") == true ]] || fail "a recipes file past 128 KiB broke the snapshot" "$out"; pass "a recipes file past Linux's 128 KiB argument ceiling still produces a snapshot"
 rm -f "$OMARCHY_AI_STATE/recipes.json" "$OMARCHY_AI_STATE/recipes.next.json" "$OMARCHY_AI_STATE/upstream.checked" "$OMARCHY_AI_STATE/manifest.remote.json"
 
 # A recipe's published context and media claims must survive the gateway and agent configuration.
