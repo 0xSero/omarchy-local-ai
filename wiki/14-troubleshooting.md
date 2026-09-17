@@ -28,7 +28,20 @@ The log is the authority on *why*. The card deliberately shows one sentence; the
 | `port 12434 is in use by something else` | a foreign listener on the gateway port | find it (`ss -ltnp "sport = :12434"`), stop it, or unload stale containers |
 | `recipes.json is missing or broken: reinstall the plugin` | the vendored file is gone or invalid | reinstall, or `make sync` in a checkout |
 | `missing tool: jq (sudo pacman -S jq)` | `jq`/`curl` absent | install them |
-| `recipes: could not fetch the registry (…); keeping <source>` | no route to the registry | not fatal — the file in use stays in use |
+| `could not fetch the registry (…)` | no route to the registry | not fatal — the file in use stays in use |
+
+### Updates
+
+The background check never changes anything; it stages. `update` is what applies.
+
+| Message | Cause | Fix |
+|---|---|---|
+| `update: <id> <old> -> <new>` | the harness was updated through Omarchy's own updater | none — the shell hot-reloads the plugin |
+| `plugin: <version> is out, but omarchy is not on PATH; update it by hand` | the release is newer but the Omarchy CLI is not installed | `omarchy plugin update <id>`, or reinstall through the marketplace |
+| `plugin: omarchy plugin update failed (see <log>)` | the fast-forward pull failed (dirty checkout, detached ref, no route) | read `$STATE/log`; in the plugin directory, `git status` and `git pull` say the same thing |
+| `refresh is off (OMARCHY_AI_RECIPES_URL is empty)` | the registry fetch was turned off | unset `OMARCHY_AI_RECIPES_URL` to re-enable it |
+| `the fetched file is not a recipes file` | the registry served something else (a proxy, a captive portal) | not fatal — the staged copy is discarded and the file in use stays |
+| `recipes: <source> is current (registry <sha12>, <when>)` | the staged copy is not newer than the file in use | none |
 
 ### Docker
 

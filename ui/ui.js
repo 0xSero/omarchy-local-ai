@@ -65,6 +65,23 @@ function shortError(c) {
   return "error"
 }
 
+// the update row: what the background check found, and the one verb that applies it. Nothing is
+// adopted on its own, so this row is the only way an update happens from the card.
+function ago(ts) {
+  var s = Math.max(0, Math.round(Date.now() / 1000 - ts))
+  return s < 90 ? "just now" : s < 5400 ? Math.round(s / 60) + "m ago" : s < 172800 ? Math.round(s / 3600) + "h ago" : Math.round(s / 86400) + "d ago"
+}
+function updateRows(snap) {
+  var u = snap.update || {}, p = u.plugin || {}, r = u.recipes || {};
+  if (u.enabled === false) return []
+  var bits = []
+  if (p.latest) bits.push("v" + p.latest)
+  if (r.new > 0) bits.push(r.relevant > 0 ? r.relevant + " for your card" : r.new + (r.new === 1 ? " recipe" : " recipes"))
+  if (bits.length) return [row("update", bits.join(" + ") + " ›", "update", { kind: "primary" })]
+  var checked = ((snap.registryFile || {}).checkedAt || 0)
+  return [row("updates", "current" + (checked ? " · checked " + ago(checked) : "") + " ›", "update-check")]
+}
+
 // one cell per physical card of a group: what holds it, or its temperature
 function cells(c, group, work) {
   var snap = c.snap, keys = work ? workKeys(snap) : [], word = work ? opWord(snap) : ""
@@ -190,5 +207,6 @@ function build(c) {
     o.tone = crashed.length ? "error" : "ready"; o.eyebrow = crashed.length ? "crashed" : "ready"; o.title = ms.length === 1 ? ms[0].name : ms.length + " models"
     o.sub = "on " + used + " of " + total + " cards" + (ms.some(function(m) { return m.shareUrl }) ? " · shared" : "") }
   o.rows = cardRows(c, false, true)
+  o.foot = updateRows(snap)
   return o
 }

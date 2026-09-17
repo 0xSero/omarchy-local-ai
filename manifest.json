@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "5.0.7",
+  "version": "5.1.0",
   "author": "0xSero",
   "license": "MIT",
   "description": "Local models on your own GPUs, from the Omarchy bar. Supports NVIDIA RTX 30, 40 and 50 series, RTX Ada and RTX Pro Blackwell, and the Intel Arc Pro B70. 67 validated recipes across 34 cards, up to 256K context. Run several models at once, each on its own GPU group. Open claude, codex, pi, omp, opencode, crush, grok, copilot or hermes on a running model, nothing written to your config. Share the same keyed endpoint on your tailnet in one click. Live speed, context and capabilities on the card.",

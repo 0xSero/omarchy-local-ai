@@ -117,9 +117,9 @@ When a model disappears while the card was stopping, the panel toasts which card
 ### Verbs the panel issues
 
 `load`, `unload`, `unload <recipe>`, `run <recipe> <backend:index>`, `share`, `open-agent <agent> <recipe>`,
-`copy:<recipe>` (via `wl-copy`), `refresh`, `log`, and `expand` (local to the panel — the size control
-does not touch the controller). The card never calls `gpu`/`recipe` on its own: `run` pins both in one
-process.
+`update`, `update --check`, `copy:<recipe>` (via `wl-copy`), `refresh`, `log`, and `expand` (local to
+the panel — the size control does not touch the controller). The card never calls `gpu`/`recipe` on its
+own: `run` pins both in one process.
 
 ### IPC
 
@@ -154,7 +154,9 @@ memory — a display card carries the desktop, so start elsewhere when there is 
 (the recipes usable with exactly *n* cards); `where(snap, model)` (which card a model is on);
 `workKeys` (the cards a running op touches); `shortError` (the four-word error word: *no card*,
 *no recipe*, *port busy*, *driver*, *out of VRAM*, *too slow*, *stopped*, *acceptance failed*,
-*no answer*, *refused*, *docker*, *disk full*, *error*).
+*no answer*, *refused*, *docker*, *disk full*, *error*); `ago` (a unix time as *just now* / *3m ago*);
+`updateRows` (the home footer's one update row — the primary `update` verb when the check staged
+something, and `update-check` otherwise, with no row at all when the check is off).
 
 **Home is grouped, not flattened.** The first section is `gpus`; each GPU group row reads
 `2× RTX 3090` with a second line of one **cell per physical card** — `free · 41°`, `#1 locked`,
@@ -162,6 +164,16 @@ memory — a display card carries the desktop, so start elsewhere when there is 
 `N locked` when it is not. An occupied group is not actionable; each running model appears under it as
 a `child` row (`<model name>` · `<tps> tok/s ›`, or `crashed ›`), and that is where a model is opened
 from. A free group's action is `card:<hardwareId>`.
+
+**Home also carries the update row**, pinned in the footer:
+
+```
+v5.1.1 + 3 for your card ›     a newer release, and three recipes for the cards detected
+current · checked 2h ago ›     nothing staged; pressing it re-checks
+```
+
+Nothing is adopted on its own, so this row is the only way an update happens from the card — see
+[3 — Recipes](03-recipes.md) and [12 — CLI](12-cli.md). With the check off there is no row at all.
 
 ## ui/CardRow.qml
 

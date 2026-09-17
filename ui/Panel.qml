@@ -101,6 +101,8 @@ Panel {
     else if (v === "agent") { agentPick = s[1]; agentOpen = false }
     else if (v === "open-agent") { if (agentLaunch.running) return; agentLaunch.command = [cli, "open-agent", s[1], s[2]]; agentLaunch.running = true; say(s[1] + " · " + (Ui.modelById(snap, s[2]) || { name: "" }).name) }
     else if (v === "share") { if (working) return; act(["share"]) }
+    else if (v === "update") { if (working) return; act(["update"]) }
+    else if (v === "update-check") { if (working) return; act(["update", "--check"]) }
     else if (v === "copy") { var m = Ui.modelById(snap, s[1]); if (copy.running || !m) return; copy.command = ["bash", "-c", "command -v wl-copy >/dev/null 2>&1 || exit 127; printf %s \"$1\" | wl-copy", "_", m.shareUrl]; copy.running = true }
     else if (v === "log") { logOpen.running = true; say("log · open") }
   }
@@ -110,7 +112,7 @@ Panel {
   // ---------------------------------------------------------------- the controller
   FileView { path: root.stateDir + "/snapshot.json"; watchChanges: true; onFileChanged: reload(); onLoaded: root.take(text()) }
   Process { id: poll; command: [root.cli, "snapshot"]; stdout: StdioCollector { waitForEnd: true; onStreamFinished: { if (text.length <= 262144) root.take(text) } } }
-  Process { id: action; onExited: { if (root.queue.length) { var n = root.queue[0]; root.queue = root.queue.slice(1); root.lastVerb = n[0]; root.pending = true; pendingTimeout.restart(); action.command = [root.cli].concat(n); action.running = true; return } root.actionDone = true; if (["run", "load", "unload", "share"].indexOf(root.lastVerb) < 0) root.pending = false; root.refresh() } }
+  Process { id: action; onExited: function(code) { if (root.queue.length) { var n = root.queue[0]; root.queue = root.queue.slice(1); root.lastVerb = n[0]; root.pending = true; pendingTimeout.restart(); action.command = [root.cli].concat(n); action.running = true; return } root.actionDone = true; if (["run", "load", "unload", "share"].indexOf(root.lastVerb) < 0) root.pending = false; if (code !== 0 && root.lastVerb === "update") root.say("update failed · log"); root.refresh() } }
   Process { id: agentLaunch; onExited: function(code) { root.refresh(); if (code === 0) root.close() } }
   Process { id: copy; onExited: function(code) { if (code === 0) { root.copied = true; copiedTimer.restart(); root.say("link copied") } else root.say(code === 127 ? "wl-copy · missing" : "copy · failed") } }
   Process { id: logOpen; command: ["omarchy-launch-tui", "--app-id=org.omarchy.local-ai-log", "less", "+G", root.stateDir + "/log"] }

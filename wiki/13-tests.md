@@ -68,13 +68,14 @@ target is not the suite's to change).
 |---|---|
 | `nvidia-smi` | GPU rows plus the driver version; `SHIM_GPUS`, `SHIM_DRIVER` |
 | `docker` | a container store under `$SHIM/containers/<name>` (labels, state, restart count), an image list, networks, `info`, `pull`, `run`, `inspect`, `logs`, `rename`, `rm`, `start`, `stop`, `ps`; refuses when `OMARCHY_AI_DOCKER=prompt` and `SHIM_ROOT≠1` |
-| `curl` | the gateway: the engine/gateway container states decide whether a pair answers; dialects come from `SHIM_APIS`; the Hub's file tree from `$SHIM/tree.json`; the registry's recipes copy from `$SHIM/remote-recipes.json`; it logs its own argv, which is how the suite proves the key never reaches curl's command line |
+| `curl` | the gateway: the engine/gateway container states decide whether a pair answers; dialects come from `SHIM_APIS`; the Hub's file tree from `$SHIM/tree.json`; the registry's recipes copy from `$SHIM/remote-recipes.json`; the tracked branch's manifest from `$SHIM/remote-manifest.json`; it logs its own argv, which is how the suite proves the key never reaches curl's command line |
 | `tailscale` | `status --json` for four tailnets: default (v4+v6), `v6` (IPv6 only, no MagicDNS), `off` (logged in, stopped), `newip` (address changed) |
 | `pkexec` | polkit: runs the command from a **clean environment** carrying only `SHIM_*` and `PKEXEC_UID`, or fails with 126 when `SHIM_PKEXEC_FAIL=1` |
 | `lspci` | an Arc Pro B70 host whose `pci.ids` has no name for the card (two `8086:e223` devices plus one without a render node) |
 | `ss` | a listener on 12434 when `SHIM_PORT_BUSY=1` |
 | `pacman`, `nvidia-ctk`, `systemctl` | the toolkit install, logging to `$SHIM/toolkit.log` |
 | `pi`, `claude`, `codex` | installed agents that echo their environment |
+| `omarchy` | the harness updater: appends `omarchy plugin update …` to `$SHIM/omarchy.log` |
 | `omarchy-launch-tui`, `omarchy-default-agent` | the terminal launcher and the default-agent query |
 
 Knobs the assertions pull: `SHIM_PULL_SLOW`, `SHIM_PULL_FAIL`, `SHIM_PULL_ERR`, `SHIM_DOWNLOAD_SLOW`,
@@ -82,7 +83,9 @@ Knobs the assertions pull: `SHIM_PULL_SLOW`, `SHIM_PULL_FAIL`, `SHIM_PULL_ERR`, 
 `SHIM_SERVED`, `SHIM_APIS`, `SHIM_CONTEXT`, `SHIM_TOKENS`, `SHIM_NO_USAGE`, `SHIM_SLOW`,
 `SHIM_LEAK_THINK`, `SHIM_MEDIA_REPLY`, `SHIM_KEYLESS_GATEWAY`, `SHIM_DOCKER_DOWN`, `SHIM_RUNTIMES`,
 `SHIM_PKEXEC_UID`, `SHIM_PKEXEC_FAIL`, `SHIM_TS`, `SHIM_PORT_BUSY`, `SHIM_FOREIGN_PORT`, `SHIM_LSPCI`,
-`SHIM_GPUS`, `SHIM_DRIVER`, `SHIM_RECIPES_DOWN`, `SHIM_ROOT`.
+`SHIM_GPUS`, `SHIM_DRIVER`, `SHIM_RECIPES_DOWN`, `SHIM_MANIFEST_DOWN`, `SHIM_ROOT`. Plugin environment
+the update assertions set: `OMARCHY_AI_UPDATE_TTL=0` (check now, in the background), `OMARCHY_AI_RECIPES=`
+and `OMARCHY_AI_MANIFEST_URL=` (the URLs under test).
 
 ### Fixtures
 
@@ -92,7 +95,7 @@ Recipes are then mutated per test with `jq` — `.launch.networkMode="host"`, `.
 `.launch.mounts[0].source="${MODEL_ROOT}/../../etc"`, and so on — which is how the gate's refusals are
 exercised without inventing a second file format.
 
-### What the 176 assertions cover
+### What the 188 assertions cover
 
 **Happy path and its report.** A fresh snapshot is idle; hardware matches the recipe; weights are
 absent before any download; `load` reaches `ready`; the pull appears as its own step; weights land in
@@ -144,9 +147,16 @@ count); a claim on a group with no card refused per group; a two-card recipe rec
 
 **Recipes as data.** The vendored file is in use until a newer one is fetched; a newer file is adopted
 0600 and reported as `live`; an older one ignored; a file that is not a recipes file refused; no route
-reported as a sentence; `OMARCHY_AI_RECIPES_URL=` turning the fetch off; the snapshot refreshing in the
-background once the TTL has passed; alternates listed with the recommended first, with a
-shape-refused alternate not offered at all.
+reported as a sentence; `OMARCHY_AI_RECIPES_URL=` turning the fetch off; alternates listed with the
+recommended first, with a shape-refused alternate not offered at all.
+
+**Updates.** The background check stages a newer registry copy into `recipes.next.json` and adopts
+nothing — the file in use is still the vendored one after the check has run; the snapshot then reports
+one new recipe in total and one for the detected card, plus the newer release; `update` applies the
+staged file (it becomes `live`) and reaches the harness through `omarchy plugin update sero.local-ai
+--yes`, which the suite proves by its shim's log; with both sides in step the card says it is current.
+`update --check` fetches and stages without adopting, and still stages the recipes when the manifest
+has no route.
 
 **Prompt mode** (socket unwritable). The card's refresh makes no docker call; a Start from nothing is
 **one** pkexec for images, weights and both containers; the gateway runs as the uid pkexec reports and

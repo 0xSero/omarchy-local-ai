@@ -17,7 +17,7 @@ whose `state` is `error` — the card must be able to say what is wrong even whe
 
 | Verb | Arguments | Does |
 |---|---|---|
-| `snapshot` | — | refresh the recipe file if the TTL has passed, derive `snapshot.json`, print it |
+| `snapshot` | — | start a background upstream check if the TTL has passed, derive `snapshot.json`, print it |
 | `load` | — | start the selected recipe on the selected card, downloading if needed |
 | `run` | `<recipe> [<backend:index>]` | pin the recipe and the card, then start — one process, one snapshot, as the card's run row does |
 | `unload` | `[<recipe>]` | stop one model, or all of them; during a download it stops the download instead |
@@ -25,7 +25,8 @@ whose `state` is `error` — the card must be able to say what is wrong even whe
 | `share` | `[--key <value>\|-]` | toggle tailnet sharing, or replace the key (`-` reads stdin) |
 | `gpu` | `[auto\|<backend:index>]` | which detected card to use; prints the `gpus` array |
 | `recipe` | `[auto\|<id>]` | which validated recipe of that card to run; prints the `recipes` array |
-| `recipes` | `[update]` | which recipe file is in use; `update` fetches a newer one now |
+| `recipes` | `[update]` | which recipe file is in use; `update` fetches a newer one now and adopts it |
+| `update` | `[--check]` | apply the staged registry copy, then update the plugin through `omarchy plugin update`; `--check` only fetches and stages |
 | `agent-dir` | `<path>` | the directory agents open in |
 | `agent-args` | `<name> [-- <flags>…]` | extra flags for one agent; none to clear |
 | `help`, `-h`, `--help` | — | usage |
@@ -56,6 +57,7 @@ Internal (never typed by hand, but documented because the tests use them):
 | `gpu <key>` | malformed | `gpu <backend:index>, as listed in the snapshot` |
 | `recipe <id>` | unknown id | `recipe <id>, as listed in the snapshot` |
 | `recipes <other>` | — | `recipes [update]` |
+| `update <other>` | — | `update [--check]` |
 | `agent-args <name>` | unknown agent | `agent-args <agent> [-- flags...], one of: ${AGENTS[*]}` |
 | `agent-dir <path>` | not a directory | `agent-dir: not a directory: <path>` |
 | `_root` | not root, or not pkexec | `_root is for pkexec` / `this must run through pkexec` |
@@ -88,7 +90,9 @@ root phase it is the home of the uid pkexec reports.
 | `OMARCHY_AI_RECIPE` | — | pin a recipe id, like `$STATE/recipe-pick` |
 | `OMARCHY_AI_RECIPES` | — | use exactly this recipes file; disables fetching |
 | `OMARCHY_AI_RECIPES_URL` | the registry raw URL | where to fetch; empty disables fetching |
-| `OMARCHY_AI_RECIPES_TTL` | `21600` | seconds between background refresh attempts |
+| `OMARCHY_AI_MANIFEST_URL` | this repository's `manifest.json` raw URL | where the newer-release check reads the published version; empty disables it |
+| `OMARCHY_AI_UPDATE_TTL` | `21600` | seconds between background upstream checks |
+| `OMARCHY_AI_UPDATE` | `1` | `0` turns the background check off |
 | `OMARCHY_AI_DOCKER` | auto | `direct` or `prompt`, overriding socket detection |
 | `OMARCHY_AI_RUN_AS` | `$(id -u):$(id -g)` | the uid:gid the gateway and downloader run as |
 | `OMARCHY_AI_WEIGHTS_PATHS` | — | colon-separated extra roots to search for weights you already have |
@@ -118,6 +122,8 @@ root phase it is the home of the uid pkexec reports.
 omarchy-local-ai snapshot | jq -r '.state, .reason, .running.name'
 omarchy-local-ai run qwen38-awq-int4-rtx3090-vllm-tp2 nvidia:0
 omarchy-local-ai recipes update
+omarchy-local-ai update --check
+omarchy-local-ai update
 omarchy-local-ai recipes | jq -r '.source, .registryCommit[0:12]'
 omarchy-local-ai agent-args codex -- --dangerously-bypass-approvals-and-sandbox
 omarchy-local-ai agent-dir ~/work/project

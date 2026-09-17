@@ -4,12 +4,13 @@
 # The vendored file is the floor: what the release shipped and the marketplace reviewed. A newer
 # copy is fetched from the registry repository (one fixed HTTPS origin, size-capped, schema-checked,
 # accepted only when its generatedAt is newer than what is in use), kept 0600 under the state dir,
-# and used in its place. Every recipe is still re-gated at launch (gate_reason), so a fetched file
-# can add validated recipes but cannot widen what a launch may do. OMARCHY_AI_RECIPES_URL= disables.
-RECIPES_VENDORED="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/recipes.json"
+# and used in its place. The update check stages such a copy; `recipes update` and the card's update
+# verb adopt it. Every recipe is still re-gated at launch (gate_reason), so a fetched file can add
+# validated recipes but cannot widen what a launch may do. OMARCHY_AI_RECIPES_URL= disables.
+RECIPES_VENDORED="$ROOT/recipes.json"
 RECIPES_LIVE="$STATE/recipes.json"
-RECIPES_URL="${OMARCHY_AI_RECIPES_URL-https://raw.githubusercontent.com/0xSero/local-ai-registry/main/plugin/recipes.json}"
-RECIPES_TTL="${OMARCHY_AI_RECIPES_TTL:-21600}"   # seconds between checks: six hours
+RECIPES_NEXT="$STATE/recipes.next.json"   # a fetched copy, staged by the update check until it is applied
+# RECIPES_URL, the one origin this fetches from, lives in lib/update.sh beside the plugin manifest's URL.
 recipes_ok_file() { jq -e '.schemaVersion=="omarchy-local-ai/recipes/1" and (.hardware|type=="object") and (.gateway.image|type=="string" and test("@sha256:[0-9a-f]{64}$")) and (.generatedAt|type=="string")' "$1" >/dev/null 2>&1; }
 recipes_generated() { jq -r '.generatedAt // ""' "$1" 2>/dev/null; }
 recipes_select() { # the file in use: an explicit one, else the live copy when it is valid and newer than the vendored one
@@ -19,28 +20,26 @@ recipes_select() { # the file in use: an explicit one, else the live copy when i
 RECIPES=$(recipes_select)
 recipes_source() { [[ $RECIPES == "$RECIPES_LIVE" ]] && printf live || printf vendored; }
 recipes_ok() { recipes_ok_file "$RECIPES"; }
-recipes_count() { jq -r '[.hardware[] | .recipe, (.recipes[]?)] | length' "$RECIPES" 2>/dev/null || printf 0; }
-# recipes_refresh: fetch the registry's copy; adopt it when it is valid and newer. Prints one line.
-recipes_refresh() {
-  [[ -n $RECIPES_URL ]] || { printf 'recipes: refresh is off (OMARCHY_AI_RECIPES_URL is empty)\n'; return 0; }
-  state_dir; local tmp="$RECIPES_LIVE.tmp.$$" err rc=0; date -u +%s >"$STATE/recipes.checked"
-  if ! err=$(curl -fsSL --max-time 20 --max-filesize 8388608 --proto =https -o "$tmp" "$RECIPES_URL" 2>&1); then
-    rm -f "$tmp"; log "recipes: fetch failed: ${err:-no route}"; printf 'recipes: could not fetch the registry (%s); keeping %s\n' "${err:-no route}" "$(recipes_source)"; return 1
-  fi
-  if ! recipes_ok_file "$tmp"; then rm -f "$tmp"; log "recipes: the fetched file is not a recipes file; kept $(recipes_source)"; printf 'recipes: the fetched file is not a recipes file; keeping %s\n' "$(recipes_source)"; return 1; fi
-  local got have; got=$(recipes_generated "$tmp"); have=$(recipes_generated "$RECIPES")
-  if [[ ! $got > $have ]]; then rm -f "$tmp"; printf 'recipes: %s is current (registry %s, %s)\n' "$(recipes_source)" "$(registry_commit | cut -c1-12)" "$have"; return 0; fi
-  chmod 600 "$tmp"; mv "$tmp" "$RECIPES_LIVE"; RECIPES=$RECIPES_LIVE
-  log "recipes: refreshed to registry $(registry_commit) ($got, $(recipes_count) recipes)"
-  printf 'recipes: updated to registry %s (%s, %s recipes)\n' "$(registry_commit | cut -c1-12)" "$got" "$(recipes_count)"
+recipes_count() { jq -r '[.hardware[] | .recipe, (.recipes[]?)] | length' "${1:-$RECIPES}" 2>/dev/null || printf 0; }
+recipes_fetch() { # recipes_fetch <dest>: one validated copy of the registry's file, or a reason on stdout
+  local dest=$1 tmp="$1.tmp.$$" err
+  [[ -n $RECIPES_URL ]] || { printf 'refresh is off (OMARCHY_AI_RECIPES_URL is empty)'; return 1; }
+  if ! err=$(curl -fsSL --max-time 20 --max-filesize 8388608 --proto =https -o "$tmp" "$RECIPES_URL" 2>&1); then rm -f "$tmp"; printf 'could not fetch the registry (%s)' "${err:-no route}"; return 1; fi
+  if ! recipes_ok_file "$tmp"; then rm -f "$tmp"; printf 'the fetched file is not a recipes file'; return 1; fi
+  chmod 600 "$tmp"; mv -f "$tmp" "$dest"
 }
-recipes_autorefresh() { # from snapshot: at most one detached fetch per TTL, never on the card's critical path
-  [[ -n $RECIPES_URL && -z ${OMARCHY_AI_RECIPES:-} ]] || return 0
-  local last=0; last=$(cat "$STATE/recipes.checked" 2>/dev/null || printf 0); [[ $last =~ ^[0-9]+$ ]] || last=0
-  (( $(date -u +%s) - last >= RECIPES_TTL )) || return 0
-  state_dir; date -u +%s >"$STATE/recipes.checked"   # claimed now, so concurrent snapshots do not all fetch
-  if command -v setsid >/dev/null 2>&1; then setsid "$SELF" recipes update >/dev/null 2>>"$LOGFILE" </dev/null & disown
-  else "$SELF" recipes update >/dev/null 2>>"$LOGFILE" </dev/null & disown; fi
+recipes_staged_newer() { [[ -s $RECIPES_NEXT ]] && recipes_ok_file "$RECIPES_NEXT" && [[ $(recipes_generated "$RECIPES_NEXT") > $(recipes_generated "$RECIPES") ]]; }
+recipes_apply() { # adopt the staged copy; prints one line
+  mv -f "$RECIPES_NEXT" "$RECIPES_LIVE"; RECIPES=$RECIPES_LIVE
+  log "recipes: applied registry $(registry_commit) ($(recipes_generated "$RECIPES"), $(recipes_count) recipes)"
+  printf 'recipes: updated to registry %s (%s, %s recipes)\n' "$(registry_commit | cut -c1-12)" "$(recipes_generated "$RECIPES")" "$(recipes_count)"
+}
+recipes_refresh() { # fetch a copy and adopt it when it is newer. Prints one line.
+  [[ -n $RECIPES_URL ]] || { printf 'recipes: refresh is off (OMARCHY_AI_RECIPES_URL is empty)\n'; return 0; }
+  state_dir; local why
+  why=$(recipes_fetch "$RECIPES_NEXT") || { log "recipes: $why"; printf 'recipes: %s; keeping %s\n' "$why" "$(recipes_source)"; return 1; }
+  recipes_staged_newer || { rm -f "$RECIPES_NEXT"; printf 'recipes: %s is current (registry %s, %s)\n' "$(recipes_source)" "$(registry_commit | cut -c1-12)" "$(recipes_generated "$RECIPES")"; return 0; }
+  recipes_apply
 }
 registry_commit() { jq -r '.registryCommit' "$RECIPES"; }
 gateway_image() { jq -r '.gateway.image // empty' "$RECIPES"; }

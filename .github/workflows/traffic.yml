@@ -2,7 +2,9 @@ name: traffic
 # GitHub keeps clone/view traffic and the referrer/path breakdown for 14 days only, and the breakdown
 # is a rolling snapshot with no daily buckets. This records all four daily on the `stats` branch, so
 # installs (every `omarchy plugin add` is a clone), views, and where they came from accumulate instead
-# of rolling off. Never touches main.
+# of rolling off. It also snapshots the repo counts (stars, forks, watchers), the release asset
+# downloads, and one GraphQL interaction tally (issues, PRs, discussions, commits) per day. Never
+# touches main: `stats` is the only branch written here.
 on:
   schedule: [{cron: "17 3 * * *"}]
   workflow_dispatch:
@@ -11,22 +13,61 @@ jobs:
   record:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with: {ref: stats}
         continue-on-error: true
       - name: record
-        env: {GH_TOKEN: "${{ secrets.TRAFFIC_TOKEN }}"}   # traffic needs push access: a token of the owner, not the workflow token
+        env:
+          GH_TOKEN: "${{ secrets.TRAFFIC_TOKEN }}"   # traffic + GraphQL need a token of the owner, not the workflow token
+          REPO: "${{ github.repository }}"
         run: |
           set -e
           git config user.name traffic-bot; git config user.email traffic@users.noreply.github.com
           git checkout -B stats
           mkdir -p traffic
           today=$(date -u +%F)
-          gh api "repos/${GITHUB_REPOSITORY}/traffic/clones"            >"traffic/clones.$today.json"
-          gh api "repos/${GITHUB_REPOSITORY}/traffic/views"             >"traffic/views.$today.json"
-          gh api "repos/${GITHUB_REPOSITORY}/traffic/popular/referrers" >"traffic/referrers.$today.json"
-          gh api "repos/${GITHUB_REPOSITORY}/traffic/popular/paths"     >"traffic/paths.$today.json"
-          gh api "repos/${GITHUB_REPOSITORY}"                           >"traffic/repo.$today.json"
+          owner=${REPO%/*}; name=${REPO#*/}
+
+          # REST: the four traffic endpoints, the repo snapshot, and the full release list (assets
+          # carry cumulative download_count, which is how the downloaded archive is counted).
+          gh api "repos/${REPO}/traffic/clones"            >"traffic/clones.$today.json"
+          gh api "repos/${REPO}/traffic/views"             >"traffic/views.$today.json"
+          gh api "repos/${REPO}/traffic/popular/referrers" >"traffic/referrers.$today.json"
+          gh api "repos/${REPO}/traffic/popular/paths"     >"traffic/paths.$today.json"
+          gh api "repos/${REPO}" | jq --arg d "$today" '.+{day:$d}' >"traffic/repo.$today.json"
+          gh api "repos/${REPO}/releases?per_page=100" --paginate --slurp \
+            | jq 'add // []'                                              >"traffic/releases.$today.json"
+
+          # One GraphQL call for every interaction count. `issues`/`pullRequests` with no `states`
+          # argument are already all-time totals; the per-state aliases are the split.
+          gh api graphql -f query='
+            query($owner:String!,$name:String!){
+              repository(owner:$owner,name:$name){
+                stargazerCount forkCount
+                watchers{totalCount}
+                issues{totalCount}
+                openIssues: issues(states:[OPEN]){totalCount}
+                closedIssues: issues(states:[CLOSED]){totalCount}
+                pullRequests{totalCount}
+                openPRs: pullRequests(states:[OPEN]){totalCount}
+                mergedPRs: pullRequests(states:[MERGED]){totalCount}
+                closedPRs: pullRequests(states:[CLOSED]){totalCount}
+                discussions{totalCount}
+                defaultBranchRef{name target{... on Commit{history{totalCount}}}}
+              }
+            }' -f owner="$owner" -f name="$name" \
+          | jq --arg d "$today" '
+              .data.repository as $r
+              | {day: $d,
+                 stars: $r.stargazerCount, forks: $r.forkCount, watchers: $r.watchers.totalCount,
+                 issues: {open: $r.openIssues.totalCount, closed: $r.closedIssues.totalCount,
+                          total: $r.issues.totalCount},
+                 pull_requests: {open: $r.openPRs.totalCount, merged: $r.mergedPRs.totalCount,
+                                 closed: $r.closedPRs.totalCount, total: $r.pullRequests.totalCount},
+                 discussions: $r.discussions.totalCount,
+                 default_branch: $r.defaultBranchRef.name,
+                 commits: $r.defaultBranchRef.target.history.totalCount}' >"traffic/interactions.$today.json"
+
           # GitHub revises the last day or two as data settles, so the newest reading of a day wins.
           for series in clones views; do
             jq -s --arg k "$series" '
@@ -34,22 +75,44 @@ jobs:
               | map({day: .[0].timestamp[:10], count: (map(.count)|max), uniques: (map(.uniques)|max)})
               | sort_by(.day)' "traffic/${series}.2"*.json >"traffic/$series-daily.json"
           done
+          # Star/fork timeline from the dated repo snapshots, same newest-reading-wins rule.
+          jq -s 'map(select(.day))
+                 | map({day, count: .stargazers_count, forks: .forks_count})
+                 | group_by(.day) | map(.[-1]) | sort_by(.day)' \
+                 traffic/repo.*.json >"traffic/stars-daily.json"
+
           # Every counter GitHub exposes, in one file: totals and peak over the full archived history,
-          # plus the rolling 14-day unique counts and the current referrer/path breakdown.
+          # plus the rolling 14-day unique counts, the current referrer/path breakdown, the download
+          # tally, the day's interaction counts and the star timeline.
           jq -n --arg today "$today" \
              --slurpfile daily_clones traffic/clones-daily.json --slurpfile daily_views traffic/views-daily.json \
+             --slurpfile daily_stars  traffic/stars-daily.json \
              --slurpfile clones "traffic/clones.$today.json" --slurpfile views "traffic/views.$today.json" \
              --slurpfile repo "traffic/repo.$today.json" \
-             --slurpfile referrers "traffic/referrers.$today.json" --slurpfile paths "traffic/paths.$today.json" '
+             --slurpfile referrers "traffic/referrers.$today.json" --slurpfile paths "traffic/paths.$today.json" \
+             --slurpfile releases "traffic/releases.$today.json" \
+             --slurpfile interactions "traffic/interactions.$today.json" '
             def span($x): {days: ($x|length), first: $x[0].day, last: $x[-1].day,
                            total: ($x|map(.count)|add), peak_day: ($x|max_by(.count)|.day),
                            peak: ($x|max_by(.count)|.count), daily_uniques_sum: ($x|map(.uniques)|add)};
+            def timeline($x): {days: ($x|length), first: $x[0].day, last: $x[-1].day,
+                               first_count: $x[0].count, last_count: $x[-1].count,
+                               gained: ($x[-1].count - $x[0].count)};
+            def rel: {tag: .tag_name, name: .name, published: .published_at,
+                      downloads: ([.assets[].download_count] | add // 0),
+                      assets: [.assets[] | {name: .name, downloads: .download_count}]};
             {updated: $today,
              repo: {stars: $repo[0].stargazers_count, forks: $repo[0].forks_count,
                     watchers: $repo[0].subscribers_count, open_issues: $repo[0].open_issues_count,
                     size_kb: $repo[0].size},
-             clones: span($daily_clones[0]) + {uniques_14d: $clones[0].uniques},
-             views:  span($daily_views[0])  + {uniques_14d: $views[0].uniques},
+             clones: (span($daily_clones[0]) + {uniques_14d: $clones[0].uniques}),
+             views:  (span($daily_views[0])  + {uniques_14d: $views[0].uniques}),
+             stars:  timeline($daily_stars[0]),
+             downloads: {total: ([$releases[0][] | .assets[].download_count] | add // 0),
+                         release_count: ($releases[0]|length),
+                         latest: ([$releases[0][] | select(.draft|not)][0].tag_name // null),
+                         by_release: [$releases[0][] | rel]},
+             interactions: $interactions[0],
              referrers: $referrers[0], paths: $paths[0]}' >traffic/summary.json
           cat traffic/summary.json
           git add traffic && git commit -qm "traffic $today" && git push -q origin stats

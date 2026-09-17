@@ -165,13 +165,15 @@ The two disallowed arguments are the CPU-fallback escape hatches: `enforce.eager
 execution and `disable-cuda-graph(s)` disables CUDA graphs, both of which turn a broken GPU into a
 slow success.
 
-## The file in use, and refreshing it
+## The file in use, refreshing it, and applying it
 
 | Var | Default | Effect |
 |---|---|---|
 | `OMARCHY_AI_RECIPES` | unset | use exactly this file; disables fetching |
 | `OMARCHY_AI_RECIPES_URL` | `https://raw.githubusercontent.com/0xSero/local-ai-registry/main/plugin/recipes.json` | the one fixed HTTPS origin; empty string disables fetching |
-| `OMARCHY_AI_RECIPES_TTL` | `21600` (6 h) | how often `snapshot` may start a background refresh |
+| `OMARCHY_AI_MANIFEST_URL` | `https://raw.githubusercontent.com/0xSero/omarchy-local-ai/main/manifest.json` | the plugin's own manifest on the tracked branch — the newer-release check; empty string disables it |
+| `OMARCHY_AI_UPDATE_TTL` | `21600` (6 h) | how often `snapshot` may start a background check |
+| `OMARCHY_AI_UPDATE` | unset | `0` turns the background check off |
 
 `recipes_select`: the explicit file if set; otherwise the **live** copy (`$STATE/recipes.json`) when it
 exists, is a valid recipes file, and its `generatedAt` is strictly greater (string comparison — the
@@ -179,22 +181,31 @@ format is ISO-8601 UTC, so that is a date comparison) than the vendored file's; 
 **vendored** file. `recipes_source` reports which, and the snapshot carries it as
 `registryFile.source`.
 
-`recipes_refresh`:
+`recipes_fetch <dest>`:
 
 ```
 curl -fsSL --max-time 20 --max-filesize 8388608 --proto =https -o <tmp> <url>
 ```
 
-then: a broken download → `recipes: could not fetch the registry (<curl error>); keeping <source>`;
-a file that fails `recipes_ok_file` → `recipes: the fetched file is not a recipes file; keeping <source>`;
-an older-or-equal `generatedAt` → `recipes: <source> is current (registry <sha12>, <when>)`; otherwise
-it is `chmod 600`, moved to `$STATE/recipes.json`, and reported as
-`recipes: updated to registry <sha12> (<when>, <n> recipes)`. Nothing else changes — the new file is
-gated recipe by recipe like any other.
+then: a broken download → `could not fetch the registry (…)`; a file that fails `recipes_ok_file` →
+`the fetched file is not a recipes file`; otherwise `chmod 600` and a move into `<dest>`. `recipes_refresh`
+reports either as `recipes: <reason>; keeping <source>`, so the person sees the registry's own error,
+not a summary of it. Nothing else changes — the fetched file is gated recipe by recipe like any other.
 
-`recipes_autorefresh` (called by `snapshot`) starts at most one **detached** `recipes update` per TTL,
-and stamps `$STATE/recipes.checked` *before* forking so concurrent snapshots do not all fetch. The
-fetch is never on the card's critical path.
+`recipes_refresh` (the `recipes update` verb) fetches into the staging path and adopts it only when it
+is newer than the file in use: `recipes: <source> is current (registry <sha12>, <when>)`, or
+`recipes: updated to registry <sha12> (<when>, <n> recipes)`.
+
+`upstream_autocheck` (called by `snapshot`) starts at most one **detached** `update --check` per TTL
+and stamps `$STATE/upstream.checked` *before* forking so concurrent snapshots do not all fetch. The
+check is never on the card's critical path, and it adopts nothing: it writes the registry copy to
+`$STATE/recipes.next.json` and the plugin's remote manifest to `$STATE/manifest.remote.json`.
+
+`recipes_staged_newer` compares the staged copy's `generatedAt` with the file in use. The snapshot
+carries the result as `update.recipes.{generatedAt, commit, new, relevant}`, where `relevant` counts
+the new recipes belonging to the cards actually detected. **Nothing is adopted until
+`omarchy-local-ai update`** — the card's update row — runs: it applies the staged registry file, then
+updates the harness through `omarchy plugin update <id> --yes`.
 
 ## `make sync`: where the file comes from
 
