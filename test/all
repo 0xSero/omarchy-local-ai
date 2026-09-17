@@ -664,6 +664,8 @@ host_rec=$(recipe flm-llama false dir | jq '.engine="flm" | .model.servedName="l
 write_recipes "$host_rec" amd-ryzen-ai-krackan-npu
 jq '.hardware["amd-ryzen-ai-krackan-npu"].match={backend:"amd-npu",vramGb:16,names:["ryzenainpu","npukrackan"],name:"AMD NPU Krackan"}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
 : >"$SHIM/docker.log"; rm -f "$SHIM/host-engine" "$SHIM/flm.log"
+"$CLI" unload >/dev/null || true
+SHIM_NPU=1 "$CLI" gpu auto >/dev/null   # earlier tests pin the 4090; the NPU is the only card with a recipe now
 SHIM_NPU=1 SHIM_SERVED=llama3.2:1b "$CLI" snapshot >/dev/null
 [[ $(snap '[.gpus[]|select(.backend=="amd-npu")]|length') == 1 && $(snap '.cards[]|select(.backend=="amd-npu")|.recipe.id') == flm-llama ]] || fail "npu detect" "$(snap .gpus) $(snap .cards)"; pass "an AMD XDNA2 NPU with /dev/accel is detected and matched to an flm recipe"
 [[ $(snap .selected.recipeId) == flm-llama ]] || fail "npu selected" "$(snap .selected) $(snap .reason)"; pass "the NPU recipe is selected when it is the only matched card"
