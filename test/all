@@ -673,8 +673,9 @@ SHIM_NPU=1 SHIM_SERVED=llama3.2:1b "$CLI" load
 [[ $(snap .state) == ready && $(snap .running.recipeId) == flm-llama ]] || fail "flm load" "$(snap .state) $(snap .error)"; pass "an flm host recipe reaches ready: pull, host serve, gateway, accept"
 grep -q "flm pull llama3.2:1b" "$SHIM/flm.log" || fail "flm pull" "$(cat "$SHIM/flm.log" 2>/dev/null)"; pass "weights for an flm recipe are pulled with flm, not huggingface_hub"
 grep -q "flm serve llama3.2:1b" "$SHIM/flm.log" || fail "flm serve" "$(cat "$SHIM/flm.log" 2>/dev/null)"; pass "the engine is flm serve on the host"
-grep -E "docker run .*omarchy-local-ai-flm-llama-engine" "$SHIM/docker.log" && fail "docker engine for host recipe"; pass "a host recipe never starts an engine container"
-grep -q "host.docker.internal:host-gateway" "$SHIM/docker.log" || fail "gateway extra hosts" "$(grep gateway "$SHIM/docker.log" | tail -1)"; pass "the gateway reaches the host engine through host.docker.internal"
+grep -E "docker run .*omarchy-local-ai-flm-llama-engine" "$SHIM/docker.log" || fail "engine proxy" "$(cat "$SHIM/docker.log")"; pass "a host recipe starts a TCP proxy container aliased engine"
+grep -q "UPSTREAM=http://engine:52626" "$SHIM/docker.log" || fail "gateway upstream" "$(grep UPSTREAM "$SHIM/docker.log" | tail -1)"; pass "the gateway reaches the host engine through the proxy, not the host"
+grep -q "flm serve llama3.2:1b --host 127.0.0.1" "$SHIM/flm.log" || fail "flm loopback" "$(cat "$SHIM/flm.log" 2>/dev/null)"; pass "flm listens on loopback, never on a docker bridge"
 [[ -s $OMARCHY_AI_USER_HOME/.config/flm/models/Llama-3.2-1B-NPU2/model.q4nx ]] || fail "flm files"; pass "flm pull lands files under the FLM models directory"
 SHIM_NPU=1 "$CLI" unload >/dev/null
 [[ $(snap .state) == idle ]] || fail "flm unload" "$(snap .state) $(snap .error)"; pass "unload stops the host flm process and the gateway"
