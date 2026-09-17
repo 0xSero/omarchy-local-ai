@@ -2,6 +2,13 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.0.5] - 2026-09-16
+
+### Fixed
+- Keep OMP image attachments in PNG/JPEG using its supported WebP exclusion setting. Local llama.cpp decoders do not support WebP; the same image passed as PNG but produced incorrect answers as WebP.
+
+- Require image blocks in live image-test requests and reject Codex shell workarounds during vision acceptance.
+
 ## [5.0.4] - 2026-09-16
 
 ### Fixed

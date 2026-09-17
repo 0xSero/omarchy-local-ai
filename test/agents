@@ -62,6 +62,11 @@ def response_text(raw):
             texts.extend(b.get('text','') for b in obj['content'] if isinstance(b,dict) and b.get('type')=='text')
     return ''.join(texts)
 
+def image_count(value):
+    if isinstance(value, dict):
+        return int(value.get('type') in ('image', 'image_url', 'input_image')) + sum(image_count(v) for v in value.values())
+    return sum(image_count(v) for v in value) if isinstance(value, list) else 0
+
 def run(agent, model, feature='text'):
     label=model['recipeId']+'-'+agent+'-'+feature
     case=ROOT/label;case.mkdir(parents=True,exist_ok=True)
@@ -73,7 +78,7 @@ def run(agent, model, feature='text'):
     if feature=='text':prompt=f'Reply with exactly {marker}. Do not use tools. Do not modify files.'
     elif feature=='vision':
         shutil.copyfile(ROOT/'colors.png',project/'colors.png')
-        prompt='Name the two colors in the attached image, from left to right. Answer with only the two color names.'
+        prompt='Name the two colors in the attached image, from left to right. Answer with only the two color names. Do not inspect pixels programmatically.'
         if agent in ('claude','grok','crush'):prompt='Use your image-capable file reader to view ./colors.png. '+prompt.replace('attached image','image')+' Do not inspect pixels programmatically, use network, or delegate.'
     else:prompt='Work only in the current directory. Read input.txt using a tool. Write its exact contents to output.txt using a file tool or shell command. Read output.txt to verify it. Reply with the exact contents only. Do not use network or delegate.'
     requests=[]
@@ -86,6 +91,7 @@ def run(agent, model, feature='text'):
             try:d=json.loads(body) if body else {}
             except ValueError:d={}
             n=len(requests);rec={'path':self.path,'model':d.get('model'),'stream':d.get('stream'),'tools':len(d.get('tools',[])),'reasoning_effort':d.get('reasoning_effort'),'reasoning':d.get('reasoning'),'chat_template_kwargs':d.get('chat_template_kwargs'),'tool_results':sum(1 for m in d.get('messages',[]) if m.get('role')=='tool' or isinstance(m.get('content'),list) and any(b.get('type')=='tool_result' for b in m['content'] if isinstance(b,dict))) + sum(1 for m in d.get('input',[]) if isinstance(m,dict) and m.get('type')=='function_call_output') if isinstance(d.get('input',[]),list) else 0}
+            rec['image_inputs']=image_count(d)
             rec.update({k:d[k] for k in ('max_tokens','max_completion_tokens','max_output_tokens') if k in d})
             requests.append(rec)
             port=model['port']
@@ -146,6 +152,7 @@ def run(agent, model, feature='text'):
     output=project/'output.txt'
     expected=bool(re.search(r'blue\W+(?:and\W+)?yellow',text.lower())) if feature=='vision' else marker in text
     passed=code==0 and expected and bool(inference) and all(r.get('status')==200 and r.get('model')==model['servedModel'] for r in inference)
+    if feature=='vision':passed=passed and any(r.get('image_inputs',0)>0 for r in inference)
     if feature=='tools':passed=passed and output.exists() and output.read_text().strip()==marker and any(r.get('tool_results',0)>0 for r in requests)
     tool_errors=[]; agent_parts=[]; diagnostics=[]
     def inspect_event(e):
@@ -162,7 +169,7 @@ def run(agent, model, feature='text'):
             m=e['message'];agent_parts.extend(b.get('text','') for b in m.get('content',[]) if b.get('type')=='text')
             if m.get('stopReason')=='error': tool_errors.append(m)
         if kind=='item.completed' and item.get('type')=='command_execution':
-            if item.get('exit_code') not in (None,0) or re.search(r'command not found|No such file or directory|Permission denied', item.get('aggregated_output','')): tool_errors.append(item)
+            if feature=='vision' or item.get('exit_code') not in (None,0) or re.search(r'command not found|No such file or directory|Permission denied', item.get('aggregated_output','')): tool_errors.append(item)
         if e.get('type')=='tool_execution_end' and e.get('isError'):tool_errors.append(e)
         if e.get('type')=='tool.execution_complete' and e.get('data',{}).get('success') is False:tool_errors.append(e)
     if (case/'agent.log').exists():

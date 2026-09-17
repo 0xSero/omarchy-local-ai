@@ -73,7 +73,10 @@ agent_command() {
         cp "$dir/models.json" "$dir/models.yml"
         printf 'modelRoles:\n  default: omarchy-local/%s\nsetupVersion: 2\n' "$model" >"$dir/config.yml"
       fi
-      printf '%s\0' env "PI_CODING_AGENT_DIR=$dir" "OMP_CODING_AGENT_DIR=$dir" "$bin" --provider omarchy-local --model "$model" ;;
+      printf '%s\0' env "PI_CODING_AGENT_DIR=$dir" "OMP_CODING_AGENT_DIR=$dir"
+      # Local llama.cpp decoders cannot read WebP; OMP can preserve PNG/JPEG instead.
+      [[ $name == omp ]] && printf '%s\0' OMP_NO_WEBP=1
+      printf '%s\0' "$bin" --provider omarchy-local --model "$model" ;;
     crush)
       # crush takes providers from XDG config only, not from OPENAI_BASE_URL, and its XDG data file pins the
       # last chosen model over the config: give it a plugin-owned config and data home

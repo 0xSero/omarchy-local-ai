@@ -13,7 +13,7 @@ python3 test/agents --out "$HOME/agent-check-pi" --agents pi --features text too
 
 Use `--plugin` for a different checkout or installed plugin, `--state` for its state directory, and repeat `--recipe <id>` to select ready recipes. The script does not load models or install agents. It tests only installed, launchable agents and capabilities advertised by each ready model; it does not qualify other registry recipes.
 
-Each case uses the real launcher with an isolated state and work directory. A loopback tracing proxy verifies the selected model and records HTTP outcomes without logging authentication headers. Tests require the actual final response, and file tests also verify the resulting file. A failed tool call keeps the case failed even if the final answer succeeds. Agent notices are recorded separately as diagnostics.
+Each case uses the real launcher with an isolated state and work directory. A loopback tracing proxy verifies the selected model and records HTTP outcomes without logging authentication headers. Tests require the actual final response, and file tests also verify the resulting file. Image tests require an image block in the inference request; Codex shell execution during an image test is rejected so pixel inspection cannot masquerade as vision. A failed tool call keeps the case failed even if the final answer succeeds. Agent notices are recorded separately as diagnostics.
 
 The output contains `results.json`, per-case transcripts and API responses, plus generated test inputs. It is private and must be outside the repository. Exit status is nonzero when any case fails. This exercises real inference and file tools; it is separate from UI acceptance and a finite pass is not a guarantee of error-free model output.
 

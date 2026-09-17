@@ -610,6 +610,8 @@ printf 'providers: {stale: {baseUrl: "http://127.0.0.1:9999/v1"}}\n' >"$OMARCHY_
 jq -e '.providers["omarchy-local"] | .baseUrl=="http://127.0.0.1:12434/v1" and .models[0].id=="Test-Model" and .models[0].contextWindow==262144' "$OMARCHY_AI_STATE/agents/omp/models.yml" >/dev/null || fail "OMP retained stale model config"
 [[ $(mode "$OMARCHY_AI_STATE/agents/omp/models.yml") == 600 ]] || fail "OMP config mode"; pass "OMP refreshes migrated YAML config when launching a different model"
 jq -e '.providers["omarchy-local"].models[0].compat.supportsReasoningParams == false' "$OMARCHY_AI_STATE/agents/omp/models.yml" >/dev/null || fail "OMP overrides engine reasoning defaults"; pass "OMP leaves reasoning parameters to the engine defaults"
+argv=$("$CLI" open-agent omp)
+[[ $argv == *OMP_NO_WEBP=1* ]] || fail "OMP sends unsupported WebP images"; pass "OMP uses image formats supported by local decoders"
 for a in grok opencode crush; do cp "$TMP/bin/pi" "$TMP/bin/$a"; done
 argv=$("$CLI" open-agent grok)
 [[ $argv == *GROK_HOME=* && $argv == *--model\ omarchy-local* && $argv != *GROK_CLI_CHAT_PROXY_BASE_URL* && $argv != *"$(cat "$OMARCHY_AI_STATE/gateway.key")"* ]] || fail "Grok uses cloud routing"

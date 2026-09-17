@@ -48,6 +48,7 @@ Notes that are not cosmetic:
   this API key?" for every new key and *remember* a refusal; `ANTHROPIC_AUTH_TOKEN` is its documented
   form for gateways and is used as-is. The gateway accepts `Authorization: Bearer`.
 - **`opencode` keeps the key out of its config text** by having the config reference `{env:…}`.
+- **OMP uses PNG/JPEG for images.** Its `OMP_NO_WEBP=1` setting avoids WebP, which local llama.cpp image decoders cannot read.
 - **OpenCode and Codex receive the selected context window.** OpenCode and Crush also receive the selected model's image support. The gateway preserves images in Chat, Messages and Responses requests, including Messages tool results.
 - **Grok uses its custom-model configuration**, so a saved cloud model or OAuth token cannot override the local selection. Its private config leaves reasoning and sampling settings unset.
 - **`pi`/`omp` get the recipe's real context and image support**, not a hardcoded 128K:
