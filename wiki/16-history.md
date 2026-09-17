@@ -84,6 +84,16 @@ with nothing and kept a v4 paragraph under a v5 card:
   is: several models at once on separate GPU groups, context and capabilities stated before launch,
   agents with nothing written to config, the keyed tailnet endpoint, and the stats on the card.
 
+### 5.0.7 — 2026-09-17
+
+- **The listing image is the Local AI banner plus the card.** `preview.png` now opens with the dove
+  banner, states the supported GPUs (NVIDIA RTX 30/40/50, RTX Ada, RTX Pro Blackwell, Intel Arc Pro
+  B70), the 67 recipes across 34 cards, the agents and the tailnet share, and shows the card running
+  Qwen3.8-27B on 2× RTX 3090 and on 2× Arc Pro B70. `docs/preview.py` takes the banner and two
+  captures; the banner lives in `media/`.
+- **The description says which GPUs.** It names the GPU families and the agents rather than
+  describing the card's controls.
+
 ## The 2026-09-16 consolidation
 
 The work had grown four copies of this repository across two machines, with `main` and `panel-v5`

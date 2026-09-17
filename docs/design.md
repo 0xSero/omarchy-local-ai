@@ -270,11 +270,12 @@ the update request targets**. A release that drops it publishes a listing with n
 listing's description is `manifest.json`'s `description` at that same commit. So `preview.png` and
 the description travel with the release, not with the submission.
 
-`docs/preview.py` builds the image from a full-screen capture of the open card (`test/visual`
-captures one over SSH): it finds the panel by its own background colour, so any resolution works,
-and fails loudly rather than clipping when a line no longer fits the text column.
+`docs/preview.py` composes the image from the Local AI banner (`media/banner.png`), the supported
+hardware facts written in the script, and two full-screen captures of the open card, one on NVIDIA
+and one on Intel Arc (`test/visual` captures one over SSH). It finds the panel by its own background
+colour, so any resolution works, and fails loudly rather than clipping when a line no longer fits.
 
-    python3 docs/preview.py --shot capture.png --out preview.png
+    python3 docs/preview.py --banner media/banner.png --nvidia nvidia.png --intel intel.png --out preview.png
 
 ## Release contents
 

@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.0.7] - 2026-09-17
+
+### Changed
+- The marketplace listing: `preview.png` now carries the Local AI banner, the supported GPUs, recipe count, agents and sharing, and two live captures of the card (Qwen3.8-27B on 2× RTX 3090 and on 2× Arc Pro B70). The description names the supported GPU families and the agents outright. `docs/preview.py` composes the image from `media/banner.png` and two captures.
+
 ## [5.0.6] - 2026-09-17
 
 ### Fixed
