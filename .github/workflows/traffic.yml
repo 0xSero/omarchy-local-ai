@@ -1,0 +1,55 @@
+name: traffic
+# GitHub keeps clone/view traffic and the referrer/path breakdown for 14 days only, and the breakdown
+# is a rolling snapshot with no daily buckets. This records all four daily on the `stats` branch, so
+# installs (every `omarchy plugin add` is a clone), views, and where they came from accumulate instead
+# of rolling off. Never touches main.
+on:
+  schedule: [{cron: "17 3 * * *"}]
+  workflow_dispatch:
+permissions: {contents: write}
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: stats}
+        continue-on-error: true
+      - name: record
+        env: {GH_TOKEN: "${{ secrets.TRAFFIC_TOKEN }}"}   # traffic needs push access: a token of the owner, not the workflow token
+        run: |
+          set -e
+          git config user.name traffic-bot; git config user.email traffic@users.noreply.github.com
+          git checkout -B stats
+          mkdir -p traffic
+          today=$(date -u +%F)
+          gh api "repos/${GITHUB_REPOSITORY}/traffic/clones"            >"traffic/clones.$today.json"
+          gh api "repos/${GITHUB_REPOSITORY}/traffic/views"             >"traffic/views.$today.json"
+          gh api "repos/${GITHUB_REPOSITORY}/traffic/popular/referrers" >"traffic/referrers.$today.json"
+          gh api "repos/${GITHUB_REPOSITORY}/traffic/popular/paths"     >"traffic/paths.$today.json"
+          gh api "repos/${GITHUB_REPOSITORY}"                           >"traffic/repo.$today.json"
+          # GitHub revises the last day or two as data settles, so the newest reading of a day wins.
+          for series in clones views; do
+            jq -s --arg k "$series" '
+              [.[] | .[$k][]] | group_by(.timestamp)
+              | map({day: .[0].timestamp[:10], count: (map(.count)|max), uniques: (map(.uniques)|max)})
+              | sort_by(.day)' "traffic/${series}.2"*.json >"traffic/$series-daily.json"
+          done
+          # Every counter GitHub exposes, in one file: totals and peak over the full archived history,
+          # plus the rolling 14-day unique counts and the current referrer/path breakdown.
+          jq -n --arg today "$today" \
+             --slurpfile daily_clones traffic/clones-daily.json --slurpfile daily_views traffic/views-daily.json \
+             --slurpfile clones "traffic/clones.$today.json" --slurpfile views "traffic/views.$today.json" \
+             --slurpfile repo "traffic/repo.$today.json" \
+             --slurpfile referrers "traffic/referrers.$today.json" --slurpfile paths "traffic/paths.$today.json" '
+            def span($x): {days: ($x|length), first: $x[0].day, last: $x[-1].day,
+                           total: ($x|map(.count)|add), peak_day: ($x|max_by(.count)|.day),
+                           peak: ($x|max_by(.count)|.count), daily_uniques_sum: ($x|map(.uniques)|add)};
+            {updated: $today,
+             repo: {stars: $repo[0].stargazers_count, forks: $repo[0].forks_count,
+                    watchers: $repo[0].subscribers_count, open_issues: $repo[0].open_issues_count,
+                    size_kb: $repo[0].size},
+             clones: span($daily_clones[0]) + {uniques_14d: $clones[0].uniques},
+             views:  span($daily_views[0])  + {uniques_14d: $views[0].uniques},
+             referrers: $referrers[0], paths: $paths[0]}' >traffic/summary.json
+          cat traffic/summary.json
+          git add traffic && git commit -qm "traffic $today" && git push -q origin stats

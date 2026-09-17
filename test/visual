@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""Capture the real Omarchy panel over SSH, without desktop video streaming.
+Usage: test/visual omarchy --output HDMI-A-3 --action card:rtx-3090-24gb --action count:2
+Navigation actions only; this helper never starts or stops inference.
+"""
+import argparse
+from pathlib import Path
+import re
+import shlex
+import subprocess
+import tempfile
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument("host")
+p.add_argument("--output", required=True, help="Hyprland output containing the panel")
+p.add_argument("--action", action="append", default=[])
+p.add_argument("--save", type=Path)
+a = p.parse_args()
+if not re.fullmatch(r"[A-Za-z0-9_.@-]+", a.host) or a.host.startswith("-"):
+    p.error("invalid SSH host")
+for action in a.action:
+    if not re.fullmatch(r"(?:home|back|expand|agent-toggle|(?:card|count|pick|model):[a-z0-9-]+)", action):
+        p.error("only home/back/expand/agent-toggle/card/count/pick/model navigation is supported")
+remote = 'set -eu; export XDG_RUNTIME_DIR=/run/user/$(id -u); '
+remote += 'export WAYLAND_DISPLAY=$(basename "$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name "wayland-*" | head -1)"); '
+ipc = "quickshell ipc --any-display -p /usr/share/omarchy/shell call sero.local-ai "
+remote += ipc + "open >/dev/null; "
+for action in a.action:
+    remote += ipc + "activate " + shlex.quote(action) + " >/dev/null; "
+remote += "sleep 0.4; grim -o " + shlex.quote(a.output) + " -t jpeg -q 85 -"
+result = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", a.host, remote], capture_output=True, timeout=20, check=True)
+if not result.stdout.startswith(b"\xff\xd8"):
+    raise SystemExit("remote did not return a JPEG: " + result.stderr.decode(errors="replace"))
+output = a.save or Path(tempfile.mkdtemp(prefix="omarchy-panel-")) / "panel.jpg"
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_bytes(result.stdout)
+print(output.resolve())
