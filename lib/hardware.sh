@@ -13,7 +13,7 @@ hardware_json() {
   [[ -n $rows ]] && nvidia=$(jq -Rsc 'split("\n")|map(select(length>0)|split(",")|map(gsub("^ +| +$";"")))
     |map({backend:"nvidia",index:(.[0]|tonumber),product:.[1],totalMiB:(.[2]|tonumber),usedMiB:(.[3]|tonumber),freeMiB:(.[4]|tonumber),
           tempC:(.[6]|if .==null or .=="" then null else tonumber end), utilPct:(.[7]|if .==null or .=="" then null else tonumber end)})' <<<"$rows")
-  jq -nc --argjson n "$nvidia" --argjson i "$(intel_gpus)" --arg d "$driver" '{gpus:($n+$i),driver:$d}'
+  jq -nc --argjson n "$nvidia" --argjson i "$(intel_gpus)" --argjson a "$(amd_npus)" --arg d "$driver" '{gpus:($n+$i+$a),driver:$d}'
 }
 
 # Intel Arc Pro B70 (Battlemage G31, PCI 8086:e223): one entry per card that has a render node.
@@ -35,6 +35,25 @@ intel_temp() { # intel_temp <pci-address> -> package temperature in °C from the
   local h f; for h in /sys/bus/pci/devices/"$1"/hwmon/hwmon*; do
     for f in "$h"/temp*_label; do [[ -f $f && $(cat "$f" 2>/dev/null) == pkg ]] && { awk '{printf "%d", $1/1000}' "${f%_label}_input" 2>/dev/null; return; }; done
   done; printf null
+}
+
+# AMD Ryzen AI NPU (XDNA2, PCI 1022:17f0): one entry when the accel node is there.
+# Product comes from xrt-smi when it names the silicon (Krackan, Strix Halo, …);
+# otherwise a generic name that still matches a recipe's names[] after norm.
+AMD_NPU_IDS='1022:17f0'
+amd_npus() {
+  local accel="${OMARCHY_AI_ACCEL_PATH:-/dev/accel/accel0}"
+  [[ -e $accel ]] || { printf '[]'; return; }
+  command -v lspci >/dev/null 2>&1 || { printf '[]'; return; }
+  local a; a=$(lspci -Dnn -d "$AMD_NPU_IDS" 2>/dev/null | awk '{print $1}' | head -1)
+  [[ -n $a ]] || { printf '[]'; return; }
+  local product="AMD Ryzen AI NPU" total=16384 exam=""
+  exam=$(deadline 8 xrt-smi examine 2>/dev/null || true)
+  if grep -qi 'strix halo' <<<"$exam"; then product="AMD NPU Strix Halo"; total=32768
+  elif grep -qi krackan <<<"$exam"; then product="AMD NPU Krackan"; total=16384
+  elif grep -qi strix <<<"$exam"; then product="AMD NPU Strix"; total=16384
+  fi
+  jq -nc --arg p "$product" --argjson t "$total" '[{backend:"amd-npu",index:0,product:$p,totalMiB:$t,usedMiB:null,freeMiB:null,tempC:null,utilPct:null}]'
 }
 
 driver_ok() { # driver_ok <have> <min>  (dotted versions; empty min means no requirement)

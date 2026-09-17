@@ -17,10 +17,12 @@
 # `running`, `port`, `apis`, `agents` and `share` describe the model the card looks at.
 
 declare -A IMG_OK=()   # image presence by reference, asked once per snapshot: recipes share images
-image_present() { local i=$1; [[ -n ${IMG_OK[$i]:-} ]] || { if docker image inspect "$i" >/dev/null 2>&1; then IMG_OK[$i]=1; else IMG_OK[$i]=0; fi; }; [[ ${IMG_OK[$i]} == 1 ]]; }
+image_present() { local i=$1; [[ -n $i ]] || return 1; [[ -n ${IMG_OK[$i]:-} ]] || { if docker image inspect "$i" >/dev/null 2>&1; then IMG_OK[$i]=1; else IMG_OK[$i]=0; fi; }; [[ ${IMG_OK[$i]} == 1 ]]; }
 recipe_on_disk() { # recipe_on_disk <recipe-json> -> true|false: weights marked complete and, where docker answers, the image pulled
-  local r=$1
-  if weights_present "$r" && { ! docker_direct || image_present "$(jq -r .launch.image <<<"$r")"; }; then printf true; else printf false; fi
+  local r=$1 img
+  img=$(jq -r '.launch.image // empty' <<<"$r")
+  host_recipe "$r" && img=$(gateway_image)
+  if weights_present "$r" && { ! docker_direct || image_present "$img"; }; then printf true; else printf false; fi
 }
 # port_listener -> none | gateway | other, for $PORT. A listener is found with ss, or, without ss, by a
 # connect probe (never assumed free). Our gateway is recognised by its exact refusal of an
@@ -51,6 +53,7 @@ models_json() {
     [[ -n $id ]] || continue
     s=$(jq -c --arg id "$id" '.slots[$id]' <<<"$ledger"); port=$(jq -r .port <<<"$s"); engine=$(jq -r .engine <<<"$s"); gateway=$(jq -r .gateway <<<"$s")
     served=""; answering=false; engine_up=false; note=""
+    if host_engine_up "$id"; then engine_up=true; fi
     if docker_direct; then
       e=$(live "$engine" || true); [[ $e == "true|1|"* ]] && engine_up=true
       if $engine_up && [[ $(live "$gateway") == "true|1|"* ]]; then
@@ -97,7 +100,7 @@ snapshot_write() {
     local id; while IFS= read -r id; do
       [[ -n $id ]] || continue
       local s; s=$(jq -c --arg id "$id" '.slots[$id]' <<<"$ledger")
-      exists "$(jq -r .engine <<<"$s")" || exists "$(jq -r .gateway <<<"$s")" || exists "$(jq -r .engine <<<"$s")-previous" || { log "model $id is gone (its containers were removed); forgotten"; slot_forget "$id"; rm -f "$STATE/slots/$id.json"; }
+      exists "$(jq -r .engine <<<"$s")" || exists "$(jq -r .gateway <<<"$s")" || exists "$(jq -r .engine <<<"$s")-previous" || host_engine_up "$id" || { log "model $id is gone (its containers were removed); forgotten"; slot_forget "$id"; rm -f "$STATE/slots/$id.json"; }
     done < <(jq -r '.slots | keys[]' <<<"$ledger")
     ledger=$(lread)
   fi

@@ -15,6 +15,7 @@ weights_dest() { # weights_dest <recipe> -> "dir\t<path>" or "hf\t<hf-home>"
 }
 weights_dest_compute() {
   local r=$1 src tgt sub; sub=$(jq -r '.weights.subdir // ""' <<<"$r")
+  if host_recipe "$r"; then printf 'flm\t%s\n' "${FLM_MODEL_PATH:-$HOME_DIR/.config/flm/models}${sub:+/$sub}"; return; fi
   while IFS=$'\t' read -r src tgt; do
     case $src in
       '${MODEL_ROOT}/'*) printf 'dir\t%s\n' "$(expand_mount "$src")${sub:+/$sub}"; return ;;
@@ -48,6 +49,7 @@ weights_files_ok() {
   local r=$1 kind base f
   read -r kind base < <(weights_dest "$r")
   if [[ $kind == hf ]]; then base="$base/hub/models--$(jq -r '.model.repository' <<<"$r" | sed 's|/|--|g')/snapshots/$(jq -r .model.revision <<<"$r")"
+  elif [[ $kind == flm ]]; then : # files live under the FLM models dir (or a recipe subdir)
   else f=$(jq -r '.model.servedName // ""' <<<"$r"); if [[ $f == *.gguf ]]; then [[ -s "$base/${f##*/}" ]]; return; fi; fi
   [[ -d $base ]] && [[ -n $(find -L "$base" -maxdepth 3 -name .cache -prune -o -type f -size +0 -print 2>/dev/null | head -1) ]]   # .cache: hf's own partials and metadata
 }
@@ -193,6 +195,27 @@ cancel_download() {
   log "download stopped; partial weights kept"; snapshot_write
 }
 host_hf() { [[ -z ${OMARCHY_AI_NO_HOST_HF:-} ]] && bin_of hf 2>/dev/null; }
+host_flm() { [[ -z ${OMARCHY_AI_NO_HOST_FLM:-} ]] && bin_of flm 2>/dev/null; }
+
+# download_flm <recipe>: host FastFlowLM pull of the recipe's tag. No docker.
+download_flm() {
+  local r=$1 id hf tag pid bytes pct prev=0 rate eta detail
+  id=$(jq -r .id <<<"$r"); tag=$(flm_tag "$r"); hf=$(host_flm)
+  [[ -n $hf && -n $tag ]] || { fail "install FastFlowLM (flm) to download $id"; return 1; }
+  op download "$id" "downloading weights" 0; log "download: $hf pull $tag"
+  spawn_child "$hf" pull "$tag" >>"$LOGFILE" 2>&1; pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    bytes=$(dir_bytes "${WMEASURE:-$WBASE}")
+    if (( WEXP > 0 )); then
+      pct=$(( bytes*100/WEXP )); (( pct > 100 )) && pct=100
+      detail="$((bytes/1073741824)) / $((WEXP/1073741824)) GB"
+      if (( POLL > 0 && bytes > prev && prev > 0 )); then rate=$(( (bytes - prev) / POLL )); eta=$(( (WEXP - bytes) / rate )); (( eta < 0 )) && eta=0; detail+=" · about $((eta/60))m$((eta%60))s left"; fi
+      op download "$id" "$detail" "$pct"
+    fi
+    prev=$bytes; sleep "$POLL"
+  done
+  wait "$pid" || { fail "weight download failed for $id (see $LOGFILE)"; return 1; }
+}
 
 # download_host <recipe>: the host `hf` tool, as this user, with progress on the card. No docker.
 download_host() {

@@ -71,6 +71,46 @@ write_assets() {
   done < <(jq -r '.launch.mounts[]?|.source|select(startswith("asset/"))|ltrimstr("asset/")' <<<"$r")
 }
 
+engine_pid_file() { printf '%s/engines/%s.pid\n' "$STATE" "$1"; }
+engine_log_file() { printf '%s/engines/%s.log\n' "$STATE" "$1"; }
+host_engine_up() { # host_engine_up <recipe-id>
+  local f p; f=$(engine_pid_file "$1"); [[ -f $f ]] || return 1
+  p=$(cat "$f" 2>/dev/null) || return 1
+  [[ $p =~ ^[0-9]+$ ]] && kill -0 "$p" 2>/dev/null
+}
+host_gateway_ip() {
+  local ip; ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)
+  [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || ip=172.17.0.1
+  printf '%s' "$ip"
+}
+stop_host_engine() { # stop_host_engine <recipe-id>
+  local f p; f=$(engine_pid_file "$1"); [[ -f $f ]] || return 0
+  p=$(cat "$f" 2>/dev/null || true)
+  if [[ $p =~ ^[0-9]+$ ]]; then
+    kill -TERM -- "-$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null || true
+    local i; for ((i=0; i<50; i++)); do kill -0 "$p" 2>/dev/null || break; sleep 0.1; done
+    kill -0 "$p" 2>/dev/null && { kill -KILL -- "-$p" 2>/dev/null || kill -KILL "$p" 2>/dev/null || true; }
+  fi
+  rm -f "$f"
+}
+start_host_engine() { # start_host_engine <recipe>: flm serve on the host, bound so the gateway container can reach it
+  local r=$1 id tag port bind flm ctx pid
+  id=$(jq -r .id <<<"$r"); tag=$(flm_tag "$r"); port=$(jq -r .launch.containerPort <<<"$r")
+  flm=$(host_flm) || { fail "install FastFlowLM (flm) to run this recipe"; return 1; }
+  [[ -n $tag ]] || { fail "recipe has no flm model tag"; return 1; }
+  stop_host_engine "$id"
+  bind=$(host_gateway_ip)
+  ctx=$(jq -r '.serving.ctxTokens // 0' <<<"$r")
+  state_dir; mkdir -p "$STATE/engines"
+  local -a cmd=("$flm" serve "$tag" --host "$bind" --port "$port")
+  (( ctx > 0 )) && cmd+=(--ctx-len "$ctx")
+  log "engine: ${cmd[*]}"
+  spawn_child "${cmd[@]}" >>"$(engine_log_file "$id")" 2>&1; pid=$!
+  printf '%s\n' "$pid" >"$(engine_pid_file "$id")"
+  sleep 0.2
+  kill -0 "$pid" 2>/dev/null || { fail "flm exited during startup (see $(engine_log_file "$id"))"; return 1; }
+}
+
 engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
   local r=$1 id backend src tgt mode v real name net
   id=$(jq -r .id <<<"$r"); backend=$(jq -r .match.backend <<<"$r"); name=$(jq -r .slot.engine <<<"$r"); net=$(jq -r .slot.net <<<"$r")
@@ -127,7 +167,12 @@ gateway_argv() { # gateway_argv <recipe>
     --user "$RUN_AS" --publish "127.0.0.1:$port:12434" --label "$LABEL=1" --label "$LABEL.recipe=$(jq -r .id <<<"$r")" \
     --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=gateway"
   share_publish_argv "$port"   # the tailnet address too, while sharing is on
-  printf '%s\0' --env "UPSTREAM=http://engine:$(jq -r .launch.containerPort <<<"$r")" --env "MODEL=$(jq -r .model.servedName <<<"$r")" \
+  if host_recipe "$r"; then
+    printf '%s\0' --add-host "host.docker.internal:host-gateway" --env "UPSTREAM=http://host.docker.internal:$(jq -r .launch.containerPort <<<"$r")"
+  else
+    printf '%s\0' --env "UPSTREAM=http://engine:$(jq -r .launch.containerPort <<<"$r")"
+  fi
+  printf '%s\0' --env "MODEL=$(jq -r .model.servedName <<<"$r")" \
     --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY_FILE:/run/gateway.key:ro" "$img"
 }
 # argv builders run in a subshell and can fail halfway (a mount root that cannot be made, a recipe
@@ -174,7 +219,12 @@ post() { curl -fsS --max-time 600 --max-filesize 4194304 -H 'Content-Type: appli
 # a container that exits at once "running" (State.Running stays true while it restarts), so a broken
 # engine would otherwise wait out the whole acceptance timeout; its last log line is the reason.
 engine_alive() {
-  local e=$1 st running restarting count
+  local e=$1 st running restarting count id
+  id=${e#"$CTR"-}; id=${id%-engine}
+  if [[ -f $(engine_pid_file "$id") ]]; then
+    host_engine_up "$id" || { fail "engine exited during startup (see $(engine_log_file "$id"))"; return 1; }
+    return 0
+  fi
   st=$(docker inspect -f '{{.State.Running}}|{{.State.Restarting}}|{{.RestartCount}}' "$e" 2>/dev/null) || { fail "engine exited during startup (docker logs $e)"; return 1; }
   running=${st%%|*}; restarting=${st#*|}; count=${restarting#*|}; restarting=${restarting%%|*}
   [[ $running == true ]] || { fail "engine exited during startup (docker logs $e)"; return 1; }
@@ -191,7 +241,10 @@ accept() {
   id=$(jq -r .id <<<"$r"); want=$(jq -r .model.servedName <<<"$r")
   while :; do
     models=$(api models 5 2>/dev/null || true)
-    served=$(jq -r '.data[0].id // empty' <<<"$models" 2>/dev/null || true)
+    served=$(jq -r --arg w "$want" '
+      (.data // []) as $d
+      | ($d[]? | .id | select(.==$w)) // ($d[]? | .id | select(($w|contains("/")) and endswith($w|split("/")[-1]))) // ($d[0].id // empty)
+    ' <<<"$models" 2>/dev/null || true)
     [[ -n $served ]] && break
     (( SECONDS < deadline )) || { fail "engine did not answer within ${TIMEOUT}s"; return 1; }
     if docker_direct; then engine_alive "$engine" || return 1; fi   # behind a prompt, the deadline decides
@@ -308,6 +361,7 @@ drop_previous() { # every set-aside pair of ours goes: a Start that succeeded, o
 }
 stop_slot() { # stop_slot <recipe-json>: its pair, its set-aside pair, its network
   local r=$1 c
+  host_recipe "$r" && stop_host_engine "$(jq -r .id <<<"$r")"
   for c in $(jq -r '.slot.engine, .slot.gateway' <<<"$r"); do
     exists "$c" && owned "$c" && docker rm -f "$c" >/dev/null 2>&1
     exists "$c-previous" && owned "$c-previous" && docker rm -f "$c-previous" >/dev/null 2>&1
@@ -318,12 +372,17 @@ stop_slot() { # stop_slot <recipe-json>: its pair, its set-aside pair, its netwo
 stop_all() { # every container of ours; non-zero when one is still there afterwards
   local c; while IFS= read -r c; do [[ -n $c ]] && docker rm -f "$c" >/dev/null 2>&1; done < <(owned_names)
   while IFS= read -r c; do [[ -n $c ]] && { fail "$c could not be removed"; return 1; }; done < <(owned_names)
+  for f in "$STATE"/engines/*.pid; do [[ -f $f ]] || continue; stop_host_engine "$(basename "$f" .pid)"; done
   return 0
 }
 
 start_pair() { # start_pair <recipe>: network, engine, then gateway; returns non-zero on any failure. Assets and key exist already.
   local r=$1; local -a argv=()
   ensure_network "$(jq -r .slot.net <<<"$r")" || return 1
+  if host_recipe "$r"; then
+    start_gateway "$r" || return 1
+    return 0
+  fi
   read_argv engine_argv "$r" || { fail "could not build the engine command (see $LOGFILE)"; return 1; }; argv=("${ARGV[@]}")
   log "engine: ${argv[*]}"
   run_child "${argv[@]}" >&2 2>&1 || return 1

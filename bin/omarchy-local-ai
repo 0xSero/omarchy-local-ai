@@ -92,8 +92,15 @@ w_load() {
   mkdir -p "$STATE/slots"; printf '%s\n' "$r" >"$STATE/recipe.json"
   local victims; victims=$(jq -r '[.victims[]? | select(.id != $id) | .name] | join(", ")' --arg id "$id" <<<"$r")
   [[ -z $victims ]] || log "start $id replaces $victims (same cards)"
-  if (( need )) && host_hf >/dev/null; then # the host's own hf, as this user, no docker and no prompt
+  if (( need )) && host_recipe "$r"; then
+    host_flm >/dev/null || oops "install FastFlowLM (flm) to run this recipe"
+    download_flm "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"; weights_mark "$r"; need=0
+  elif (( need )) && host_hf >/dev/null; then # the host's own hf, as this user, no docker and no prompt
     download_host "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"; weights_mark "$r"; need=0
+  fi
+  if host_recipe "$r"; then
+    op starting "$id" "starting the npu engine" 0
+    start_host_engine "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
   fi
   t0=$SECONDS
   local was why
@@ -108,7 +115,12 @@ w_load() {
     why=$(sed -n '$s/^local-ai: //p' "$STATE/accept.err" 2>/dev/null); [[ -n $why ]] || why="engine failed to start (see $LOGFILE)"
     log "rollback: $why"; op starting "$id" "rolling back" 0
     # the failed engine's own last lines, before rollback removes it: the reason lives there
-    if docker_direct; then { echo "--- engine log before rollback ($id)"; docker logs --tail 400 "$(jq -r .slot.engine <<<"$r")" 2>&1 | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true; fi
+    if docker_direct; then
+      if host_recipe "$r"; then { echo "--- engine log before rollback ($id)"; tail -n 80 "$(engine_log_file "$id")" 2>/dev/null | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true
+        stop_host_engine "$id"
+      elif [[ -f $(engine_pid_file "$id") ]]; then { echo "--- engine log before rollback ($id)"; tail -n 80 "$(engine_log_file "$id")" 2>/dev/null | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true
+      else { echo "--- engine log before rollback ($id)"; docker logs --tail 400 "$(jq -r .slot.engine <<<"$r")" 2>&1 | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true; fi
+    fi
     privileged restore "$STATE/recipe.json" >"$STATE/phase.out" 2>>"$LOGFILE" || why+="; the previous model could not be restored (see $LOGFILE)"
     # the new slot is gone; a replaced earlier run of this recipe is back under the same name, with its own record
     if [[ -n $was ]]; then lwrite '.slots[$id]=$o' --arg id "$id" --argjson o "$was"; [[ -f $STATE/slots/$id.json.prev ]] && mv -f "$STATE/slots/$id.json.prev" "$STATE/slots/$id.json"
