@@ -192,8 +192,14 @@ write_recipes "$(recipe good true asset)"
 [[ $(snap .selected.name) == "Test Model" ]] || fail "hardware matched the recipe"; pass "hardware match picks the recipe for the detected GPU"
 [[ $(snap .selected.onDisk) == false ]] || fail "not downloaded yet"; pass "weights reported absent before any download"
 
+# A v1 ledger predates slots. It must be accepted without jq noise, then upgraded by the first state write.
+printf '%s\n' '{"schemaVersion":"omarchy-local-ai/ledger/1","op":{"name":"","recipeId":"","pid":0,"startedAt":"","detail":"","percent":0},"error":"","accepted":{"recipeId":"","servedModel":"","registry":"","apis":[]},"lastStartSeconds":99}' >"$OMARCHY_AI_STATE/ledger.json"
+"$CLI" snapshot >/dev/null 2>"$TMP/legacy-ledger.err"
+[[ ! -s $TMP/legacy-ledger.err && $(snap .state) == idle ]] || fail "v1 ledger snapshots cleanly" "$(cat "$TMP/legacy-ledger.err")"; pass "v1 ledger without slots snapshots cleanly"
+
 "$CLI" load
 [[ $(snap .state) == ready ]] || fail "load reaches ready" "$(snap .state) $(snap .error)"; pass "load: download, start, accept, ready"
+[[ $(jq -r .schemaVersion "$OMARCHY_AI_STATE/ledger.json") == "omarchy-local-ai/ledger/2" && $(jq -r '.slots|type' "$OMARCHY_AI_STATE/ledger.json") == object ]] || fail "v1 ledger upgraded on write" "$(cat "$OMARCHY_AI_STATE/ledger.json")"; pass "first state write upgrades a v1 ledger with slots"
 
 # the pull is a step of its own on the card while it runs
 : >"$SHIM/images"   # forget the images so the second load pulls again
