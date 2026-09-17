@@ -9,14 +9,6 @@
 AGENTS=(pi omp opencode ori claude codex grok agy hermes copilot crush)
 ENDPOINT="http://127.0.0.1:$PORT"   # open_agent points it at the model's own port before building the command
 
-agent_dialect() { # which gateway dialect an agent speaks
-  case $1 in
-    claude) printf messages ;;
-    codex) printf responses ;;
-    *) printf chat ;;
-  esac
-}
-
 agents_json() { # agents_json <apis-json> -> {"default":"pi","installed":["pi",...],"launchable":[...]} against a model's accepted dialects
   local apis=${1:-[]} def="" found=""
   for a in "${AGENTS[@]}"; do bin_of "$a" >/dev/null 2>&1 && found+="$a "; done   # installed only; one jq pass below splits installed from launchable

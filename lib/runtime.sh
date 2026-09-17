@@ -13,7 +13,6 @@
 owned() { [[ $(docker inspect -f "{{index .Config.Labels \"$LABEL\"}}" "$1" 2>/dev/null) == 1 ]]; }
 exists() { docker inspect "$1" >/dev/null 2>&1; }
 running() { [[ $(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null) == true ]]; }
-container_recipe() { docker inspect -f "{{index .Config.Labels \"$LABEL.recipe\"}}" "$1" 2>/dev/null; }
 live() { docker inspect -f "{{.State.Running}}|{{index .Config.Labels \"$LABEL\"}}|{{index .Config.Labels \"$LABEL.recipe\"}}" "$1" 2>/dev/null; }   # "true|1|<recipe>" when ours and running
 owned_names() { docker ps -a --filter "label=$LABEL=1" --format '{{.Names}}' 2>/dev/null; }   # every container of ours, running or not
 

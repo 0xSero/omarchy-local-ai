@@ -30,8 +30,8 @@ FRAME = (58, 58, 58)
 CELL = (22, 22, 22)
 
 FONT_CANDIDATES = (
-    ("bold", "/Users/sero/Library/Fonts/CaskaydiaMonoNerdFont-Bold.ttf"),
-    ("light", "/Users/sero/Library/Fonts/CaskaydiaMonoNerdFont-Light.ttf"),
+    ("bold", "~/Library/Fonts/CaskaydiaMonoNerdFont-Bold.ttf"),
+    ("light", "~/Library/Fonts/CaskaydiaMonoNerdFont-Light.ttf"),
     ("bold", "/System/Library/Fonts/Menlo.ttc"),
     ("light", "/System/Library/Fonts/Menlo.ttc"),
     ("bold", "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"),
@@ -49,8 +49,8 @@ FOOTER = ("256K context on verified TP2 recipes · NVIDIA + Intel Arc", "Docker 
 
 def font(weight, size):
     for want, path in FONT_CANDIDATES:
-        if want == weight and Path(path).exists():
-            return ImageFont.truetype(path, size)
+        if want == weight and Path(path).expanduser().exists():
+            return ImageFont.truetype(str(Path(path).expanduser()), size)
     return ImageFont.load_default(size)
 
 

@@ -54,7 +54,7 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 
 ## How we know it works
 
-- 29 NVIDIA recipes ran the plugin's own Start path on rented cards, RTX 3060 through RTX 6000 Ada ([per-card logs](test/rented-results/)).
+- 29 NVIDIA recipes ran the plugin's own Start path on rented cards, RTX 3060 through RTX 6000 Ada (`test/rented.py` is the harness; its per-card results stay outside the repository).
 - Qwen TP2 has been checked on the mixed RTX 3090 and Arc Pro B70 host with 256K context.
 - The shimmed tests cover the gate, download, start, acceptance, rollback, agents, sharing, key handling, and the no-docker-group path: `make test`, no GPU needed (Bash 4+ and Node.js).
 
