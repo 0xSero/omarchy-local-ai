@@ -103,6 +103,7 @@ start_host_engine() { # start_host_engine <recipe>: flm on loopback plus a unix 
   id=$(jq -r .id <<<"$r"); tag=$(flm_tag "$r"); port=$(jq -r .launch.containerPort <<<"$r")
   flm=$(host_flm) || { fail "install FastFlowLM (flm) to run this recipe"; return 1; }
   [[ -n $tag ]] || { fail "recipe has no flm model tag"; return 1; }
+  flm_version_ok "$flm" "$r" || return 1
   stop_host_engine "$id"
   ctx=$(jq -r '.serving.ctxTokens // 0' <<<"$r")
   state_dir; mkdir -p "$STATE/engines"

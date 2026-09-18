@@ -196,12 +196,19 @@ cancel_download() {
 }
 host_hf() { [[ -z ${OMARCHY_AI_NO_HOST_HF:-} ]] && bin_of hf 2>/dev/null; }
 host_flm() { [[ -z ${OMARCHY_AI_NO_HOST_FLM:-} ]] && bin_of flm 2>/dev/null; }
+# flm_version_ok <flm> <recipe>: no digest pins a host engine, so the recipe's minEngine does
+flm_version_ok() {
+  local min have; min=$(jq -r '.minEngine // ""' <<<"$2"); [[ -z $min ]] && return 0
+  have=$("$1" --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -1)
+  [[ -n $have ]] && driver_ok "$have" "$min" || { fail "needs FastFlowLM $min or newer (have ${have:-unknown})"; return 1; }
+}
 
 # download_flm <recipe>: host FastFlowLM pull of the recipe's tag. No docker.
 download_flm() {
   local r=$1 id hf tag pid bytes pct prev=0 rate eta detail
   id=$(jq -r .id <<<"$r"); tag=$(flm_tag "$r"); hf=$(host_flm)
   [[ -n $hf && -n $tag ]] || { fail "install FastFlowLM (flm) to download $id"; return 1; }
+  flm_version_ok "$hf" "$r" || return 1
   op download "$id" "downloading weights" 0; log "download: $hf pull $tag"
   spawn_child "$hf" pull "$tag" >>"$LOGFILE" 2>&1; pid=$!
   while kill -0 "$pid" 2>/dev/null; do

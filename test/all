@@ -167,6 +167,7 @@ case "$1" in
   serve)
     : >"$SHIM/host-engine"
     exec sleep 3600 ;;
+  --version) echo "FLM v${SHIM_FLM_VERSION:-1.0.4}" ;;
   *) exit 0 ;;
 esac
 EOF
@@ -660,7 +661,7 @@ SHIM_MEDIA_REPLY=Blue "$CLI" load
 
 # FastFlowLM on an AMD NPU: host engine, gateway still in docker
 touch "$TMP/accel0"; export OMARCHY_AI_ACCEL_PATH="$TMP/accel0"
-host_rec=$(recipe flm-llama false dir | jq '.engine="flm" | .model.servedName="llama3.2:1b" | .model.repository="FastFlowLM/Llama-3.2-1B-NPU2" | .weights.subdir="Llama-3.2-1B-NPU2" | .capabilities.tools=false | .launch.kind="host" | .launch.image="" | .launch.containerPort=52626 | .launch.mounts=[] | .launch.entrypoint=null | .launch.arguments=[]')
+host_rec=$(recipe flm-llama false dir | jq '.engine="flm" | .model.servedName="llama3.2:1b" | .model.repository="FastFlowLM/Llama-3.2-1B-NPU2" | .weights.subdir="Llama-3.2-1B-NPU2" | .capabilities.tools=false | .launch.kind="host" | .launch.image="" | .launch.containerPort=52626 | .launch.mounts=[] | .launch.entrypoint=null | .launch.arguments=[] | .minEngine="1.0.4"')
 write_recipes "$host_rec" amd-ryzen-ai-krackan-npu
 jq '.hardware["amd-ryzen-ai-krackan-npu"].match={backend:"amd-npu",vramGb:16,names:["ryzenainpu","npukrackan"],name:"AMD NPU Krackan"}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
 : >"$SHIM/docker.log"; rm -f "$SHIM/host-engine" "$SHIM/flm.log"
@@ -680,6 +681,10 @@ grep -q "flm serve llama3.2:1b --host 127.0.0.1" "$SHIM/flm.log" || fail "flm lo
 SHIM_NPU=1 "$CLI" unload >/dev/null
 [[ $(snap .state) == idle ]] || fail "flm unload" "$(snap .state) $(snap .error)"; pass "unload stops the host flm process and the gateway"
 kill -0 "$(cat "$OMARCHY_AI_STATE/engines/flm-llama.pid" 2>/dev/null)" 2>/dev/null && fail "flm still running"; pass "unload leaves no flm process"
+rm -f "$SHIM/flm.log"
+SHIM_NPU=1 SHIM_FLM_VERSION=1.0.3 SHIM_SERVED=llama3.2:1b "$CLI" load
+[[ $(snap .state) == error && $(snap .error) == *"needs FastFlowLM 1.0.4 or newer (have 1.0.3)"* ]] || fail "old flm accepted" "$(snap .state) $(snap .error)"; pass "an flm older than the recipe's minEngine is refused"
+grep -q "flm serve" "$SHIM/flm.log" && fail "old flm served" "$(cat "$SHIM/flm.log")"; pass "a refused flm is never started"
 unset OMARCHY_AI_ACCEL_PATH; write_recipes "$(recipe good true asset)"
 
 echo "1..$n"

@@ -46,6 +46,7 @@ A recipe:
 | `launch.shm`, `launch.ipc`, `launch.networkMode`, `launch.capAdd`, `launch.securityOpt` | shape | gated |
 | `claims` / `cards` | how many cards, of which hardware ids | `claimed_indexes` |
 | `minDriver` | optional minimum NVIDIA driver | `driver_ok` |
+| `minEngine` | optional minimum host `flm` for a `launch.kind: "host"` recipe | `flm_version_ok`, before pull and serve |
 | `validated` | `{harness, acceptedAt}` | provenance, display |
 
 ### Mount policy
