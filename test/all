@@ -17,6 +17,7 @@ ln -s "$(PATH="$PATH:/opt/homebrew/bin:/usr/local/bin" command -v jq)" "$TMP/bin
 n=0
 pass() { n=$((n+1)); echo "ok $n - $1"; }
 fail() { echo "not ok - $1${2:+: $2}" >&2; exit 1; }
+skip() { n=$((n+1)); echo "ok $n - # skip $1"; }
 snap() { jq -r "$1" "$OMARCHY_AI_STATE/snapshot.json"; }
 sha_of_file() { { command -v sha256sum >/dev/null 2>&1 && sha256sum -- "$1" || shasum -a 256 -- "$1"; } | cut -c1-64; }
 mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }   # GNU first; BSD stat has no -c (and GNU stat -f prints instead of failing)
@@ -475,6 +476,10 @@ rm -f "$TMP/bin/amd-smi"; mv "$TMP/nvidia-smi.bak" "$TMP/bin/nvidia-smi"
 write_recipes "$(recipe good true asset)"
 
 # KFD+render path: docker info reports no CDI spec. The same recipe must launch via raw devices.
+# The gate's KFD+render branch checks /dev/kfd on the host; skip when the test box has no AMD HW.
+if [[ ! -e /dev/kfd ]] || [[ -z $(ls /dev/dri/renderD* 2>/dev/null) ]]; then
+  skip "KFD+render path: no /dev/kfd or render nodes on this host (typical CI without AMD GPU)"
+else
 mv "$TMP/bin/nvidia-smi" "$TMP/nvidia-smi.bak"
 write_recipes "$(recipe good true asset | jq '.launch.environment.FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"')" rx-7900-xtx-24gb amd-rocm
 jq '.hardware["rx-7900-xtx-24gb"].match={backend:"amd-rocm",vramGb:24,names:["rx7900xtx"],name:"AMD Radeon RX 7900 XTX"}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
@@ -488,6 +493,7 @@ grep -q -- "--group-add video" "$SHIM/docker.log" && grep -q -- "--group-add ren
 "$CLI" unload
 unset OMARCHY_AI_HARDWARE_JSON
 mv "$TMP/nvidia-smi.bak" "$TMP/bin/nvidia-smi"
+fi
 write_recipes "$(recipe good true asset)"
 
 # AMD: rocm-smi fallback path when amd-smi is missing. Same recipe must still match.
