@@ -43,12 +43,18 @@ amd_smi_bin() {
   [[ -z ${OMARCHY_AI_NO_HOST_AMD:-} && -x /opt/rocm/bin/amd-smi ]] && printf '%s\n' /opt/rocm/bin/amd-smi
 }
 
-amd_gpus() { # AMD cards via amd-smi; marketing name + VRAM so recipes match like NVIDIA
-  local smi static metric='{}' out
-  smi=$(amd_smi_bin) || true
-  [[ -n $smi ]] || { printf '[]'; return; }
-  static=$("$smi" static --json 2>/dev/null) || static=''
-  [[ -n $static ]] || { printf '[]'; return; }
+rocm_smi_bin() {
+  [[ -n ${OMARCHY_AI_ROCM_SMI:-} ]] && { printf '%s\n' "$OMARCHY_AI_ROCM_SMI"; return; }
+  command -v rocm-smi 2>/dev/null && return
+  [[ -z ${OMARCHY_AI_NO_HOST_AMD:-} && -x /opt/rocm/bin/rocm-smi ]] && printf '%s\n' /opt/rocm/bin/rocm-smi
+}
+
+amd_gpus_from_amd_smi() {
+  local smi static metric out
+  smi=$(amd_smi_bin) || return 1
+  [[ -n $smi ]] || return 1
+  static=$("$smi" static --json 2>/dev/null) || return 1
+  [[ -n $static ]] || return 1
   metric=$("$smi" metric --mem-usage --json 2>/dev/null) || metric='{}'
   out=$(jq -nc --argjson s "$static" --argjson m "$metric" '
     ($m.gpu_data // []) as $md
@@ -63,8 +69,52 @@ amd_gpus() { # AMD cards via amd-smi; marketing name + VRAM so recipes match lik
             totalMiB:($g.vram.size.value // $u.mem_usage.total_vram.value // 0),
             usedMiB:($u.mem_usage.used_vram.value // null),
             freeMiB:($u.mem_usage.free_vram.value // null)
-          }]') || out='[]'
+          }]') || return 1
   printf '%s' "$out"
+}
+
+amd_gpus_from_rocm_smi() {
+  local smi raw i=0 out='[]' product bytes used
+  smi=$(rocm_smi_bin) || return 1
+  [[ -n $smi ]] || return 1
+  raw=$(deadline 10 "$smi" --showproductname --showmeminfo vram --csv 2>/dev/null) || return 1
+  [[ -n $raw ]] || return 1
+  # rocm-smi CSV column order varies across versions; Card Vendor may carry an embedded comma that
+  # breaks naive IFS parsing. Read the header row to find the field indices we need by name — the
+  # column names themselves are stable across versions. awk emits tab-separated so bash's IFS
+  # splits cleanly across the three fields even though Card Series contains spaces.
+  while IFS=$'\t' read -r product bytes used; do
+    [[ -n $product && -n $bytes ]] || continue
+    [[ $product == *Radeon* || $product == *AMD* ]] || continue
+    [[ $product == AMD* ]] || product="AMD $product"
+    out=$(jq -c --argjson i "$i" --arg p "$product" --argjson t "$bytes" --argjson u "${used:-0}" \
+      '.+[{backend:"amd-rocm",index:$i,product:$p,totalMiB:($t/1048576|floor),
+            usedMiB:(if $u=="" then null else ($u/1048576|floor) end),
+            freeMiB:(if $u=="" then null else (($t-$u)/1048576|floor) end)}]' <<<"$out")
+    i=$((i+1))
+  done < <(printf '%s\n' "$raw" | awk -F, '
+    BEGIN { OFS = "\t" }
+    NR==1 {
+      for (i=1; i<=NF; i++) {
+        if ($i == "Card Series") cs = i
+        if ($i == "VRAM Total Memory (B)") vt = i
+        if ($i == "VRAM Total Used Memory (B)") vu = i
+      }
+      next
+    }
+    NR>1 && cs && vt && vu {
+      product = $(cs); bytes = $(vt); used = $(vu)
+      if (product == "" || bytes == "") next
+      print product, bytes, used
+    }')
+  printf '%s' "$out"
+}
+
+amd_gpus() {
+  local out
+  if out=$(amd_gpus_from_amd_smi 2>/dev/null); then printf '%s' "$out"; return; fi
+  if out=$(amd_gpus_from_rocm_smi 2>/dev/null); then printf '%s' "$out"; return; fi
+  printf '[]'
 }
 
 # normalize a product name the way the registry export does, so a match is a string compare

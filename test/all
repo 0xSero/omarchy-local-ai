@@ -474,6 +474,22 @@ unset SHIM_RUNTIMES SHIM_AMD_GPUS
 rm -f "$TMP/bin/amd-smi"; mv "$TMP/nvidia-smi.bak" "$TMP/bin/nvidia-smi"
 write_recipes "$(recipe good true asset)"
 
+# AMD: rocm-smi fallback path when amd-smi is missing. Same recipe must still match.
+mv "$TMP/bin/nvidia-smi" "$TMP/nvidia-smi.bak"
+cat >"$TMP/bin/rocm-smi" <<'EOF'
+#!/usr/bin/env bash
+cat <<CSV
+device,VRAM Total Memory (B),VRAM Total Used Memory (B),Card Series,Card Model,Card Vendor
+card0,25753026560,1024,Radeon RX 7900 XTX,0x744c,Advanced Micro Devices Inc. [AMD/ATI]
+CSV
+EOF
+chmod +x "$TMP/bin/rocm-smi"
+write_recipes "$(recipe good true asset | jq '.launch.environment.FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"')" rx-7900-xtx-24gb amd-rocm
+"$CLI" snapshot >/dev/null
+[[ $(snap .hardwareId) == rx-7900-xtx-24gb && $(snap '.gpus[0].backend') == amd-rocm && $(snap '.gpus[0].product') == "AMD Radeon RX 7900 XTX" ]] || fail "rocm-smi fallback match" "$(snap .hardwareId) $(snap .gpus)"; pass "AMD card: rocm-smi (with amd-smi hidden) still matches the same recipe"
+rm -f "$TMP/bin/rocm-smi"; mv "$TMP/nvidia-smi.bak" "$TMP/bin/nvidia-smi"
+write_recipes "$(recipe good true asset)"
+
 # hf-cache recipes download into the cache, not a local dir
 write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI" load
 [[ $(snap .state) == ready ]] || fail "hf recipe" "$(snap .error)"; pass "hf-cache recipe: downloaded into the shared cache and started"
