@@ -85,7 +85,7 @@ match_hardware() {
                elif ($gpus|length)==0 then "no supported GPU detected"
                else ("no validated recipe for "+(($use // $gpus[0]).product)+" yet") end),
        pinned:($pinned!=null),
-       gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // "")), tempC:(.tempC // null), utilPct:(.utilPct // null),
+       gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // "")), renderNode:(.renderNode // null), tempC:(.tempC // null), utilPct:(.utilPct // null),
                        usedGb:(if .usedMiB==null then null else ((.usedMiB/1024*10|round)/10) end)}]}' "$RECIPES"
 }
 

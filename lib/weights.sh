@@ -269,7 +269,10 @@ docker_ok() { # docker_ok [backend]: the daemon answers this user; NVIDIA/AMD to
         return 1
       } ;;
     amd-rocm)
-      grep -qiE 'amd\.com/gpu=|[[:space:]]amd([[:space:]]|$)' "$STATE/docker.info" || {
+      # CDI is the preferred path (engine_argv picks it when available); KFD+render works
+      # without any toolkit as long as /dev/kfd and at least one render node are present.
+      grep -qiE 'amd\.com/gpu=|[[:space:]]amd([[:space:]]|$)' "$STATE/docker.info" || \
+      [[ -e /dev/kfd && -n $(ls /dev/dri/renderD* 2>/dev/null) ]] || {
         printf 'the AMD container toolkit is not set up: sudo pacman -S amd-container-toolkit; sudo amd-ctk runtime configure --runtime=docker; sudo systemctl restart docker'
         return 1
       } ;;

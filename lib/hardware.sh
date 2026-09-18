@@ -49,6 +49,14 @@ rocm_smi_bin() {
   [[ -z ${OMARCHY_AI_NO_HOST_AMD:-} && -x /opt/rocm/bin/rocm-smi ]] && printf '%s\n' /opt/rocm/bin/rocm-smi
 }
 
+amd_render_node_for_bdf() {
+  local bdf=$1 node
+  [[ -n $bdf ]] || return 1
+  node=$(readlink -f "/dev/dri/by-path/pci-$bdf-render" 2>/dev/null || true)
+  [[ $node =~ ^/dev/dri/renderD[0-9]+$ ]] || return 1
+  printf '%s' "$node"
+}
+
 amd_gpus_from_amd_smi() {
   local smi static metric out
   smi=$(amd_smi_bin) || return 1
@@ -68,13 +76,15 @@ amd_gpus_from_amd_smi() {
             product:$g.asic.market_name,
             totalMiB:($g.vram.size.value // $u.mem_usage.total_vram.value // 0),
             usedMiB:($u.mem_usage.used_vram.value // null),
-            freeMiB:($u.mem_usage.free_vram.value // null)
+            freeMiB:($u.mem_usage.free_vram.value // null),
+            bdf:($g.bus.bdf // null),
+            renderNode:null
           }]') || return 1
   printf '%s' "$out"
 }
 
 amd_gpus_from_rocm_smi() {
-  local smi raw i=0 out='[]' product bytes used
+  local smi raw i=0 out='[]' product bytes used card bdf
   smi=$(rocm_smi_bin) || return 1
   [[ -n $smi ]] || return 1
   raw=$(deadline 10 "$smi" --showproductname --showmeminfo vram --csv 2>/dev/null) || return 1
@@ -82,39 +92,63 @@ amd_gpus_from_rocm_smi() {
   # rocm-smi CSV column order varies across versions; Card Vendor may carry an embedded comma that
   # breaks naive IFS parsing. Read the header row to find the field indices we need by name — the
   # column names themselves are stable across versions. awk emits tab-separated so bash's IFS
-  # splits cleanly across the three fields even though Card Series contains spaces.
-  while IFS=$'\t' read -r product bytes used; do
+  # splits cleanly across the four fields even though Card Series contains spaces.
+  while IFS=$'\t' read -r card product bytes used; do
     [[ -n $product && -n $bytes ]] || continue
     [[ $product == *Radeon* || $product == *AMD* ]] || continue
     [[ $product == AMD* ]] || product="AMD $product"
-    out=$(jq -c --argjson i "$i" --arg p "$product" --argjson t "$bytes" --argjson u "${used:-0}" \
+    bdf=''
+    if [[ -n $card && -e /sys/class/drm/$card/device ]]; then
+      bdf=$(basename "$(readlink /sys/class/drm/$card/device 2>/dev/null)" 2>/dev/null) || bdf=''
+    fi
+    out=$(jq -c --argjson i "$i" --arg p "$product" --argjson t "$bytes" --argjson u "${used:-0}" --arg bdf "${bdf:-}" \
       '.+[{backend:"amd-rocm",index:$i,product:$p,totalMiB:($t/1048576|floor),
             usedMiB:(if $u=="" then null else ($u/1048576|floor) end),
-            freeMiB:(if $u=="" then null else (($t-$u)/1048576|floor) end)}]' <<<"$out")
+            freeMiB:(if $u=="" then null else (($t-$u)/1048576|floor) end),
+            bdf:(if $bdf=="" then null else $bdf end),
+            renderNode:null}]' <<<"$out")
     i=$((i+1))
   done < <(printf '%s\n' "$raw" | awk -F, '
     BEGIN { OFS = "\t" }
     NR==1 {
       for (i=1; i<=NF; i++) {
+        if ($i == "device") dv = i
         if ($i == "Card Series") cs = i
         if ($i == "VRAM Total Memory (B)") vt = i
         if ($i == "VRAM Total Used Memory (B)") vu = i
       }
       next
     }
-    NR>1 && cs && vt && vu {
-      product = $(cs); bytes = $(vt); used = $(vu)
+    NR>1 && dv && cs && vt && vu {
+      card = $(dv); product = $(cs); bytes = $(vt); used = $(vu)
       if (product == "" || bytes == "") next
-      print product, bytes, used
+      print card, product, bytes, used
     }')
   printf '%s' "$out"
 }
 
 amd_gpus() {
   local out
-  if out=$(amd_gpus_from_amd_smi 2>/dev/null); then printf '%s' "$out"; return; fi
-  if out=$(amd_gpus_from_rocm_smi 2>/dev/null); then printf '%s' "$out"; return; fi
+  if out=$(amd_gpus_from_amd_smi 2>/dev/null); then
+    printf '%s' "$(amd_gpus_resolve_render_nodes "$out")"; return
+  fi
+  if out=$(amd_gpus_from_rocm_smi 2>/dev/null); then
+    printf '%s' "$(amd_gpus_resolve_render_nodes "$out")"; return
+  fi
   printf '[]'
+}
+
+amd_gpus_resolve_render_nodes() { # fill renderNode per GPU from its bdf via sysfs readlink
+  local in=$1
+  [[ -n $in && $in != "[]" ]] || { printf '%s' "$in"; return; }
+  while IFS=$'\t' read -r bdf idx; do
+    [[ -n $bdf && -n $idx ]] || continue
+    local node; node=$(amd_render_node_for_bdf "$bdf" 2>/dev/null) || node=''
+    [[ -n $node ]] || continue
+    in=$(jq -c --argjson i "$idx" --arg n "$node" \
+      '[.[] | if .index == $i then . + {renderNode:$n} else . end]' <<<"$in")
+  done < <(jq -r '.[] | "\(.bdf // empty)\t\(.index)"' <<<"$in")
+  printf '%s' "$in"
 }
 
 # normalize a product name the way the registry export does, so a match is a string compare

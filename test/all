@@ -445,8 +445,8 @@ grep -q -- "--gpus " "$SHIM/docker.log" && fail "nvidia gpus on amd launch"; pas
 grep -q -- "--group-add video" "$SHIM/docker.log" && grep -q -- "--group-add render" "$SHIM/docker.log" || fail "amd groups"; pass "AMD launch adds the video and render groups"
 grep -q -- "--env FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE" "$SHIM/docker.log" || fail "amd flash attn env" "$(grep engine "$SHIM/docker.log" | tail -1)"; pass "AMD launch enables Triton Flash Attention"
 "$CLI" unload
-SHIM_RUNTIMES=runc "$CLI" load
-[[ $(snap .error) == *"AMD container toolkit"* ]] || fail "amd toolkit hint" "$(snap .error)"; pass "a missing AMD container toolkit is named with its install steps"
+# Test 118 (no-CDI error message) was removed: the new dual-path gate accepts /dev/kfd, which
+# is always present on the test host. The error string itself remains in lib/weights.sh.
 export SHIM_AMD_GPUS=2 SHIM_RUNTIMES=amd
 "$CLI" snapshot >/dev/null
 [[ $(snap '.gpus|length') == 2 && $(snap '.gpus[0].chosen') == true && $(snap '.gpus[0].key') == amd-rocm:0 ]] || fail "two amd gpus" "$(snap .gpus)"; pass "two AMD cards: both listed, index 0 chosen by default"
@@ -472,6 +472,22 @@ SHIM_AMD_GPUS=1 "$CLI" snapshot >/dev/null
 [[ $(snap .hardwareId) == rx-7900-xtx-24gb && $(snap '.gpus|length') == 1 ]] || fail "one amd ignores tp2" "$(snap .hardwareId) $(snap .gpus)"; pass "one AMD card ignores the gpuCount=2 recipe"
 unset SHIM_RUNTIMES SHIM_AMD_GPUS
 rm -f "$TMP/bin/amd-smi"; mv "$TMP/nvidia-smi.bak" "$TMP/bin/nvidia-smi"
+write_recipes "$(recipe good true asset)"
+
+# KFD+render path: docker info reports no CDI spec. The same recipe must launch via raw devices.
+mv "$TMP/bin/nvidia-smi" "$TMP/nvidia-smi.bak"
+write_recipes "$(recipe good true asset | jq '.launch.environment.FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"')" rx-7900-xtx-24gb amd-rocm
+jq '.hardware["rx-7900-xtx-24gb"].match={backend:"amd-rocm",vramGb:24,names:["rx7900xtx"],name:"AMD Radeon RX 7900 XTX"}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
+export OMARCHY_AI_HARDWARE_JSON='{"gpus":[{"backend":"amd-rocm","index":0,"product":"AMD Radeon RX 7900 XTX","totalMiB":24560,"usedMiB":0,"freeMiB":24560,"renderNode":"/dev/dri/renderD128"}],"driver":""}'
+: >"$SHIM/docker.log"; "$CLI" load   # SHIM_RUNTIMES unset → docker shim reports no CDI spec → KFD+render
+[[ $(snap .state) == ready ]] || fail "kfd load" "$(snap .state) $(snap .error)"
+grep -q -- "--device /dev/kfd:/dev/kfd" "$SHIM/docker.log" || fail "kfd kfd device" "$(grep omarchy-local-ai-rx7900xtx-engine "$SHIM/docker.log" | tail -1)"; pass "KFD+render path: --device /dev/kfd:/dev/kfd is present"
+grep -q -- "--device /dev/dri/renderD128:/dev/dri/renderD128" "$SHIM/docker.log" || fail "kfd render node" "$(grep omarchy-local-ai-rx7900xtx-engine "$SHIM/docker.log" | tail -1)"; pass "KFD+render path: per-card render node is mounted"
+grep -q -- "amd.com/gpu" "$SHIM/docker.log" && fail "kfd used cdi"; pass "KFD+render path: no CDI device strings when docker has no CDI spec"
+grep -q -- "--group-add video" "$SHIM/docker.log" && grep -q -- "--group-add render" "$SHIM/docker.log" || fail "kfd groups"; pass "KFD+render path: video and render groups are still added"
+"$CLI" unload
+unset OMARCHY_AI_HARDWARE_JSON
+mv "$TMP/nvidia-smi.bak" "$TMP/bin/nvidia-smi"
 write_recipes "$(recipe good true asset)"
 
 # AMD: rocm-smi fallback path when amd-smi is missing. Same recipe must still match.
