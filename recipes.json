@@ -6088,9 +6088,12 @@
           "ctxTokens": 65536
         },
         "speed": {
-          "tps": null
+          "tps": 40
         },
-        "validated": null,
+        "validated": {
+          "acceptedAt": "2026-09-19T18:05:00Z",
+          "harness": "AMD Radeon RX 7600 XT gfx1102 local ROCm"
+        },
         "weights": {
           "subdir": ""
         }
