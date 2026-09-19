@@ -90,9 +90,17 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
   elif [[ $backend == amd-rocm ]]; then
     # CDI when amd-ctk has produced a spec; KFD+render otherwise. Same HSA surface for the engine.
     if cdi_amd_available; then
-      local tp; tp=$(jq -r '[.launch.arguments[]?]|index("--tensor-parallel-size") as $i | if $i==null then 1 else (.[$i+1]|tonumber) end' <<<"$r")
-      if (( tp > 1 )); then a+=(--device amd.com/gpu=all); else a+=(--device "amd.com/gpu=$(jq -r .gpuIndex <<<"$r")"); fi
-      a+=(--group-add video --group-add render)
+      # Claimed indexes only — never amd.com/gpu=all. Tensor-parallel needs every claimed card
+      # visible, but extra AMD devices (an iGPU, a third dGPU) would appear as HIP devices and
+      # break vLLM's --tensor-parallel-size. NVIDIA uses the same gpuIndexes list via --gpus.
+      # AMD CDI has no comma form: one --device amd.com/gpu=N per card.
+      local id; local -a cdi=()
+      while IFS= read -r id; do
+        [[ $id =~ ^[0-9]+$ ]] || continue
+        cdi+=(--device "amd.com/gpu=$id")
+      done < <(jq -r '(.gpuIndexes // [.gpuIndex])[]?' <<<"$r")
+      ((${#cdi[@]})) || { fail "no AMD GPU indexes for CDI"; return 1; }
+      a+=("${cdi[@]}" --group-add video --group-add render)
     else
       local -a nodes=()
       while IFS= read -r real; do

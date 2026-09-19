@@ -423,16 +423,12 @@ write_recipes "$(recipe good true asset)"; "$CLI" unload
 mv "$TMP/bin/nvidia-smi" "$TMP/nvidia-smi.bak"
 cat >"$TMP/bin/amd-smi" <<'EOF'
 #!/usr/bin/env bash
-# SHIM_AMD_GPUS: default one 7900 XTX; two = a second identical card at index 1
-gpus=${SHIM_AMD_GPUS:-1}
+# SHIM_AMD_GPUS: count of identical 7900 XTXs (default 1)
+n=${SHIM_AMD_GPUS:-1}
 if [[ $* == *static* ]]; then
-  if [[ $gpus == 2 ]]; then
-    echo '{"gpu_data":[{"gpu":0,"asic":{"market_name":"AMD Radeon RX 7900 XTX"},"vram":{"size":{"value":24560,"unit":"MB"}}},{"gpu":1,"asic":{"market_name":"AMD Radeon RX 7900 XTX"},"vram":{"size":{"value":24560,"unit":"MB"}}}]}'
-  else
-    echo '{"gpu_data":[{"gpu":0,"asic":{"market_name":"AMD Radeon RX 7900 XTX"},"vram":{"size":{"value":24560,"unit":"MB"}}}]}'
-  fi
+  jq -nc --argjson n "$n" '{gpu_data:[range(0;$n)|{gpu:.,asic:{market_name:"AMD Radeon RX 7900 XTX"},vram:{size:{value:24560,unit:"MB"}}}]}'
 else
-  echo '{"gpu_data":[{"gpu":0,"mem_usage":{"total_vram":{"value":24560},"used_vram":{"value":50},"free_vram":{"value":24510}}},{"gpu":1,"mem_usage":{"total_vram":{"value":24560},"used_vram":{"value":100},"free_vram":{"value":24460}}}]}'
+  jq -nc --argjson n "$n" '{gpu_data:[range(0;$n)|{gpu:.,mem_usage:{total_vram:{value:24560},used_vram:{value:50},free_vram:{value:24510}}}]}'
 fi
 EOF
 chmod +x "$TMP/bin/amd-smi"
@@ -455,14 +451,28 @@ export SHIM_AMD_GPUS=2 SHIM_RUNTIMES=amd
 [[ $(snap '.gpus[1].chosen') == true ]] || fail "pin second amd" "$(snap .gpus)"; pass "gpu amd-rocm:1 pins the second AMD card"
 "$CLI" gpu auto >/dev/null
 # two cards: a gpuCount=2 sibling is preferred; pinning a card keeps the 1-GPU recipe
-tp2=$(recipe tp2 true hf | jq '.model.name="TP2 Model" | .launch.arguments += ["--tensor-parallel-size","2"]')
+tp2=$(recipe tp2 true hf | jq '.model.name="TP2 Model" | .cards=2 | .launch.arguments += ["--tensor-parallel-size","2"]')
 jq --argjson r "$tp2" '.hardware["rx-7900-xtx-24gb-tp2"]={match:{backend:"amd-rocm",vramGb:24,gpuCount:2,names:["rx7900xtx"],name:"rx-7900-xtx-24gb-tp2"},recipe:$r}' \
   "$OMARCHY_AI_RECIPES" >"$TMP/recipes.tp2.json" && mv "$TMP/recipes.tp2.json" "$OMARCHY_AI_RECIPES"
 "$CLI" snapshot >/dev/null
 [[ $(snap .hardwareId) == rx-7900-xtx-24gb-tp2 && $(snap .selected.name) == "TP2 Model" ]] || fail "two amd pick tp2" "$(snap .hardwareId) $(snap .model)"; pass "two AMD cards pick the gpuCount=2 recipe"
 : >"$SHIM/docker.log"; SHIM_RUNTIMES=amd "$CLI" load
-grep -q -- "--device amd.com/gpu=all" "$SHIM/docker.log" || fail "amd tp2 cdi" "$(grep engine "$SHIM/docker.log" | tail -1)"; pass "TP>1 AMD launch uses CDI amd.com/gpu=all"
+line=$(grep "^docker run .*omarchy-local-ai-tp2-engine" "$SHIM/docker.log" | tail -1)
+[[ $(snap '.selected.indexes|join(",")') == "0,1" ]] || fail "amd tp2 indexes" "$(snap .selected)"
+grep -q -- "--device amd.com/gpu=0" <<<"$line" && grep -q -- "--device amd.com/gpu=1" <<<"$line" || fail "amd tp2 cdi" "$line"
+grep -q -- "--device amd.com/gpu=all" <<<"$line" && fail "amd tp2 used all gpus" "$line"; pass "TP AMD launch uses one CDI device per claimed index, not amd.com/gpu=all"
 "$CLI" unload
+# three identical cards: a 2-card claim must not widen to all (an iGPU / extra dGPU must stay out)
+export SHIM_AMD_GPUS=3 SHIM_RUNTIMES=amd
+"$CLI" snapshot >/dev/null
+[[ $(snap '.gpus|length') == 3 && $(snap .hardwareId) == rx-7900-xtx-24gb-tp2 && $(snap '.selected.indexes|join(",")') == "0,1" ]] || fail "three amd claim two" "$(snap .hardwareId) $(snap .selected) $(snap .gpus)"
+: >"$SHIM/docker.log"; "$CLI" load
+line=$(grep "^docker run .*omarchy-local-ai-tp2-engine" "$SHIM/docker.log" | tail -1)
+grep -q -- "--device amd.com/gpu=0" <<<"$line" && grep -q -- "--device amd.com/gpu=1" <<<"$line" || fail "amd 3gpu claimed cdi" "$line"
+grep -q -- "--device amd.com/gpu=2" <<<"$line" && fail "third amd gpu claimed" "$line"
+grep -q -- "--device amd.com/gpu=all" <<<"$line" && fail "3gpu used all" "$line"; pass "a 2-card AMD claim on a 3-card host uses only the claimed CDI devices"
+"$CLI" unload
+export SHIM_AMD_GPUS=2
 "$CLI" gpu amd-rocm:0 >/dev/null
 [[ $(snap .hardwareId) == rx-7900-xtx-24gb && $(snap .selected.name) == "Test Model" ]] || fail "pin keeps 1-gpu recipe" "$(snap .hardwareId) $(snap .model)"; pass "pinning one AMD card keeps the 1-GPU recipe"
 : >"$SHIM/docker.log"; SHIM_RUNTIMES=amd "$CLI" load
