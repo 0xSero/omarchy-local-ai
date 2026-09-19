@@ -401,7 +401,9 @@ write_recipes "$(recipe ipc true asset | jq '.launch.ipc="host"')"; "$CLI" snaps
   candidate=$(jq -c '.match.backend="intel-xpu" | .launch.devices=["/dev/dri"] | .launch.arguments=[]' <<<"$r")
   [[ -z $(gate_reason "$candidate") ]] || fail "legacy Intel declaration refused"
   argv=$(engine_argv "$candidate" | jq -Rsc 'split("\u0000")[:-1]')
-  jq -e --arg img "$img" --arg node "$TMP/renderD128" '. as $a | index($img) as $i |
+  # the expected node goes through canon() too: on a host where /var is a symlink (macOS) the engine
+  # reports the resolved path, and comparing it against $TMP would fail for the wrong reason
+  jq -e --arg img "$img" --arg node "$(canon "$TMP/renderD128")" '. as $a | index($img) as $i |
     [range($i) | select($a[.] == "--device") | $a[.+1]] == [($node+":"+$node)]' <<<"$argv" >/dev/null || fail "Intel declaration must map only render nodes"
   rm -f "$OMARCHY_AI_DRI_PATH/pci-test-render" "$TMP/renderD128"
 )
