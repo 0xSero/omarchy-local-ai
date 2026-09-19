@@ -108,8 +108,7 @@ See [10 — Sharing](10-sharing.md). The short version: `tailscale is not instal
 | `load a model first` | no ready model | Start one |
 | `<name> cannot use this model: its API dialect did not pass acceptance` | the engine does not serve that dialect | pick another agent, or a recipe whose engine serves it |
 | `<name> is not installed` | the binary is not found | install it, or place it in `~/.local/bin` |
-| `could not open a terminal for <name>: omarchy-launch-tui is missing` | no launcher | install Omarchy's launcher |
-| `could not open a terminal for <name>: the uwsm app daemon is not answering` | uwsm is wedged | restart uwsm; the plugin already tried the plain client |
+| `could not open a terminal for <name>: no Omarchy terminal launcher is available` | neither `omarchy-launch-tui` nor `uwsm` with `xdg-terminal-exec` is installed | install Omarchy's launcher |
 | `agent-args <agent> [-- flags...], one of: …` | wrong agent name | use a name from the list printed |
 | `agent-dir: not a directory: <path>` | the path does not exist | create it first |
 

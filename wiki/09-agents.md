@@ -96,15 +96,15 @@ omarchy-launch-tui --app-id=org.omarchy.agent <argv>          (detached, its own
 ```
 
 `omarchy-launch-tui` blocks for the terminal's whole life, so its exit is detached from the launch and
-never reported as the agent's. It goes through uwsm's fast app daemon, which can wedge (*Timed out
-waiting for pipes*, ten seconds per call), so a two-second `uwsm-app ping` decides between it and the
-plain client:
+never reported as the agent's. It is the normal path, and it is not probed with *uwsm-app ping*: current
+Omarchy turns that probe into a visible *pong* notification, so opening an agent would look like it ran a
+test action. When the launcher is missing, the same terminal command goes through the plain uwsm client:
 
 ```
 uwsm app -- xdg-terminal-exec --app-id=org.omarchy.agent -e <argv>
 ```
 
-If neither is available: `could not open a terminal for <name>: the uwsm app daemon is not answering`.
+If neither is available: `could not open a terminal for <name>: no Omarchy terminal launcher is available`.
 A launch that works clears an earlier refusal (`.error = ""`), because the panel's error state would
 otherwise outlive the problem.
 
