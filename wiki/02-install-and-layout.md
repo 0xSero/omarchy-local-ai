@@ -41,7 +41,7 @@ plugin add` is a clone, which is why the traffic workflow counts clones as insta
 | docker | everything that runs | no docker-group membership needed; see [1 — Architecture](01-architecture.md) |
 | pkexec + a polkit agent | the prompt mode | Omarchy ships both |
 | NVIDIA GPU (8 GB+) or Intel Arc Pro B70 | a recipe to exist for your card | the NVIDIA container toolkit is installed inside the same prompt when missing |
-| `hf` | faster downloads | optional; without it the recipe's own image downloads |
+| `hf` | weight downloads | required when the recipe image lacks Python 3 or `huggingface_hub`; otherwise the image can download |
 | `tailscale` | `share` | optional |
 
 The card says what is missing before it tries: with no supported GPU it reads *no supported GPU*;

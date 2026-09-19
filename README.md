@@ -24,7 +24,8 @@ Home also carries one **update** row. A background check reads the registry's re
 
 - **Docker**, which Omarchy ships. You do not need to be in the `docker` group: Start, Stop, and Share ask for your password once, through Omarchy's own prompt. With *Sudoless Docker* enabled in Omarchy's security settings there is no prompt.
 - **An NVIDIA GPU (8 GB and up) or an Intel Arc Pro B70.** The NVIDIA container toolkit is installed for you inside that same prompt when missing.
-- Optional: `tailscale` for sharing, `hf` for faster downloads.
+- **Hugging Face CLI (`hf`)** to download weights when the engine image lacks Python 3 or `huggingface_hub`. Other images can download weights themselves.
+- Optional: `tailscale` for sharing.
 
 No config file or API key to make.
 
