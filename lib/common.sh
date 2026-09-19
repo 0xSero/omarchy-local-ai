@@ -53,10 +53,14 @@ canon() { # canonicalize, resolving symlinks even for not-yet-existing leaf path
 }
 
 # ---------------------------------------------------------------- ledger
-lread() { # Normalize the v1 ledger shape on read. The first lwrite persists this as ledger/2; snapshots also
-  # remain safe during the transition, rather than sending jq's "null has no keys" to the panel log.
+lread() { # Normalize a ledger written by an older plugin on read: a v1 ledger has no .slots and
+  # keeps its acceptance at the top level, where v2 keeps it per slot. Migrate the shape, drop the
+  # stale top-level field, and let the first lwrite persist it as ledger/2; snapshots stay safe
+  # during the transition, rather than sending jq's "null has no keys" to the panel log.
   if [[ -f $LEDGER ]]; then
-    jq -c '.slots = (.slots // {}) | .schemaVersion = "omarchy-local-ai/ledger/2"' "$LEDGER"
+    jq -c 'if .slots == null or .schemaVersion != "omarchy-local-ai/ledger/2"
+           then .slots = (.slots // {}) | .schemaVersion = "omarchy-local-ai/ledger/2" | del(.accepted)
+           else . end' "$LEDGER"
   else
     printf '%s\n' "$LEDGER_EMPTY"
   fi
