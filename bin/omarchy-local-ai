@@ -56,10 +56,11 @@ current_recipe() { # the one recipe for this machine, gated; prints json or fail
   m=$(match_hardware); id=$(jq -r .hardwareId <<<"$m")
   [[ -n $id ]] || { fail "$(jq -r .reason <<<"$m")"; return 1; }
   r=$(recipe_for "$id") || return 1
-  r=$(jq -c --argjson m "$m" '. + {gpuIndex:$m.gpu.index, match:{backend:$m.gpu.backend}}' <<<"$r")
+  r=$(jq -c --argjson m "$m" '. + {gpuIndex:$m.gpu.index, gpuRenderNode:($m.gpu.renderNode // ""), match:{backend:$m.gpu.backend}}' <<<"$r")
   gate=$(gate_reason "$r"); [[ -z $gate ]] || { fail "recipe refused: $gate"; return 1; }
   local ci; ci=$(claimed_indexes "$r" "$m"); [[ $(jq -r .short <<<"$ci") == "" ]] || { fail "$(jq -r .short <<<"$ci")"; return 1; }
-  r=$(jq -c --argjson ci "$ci" '. + {gpuIndexes:$ci.indexes, gpuKeys:$ci.keys}' <<<"$r")
+  r=$(jq -c --argjson ci "$ci" --argjson m "$m" '. + {gpuIndexes:$ci.indexes, gpuKeys:$ci.keys,
+    gpuRenderNodes:([$m.gpus[] | select(.index as $i | $ci.indexes | index($i)) | .renderNode | select(. != null and . != "")] | unique)}' <<<"$r")
   driver_ok "$(jq -r .driver <<<"$m")" "$(jq -r '.minDriver // ""' <<<"$r")" \
     || { fail "needs NVIDIA driver $(jq -r .minDriver <<<"$r") or newer"; return 1; }
   printf '%s\n' "$r"

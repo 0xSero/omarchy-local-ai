@@ -61,13 +61,23 @@ match_hardware() {
   jq -c --argjson hw "$hw" --arg pick "$(gpu_pick)" '
     def norm: ascii_downcase|gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]";"");
     . as $file
-    | [$hw.gpus | to_entries[] as $gi | $gi.value as $g
-        | ([$file.hardware|to_entries[] as $e
-            | select($g.backend==$e.value.match.backend)
-            | select(($e.value.match.names|index($g.product|norm))!=null)
-            | select(((($e.value.match.vramGb*1024)-$g.totalMiB)|fabs)<=1024)
-            | $e.key] | .[0] // "") as $id
-        | $g + {hardwareId:$id, key:($g.backend+":"+($g.index|tostring)), order:$gi.key,
+    | def matches($g;$m):
+        $g.backend==$m.backend
+        and (($m.names|index($g.product|norm))!=null)
+        and (((($m.vramGb*1024)-$g.totalMiB)|fabs)<=1024);
+      def peers($m): [$hw.gpus[] | select(matches(.;$m))] | length;
+      [$hw.gpus | to_entries[] as $gi | $gi.value as $g
+        | ($g.backend+":"+($g.index|tostring)) as $key
+        | [$file.hardware|to_entries[] as $e
+            | select(matches($g;$e.value.match))
+            | select(($e.value.match.gpuCount // 1) <= peers($e.value.match))
+            | $e] as $cands
+        | (if ($cands|length)==0 then ""
+           elif $pick!="" and $key==$pick then
+             ([ $cands[] | select((.value.match.gpuCount // 1)==1) ] | .[0].key // $cands[0].key)
+           else ($cands | max_by(.value.match.gpuCount // 1) | .key)
+           end) as $id
+        | $g + {hardwareId:$id, key:$key, order:$gi.key,
                 vramGb:(if $g.totalMiB==null then null else (($g.totalMiB/1024)+0.5|floor) end)}] as $gpus
     | ([$gpus[]|select(.key==$pick)]|.[0]) as $pinned
     | ([$gpus[]|select(.hardwareId!="")] | sort_by(-.totalMiB, -(.freeMiB // 0), .order) | .[0]) as $auto
@@ -78,7 +88,7 @@ match_hardware() {
                elif ($gpus|length)==0 then "no supported GPU detected"
                else ("no validated recipe for "+(($use // $gpus[0]).product)+" yet") end),
        pinned:($pinned!=null),
-       gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // "")), tempC:(.tempC // null), utilPct:(.utilPct // null),
+       gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // "")), renderNode:(.renderNode // null), tempC:(.tempC // null), utilPct:(.utilPct // null),
                        usedGb:(if .usedMiB==null then null else ((.usedMiB/1024*10|round)/10) end)}]}' "$RECIPES"
 }
 

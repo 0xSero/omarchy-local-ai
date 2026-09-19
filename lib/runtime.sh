@@ -71,6 +71,12 @@ write_assets() {
   done < <(jq -r '.launch.mounts[]?|.source|select(startswith("asset/"))|ltrimstr("asset/")' <<<"$r")
 }
 
+cdi_amd_available() {
+  local info
+  info=$(deadline 5 docker info 2>/dev/null) || return 1
+  grep -q "cdi: amd.com/gpu=" <<<"$info"
+}
+
 engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
   local r=$1 id backend src tgt mode v real name net
   id=$(jq -r .id <<<"$r"); backend=$(jq -r .match.backend <<<"$r"); name=$(jq -r .slot.engine <<<"$r"); net=$(jq -r .slot.net <<<"$r")
@@ -81,6 +87,21 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
     # reads as device 0 plus count 1 ("cannot set both Count and DeviceIDs")
     local ids; ids=$(jq -r '(.gpuIndexes // [.gpuIndex]) | map(tostring) | join(",")' <<<"$r")
     if [[ $ids == *,* ]]; then a+=(--gpus "\"device=$ids\""); else a+=(--gpus "device=$ids"); fi
+  elif [[ $backend == amd-rocm ]]; then
+    # CDI when amd-ctk has produced a spec; KFD+render otherwise. Same HSA surface for the engine.
+    if cdi_amd_available; then
+      local tp; tp=$(jq -r '[.launch.arguments[]?]|index("--tensor-parallel-size") as $i | if $i==null then 1 else (.[$i+1]|tonumber) end' <<<"$r")
+      if (( tp > 1 )); then a+=(--device amd.com/gpu=all); else a+=(--device "amd.com/gpu=$(jq -r .gpuIndex <<<"$r")"); fi
+      a+=(--group-add video --group-add render)
+    else
+      local -a nodes=()
+      while IFS= read -r real; do
+        [[ $real =~ ^/dev/dri/renderD[0-9]+$ ]] || { fail "no render node for a selected AMD GPU"; return 1; }
+        nodes+=(--device "$real:$real")
+      done < <(jq -r '(.gpuRenderNodes // [.gpuRenderNode])[]? // empty' <<<"$r")
+      ((${#nodes[@]})) || { fail "no render nodes for selected AMD GPUs"; return 1; }
+      a+=(--device /dev/kfd:/dev/kfd "${nodes[@]}" --group-add video --group-add render)
+    fi
   else # Intel: render nodes only, resolved per device; no card* control nodes, no whole /dev/dri
     local -a nodes=()
     for v in "${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}"/*-render; do [[ -e $v ]] || continue; real=$(canon "$v"); nodes+=(--device "$real:$real"); done

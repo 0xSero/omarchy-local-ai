@@ -49,7 +49,7 @@ agent_command() {
     opencode)
       # opencode resolves {env:NAME} inside its config, so the key stays out of the config text too
       cfg=$(jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --argjson ctx "$context" --argjson vision "$vision" \
-        '{"$schema":"https://opencode.ai/config.json",provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:"{env:OMARCHY_LOCAL_AI_KEY}"},models:{($m):{name:$m,limit:{context:$ctx,output:$ctx},modalities:{input:(if $vision then ["text","image"] else ["text"] end),output:["text"]}}}}}}')
+        '{"$schema":"https://opencode.ai/config.json",provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:"{env:OMARCHY_LOCAL_AI_KEY}"},models:{($m):{name:$m,limit:{context:$ctx,output:$ctx},reasoning:true,options:{reasoningEffort:"xhigh"},modalities:{input:(if $vision then ["text","image"] else ["text"] end),output:["text"]}}}}}}')
       with_key OMARCHY_LOCAL_AI_KEY
       printf '%s\0' env "OPENCODE_CONFIG_CONTENT=$cfg" "$bin" --model "omarchy-local/$model" ;;
     pi|omp)
@@ -68,7 +68,8 @@ agent_command() {
       printf '%s\0' env "PI_CODING_AGENT_DIR=$dir" "OMP_CODING_AGENT_DIR=$dir"
       # Local llama.cpp decoders cannot read WebP; OMP can preserve PNG/JPEG instead.
       [[ $name == omp ]] && printf '%s\0' OMP_NO_WEBP=1
-      printf '%s\0' "$bin" --provider omarchy-local --model "$model" ;;
+      # Qwen3.8's chat template rejects OpenAI-style "high"; it allows xhigh/medium/low (xhigh is the model default).
+      printf '%s\0' "$bin" --provider omarchy-local --model "$model" --thinking=xhigh ;;
     crush)
       # crush takes providers from XDG config only, not from OPENAI_BASE_URL, and its XDG data file pins the
       # last chosen model over the config: give it a plugin-owned config and data home

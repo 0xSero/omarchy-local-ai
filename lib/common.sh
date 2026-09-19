@@ -53,7 +53,14 @@ canon() { # canonicalize, resolving symlinks even for not-yet-existing leaf path
 }
 
 # ---------------------------------------------------------------- ledger
-lread() { if [[ -f $LEDGER ]]; then cat "$LEDGER"; else printf '%s\n' "$LEDGER_EMPTY"; fi; }
+lread() { # Normalize the v1 ledger shape on read. The first lwrite persists this as ledger/2; snapshots also
+  # remain safe during the transition, rather than sending jq's "null has no keys" to the panel log.
+  if [[ -f $LEDGER ]]; then
+    jq -c '.slots = (.slots // {}) | .schemaVersion = "omarchy-local-ai/ledger/2"' "$LEDGER"
+  else
+    printf '%s\n' "$LEDGER_EMPTY"
+  fi
+}
 sha_of() { printf '%s' "$1" | { command -v sha256sum >/dev/null 2>&1 && sha256sum || shasum -a 256; } | cut -c1-64; }   # of a string
 deadline() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }   # <secs> <cmd...>: a probe that hangs must not hang the card
 HAVE_FLOCK=0; command -v flock >/dev/null 2>&1 && HAVE_FLOCK=1   # Omarchy has util-linux; the mkdir path is for tests elsewhere

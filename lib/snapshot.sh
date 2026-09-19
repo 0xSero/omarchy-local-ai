@@ -84,7 +84,7 @@ snapshot_write() {
   [[ -f $LEDGER ]] && jq -e 'has("share")' "$LEDGER" >/dev/null 2>&1 && lwrite 'del(.share)'   # a ledger from before 4.1 carried the key: scrub it wherever it is met
   local ledger match rec hw_id reason state="" note="" pid busy=false
   ledger=$(lread); match=$(match_hardware); hw_id=$(jq -r .hardwareId <<<"$match"); reason=$(jq -r .reason <<<"$match")
-  rec=$(recipe_for "$hw_id"); [[ -n $rec ]] && rec=$(jq -c --argjson m "$match" '. + {gpuIndex:$m.gpu.index, match:{backend:$m.gpu.backend}}' <<<"$rec")
+  rec=$(recipe_for "$hw_id"); [[ -n $rec ]] && rec=$(jq -c --argjson m "$match" '. + {gpuIndex:$m.gpu.index, gpuRenderNode:($m.gpu.renderNode // ""), match:{backend:$m.gpu.backend}}' <<<"$rec")
   pid=$(busy_pid); [[ -n $pid ]] && busy=true
   $busy || ledger=$(lread)   # a worker that finished between the two reads has already cleared its op: read again before calling it vanished
   if ! $busy && [[ $(jq -r .op.pid <<<"$ledger") -gt 0 ]]; then # the op's worker is gone without a word (killed): say so, once
