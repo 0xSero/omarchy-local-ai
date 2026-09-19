@@ -86,9 +86,13 @@ phase_start() { # phase_start <recipe-file> <download 0|1>: images, weights when
       why=$(docker_ok "$(jq -r .match.backend <<<"$r")") || { printf 'reason %s\n' "$why"; return 1; }
     else printf 'reason %s\n' "$why"; return 1; fi
   fi
-  ensure_image "$(jq -r .launch.image <<<"$r")" "$id" || return 1
-  ensure_image "$(gateway_image)" "$id" || return 1
-  if [[ ${2:-0} == 1 ]]; then echo "step downloading weights"; download_run "$r" || return 1; fi
+  if host_recipe "$r"; then
+    ensure_image "$(gateway_image)" "$id" || return 1
+  else
+    ensure_image "$(jq -r .launch.image <<<"$r")" "$id" || return 1
+    ensure_image "$(gateway_image)" "$id" || return 1
+    if [[ ${2:-0} == 1 ]]; then echo "step downloading weights"; download_run "$r" || return 1; fi
+  fi
   echo "step setting aside the previous model"
   drop_previous
   set_aside "$r" || { printf 'reason could not set aside the running containers\n'; return 1; }

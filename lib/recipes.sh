@@ -100,6 +100,8 @@ recipe_pick() { printf '%s' "${OMARCHY_AI_RECIPE:-$(cat "$RECIPE_PICK" 2>/dev/nu
 # offered(): the shape checks of gate_reason a file can fail on its own (host networking or IPC, extra
 # capabilities, a weakened profile): such a recipe is not offered at all rather than refused at Start
 OFFERED='select(((.launch.networkMode//"bridge")=="bridge") and ((.launch.ipc//"")!="host") and (((.launch.capAdd//[])|length)==0) and (((.launch.securityOpt//[])|length)==0))'
+host_recipe() { [[ $(jq -r '.launch.kind // "docker"' <<<"$1") == host ]]; }
+flm_tag() { jq -r '.model.tag // .model.servedName // empty' <<<"$1"; }
 recipes_for() { jq -c --arg h "$1" "[.hardware[\$h] | select(.!=null) | (.recipe // empty), (.recipes[]? // empty | $OFFERED)]" "$RECIPES"; }   # every recipe of a card, recommended first; a refused alternate is left out, a refused recommendation stays with its reason
 # claimed_indexes <recipe-json> <match-json> -> {"indexes":[..],"backends":[..],"short":""}: every card the
 # recipe claims (claims per hardware id, or `cards` of its own type), resolved to device indexes:
@@ -130,7 +132,9 @@ gate_reason() {
     elif (.model.repository|test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")|not) then "invalid model repository"
     elif ((.weights.subdir//"")|test("^([A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*)?$")|not) then "invalid weights directory"
     elif ((.model.servedName//"")|test("[\"\\\\\\x27]")) then "invalid served model name"
-    elif (.launch.image|test("@sha256:[0-9a-f]{64}$")|not) then "image is not digest-pinned"
+    elif ((.launch.kind // "docker") == "host") and (.engine != "flm") then "host recipes must use the flm engine"
+    elif ((.launch.kind // "docker") == "host") and ((.model.tag // .model.servedName // "")|test("^[A-Za-z0-9][A-Za-z0-9._:-]*$")|not) then "invalid flm model tag"
+    elif ((.launch.kind // "docker") != "host") and (.launch.image|test("@sha256:[0-9a-f]{64}$")|not) then "image is not digest-pinned"
     elif (.model.revision|test("^[0-9a-f]{40,64}$")|not) then "model revision is not pinned"
     elif ((.launch.networkMode//"bridge")!="bridge") then "requires \(.launch.networkMode) networking"
     elif ((.launch.ipc//"")=="host") then "requires host IPC"
