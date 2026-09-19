@@ -94,12 +94,24 @@ amd_gpus_from_rocm_smi() {
   # breaks naive IFS parsing. Read the header row to find the field indices we need by name — the
   # column names themselves are stable across versions. awk emits tab-separated so bash's IFS
   # splits cleanly across the four fields even though Card Series contains spaces.
-  while IFS=$'\t' read -r card product bytes used; do
+  while IFS=$'\t' read -r card product bytes used model; do
     [[ -n $product && -n $bytes ]] || continue
     [[ $product == *Radeon* || $product == *AMD* ]] || continue
     [[ $product == AMD* ]] || product="AMD $product"
-    bdf=''
-    if [[ -n $card && -e /sys/class/drm/$card/device ]]; then
+    # rocm-smi's own "device" numbering (card0, card1, ...) does not necessarily match the
+    # sysfs /sys/class/drm/cardN names: on a hybrid dGPU+iGPU system the two diverge and a
+    # readlink of the card column picks the wrong PCI device. The Card Model hex id is the
+    # PCI device id, so resolve the bdf from the drm card whose uevent PCI_ID matches it.
+    local bdf='' c
+    if [[ -n ${model:-} ]]; then
+      for c in /sys/class/drm/card[0-9]*; do
+        [[ -e $c/device/uevent ]] || continue
+        grep -qi "PCI_ID=1002:${model#0x}" "$c/device/uevent" 2>/dev/null || continue
+        bdf=$(basename "$(readlink "$c/device" 2>/dev/null)" 2>/dev/null) || bdf=''
+        [[ -n $bdf ]] && break
+      done
+    fi
+    if [[ -z $bdf && -n $card && -e /sys/class/drm/$card/device ]]; then
       bdf=$(basename "$(readlink /sys/class/drm/$card/device 2>/dev/null)" 2>/dev/null) || bdf=''
     fi
     out=$(jq -c --argjson i "$i" --arg p "$product" --argjson t "$bytes" --argjson u "${used:-0}" --arg bdf "${bdf:-}" \
@@ -115,6 +127,7 @@ amd_gpus_from_rocm_smi() {
       for (i=1; i<=NF; i++) {
         if ($i == "device") dv = i
         if ($i == "Card Series") cs = i
+        if ($i == "Card Model") cm = i
         if ($i == "VRAM Total Memory (B)") vt = i
         if ($i == "VRAM Total Used Memory (B)") vu = i
       }
@@ -123,7 +136,7 @@ amd_gpus_from_rocm_smi() {
     NR>1 && dv && cs && vt && vu {
       card = $(dv); product = $(cs); bytes = $(vt); used = $(vu)
       if (product == "" || bytes == "") next
-      print card, product, bytes, used
+      print card, product, bytes, used, $(cm)
     }')
   printf '%s' "$out"
 }
