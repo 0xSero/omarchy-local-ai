@@ -180,7 +180,8 @@ case "$1" in
   --version) echo "FLM v${SHIM_FLM_VERSION:-1.0.4}" ;;
   *) exit 0 ;;
 esac
-EOFfind "$TMP/bin" -type f -exec chmod +x {} +   # not the jq symlink: its target is not ours to chmod on CI
+EOF
+find "$TMP/bin" -type f -exec chmod +x {} +   # not the jq symlink: its target is not ours to chmod on CI
 
 # ---------------------------------------------------------------- fixture recipes.json
 digest=$(printf 'a%.0s' {1..64}); rev=$(printf 'b%.0s' {1..40})
@@ -389,9 +390,14 @@ write_recipes "$(recipe rx6800xt true asset)" rx-6800-xt-16gb
 jq '.hardware["rx-6800-xt-16gb"].match={backend:"amd-rocm",vramGb:16,names:["rx6800xt"],name:"AMD Radeon RX 6800 XT"}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
 "$CLI" snapshot >/dev/null
 [[ $(snap .hardwareId) == rx-6800-xt-16gb && $(snap '.gpus[0].key') == amd-rocm:0 ]] || fail "amd hardware matched" "$(snap .gpus)"; pass "AMD RX 6800 XT matches an amd-rocm recipe"
+# The gate accepts CDI or /dev/kfd plus render nodes; a box with neither refuses the launch before any wiring exists.
+if [[ ! -e /dev/kfd ]] || [[ -z $(ls /dev/dri/renderD* 2>/dev/null) ]]; then
+  skip "AMD RX 6800 XT ROCm launch: no /dev/kfd or render nodes on this host (typical CI without AMD GPU)"
+else
 : >"$SHIM/docker.log"; "$CLI" load
 [[ $(snap .state) == ready ]] || fail "amd load" "$(snap .state) $(snap .error)"
 grep -q -- "--device /dev/kfd:/dev/kfd" "$SHIM/docker.log" && grep -q -- "--device /dev/dri/renderD128:/dev/dri/renderD128" "$SHIM/docker.log" || fail "amd device wiring" "$(grep omarchy-local-ai-rx6800xt-engine "$SHIM/docker.log" | tail -1)"; pass "AMD engine receives KFD and only its assigned render node"
+fi
 "$CLI" unload
 unset OMARCHY_AI_HARDWARE_JSON
 write_recipes "$(recipe good true asset)"
