@@ -8,6 +8,9 @@ hardware_json() {
   if command -v nvidia-smi >/dev/null 2>&1; then
     # one invocation answers both: per-card rows and the driver version on every row
     rows=$(deadline 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,memory.free,driver_version,temperature.gpu,utilization.gpu --format=csv,noheader,nounits 2>/dev/null || true)
+    # a failed nvidia-smi (no NVIDIA GPU, broken driver) still prints a message on stdout;
+    # only CSV rows carry commas, so anything else means "no card" — keep the driver empty too
+    [[ $rows == *,* ]] || rows=''
     driver=$(head -1 <<<"$rows" | awk -F, '{print $6}' 2>/dev/null | tr -d ' ' || true)
   fi
   [[ -n $rows ]] && nvidia=$(jq -Rsc 'split("\n")|map(select(length>0)|split(",")|map(gsub("^ +| +$";"")))
