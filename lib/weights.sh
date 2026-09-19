@@ -143,8 +143,6 @@ weights_find() { # weights_find <recipe>: adopt a verified copy from this machin
   return 1
 }
 
-# download_weights <recipe>: host `hf` when present, else the recipe's own image, which always carries
-# huggingface_hub because the engine loads from the Hub. Progress is reported through op().
 # mount_dirs <recipe>: the host directories the recipe mounts, made before any container (as this user, shared)
 mount_dirs() {
   local r=$1 src tgt real
@@ -246,11 +244,14 @@ download_host() {
   wait "$pid" || { fail "weight download failed for $id (see $LOGFILE)"; return 1; }
 }
 
-# download_run <recipe>: the recipe's own image downloads the weights (it always carries huggingface_hub);
+# download_run <recipe>: the recipe's image downloads the weights if it carries huggingface_hub;
 # runs inside a phase, blocking; the user's side reports progress from the directory's size.
 download_run() {
   local r=$1 id repo rev img err
   id=$(jq -r .id <<<"$r"); repo=$(jq -r .model.repository <<<"$r"); rev=$(jq -r .model.revision <<<"$r"); img=$(jq -r .launch.image <<<"$r")
+  run_child docker run --rm --network none --user "$RUN_AS" --env HOME=/tmp \
+    --label "$LABEL.download=1" --entrypoint python3 "$img" -c 'import huggingface_hub' >&2 2>&1 \
+    || { printf 'reason host hf is required to download weights for %s: the image downloader is unavailable (see %s)\n' "$id" "$LOGFILE"; return 1; }
   weights_dest_vars "$r"
   local py="import os; from huggingface_hub import snapshot_download as d; d(os.environ['HF_REPO'], revision=os.environ['HF_REV']"
   [[ -n $WPATTERN ]] && py+=", allow_patterns=[os.environ['HF_PATTERN'], '*mmproj*']"

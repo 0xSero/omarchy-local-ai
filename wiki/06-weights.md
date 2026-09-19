@@ -70,8 +70,10 @@ with rate and ETA from the previous sample — the card's `12 / 18 GB · about 6
 
 ### The recipe's own image — `download_run`
 
-Inside a start phase, when the host has no `hf`. The engine image always carries `huggingface_hub`,
-because the engine loads from the Hub:
+Inside a start phase, when the host has no `hf`. A network-disabled container first checks that
+Python 3 can import `huggingface_hub`, as `RUN_AS`, without mounting weights or passing the Hub token.
+If the downloader is unavailable, Start reports that host `hf` is required and writes no completion
+marker. Otherwise the image downloads:
 
 ```
 docker run --rm --user <RUN_AS> --label io.omarchy.local-ai.download=1 --network bridge \

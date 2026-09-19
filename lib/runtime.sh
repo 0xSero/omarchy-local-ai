@@ -198,6 +198,9 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
     # reads as device 0 plus count 1 ("cannot set both Count and DeviceIDs")
     local ids; ids=$(jq -r '(.gpuIndexes // [.gpuIndex]) | map(tostring) | join(",")' <<<"$r")
     if [[ $ids == *,* ]]; then a+=(--gpus "\"device=$ids\""); else a+=(--gpus "device=$ids"); fi
+    if jq -e '.launch.devices == ["/dev/nvidia-uvm"]' >/dev/null <<<"$r"; then
+      a+=(--device /dev/nvidia-uvm)
+    fi
   elif [[ $backend == amd-rocm ]]; then
     # CDI when amd-ctk has produced a spec; KFD+render otherwise. Same HSA surface for the engine.
     if cdi_amd_available; then

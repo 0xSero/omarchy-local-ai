@@ -10,7 +10,7 @@ export OMARCHY_AI_USER_HOME="$TMP/home" OMARCHY_AI_STATE="$TMP/state" OMARCHY_AI
   OMARCHY_AI_MODEL_ROOT="$TMP/home/.cache/omarchy/local-ai/models" OMARCHY_AI_CACHE_ROOT="$TMP/home/.cache/omarchy/local-ai/cache" \
   OMARCHY_AI_HF_HOME="$TMP/home/.cache/huggingface" OMARCHY_AI_PORT=12434 OMARCHY_AI_POLL=0 OMARCHY_AI_TIMEOUT=5 \
   OMARCHY_AI_FOREGROUND=1 OMARCHY_AI_NO_HOST_HF=1 OMARCHY_AI_NO_HOST_AMD=1 OMARCHY_AI_DOCKER=direct SHIM="$TMP/shim" OMARCHY_AI_DRI_PATH="$TMP/dri" \
-  PATH="$TMP/bin:/usr/bin:/bin"   # shims plus the base system only; the developer's own agents must not leak in
+  PATH="$TMP/bin:/usr/bin:/bin"   # known agents are shimmed below, including any installed system-wide
 mkdir -p "$TMP/bin" "$TMP/home" "$SHIM"
 ln -s "$BASH" "$TMP/bin/bash"
 ln -s "$(PATH="$PATH:/opt/homebrew/bin:/usr/local/bin" command -v jq)" "$TMP/bin/jq"
@@ -61,6 +61,7 @@ case "$1" in
       [[ ${args[$i]} == --entrypoint && ${args[$((i+1))]} == python3 ]] && role=download
     done
     if [[ $role == download ]]; then # the weights downloader: write a fake file into the mounted dir (a partial one first when slow)
+      if [[ ${args[*]} == *'import huggingface_hub'* ]]; then [[ ${SHIM_HUB_MISSING:-0} != 1 ]]; exit $?; fi
       fname=model.safetensors; for a in "${args[@]}"; do [[ $a == HF_PATTERN=* ]] && fname=${a#HF_PATTERN=}; done   # a GGUF recipe fetches its one file
       for ((i=0;i<${#args[@]};i++)); do [[ ${args[$i]} == --volume ]] && { src=${args[$((i+1))]%%:*}; mkdir -p "$src"; [[ -n ${SHIM_DOWNLOAD_SLOW:-} ]] && { head -c 1024 /dev/zero >"$src/$fname"; sleep "$SHIM_DOWNLOAD_SLOW"; }; head -c 4096 /dev/zero >"$src/$fname"; }; done
       [[ ${SHIM_DOWNLOAD_FAIL:-} == 1 ]] && exit 1; exit 0
@@ -160,9 +161,18 @@ printf '0000:c3:00.0 VGA compatible controller [0300]: Intel Corporation Battlem
 printf '0000:c4:00.0 VGA compatible controller [0300]: Intel Corporation Device [8086:e223]\n'
 [[ -n ${SHIM_NPU:-} ]] && printf '0000:c2:00.1 Signal processing controller [1180]: Advanced Micro Devices, Inc. [AMD] Strix/Krackan/Strix Halo Neural Processing Unit [1022:17f0] (rev 20)\n'
 EOF
+cat >"$TMP/bin/hf" <<'EOF'
+#!/usr/bin/env bash
+echo "hf $*" >>"$SHIM/hf.log"
+while (( $# )); do
+  if [[ $1 == --local-dir ]]; then mkdir -p "$2"; head -c 4096 /dev/zero >"$2/model.safetensors"; exit 0; fi
+  shift
+done
+exit 1
+EOF
 printf '#!/usr/bin/env bash\n[[ ${SHIM_PORT_BUSY:-} == 1 ]] && echo "LISTEN 0 4096 127.0.0.1:12434 0.0.0.0:*"\nexit 0\n' >"$TMP/bin/ss"
 for tk in pacman nvidia-ctk systemctl; do printf '#!/usr/bin/env bash\necho "%s $*" >>"$SHIM/toolkit.log"\n' "$tk" >"$TMP/bin/$tk"; done
-for a in pi claude codex; do printf '#!/usr/bin/env bash\necho "$0 $* ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-} ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-} LOCAL_AI_KEY=${LOCAL_AI_KEY:-}"\n' >"$TMP/bin/$a"; done
+for a in pi omp opencode ori claude codex grok agy hermes copilot crush; do printf '#!/usr/bin/env bash\necho "$0 $* ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-} ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-} LOCAL_AI_KEY=${LOCAL_AI_KEY:-}"\n' >"$TMP/bin/$a"; done
 printf '#!/usr/bin/env bash\necho "launch $*"\n' >"$TMP/bin/omarchy-launch-tui"
 printf '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >>"$SHIM/uwsm-app.log"\nexit 0\n' >"$TMP/bin/uwsm-app"
 printf '#!/usr/bin/env bash\necho pi\n' >"$TMP/bin/omarchy-default-agent"
@@ -242,7 +252,7 @@ grep -q -- "--network-alias engine" "$SHIM/docker.log" || fail "engine on the pr
 grep -q -- "--volume $OMARCHY_AI_STATE/assets/cfg.yml:/app/config.yml:ro" "$SHIM/docker.log" || fail "asset mounted"; pass "config asset written from recipes.json and mounted read-only"
 [[ $(cat "$OMARCHY_AI_STATE/assets/cfg.yml") == "model_name: Test-Model" ]] || fail "asset content"; pass "asset content matches the vendored file"
 [[ $(snap '.apis|join(",")') == "chat,messages,responses" ]] || fail "all dialects accepted" "$(snap .apis)"; pass "acceptance probes chat, messages, and responses"
-[[ $(snap '.agents.launchable|join(",")') == "pi,claude,codex" ]] || fail "launchable agents" "$(snap .agents.launchable)"; pass "every installed agent is launchable when every dialect passed"
+[[ $(snap '.agents.launchable|join(",")') == "pi,omp,opencode,ori,claude,codex,grok,agy,hermes,copilot,crush" ]] || fail "launchable agents" "$(snap .agents.launchable)"; pass "every installed agent is launchable when every dialect passed"
 [[ -s $OMARCHY_AI_STATE/gateway.key ]] || fail "key generated"; pass "gateway key generated on first start"
 k=$(cat "$OMARCHY_AI_STATE/gateway.key")
 grep -rq -- "$k" "$OMARCHY_AI_STATE/ledger.json" "$OMARCHY_AI_STATE/snapshot.json" "$OMARCHY_AI_STATE/log" && fail "key leaked into ledger, snapshot, or log"; pass "the key is in gateway.key only: not in the ledger, the snapshot, or the log"
@@ -310,7 +320,7 @@ SHIM_LEAK_THINK=1 "$CLI" load; [[ $(snap .error) == *"reasoning leaks into the a
 "$CLI" load; [[ $(snap .state) == ready && $(snap .error) == "" ]] || fail "recover after leak"
 
 # missing dialects hide agents
-SHIM_APIS=chat "$CLI" load; [[ $(snap '.agents.launchable|join(",")') == "pi" ]] || fail "launchable filtered" "$(snap .agents.launchable)"; pass "agents whose dialect failed acceptance are hidden"
+SHIM_APIS=chat "$CLI" load; [[ $(snap '.agents.launchable|join(",")') == "pi,omp,opencode,ori,grok,agy,hermes,copilot,crush" ]] || fail "launchable filtered" "$(snap .agents.launchable)"; pass "agents whose dialect failed acceptance are hidden"
 [[ $("$CLI" open-agent claude 2>&1 || true) == *"did not pass acceptance"* ]] || fail "refused agent"; pass "open-agent refuses an agent whose dialect failed"
 
 # unload
@@ -356,6 +366,46 @@ write_recipes "$(recipe unpinned true asset | jq '.launch.image="ghcr.io/x/engin
 [[ $(snap .reason) == *"not digest-pinned"* ]] || fail "gate digest"; pass "gate: unpinned image refused"
 write_recipes "$(recipe ipc true asset | jq '.launch.ipc="host"')"; "$CLI" snapshot >/dev/null
 [[ $(snap .reason) == *"host IPC"* ]] || fail "gate ipc"; pass "gate: host IPC refused"
+# Device declarations cross the gate and the real argv builder, without starting containers.
+(
+  source "$ROOT/lib/common.sh"
+  source "$ROOT/lib/hardware.sh"
+  source "$ROOT/lib/recipes.sh"
+  source "$ROOT/lib/runtime.sh"
+  r=$(recipe devices false dir | jq -c '. + {gpuIndex:0,match:{backend:"nvidia"},slot:{engine:"test-engine",net:"test"}} |
+    .launch.mounts=[] | .launch.devices=["/dev/nvidia-uvm"] | .launch.arguments=["--device","CUDA0"]')
+  img=$(jq -r .launch.image <<<"$r")
+  [[ -z $(gate_reason "$r") ]] || fail "UVM declaration refused"
+  argv=$(engine_argv "$r" | jq -Rsc 'split("\u0000")[:-1]')
+  jq -e --arg img "$img" '. as $a | index($img) as $i |
+    ([range($i) | select($a[.] == "--device") | $a[.+1]] == ["/dev/nvidia-uvm"]) and
+    (.[$i+1:] == ["--device","CUDA0"])' <<<"$argv" >/dev/null || fail "UVM must precede the image; CUDA0 is an engine argument"
+  for filter in 'del(.launch.devices)' '.launch.devices=null' '.launch.devices=[]'; do
+    candidate=$(jq -c "$filter" <<<"$r")
+    [[ -z $(gate_reason "$candidate") ]] || fail "empty device declaration refused: $filter"
+    argv=$(engine_argv "$candidate" | jq -Rsc 'split("\u0000")[:-1]')
+    jq -e --arg img "$img" 'index($img) as $i | .[:$i] | index("--device") == null' <<<"$argv" >/dev/null || fail "empty device declaration added host access: $filter"
+  done
+  for devices in '["/dev/nvidia0"]' '["/dev/nvidia-uvm-tools"]' '["/dev/nvidia-uvm:/dev/nvidia-uvm"]' \
+    '["/dev/nvidia-uvm "]' '["/dev/../dev/nvidia-uvm"]' '["/dev/nvidia-uvm","/dev/nvidia-uvm"]' \
+    '["/dev/nvidia-uvm","/dev/sda"]' '["/dev/dri"]' '"/dev/nvidia-uvm"' false 0 '""' '{}'; do
+    candidate=$(jq -c --argjson d "$devices" '.launch.devices=$d' <<<"$r")
+    [[ $(gate_reason "$candidate") == "requires unsupported host devices" ]] || fail "unsafe devices accepted: $devices"
+  done
+  for backend in intel-xpu amd-rocm cpu; do
+    candidate=$(jq -c --arg b "$backend" '.match.backend=$b' <<<"$r")
+    [[ $(gate_reason "$candidate") == "requires unsupported host devices" ]] || fail "UVM accepted for $backend"
+  done
+  mkdir -p "$OMARCHY_AI_DRI_PATH"; touch "$TMP/renderD128"
+  ln -s "$TMP/renderD128" "$OMARCHY_AI_DRI_PATH/pci-test-render"
+  candidate=$(jq -c '.match.backend="intel-xpu" | .launch.devices=["/dev/dri"] | .launch.arguments=[]' <<<"$r")
+  [[ -z $(gate_reason "$candidate") ]] || fail "legacy Intel declaration refused"
+  argv=$(engine_argv "$candidate" | jq -Rsc 'split("\u0000")[:-1]')
+  jq -e --arg img "$img" --arg node "$TMP/renderD128" '. as $a | index($img) as $i |
+    [range($i) | select($a[.] == "--device") | $a[.+1]] == [($node+":"+$node)]' <<<"$argv" >/dev/null || fail "Intel declaration must map only render nodes"
+  rm -f "$OMARCHY_AI_DRI_PATH/pci-test-render" "$TMP/renderD128"
+)
+pass "device gate rejects unsafe declarations; NVIDIA UVM and Intel render nodes keep their argv boundaries"
 write_recipes "$(recipe good true asset)"; SHIM_DRIVER=550.10 "$CLI" snapshot >/dev/null; [[ $(snap .reason) == "" ]] || fail "no minDriver, no gate"; pass "driver gate is silent when the recipe declares no minimum"
 write_recipes "$(recipe good true asset | jq '.minDriver="575.0"')"; SHIM_DRIVER=550.10 "$CLI" snapshot >/dev/null
 [[ $(snap .reason) == *"driver 575.0"* ]] || fail "driver gate" "$(snap .reason)"; pass "driver gate refuses an older driver out loud"
@@ -575,6 +625,27 @@ write_recipes "$(recipe hfcache false hf)"; HF_TOKEN=hf_secret_token_value "$CLI
 [[ $(snap .state) == ready ]] || fail "hf recipe" "$(snap .error)"; pass "hf-cache recipe: downloaded into the shared cache and started"
 grep -q -- "--volume $(cd "$OMARCHY_AI_HF_HOME" && pwd -P):/root/.cache/huggingface" "$SHIM/docker.log" || fail "hf mount"; pass "hf cache mounted at the recipe's target"
 grep -q "HF_TOKEN" "$OMARCHY_AI_STATE/log" && ! grep -q "hf_secret_token_value" "$OMARCHY_AI_STATE/log" "$SHIM/docker.log" || fail "token in log" "$(grep -h HF_TOKEN "$OMARCHY_AI_STATE/log" "$SHIM/docker.log" | head -2)"; pass "HF_TOKEN reaches the downloader by name; its value is never logged"
+"$CLI" unload
+
+# An image without the downloader fails before a download or completion marker, in either Docker mode.
+write_recipes "$(recipe nohub false dir | jq '.model.repository="org/nohub" | .launch.mounts[0].source="${MODEL_ROOT}/nohub"')"
+for access in direct prompt; do
+  : >"$SHIM/docker.log"
+  OMARCHY_AI_DOCKER=$access SHIM_PKEXEC_UID=1006 SHIM_HUB_MISSING=1 "$CLI" load
+  [[ $(snap .state) == error && $(snap .error) == *"host hf is required"* ]] || fail "missing downloader requirement ($access)" "$(snap .error)"
+  [[ ! -f $OMARCHY_AI_STATE/weights/nohub.json ]] || fail "failed preflight wrote a download marker ($access)"
+  ! grep -q -- 'snapshot_download' "$SHIM/docker.log" || fail "download started after failed preflight ($access)"
+  run_as="$(id -u):$(id -g)"; [[ $access == prompt ]] && run_as=1006:1006
+  grep -q -- "--network none --user $run_as .* -c import huggingface_hub" "$SHIM/docker.log" || fail "preflight network or user ($access)"
+  pass "missing image downloader reports host hf before download, with no marker ($access)"
+  "$CLI" unload
+done
+: >"$SHIM/docker.log"
+OMARCHY_AI_NO_HOST_HF= SHIM_HUB_MISSING=1 "$CLI" load
+[[ $(snap .state) == ready && -f $OMARCHY_AI_STATE/weights/nohub.json ]] || fail "host hf bypass" "$(snap .error)"
+grep -q -- "hf download org/nohub --revision $rev --local-dir" "$SHIM/hf.log" || fail "host hf not used"
+! grep -qE -- 'import huggingface_hub|snapshot_download' "$SHIM/docker.log" || fail "host hf still invoked image downloader"
+pass "host hf downloads successfully without the image downloader"
 "$CLI" unload
 
 # a single-file recipe whose weights already sit somewhere on the machine: adopted after a checksum, no download
