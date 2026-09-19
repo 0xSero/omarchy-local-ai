@@ -124,19 +124,26 @@ committed, so what is published is always the markdown in that commit and no gen
 GitHub keeps clone and view traffic for 14 days, and the referrer/path breakdown as a rolling snapshot
 with no daily buckets — none of it is retrievable once it rolls off. Every day at 03:17 UTC (and on
 demand) this checks out the **`stats` branch**, writes `traffic/clones.<date>.json`,
-`traffic/views.<date>.json`, `traffic/referrers.<date>.json`, `traffic/paths.<date>.json` and
-`traffic/repo.<date>.json` from the API, aggregates `traffic/clones-daily.json` and
-`traffic/views-daily.json` (one row per day, the newest reading of a day winning, because GitHub
-revises the last day or two as data settles) plus `traffic/summary.json`, then pushes to `stats`. It
-never touches `main`. It needs `secrets.TRAFFIC_TOKEN` — a token of the repository owner with push
-access, because the workflow's own token cannot read the traffic API.
+`traffic/views.<date>.json`, `traffic/referrers.<date>.json`, `traffic/paths.<date>.json`,
+`traffic/repo.<date>.json` (with `day` archived inside the file), `traffic/releases.<date>.json` (every
+release and asset with its cumulative `download_count`) and `traffic/interactions.<date>.json` (one
+GraphQL call: stars, forks, watchers, issues, PRs, discussions, commits on the default branch),
+aggregates `traffic/clones-daily.json`, `traffic/views-daily.json` and `traffic/stars-daily.json`, then
+writes `traffic/summary.json` and pushes to `stats`. It never touches `main`. It needs
+`secrets.TRAFFIC_TOKEN` — a token of the repository owner with push access, because the workflow's own
+token cannot read the traffic API.
 
 `traffic/summary.json` is the whole count in one file: stars, forks, watchers and open issues, clone
-and view totals with each series' peak day and rolling 14-day uniques, and the current referrer and
-path breakdowns. Only `uniques_14d` counts *people*: `daily_uniques_sum` adds a cloner once per day
-they cloned, so it overcounts anyone who cloned twice. Every `omarchy plugin add` is a clone, so
-`clones` is the closest thing to an install count — not the release assets, which are the suite's own
-archive and no one's download channel.
+and view totals with each series' peak day and rolling 14-day uniques, the star timeline, the download
+tally per release and asset, the day's interaction counts, and the current referrer and path
+breakdowns. Only `uniques_14d` counts *people*: `daily_uniques_sum` adds a cloner once per day they
+cloned, so it overcounts anyone who cloned twice. Every `omarchy plugin add` is a clone, so `clones` is
+the closest thing to an install count — not the release assets, which are the suite's own archive and
+no one's download channel.
+
+[17 — Stats](17-stats.md) renders that file in the published wiki, fetched in the browser, so the
+numbers are live without a build step and without a server. Nothing about it is client-side telemetry:
+it is GitHub's own count of GitHub's own repository.
 
 ## Versioning
 

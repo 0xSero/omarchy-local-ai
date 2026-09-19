@@ -44,3 +44,21 @@ const crashed = ui.build({snap: {...snap, models: [{...running, state: 'error'}]
 assert.equal(crashed.rows[2].value, 'crashed ›');
 assert(crashed.rows[1].cells.every(c => c.mark === 'crashed'));
 console.log('UI GPU grouping, model ownership and lock checks passed');
+
+// The update row is the only way an update happens from the card: something staged is the update
+// verb, nothing staged is a plain check, and a disabled check leaves the card alone.
+const staged = ui.build({snap: {...snap, update: {enabled: true, plugin: {current: '5.0.0', latest: '5.1.0'}, recipes: {new: 2, relevant: 1}}}, view: 'home', localError: ''});
+assert.equal(staged.foot.length, 1);
+assert.equal(staged.foot[0].action, 'update');
+assert.equal(staged.foot[0].kind, 'primary');
+assert(/v5\.1\.0/.test(staged.foot[0].value) && /1 for your card/.test(staged.foot[0].value));
+const registryOnly = ui.build({snap: {...snap, update: {enabled: true, plugin: {current: '5.0.0', latest: ''}, recipes: {staged: true, new: 0, relevant: 0}}}, view: 'home', localError: ''});
+assert.equal(registryOnly.foot[0].action, 'update');
+assert.equal(registryOnly.foot[0].kind, 'primary');
+assert(/^registry ›/.test(registryOnly.foot[0].value));
+const current = ui.build({snap: {...snap, update: {enabled: true, plugin: {current: '5.0.0', latest: ''}, recipes: {new: 0, relevant: 0}}, registryFile: {checkedAt: Math.floor(Date.now() / 1000) - 300}}, view: 'home', localError: ''});
+assert.equal(current.foot[0].action, 'update-check');
+assert(/^current · checked \d+m ago/.test(current.foot[0].value));
+assert.equal(ui.build({snap: {...snap, update: {enabled: false}}, view: 'home', localError: ''}).foot.length, 0);
+assert.equal(ui.build({snap, view: 'card', hw: 'b70', count: 1, pick: 'qwen-tp2', localError: ''}).foot.some(r => r.action === 'update'), false);
+console.log('UI update row checks passed');

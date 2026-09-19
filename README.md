@@ -18,6 +18,8 @@ Click the new bar icon, choose a free GPU group and recipe, then press **Run**. 
 
 Each GPU group lists its running models underneath; occupied GPUs are marked **locked**. Select a model for its stats, agent and Stop controls, or a free GPU group to start another model. Click **full screen** or press **F11** for more space; **compact** or **Escape** returns to the smaller panel. Actions stay visible while the contents scroll.
 
+Home also carries one **update** row. A background check reads the registry's recipe file and this plugin's own manifest, and the row appears when either has something newer — the plugin version, and how many new recipes are for the cards you actually have. Nothing is installed behind your back: pressing it applies the new recipes and updates the plugin through `omarchy plugin update`. With nothing to apply the row is just a re-check.
+
 ## Requirements
 
 - **Docker**, which Omarchy ships. You do not need to be in the `docker` group: Start, Stop, and Share ask for your password once, through Omarchy's own prompt. With *Sudoless Docker* enabled in Omarchy's security settings there is no prompt.
@@ -37,7 +39,8 @@ omarchy-local-ai open-agent [name] [recipe]  open an agent on a running model
 omarchy-local-ai share [--key <value>|-]     toggle tailnet sharing; replace the key (- reads stdin)
 omarchy-local-ai gpu [auto|<backend:index>]  which detected card to use
 omarchy-local-ai recipe [auto|<id>]          which validated recipe of that card to run
-omarchy-local-ai recipes [update]            the recipe file in use; update fetches a newer one from the registry
+omarchy-local-ai recipes [update]            the recipe file in use; update fetches and adopts a newer one
+omarchy-local-ai update [--check]            apply a staged registry copy and update the plugin; --check only fetches
 omarchy-local-ai agent-dir <path>            the directory agents open in
 omarchy-local-ai agent-args <name> [-- …]    extra flags for one agent
 ```
@@ -57,6 +60,7 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 - 29 NVIDIA recipes ran the plugin's own Start path on rented cards, RTX 3060 through RTX 6000 Ada (`test/rented.py` is the harness; its per-card results stay outside the repository).
 - Qwen TP2 has been checked on the mixed RTX 3090 and Arc Pro B70 host with 256K context.
 - The shimmed tests cover the gate, download, start, acceptance, rollback, agents, sharing, key handling, and the no-docker-group path: `make test`, no GPU needed (Bash 4+ and Node.js).
+- Installs, views, downloads, stars and every interaction GitHub records are collected daily on the `stats` branch and rendered at <https://0xsero.github.io/omarchy-local-ai/#17-stats>. No server and no client-side telemetry: they are GitHub's own counts of GitHub's own repository.
 
 ## Remove
 

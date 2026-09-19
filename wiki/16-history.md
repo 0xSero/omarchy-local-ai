@@ -94,6 +94,27 @@ with nothing and kept a v4 paragraph under a v5 card:
 - **The description says which GPUs.** It names the GPU families and the agents rather than
   describing the card's controls.
 
+### 5.1.0 — 2026-09-17
+
+- **Updates became visible, and user-applied.** A detached check — at most once per six hours, never
+  on the card's critical path — reads two files from one origin: the registry's `plugin/recipes.json`
+  and this repository's `manifest.json` on the tracked branch. It stages what it finds and adopts
+  nothing. Home's footer carries one row: `v5.1.1 + 3 for your card ›` when something is newer,
+  `current · checked 2h ago ›` when it is not (a plain re-check), and nothing when the check is off.
+  `omarchy-local-ai update` applies both — the staged registry file, then the harness through
+  `omarchy plugin update <id> --yes` — and `recipes update` still fetches and adopts in one step for
+  scripts. `recipes_autorefresh`, which adopted silently, is gone: until the user says otherwise, what
+  runs is the marketplace-reviewed vendored file.
+- **Analytics became complete.** `traffic.yml` now records the release assets' own `download_count`, a
+  per-day interaction tally (stars, forks, watchers, issues, PRs, discussions, commits) from one
+  GraphQL call, and the repo snapshot with its date archived inside the file, so a star timeline is
+  derivable. `traffic/summary.json` carries all of it and [17 — Stats](17-stats.md) renders that file
+  in the published wiki — GitHub's own count of GitHub's own repository, no server and no client-side
+  telemetry.
+- **Fixed:** the `traffic.yml` jq program, broken since `d6828f9`, made the scheduled run of
+  2026-09-17 fail outright; the daily record had been silently reporting only clones and views. Its
+  `actions/checkout` is now pinned by commit like the other three workflows.
+
 ## The 2026-09-16 consolidation
 
 The work had grown four copies of this repository across two machines, with `main` and `panel-v5`

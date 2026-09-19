@@ -29,7 +29,7 @@ plugin add` is a clone, which is why the traffic workflow counts clones as insta
 
 ```
 # omarchy:summary=Run the validated local models for this machine's GPUs and open coding agents on them
-# omarchy:args=<snapshot|load|unload [recipe]|open-agent [name] [recipe]|share [--key value]|gpu [key]|recipe [id]|recipes [update]|agent-dir <path>>
+# omarchy:args=<snapshot|load|unload [recipe]|open-agent [name] [recipe]|share [--key value]|gpu [key]|recipe [id]|recipes [update]|update [--check]|agent-dir <path>>
 ```
 
 ## Requirements
@@ -114,8 +114,10 @@ Everything it owns is under three roots. Nothing else is touched — in particul
 | `weights/<recipe-id>.json` | 0600 | the completion marker (see [6 — Weights](06-weights.md)) |
 | `trees/<repo>@<rev>.tsv` | 0600 | cached Hub file trees, used for verifying weights you already have |
 | `usage.jsonl` | 0600 | one line per request the plugin itself made through a gateway |
-| `recipes.json` | 0600 | the fetched registry copy, when one is newer than the vendored file |
-| `recipes.checked` | 0600 | unix time of the last refresh attempt (the TTL clock) |
+| `recipes.json` | 0600 | the registry copy in use, when it is newer than the vendored file |
+| `recipes.next.json` | 0600 | a fetched registry copy staged by the update check, waiting for `update` |
+| `manifest.remote.json` | 0600 | the plugin manifest the update check last read from the tracked branch |
+| `upstream.checked` | 0600 | unix time of the last upstream check (the TTL clock) |
 | `share.on` | 0600 | present while sharing is wanted; holds the address published |
 | `share.error` | 0600 | the last share refusal, shown under the toggle |
 | `op.lock`, `ledger.lock`, `op.lockd/`, `ledger.lockd/` | 0600 | lock targets |

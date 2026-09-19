@@ -2,6 +2,22 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.1.0] - 2026-09-17
+
+### Added
+- One update row on the card's home, and one verb behind it. A background check — at most once per six hours, never on the card's critical path — reads the registry's recipes and this repository's own `manifest.json`, stages what is newer, and adopts nothing; the row says `v5.1.1 + 3 for your card ›` when something is staged. `omarchy-local-ai update` applies the staged registry copy and then updates the harness through Omarchy's own `omarchy plugin update <id> --yes`. `update --check` fetches and stages only.
+- Analytics: the daily `traffic` workflow now records every release asset's cumulative `download_count`, a per-day interaction tally (stars, forks, watchers, issues, PRs, discussions, commits on the default branch) from one GraphQL call, and the repository snapshot with its date archived inside the file, so a star timeline is derivable. [17 — Stats](https://0xsero.github.io/omarchy-local-ai/#17-stats) renders `traffic/summary.json` live.
+
+### Changed
+- The registry copy is no longer adopted silently. The background check only stages it (`$STATE/recipes.next.json`) and reports what it holds — whether a newer copy is waiting, how many recipes it adds, and how many of those are for the cards actually detected. A newer copy that changes recipes without adding any still reads as staged, so it can be applied from the card. What runs is the marketplace-reviewed vendored file until the user applies the update. `recipes update` still fetches and adopts in one step.
+
+### Fixed
+- `traffic.yml`'s jq program had been invalid since `d6828f9`, so the scheduled run of 2026-09-17 failed and the daily record had been reporting only clones and views. The step now runs with `pipefail`, so a failing `gh` fails the run instead of letting jq turn an error body into zeroed counters. Its `actions/checkout` is pinned by commit like the repository's other workflows.
+
+### Internal
+- `OMARCHY_AI_RECIPES_TTL` becomes `OMARCHY_AI_UPDATE_TTL` (it now clocks both checks); `OMARCHY_AI_UPDATE=0` or an empty `OMARCHY_AI_MANIFEST_URL` turns the release check off. `recipes_autorefresh` is replaced by `upstream_autocheck`, and the repository root is computed once in `lib/common.sh`.
+- Recipe files reach jq as file inputs, never as arguments: the published `recipes.json` is past the 128 KiB cap Linux puts on one argument, so passing its contents would have failed every snapshot on Omarchy. Adopting a staged copy now re-validates the file it is about to move, so a check that races an update cannot downgrade the file in use.
+
 ## [5.0.7] - 2026-09-17
 
 ### Changed

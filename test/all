@@ -98,6 +98,10 @@ if [[ $url == *recipes.json ]]; then # the registry's copy of the recipe file (S
   [[ ${SHIM_RECIPES_DOWN:-} == 1 ]] && { echo "curl: (6) Could not resolve host" >&2; exit 6; }
   out=/dev/stdout; for ((i=1;i<=$#;i++)); do [[ ${!i} == -o ]] && { j=$((i+1)); out=${!j}; }; done; cat "$SHIM/remote-recipes.json" >"$out"; exit 0
 fi
+if [[ $url == */manifest.json ]]; then # the plugin's own manifest on the tracked branch (SHIM_MANIFEST_DOWN: no route)
+  [[ ${SHIM_MANIFEST_DOWN:-} == 1 ]] && { echo "curl: (6) Could not resolve host" >&2; exit 6; }
+  out=/dev/stdout; for ((i=1;i<=$#;i++)); do [[ ${!i} == -o ]] && { j=$((i+1)); out=${!j}; }; done; cat "$SHIM/remote-manifest.json" >"$out"; exit 0
+fi
 data=""; auth=""; for ((i=1;i<=$#;i++)); do [[ ${!i} == -d ]] && { j=$((i+1)); data=${!j}; }; [[ ${!i} == -H ]] && { j=$((i+1)); h=${!j}; [[ $h == @* ]] && h=$(cat "${h#@}" 2>/dev/null); [[ $h == "Authorization: Bearer "* ]] && auth=${h#Authorization: Bearer }; }; done
 printf '%s\n' "$*" >>"$SHIM/curl.log"   # this shim's argv is what /proc/<pid>/cmdline would show
 if [[ $auth != "$(cat "$SHIM/../state/gateway.key" 2>/dev/null)" && ${SHIM_KEYLESS_GATEWAY:-} != 1 ]]; then   # the gateway refuses unkeyed requests; -f makes that exit 22
@@ -157,6 +161,7 @@ for tk in pacman nvidia-ctk systemctl; do printf '#!/usr/bin/env bash\necho "%s 
 for a in pi claude codex; do printf '#!/usr/bin/env bash\necho "$0 $* ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-} ANTHROPIC_AUTH_TOKEN=${ANTHROPIC_AUTH_TOKEN:-} LOCAL_AI_KEY=${LOCAL_AI_KEY:-}"\n' >"$TMP/bin/$a"; done
 printf '#!/usr/bin/env bash\necho "launch $*"\n' >"$TMP/bin/omarchy-launch-tui"
 printf '#!/usr/bin/env bash\necho pi\n' >"$TMP/bin/omarchy-default-agent"
+printf '#!/usr/bin/env bash\necho "omarchy $*" >>"$SHIM/omarchy.log"\n' >"$TMP/bin/omarchy"   # the harness updater the card's update row calls
 find "$TMP/bin" -type f -exec chmod +x {} +   # not the jq symlink: its target is not ours to chmod on CI
 
 # ---------------------------------------------------------------- fixture recipes.json
@@ -695,11 +700,45 @@ echo '{"schemaVersion":"omarchy-local-ai/recipes/1","hardware":"nope"}' >"$SHIM/
 out=$(RS recipes update 2>/dev/null) && fail "broken file accepted"; [[ $out == "recipes: the fetched file is not a recipes file"* && $(jq -r .registryCommit "$OMARCHY_AI_STATE/recipes.json") == feedface* ]] || fail "broken file refused" "$out"; pass "recipes update: a file that is not a recipes file is refused and the live copy stays"
 out=$(SHIM_RECIPES_DOWN=1 RS recipes update 2>/dev/null) && fail "no route accepted"; [[ $out == "recipes: could not fetch the registry"* ]] || fail "no route reported" "$out"; pass "recipes update: no route is a sentence, nothing changes"
 out=$(OMARCHY_AI_RECIPES= OMARCHY_AI_RECIPES_URL= "$CLI" recipes update); [[ $out == "recipes: refresh is off"* ]] || fail "refresh off" "$out"; pass "OMARCHY_AI_RECIPES_URL= turns the refresh off"
-rm -f "$OMARCHY_AI_STATE/recipes.json"; jq -c '.generatedAt="2099-06-01T00:00:00Z" | .registryCommit="feedface00000000000000000000000000000000"' "$R_VENDORED" >"$SHIM/remote-recipes.json"
-OMARCHY_AI_RECIPES= OMARCHY_AI_RECIPES_URL=https://example.invalid/r/recipes.json OMARCHY_AI_RECIPES_TTL=0 "$CLI" snapshot >/dev/null
-for ((i=0; i<50; i++)); do [[ -f $OMARCHY_AI_STATE/recipes.json ]] && break; sleep 0.1; done   # the fetch is detached from the snapshot
-[[ $(jq -r .generatedAt "$OMARCHY_AI_STATE/recipes.json" 2>/dev/null) == 2099-06-01T00:00:00Z ]] || fail "snapshot did not refresh"; pass "snapshot refreshes in the background once the TTL has passed"
-rm -f "$OMARCHY_AI_STATE/recipes.json" "$OMARCHY_AI_STATE/recipes.checked"
+# updates: the background check stages, nothing is adopted until `update` applies it, and the
+# harness is updated through Omarchy's own updater.
+RS() { OMARCHY_AI_RECIPES= OMARCHY_AI_RECIPES_URL=https://example.invalid/plugin/recipes.json "$CLI" "$@"; }
+US() { OMARCHY_AI_RECIPES= OMARCHY_AI_RECIPES_URL=https://example.invalid/plugin/recipes.json OMARCHY_AI_MANIFEST_URL=https://example.invalid/omarchy-local-ai/manifest.json "$CLI" "$@"; }
+rm -f "$OMARCHY_AI_STATE/recipes.json" "$OMARCHY_AI_STATE/recipes.next.json" "$OMARCHY_AI_STATE/upstream.checked" "$OMARCHY_AI_STATE/manifest.remote.json"
+jq -c '.generatedAt="2099-06-01T00:00:00Z" | .registryCommit="feedface00000000000000000000000000000000"
+       | .hardware["rtx-4090-24gb"].recipes=[(.hardware["rtx-4090-24gb"].recipe + {id:"extra-recipe"})]' "$R_VENDORED" >"$SHIM/remote-recipes.json"
+jq -c '.version="99.0.0"' "$ROOT/manifest.json" >"$SHIM/remote-manifest.json"
+OMARCHY_AI_UPDATE_TTL=0 US snapshot >/dev/null
+for ((i=0; i<50; i++)); do [[ -f $OMARCHY_AI_STATE/recipes.next.json ]] && break; sleep 0.1; done   # the check is detached from the snapshot
+[[ $(jq -r .generatedAt "$OMARCHY_AI_STATE/recipes.next.json" 2>/dev/null) == 2099-06-01T00:00:00Z ]] || fail "the check did not stage the registry copy"
+[[ ! -f $OMARCHY_AI_STATE/recipes.json ]] || fail "the check adopted the staged copy on its own"; pass "the background check stages a newer registry copy and adopts nothing"
+out=$(US snapshot)
+[[ $(jq -r '.update.recipes.new' <<<"$out") == 1 && $(jq -r '.update.recipes.relevant' <<<"$out") == 1 && $(jq -r '.update.plugin.latest' <<<"$out") == 99.0.0 ]] || fail "the staged update is not reported" "$(jq -c .update <<<"$out")"; pass "the snapshot says what is staged: one new recipe for this card, and a newer release"
+US update >"$TMP/update.out" || fail "update failed" "$(cat "$TMP/update.out")"
+grep -q "recipes: updated to registry feedface0000" "$TMP/update.out" || fail "update did not apply the recipes" "$(cat "$TMP/update.out")"
+[[ $(jq -r .registryCommit "$OMARCHY_AI_STATE/recipes.json") == feedface* ]] || fail "recipes not live after update"
+grep -qx "omarchy plugin update sero.local-ai --yes" "$SHIM/omarchy.log" || fail "the harness was not updated through omarchy" "$(cat "$SHIM/omarchy.log" 2>/dev/null)"; pass "update applies the staged registry file and updates the harness through omarchy plugin update"
+jq -c --arg v "$(jq -r .version "$ROOT/manifest.json")" '.version=$v' "$OMARCHY_AI_STATE/manifest.remote.json" >"$TMP/m.json" && mv "$TMP/m.json" "$OMARCHY_AI_STATE/manifest.remote.json"   # the harness update the shim cannot really perform
+out=$(US snapshot)
+[[ $(jq -r '.update.plugin.latest' <<<"$out") == "" && $(jq -r '.update.recipes.new' <<<"$out") == 0 ]] || fail "the update did not settle" "$(jq -c .update <<<"$out")"; pass "with both applied the card says it is current"
+rm -f "$OMARCHY_AI_STATE/recipes.next.json" "$OMARCHY_AI_STATE/manifest.remote.json" "$OMARCHY_AI_STATE/upstream.checked"
+out=$(SHIM_MANIFEST_DOWN=1 US update --check) || fail "update --check failed when the manifest had no route" "$out"
+[[ -f $OMARCHY_AI_STATE/recipes.next.json && ! -f $OMARCHY_AI_STATE/manifest.remote.json ]] || fail "--check did not stage the recipes alone" "$(ls "$OMARCHY_AI_STATE")"; pass "update --check stages what it can reach: with no route to the plugin manifest the recipes still stage"
+
+# a registry copy that fixes existing recipes without adding any id must still be offerable
+jq -c '.generatedAt="2099-12-01T00:00:00Z" | .registryCommit="cafebabe00000000000000000000000000000000"' "$OMARCHY_AI_STATE/recipes.json" >"$SHIM/remote-recipes.json"
+US update --check >/dev/null
+out=$(US snapshot)
+[[ $(jq -r '.update.recipes.new' <<<"$out") == 0 && $(jq -r '.update.recipes.staged' <<<"$out") == true ]] || fail "a staged copy with no new ids is not offered" "$(jq -c .update.recipes <<<"$out")"; pass "a newer registry copy with no new recipe ids still reads as staged"
+
+# Linux caps a single argument at 128 KiB; recipes.json is already past that, so the snapshot must
+# never pass a recipe file to jq as an argument
+jq -c '.pad=("x"*200000)' "$R_VENDORED" >"$TMP/fat.json"
+(( $(wc -c <"$TMP/fat.json") > 131072 )) || fail "the fat fixture is not past the ceiling"
+rm -f "$OMARCHY_AI_STATE/recipes.next.json"
+out=$(OMARCHY_AI_RECIPES="$TMP/fat.json" OMARCHY_AI_MANIFEST_URL= "$CLI" snapshot) || fail "snapshot failed on a recipes file past 128 KiB"
+[[ $(jq -r '.registryFile.generatedAt' <<<"$out") == 2026-09-17T00:03:37Z && $(jq -r '.update.recipes|has("relevant")' <<<"$out") == true ]] || fail "a recipes file past 128 KiB broke the snapshot" "$out"; pass "a recipes file past Linux's 128 KiB argument ceiling still produces a snapshot"
+rm -f "$OMARCHY_AI_STATE/recipes.json" "$OMARCHY_AI_STATE/recipes.next.json" "$OMARCHY_AI_STATE/upstream.checked" "$OMARCHY_AI_STATE/manifest.remote.json"
 
 # A recipe's published context and media claims must survive the gateway and agent configuration.
 "$CLI" unload >/dev/null
