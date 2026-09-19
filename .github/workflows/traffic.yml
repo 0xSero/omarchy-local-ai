@@ -48,8 +48,8 @@ jobs:
              repo: {stars: $repo[0].stargazers_count, forks: $repo[0].forks_count,
                     watchers: $repo[0].subscribers_count, open_issues: $repo[0].open_issues_count,
                     size_kb: $repo[0].size},
-             clones: span($daily_clones[0]) + {uniques_14d: $clones[0].uniques},
-             views:  span($daily_views[0])  + {uniques_14d: $views[0].uniques},
+             clones: (span($daily_clones[0]) + {uniques_14d: $clones[0].uniques}),
+             views:  (span($daily_views[0])  + {uniques_14d: $views[0].uniques}),
              referrers: $referrers[0], paths: $paths[0]}' >traffic/summary.json
           cat traffic/summary.json
           git add traffic && git commit -qm "traffic $today" && git push -q origin stats
