@@ -67,7 +67,7 @@ enforced structurally rather than by convention — see [4 — State](04-state.m
 |---|---|---|---|
 | the verb you typed | you, or the panel's `Process` | nothing | milliseconds to seconds; it spawns a worker and returns |
 | a worker (`_worker-load`, `_worker-unload`) | the verb, via `setsid` | `flock` on `$STATE/op.lock` (fd 8) for its whole life | one operation |
-| a detached `recipes update` | `snapshot` (`recipes_autorefresh`), at most once per TTL | nothing | seconds |
+| a detached `update --check` | `snapshot` (`upstream_autocheck`), at most once per TTL | nothing | seconds |
 | the panel's `Process` objects | the QML | one at a time | one verb each |
 | `pkexec … _root <phase>` | `elevated`, when the docker socket is not writable | root, briefly | one action |
 

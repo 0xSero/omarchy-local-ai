@@ -13,6 +13,7 @@
 #   agents/        per-agent launch config generated at open-agent time
 
 HOME_DIR="${OMARCHY_AI_USER_HOME:-$HOME}"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"   # the plugin's own directory, as installed
 STATE="${OMARCHY_AI_STATE:-${XDG_STATE_HOME:-$HOME_DIR/.local/state}/omarchy/local-ai}"
 MODEL_ROOT="${OMARCHY_AI_MODEL_ROOT:-$HOME_DIR/.cache/omarchy/local-ai/models}"
 CACHE_ROOT="${OMARCHY_AI_CACHE_ROOT:-$HOME_DIR/.cache/omarchy/local-ai/cache}"

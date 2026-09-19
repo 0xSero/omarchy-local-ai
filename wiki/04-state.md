@@ -90,7 +90,8 @@ Written by `snapshot_write` (`lib/snapshot.sh`) with `mv` from a temp file. Top 
 | `hardwareId` | string | the matched hardware id, or `""` |
 | `gpus` | array | every detected card: `{key, backend, index, product, vramGb, hardwareId, chosen, tempC, utilPct, usedGb}` |
 | `registry` | string | the `registryCommit` of the file in use |
-| `registryFile` | `{source, generatedAt, checkedAt, refresh}` | `source` is `vendored` or `live`; `checkedAt` is the unix time of the last refresh attempt; `refresh` is false when fetching is off |
+| `registryFile` | `{source, generatedAt, checkedAt, refresh}` | `source` is `vendored` or `live`; `checkedAt` is the unix time of the last upstream check; `refresh` is false when fetching is off |
+| `update` | `{enabled, plugin, recipes}` | what the background check staged, and nothing else — `plugin` is `{current, latest}` (`latest` empty when the release in use is newest) and `recipes` is `{staged, generatedAt, commit, new, relevant}`: the flag says a valid newer registry copy is waiting, and the two counters are the recipe ids it adds and, among them, the ones for the detected cards |
 | `reason` | string | why there is no model to start: a gate refusal, the hardware reason, a short card claim, or a foreign listener on the port. Empty when fine |
 | `running` | `null` \| `{recipeId, name, cards, port, state}` | the model the card looks at |
 | `models` | array | every running slot (see below) |

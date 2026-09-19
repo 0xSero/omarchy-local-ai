@@ -137,7 +137,8 @@ snapshot_write() {
   jq -nc --argjson l "$ledger" --argjson rec "${rec:-null}" --argjson match "$match" --arg state "$state" --arg reason "$reason" --arg gate "$gate" \
     --arg hw "$hw_id" --argjson focus "$focus" --argjson models "$models" --argjson agents "$(agents_json "$fapis")" --argjson share "$(share_state "$fport")" \
     --arg t "$(now)" --arg note "$note" --argjson recs "$recs" --argjson pbusy "$pbusy" --arg listener "$listener" --argjson claim "$claim" --argjson port "$fport" \
-    --arg reg "$(registry_commit)" --arg rsrc "$(recipes_source)" --arg rgen "$(recipes_generated "$RECIPES")" --arg rchk "$(cat "$STATE/recipes.checked" 2>/dev/null || printf 0)" --arg rurl "$RECIPES_URL" '
+    --arg reg "$(registry_commit)" --arg rsrc "$(recipes_source)" --arg rgen "$(recipes_generated "$RECIPES")" --arg rchk "$(cat "$UPSTREAM_CHECKED" 2>/dev/null || printf 0)" --arg rurl "$RECIPES_URL" \
+    --argjson up "$(upstream_json "$hw_id")" '
     def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
     ($recs | map(select(.id==($rec.id // ""))) | .[0]) as $sel
     | ([$models[] | select(.state != "stopped") | .keys[]]) as $busyKeys
@@ -158,6 +159,7 @@ snapshot_write() {
          expectedSeconds:(if $l.op.name=="starting" then ($l.lastStartSeconds//0) else 0 end)},
        hardwareId:$hw, gpus:$match.gpus, registry:$reg,
        registryFile:{source:$rsrc, generatedAt:$rgen, checkedAt:($rchk|tonumber), refresh:($rurl!="")},
+       update:$up,
        reason:$why,
        running:(if $focus == null then null else {recipeId:$focus.recipeId, name:$focus.name, cards:$focus.cards, port:$focus.port, state:$focus.state} end),
        models:$models, apis:($focus.apis // []), agents:$agents, share:$share,

@@ -59,6 +59,7 @@ the panel. Sharing publishes the gateway's own port on the tailnet address, with
 | 14 | [Troubleshooting](14-troubleshooting.md) | Every message the plugin can print, what caused it, what to do |
 | 15 | [Registry and CI](15-registry-and-ci.md) | The registry repository, the export, the three workflows, how a release is cut |
 | 16 | [History](16-history.md) | How the code got here, what each version changed, the state of the work |
+| 17 | [Stats](17-stats.md) | The installs, views, downloads, stars and interactions GitHub records, read live from the `stats` branch |
 
 ## Vocabulary
 

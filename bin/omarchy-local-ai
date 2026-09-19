@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # omarchy:summary=Run the validated local models for this machine's GPUs and open coding agents on them
-# omarchy:args=<snapshot|load|unload [recipe]|open-agent [name] [recipe]|share [--key value]|gpu [key]|recipe [id]|recipes [update]|agent-dir <path>>
+# omarchy:args=<snapshot|load|unload [recipe]|open-agent [name] [recipe]|share [--key value]|gpu [key]|recipe [id]|recipes [update]|update [--check]|agent-dir <path>>
 #
 # `snapshot` is a pure read that rewrites the state file the panel watches. `load` and `unload`
 # spawn a worker that holds the op lock; everything they do is logged. `open-agent` launches an
@@ -18,6 +18,8 @@ source "$HERE/../lib/priv.sh"
 source "$HERE/../lib/hardware.sh"
 # shellcheck source=../lib/recipes.sh
 source "$HERE/../lib/recipes.sh"
+# shellcheck source=../lib/update.sh
+source "$HERE/../lib/update.sh"
 # shellcheck source=../lib/weights.sh
 source "$HERE/../lib/weights.sh"
 # shellcheck source=../lib/share.sh
@@ -159,12 +161,13 @@ usage() {
   agent-args <name> [-- flags]  extra flags for one agent when opened from the panel (none to clear)
   gpu [auto|<backend:index>]  which detected card to start on (snapshot lists them); auto = largest card with a recipe
   recipe [auto|<id>]          which of the validated recipes of the chosen card to run (snapshot lists them); auto = the recommended one
-  recipes [update]            which recipe file is in use (vendored or fetched from the registry); update fetches a newer one now'
+  recipes [update]            which recipe file is in use (vendored or fetched from the registry); update fetches a newer one now
+  update [--check]            apply a newer registry copy and update the plugin; --check only fetches and stages'
 }
 
 cmd=${1:-help}; shift || true
 case $cmd in
-  snapshot) recipes_autorefresh; snapshot_write; cat "$SNAPSHOT" ;;
+  snapshot) upstream_autocheck; snapshot_write; cat "$SNAPSHOT" ;;
   load) [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1; lock_wait; spawn download "$(recipe_pick)" _worker-load ;;
   run) # run <recipe> [gpu]: the card's one click; the picks are written without a snapshot each, the Start makes the one that matters
        [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1
@@ -192,6 +195,12 @@ case $cmd in
          "") jq -c --arg s "$(recipes_source)" --arg f "$RECIPES" '{source:$s, file:$f, registryCommit, generatedAt, hardware:(.hardware|length), recipes:([.hardware[]|.recipe,(.recipes[]?)]|length)}' "$RECIPES" ;;
          *) fail "recipes [update]"; exit 1 ;;
        esac ;;
+  update) # apply what the background check staged; --check only fetches and stages
+       case ${1:-} in
+         --check) upstream_check ;;
+         "") upstream_apply ;;
+         *) fail "update [--check]"; exit 1 ;;
+       esac; snapshot_write ;;
   recipe) case ${1:-} in
          ""|auto) rm -f "$STATE/recipe-pick"; log "recipe auto" ;;
          *) [[ $1 =~ ^[a-z0-9][a-z0-9-]*$ ]] && jq -e --arg p "$1" '[.hardware[]|(.recipe.id), (.recipes[]?.id)]|index($p)!=null' "$RECIPES" >/dev/null 2>&1 || { fail "recipe <id>, as listed in the snapshot"; exit 1; }

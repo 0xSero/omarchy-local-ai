@@ -71,6 +71,55 @@ with BuildKit provenance, SBOM, and a GitHub build attestation. First image
 cannot JIT ExLlamaV3's gated-delta-net kernels without Python.h. Recipes pin
 the digest and carry `launch.provenance` linking the run.
 
+### 1.5 Updates are checked in the background and applied by the user (2026-09-17)
+
+Two things above the user can move: this plugin's own release, and the registry's recipe file. One
+detached check — `upstream_autocheck` from `snapshot`, at most once per `OMARCHY_AI_UPDATE_TTL`
+(6 h) — reads both from one origin (`raw.githubusercontent.com`: the registry's
+`plugin/recipes.json` and this repository's `manifest.json` on the tracked branch) and **stages**
+them under `$STATE`. It never adopts. The snapshot stays a pure read: `upstream_json` derives the
+`update` field from files the check left behind, so refreshing the card never touches the network.
+
+The card's home footer then carries one row. Something staged → `update`, primary, naming the
+release and the count of new recipes for the cards actually detected. Nothing staged → `update-check`
+(plain re-check). The check off → no row at all. `omarchy-local-ai update` applies the staged
+registry file and then updates the harness through Omarchy's own `omarchy plugin update <id> --yes`,
+so plugin installation stays the platform's job, not ours.
+
+Two constraints the implementation carries, both found in review. The staged copy is adopted only if it
+is *still* newer than the file it replaces — the applier claims the staged file first and validates
+what it actually holds, so a background check racing an update cannot downgrade the file in use. And
+recipe files reach jq as `--slurpfile` inputs, never as arguments: the published `recipes.json` is
+already past the 128 KiB cap Linux puts on one argument, so passing its contents would fail every
+snapshot on Omarchy while passing cleanly on a Mac.
+
+This replaces 5.0's `recipes_autorefresh`, which fetched and adopted silently every six hours. The
+trade is deliberate and it is the conservative direction: what a user runs is the vendored file the
+marketplace reviewed until they say otherwise, and a fetched file still passes `gate_reason` recipe
+by recipe. It costs freshness for users who never press the row, which is why the row is loud and
+why `recipes update` (fetch and adopt in one step) stays for scripts. A real client-side ping was
+rejected: it would need a server, and the registry has none.
+
+### 1.6 Analytics are GitHub-native and complete (2026-09-17)
+
+The question — how many people use this, and where they come from — has only GitHub's own answers,
+because there is no server and we are adding none. `traffic.yml` records daily to the `stats` branch:
+clones (every `omarchy plugin add` is a clone — the install count), views, referrers, paths, the repo
+counts, every release asset's cumulative `download_count`, one GraphQL interaction tally (stars,
+forks, watchers, issues, PRs, discussions, commits), and the repo snapshot with its `day` archived
+inside the file so a star timeline is derivable. `traffic/summary.json` aggregates them, and the wiki's [17 — Stats](wiki/17-stats.md) page renders
+that one file in the browser.
+
+What GitHub cannot give is per-user usage: raw content fetches are not counted and there is no
+per-event log for views or downloads. So "who ran which recipe" is not answerable without client
+telemetry, which is out of scope on purpose.
+
+Two things the recorder must not do, both from review (2026-09-17): it must fail loudly rather than
+publish numbers it did not get (hence `pipefail` — jq happily turns an error body into zeroed
+counters), and a step that dies must not lose the day's traffic. The second is free: every per-day
+file is a *window*, and the aggregations group by day across all files taking the maximum reading, so
+the next successful run re-records a day this one missed.
+
 ## The vendored file contract (`recipes.json`)
 
 Per hardware id: `match {backend, vramGb, names[]}` and `recipe`:

@@ -37,6 +37,7 @@ ORDER = [
     "14-troubleshooting.md",
     "15-registry-and-ci.md",
     "16-history.md",
+    "17-stats.md",
 ]
 
 CSS = """
