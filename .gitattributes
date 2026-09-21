@@ -7,3 +7,6 @@
 /.gitattributes export-ignore
 /wiki export-ignore
 /media export-ignore
+
+# Unified patch context lines intentionally contain a single space.
+integrations/*.patch whitespace=-blank-at-eol

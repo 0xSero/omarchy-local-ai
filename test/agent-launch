@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Focused launch contract: no GPU, terminal, network or user configuration.
+set -euo pipefail
+ROOT=$(cd -- "${1:-$(dirname -- "${BASH_SOURCE[0]}")/..}" && pwd)
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+export HOME="$TMP/home" STATE="$TMP/state" KEY_FILE="$TMP/key" SNAPSHOT="$TMP/snapshot" PORT=12434 OMARCHY_AI_FOREGROUND=1
+mkdir -p "$HOME" "$STATE" "$TMP/bin" "$TMP/project with spaces"
+printf 'test-key' >"$KEY_FILE"
+printf '%s' '{"models":[{"recipeId":"test","state":"ready","servedModel":"/models/test.gguf","port":12435,"launchable":["pi","omp","opencode","crush","claude","codex","grok","copilot","ori","agy","hermes"],"ctxTokens":262144,"caps":{"vision":true}}]}' >"$SNAPSHOT"
+cat >"$TMP/bin/agent" <<'AGENT'
+#!/usr/bin/env bash
+printf '%s\n' "$PWD"
+printf '%s\n' "$@"
+printf '%s\n' "${OPENCODE_CONFIG_CONTENT:-}"
+AGENT
+chmod +x "$TMP/bin/agent"
+bin_of() { printf '%s' "$TMP/bin/agent"; }
+log() { :; }
+fail() { echo "$*" >&2; return 1; }
+source "$ROOT/lib/agents.sh"
+a=$(open_agent omp test); out=$(eval "$a")
+[[ $out == "$HOME"$'\n'* && $out == *$'\n--allow-home' ]]
+printf '%s' "$TMP/project with spaces" >"$STATE/agent-dir"
+a=$(open_agent omp test); out=$(cd /tmp && eval "$a")
+[[ $out == "$TMP/project with spaces"$'\n'* && $out != *--allow-home* ]]
+rmdir "$TMP/project with spaces"
+! open_agent omp test >/dev/null 2>&1
+rm "$STATE/agent-dir"
+a=$(open_agent pi test); out=$(eval "$a")
+[[ $out == *$'\n--thinking\nxhigh' && $out != *--thinking=* && $out != *--allow-home* ]]
+a=$(open_agent opencode test); out=$(eval "$a")
+[[ $out == *$'\n--model\nomarchy-local//models/test.gguf\n'* ]]
+tail -1 <<<"$out" | jq -e '.model=="omarchy-local//models/test.gguf" and .small_model==.model and .provider["omarchy-local"].models["/models/test.gguf"].limit.context==262144' >/dev/null
+printf 'Agent launch: OMP home opt-in, spaced paths, missing paths, Pi flags and OpenCode model defaults passed\n'
+
+# Every supported adapter goes through the same terminal handoff and keeps cwd.
+cat >"$TMP/bin/omarchy-launch-tui" <<'LAUNCH'
+#!/usr/bin/env bash
+[[ $1 == --app-id=org.omarchy.agent ]] || exit 1
+shift
+cd /tmp
+exec "$@"
+LAUNCH
+chmod +x "$TMP/bin/omarchy-launch-tui"
+for agent in "${AGENTS[@]}"; do
+  command=$(open_agent "$agent" test)
+  output=$(PATH="$TMP/bin:$PATH" bash -c 'eval "omarchy-launch-tui --app-id=org.omarchy.agent $1"' _ "$command")
+  [[ $output == "$HOME" || $output == "$HOME"$'\n'* ]] || { echo "$agent lost the terminal working directory" >&2; exit 1; }
+done
+printf 'All 11 agent adapters retain the chosen directory after terminal handoff\n'

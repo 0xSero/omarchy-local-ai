@@ -22,10 +22,11 @@ hardware_json() {
 INTEL_B70_IDS='8086:e223'
 intel_gpus() {
   command -v lspci >/dev/null 2>&1 || { printf '[]'; return; }
-  local dri="${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}" a idx=0 out='[]'
+  local dri="${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}" a idx=0 out='[]' metrics='{}'
+  [[ -d /sys/bus/pci/drivers/xe && -z ${OMARCHY_AI_DRI_PATH:-} ]] && metrics=$(deadline 8 python3 "$HERE/../lib/intel-metrics.py" "$STATE" 2>/dev/null || printf '{}')
   while IFS= read -r a; do
     [[ -n $a && -e "$dri/pci-$a-render" ]] || continue
-    out=$(jq -c --argjson i "$idx" --argjson t "$(intel_temp "$a")" '.+[{backend:"intel-xpu",index:$i,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null,tempC:$t,utilPct:null}]' <<<"$out")
+    out=$(jq -c --argjson i "$idx" --argjson t "$(intel_temp "$a")" --argjson m "$metrics" --arg pci "$a" '.+[{backend:"intel-xpu",index:$i,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null,tempC:$t,utilPct:null} + (($m[$pci] // {}) | del(.totalMiB,.activity))]' <<<"$out")
     idx=$((idx+1))
   done < <(lspci -Dnn -d "$INTEL_B70_IDS" 2>/dev/null | awk '{print $1}' | sort -u)
   printf '%s' "$out"
@@ -68,7 +69,7 @@ amd_gpus_from_amd_smi() {
     ($m.gpu_data // []) as $md
     | [($s.gpu_data // [])[]
         | . as $g
-        | ($md[]? | select(.gpu==$g.gpu)) as $u
+        | ([$md[]? | select(.gpu==$g.gpu)] | .[0] // {}) as $u
         | select(($g.asic.market_name // "") != "")
         | {
             backend:"amd-rocm",
@@ -144,9 +145,15 @@ amd_gpus_resolve_render_nodes() { # fill renderNode per GPU from its bdf via sys
   while IFS=$'\t' read -r bdf idx; do
     [[ -n $bdf && -n $idx ]] || continue
     local node; node=$(amd_render_node_for_bdf "$bdf" 2>/dev/null) || node=''
-    [[ -n $node ]] || continue
-    in=$(jq -c --argjson i "$idx" --arg n "$node" \
-      '[.[] | if .index == $i then . + {renderNode:$n} else . end]' <<<"$in")
+    local sys="${OMARCHY_AI_SYSFS_ROOT:-/sys}/bus/pci/devices/$bdf" used=null total=null util=null temp=null f
+    [[ -r $sys/mem_info_vram_used ]] && used=$(awk '{print $1/1048576}' "$sys/mem_info_vram_used")
+    [[ -r $sys/mem_info_vram_total ]] && total=$(awk '{print $1/1048576}' "$sys/mem_info_vram_total")
+    [[ -r $sys/gpu_busy_percent ]] && util=$(cat "$sys/gpu_busy_percent")
+    for f in "$sys"/hwmon/hwmon*/temp1_input; do [[ -r $f ]] && { temp=$(awk '{print $1/1000}' "$f"); break; }; done
+    in=$(jq -c --argjson i "$idx" --arg n "$node" --argjson used "$used" --argjson total "$total" --argjson util "$util" --argjson temp "$temp" \
+      '[.[] | if .index == $i then . + {renderNode:(if $n!="" then $n else .renderNode end),
+        usedMiB:($used // .usedMiB), totalMiB:($total // .totalMiB),
+        freeMiB:(if $used!=null and $total!=null then $total-$used else .freeMiB end), utilPct:$util,tempC:$temp} else . end]'  <<<"$in")
   done < <(jq -r '.[] | "\(.bdf // empty)\t\(.index)"' <<<"$in")
   printf '%s' "$in"
 }

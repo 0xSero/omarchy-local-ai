@@ -5,7 +5,7 @@ REGISTRY ?= ../local-ai-registry
 .PHONY: sync check test bundle
 
 BUNDLE = dist/omarchy-local-ai-$(shell jq -r .version manifest.json).tar.gz
-RUNTIME = manifest.json recipes.json LICENSE bin/omarchy-local-ai $(wildcard lib/*.sh) $(wildcard ui/*.qml) ui/ui.js
+RUNTIME = manifest.json recipes.json LICENSE bin/omarchy-local-ai $(wildcard lib/*.sh lib/*.py) $(wildcard ui/*.qml) ui/ui.js $(wildcard integrations/*.py integrations/*.patch integrations/*.lua integrations/*.qml integrations/*.html)
 
 bundle:
 	mkdir -p dist

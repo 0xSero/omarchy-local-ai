@@ -513,7 +513,7 @@ write_recipes "$(recipe good true asset)"; unset SHIM_GPUS
 
 # stats and the running identity
 "$CLI" load; [[ $(snap .state) == ready ]] || fail "ready for stats" "$(snap .error)"
-[[ $(snap '.models[0].decodeTps') -gt 0 && $(snap '.models[0].prefillTps') -gt 0 && $(snap '.models[0].tokensToday') -gt 0 && $(snap '.models[0].caps.chat') == true ]] || fail "stats" "$(snap .models)"; pass "a model carries its decode and prefill speed from acceptance, the tokens it served today, and its capabilities"
+[[ $(snap '.models[0].decodeTps') == null && $(snap '.models[0].prefillTps') == null && $(snap '.models[0].tokensToday') == null && $(snap '.models[0].caps.chat') == true ]] || fail "stats" "$(snap .models)"; pass "an engine without live telemetry reports unknown stats instead of startup scores or test-only token counts"
 [[ $(snap .running.name) == "Test Model" ]] || fail "running identity" "$(snap .running)"; pass "running carries the recipe's name"
 write_recipes "$(recipe other true asset)"; "$CLI" snapshot >/dev/null
 [[ $(snap .running.name) == "Test Model" && $(snap .state) == ready ]] || fail "older" "$(snap .running)"; pass "a running recipe the file no longer carries is still reported, named from its slot record"
@@ -521,6 +521,8 @@ write_recipes "$(recipe good true asset)"; "$CLI" unload
 
 # AMD: amd-smi inventory, CDI launch, toolkit refusal. Hide nvidia-smi so the shim 4090 does not steal the match.
 mv "$TMP/bin/nvidia-smi" "$TMP/nvidia-smi.bak"
+# Keep the host binary shadowed while testing AMD-only inventory.
+printf '#!/bin/sh\nexit 1\n' >"$TMP/bin/nvidia-smi"; chmod +x "$TMP/bin/nvidia-smi"
 cat >"$TMP/bin/amd-smi" <<'EOF'
 #!/usr/bin/env bash
 # SHIM_AMD_GPUS: count of identical 7900 XTXs (default 1)
@@ -591,6 +593,8 @@ if [[ ! -e /dev/kfd ]] || [[ -z $(ls /dev/dri/renderD* 2>/dev/null) ]]; then
   skip "KFD+render path: no /dev/kfd or render nodes on this host (typical CI without AMD GPU)"
 else
 mv "$TMP/bin/nvidia-smi" "$TMP/nvidia-smi.bak"
+# Keep the host binary shadowed while testing AMD-only inventory.
+printf '#!/bin/sh\nexit 1\n' >"$TMP/bin/nvidia-smi"; chmod +x "$TMP/bin/nvidia-smi"
 write_recipes "$(recipe good true asset | jq '.launch.environment.FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"')" rx-7900-xtx-24gb amd-rocm
 jq '.hardware["rx-7900-xtx-24gb"].match={backend:"amd-rocm",vramGb:24,names:["rx7900xtx"],name:"AMD Radeon RX 7900 XTX"}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
 export OMARCHY_AI_HARDWARE_JSON='{"gpus":[{"backend":"amd-rocm","index":0,"product":"AMD Radeon RX 7900 XTX","totalMiB":24560,"usedMiB":0,"freeMiB":24560,"renderNode":"/dev/dri/renderD128"}],"driver":""}'
@@ -608,6 +612,8 @@ write_recipes "$(recipe good true asset)"
 
 # AMD: rocm-smi fallback path when amd-smi is missing. Same recipe must still match.
 mv "$TMP/bin/nvidia-smi" "$TMP/nvidia-smi.bak"
+# Keep the host binary shadowed while testing AMD-only inventory.
+printf '#!/bin/sh\nexit 1\n' >"$TMP/bin/nvidia-smi"; chmod +x "$TMP/bin/nvidia-smi"
 cat >"$TMP/bin/rocm-smi" <<'EOF'
 #!/usr/bin/env bash
 cat <<CSV
@@ -723,6 +729,29 @@ OMARCHY_AI_FOREGROUND=0 "$CLI" open-agent pi >/dev/null; [[ $(snap .error) == ""
 [[ ! -s $SHIM/uwsm-app.log ]] || fail "agent launch probes uwsm-app and shows ping feedback" "$(cat "$SHIM/uwsm-app.log")"; pass "agent launch does not probe uwsm-app"
 [[ $("$CLI" agent-args ../../x -- a 2>&1 || true) == *"one of:"* ]] || fail "agent-args name"; "$CLI" agent-args pi -- --yolo "--name=a b" >/dev/null; argv=$("$CLI" open-agent pi); [[ $argv == *"--yolo --name=a\\ b"* ]] || fail "agent-args" "$argv"; "$CLI" agent-args pi >/dev/null; argv=$("$CLI" open-agent pi); [[ $argv != *yolo* ]] || fail "agent-args clear"; pass "agent-args adds the person's flags to that agent, and clears them"
 mkdir -p "$TMP/work"; "$CLI" agent-dir "$TMP/work" >/dev/null; [[ $(cat "$OMARCHY_AI_STATE/agent-dir") == "$TMP/work" ]] || fail "agent-dir"; [[ $("$CLI" agent-dir "$TMP/nope" 2>&1 || true) == *"not a directory"* ]] || fail "agent-dir refusal"; pass "agent-dir records a directory and refuses a missing one"
+# A terminal launcher is allowed to discard its parent's cwd. The agent must not.
+cat >"$TMP/bin/omarchy-launch-tui" <<'LAUNCH'
+#!/usr/bin/env bash
+shift
+cd /tmp || exit 1
+exec "$@"
+LAUNCH
+cat >"$TMP/bin/pi" <<'AGENT'
+#!/usr/bin/env bash
+pwd >"$SHIM/agent-cwd"
+AGENT
+mkdir -p "$TMP/project with spaces"
+"$CLI" agent-dir "$TMP/project with spaces" >/dev/null
+OMARCHY_AI_FOREGROUND=0 "$CLI" open-agent pi >/dev/null
+for attempt in {1..40}; do [[ -s $SHIM/agent-cwd ]] && break; sleep 0.1; done
+[[ $(cat "$SHIM/agent-cwd") == "$TMP/project with spaces" ]] || fail "terminal handoff lost agent cwd"
+pass "agent enters the selected project after a terminal handoff through /tmp"
+rmdir "$TMP/project with spaces"
+[[ $("$CLI" open-agent pi 2>&1 || true) == *"folder is unavailable"* ]] || fail "missing agent folder silently falls back"
+pass "an unavailable project folder refuses launch instead of using /tmp"
+rm -f "$OMARCHY_AI_STATE/agent-dir"
+[[ $("$CLI" snapshot | jq -r .agents.directory) == "$HOME" ]] || fail "default agent directory"
+pass "the default project folder is home, independent of the shell cwd"
 jq '.op={name:"starting",recipeId:"x",pid:999999,startedAt:"t",detail:"loading the model",percent:0}' "$OMARCHY_AI_STATE/ledger.json" >"$TMP/l" && cat "$TMP/l" >"$OMARCHY_AI_STATE/ledger.json"
 "$CLI" snapshot >/dev/null; [[ $(snap .error) == *"stopped unexpectedly while loading the model"* && $(snap .operation.name) == "" ]] || fail "vanished worker" "$(snap .error)"; pass "a worker killed without its exit trap is reported by the next refresh, not shown as starting forever"
 # an older install: key copied into the ledger, files world-readable; the next snapshot scrubs and tightens

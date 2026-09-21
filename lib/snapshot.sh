@@ -36,18 +36,10 @@ port_listener() {
   code=${out##*$'\n'}; body=${out%$'\n'*}
   if [[ $code == 401 ]] && jq -e '.error.type=="authentication_error" and .error.message=="invalid or missing API key"' <<<"$body" >/dev/null 2>&1; then printf gateway; else printf other; fi
 }
-USAGE_FILE_NAME=usage.jsonl
-usage_note() { # usage_note <prompt-tokens> <completion-tokens> [recipe]: one line per request the plugin itself made through a gateway
-  state_dir; printf '{"t":%s,"prompt":%s,"completion":%s,"recipe":"%s"}\n' "$(date -u +%s)" "${1:-0}" "${2:-0}" "${3:-}" >>"$STATE/$USAGE_FILE_NAME"
-}
-usage_today() { # usage_today <recipe> -> completion tokens that model served in the last 24 h
-  local f="$STATE/$USAGE_FILE_NAME"; [[ -s $f ]] || { printf 0; return; }
-  jq -s --arg id "$1" --argjson now "$(date -u +%s)" '[.[]|select(type=="object" and .recipe==$id and .t>=$now-86400)|.completion]|add//0' "$f" 2>/dev/null || printf 0
-}
-
 # models_json <ledger> -> every slot with what reality says about it
 models_json() {
-  local ledger=$1 id s port engine gateway e g served answering engine_up mstate note out='[]' busy_id apis
+  local ledger=$1 id s port engine gateway e g served answering engine_up mstate note out='[]' busy_id apis metrics='{}'
+  if docker_direct; then metrics=$(python3 "$HERE/../lib/runtime-metrics.py" "$STATE" 2>/dev/null || printf '{}'); fi
   busy_id=$(jq -r 'if .op.pid > 0 then .op.recipeId else "" end' <<<"$ledger")
   while IFS= read -r id; do
     [[ -n $id ]] || continue
@@ -71,12 +63,12 @@ models_json() {
     else mstate=stopped; note="stopped outside the plugin; press Start or Stop"; fi
     apis=$(jq -c '.accepted.apis // []' <<<"$s")
     out=$(jq -c --argjson s "$s" --arg id "$id" --arg st "$mstate" --arg note "$note" --arg served "$served" --argjson agents "$(agents_json "$apis")" --argjson share "$(share_state "$port")" \
-      --argjson rec "$(cat "$STATE/slots/$id.json" 2>/dev/null || recipe_by_id "$id")" --argjson today "$(usage_today "$id")" \
+      --argjson rec "$(cat "$STATE/slots/$id.json" 2>/dev/null || recipe_by_id "$id")" --argjson metrics "$metrics" \
       '. + [{recipeId:$id, name:($s.name // $id), port:$s.port, endpoint:("http://127.0.0.1:"+($s.port|tostring)+"/v1"), keys:($s.keys // []), cards:(($s.keys // []) | length),
              state:$st, note:$note, servedModel:(if $served != "" then $served else ($s.accepted.servedModel // "") end), apis:($s.accepted.apis // []),
              caps:(($rec.capabilities // {}) | {chat, vision, video, tools, reasoning}),
-             ctxTokens:($rec.serving.ctxTokens // 0), kvTokens:(if ($rec.serving.kvTokens // 0) > 0 then $rec.serving.kvTokens else ($rec.serving.ctxTokens // 0) end), tokensToday:$today,
-             decodeTps:($s.accepted.tps // 0), prefillTps:($s.accepted.prefillTps // 0), acceptedAt:($s.accepted.at // ""), startedAt:($s.startedAt // ""),
+             ctxTokens:($rec.serving.ctxTokens // 0), kvTokens:(if ($rec.serving.kvTokens // 0) > 0 then $rec.serving.kvTokens else ($rec.serving.ctxTokens // 0) end), tokensToday:($metrics[$id].tokensToday // null), usageSince:($metrics[$id].usageSince // ""), statsUpdatedAt:($metrics[$id].statsUpdatedAt // null),
+             decodeTps:($metrics[$id].decodeTps // null), prefillTps:($metrics[$id].prefillTps // null), acceptedAt:($s.accepted.at // ""), startedAt:($s.startedAt // ""),
              launchable:$agents.launchable, shareUrl:(if $share.active then $share.url else "" end), engine:$s.engine, gateway:$s.gateway}]' <<<"$out")
   done < <(jq -r '.slots | keys[]' <<<"$ledger")
   printf '%s' "$out"

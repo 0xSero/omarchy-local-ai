@@ -1,0 +1,153 @@
+--- a/Panel.qml
++++ b/Panel.qml
+@@ -7,7 +7,7 @@
+ 
+ Panel {
+   id: root
+-  moduleName: "omarchy.agents"
++  moduleName: "sero.agents"
+   ipcTarget: "omarchy.agents"
+   manageIpc: false
+ 
+@@ -18,7 +18,12 @@
+   readonly property color track: Style.selectedFillFor(foreground, Color.accent)
+   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+ 
+-  readonly property var providers: usage.enabledProviders
++  readonly property var providers: usage.enabledProviders.filter(function(p) { return p.providerId !== "local-ai" }).concat([{ providerId: "local-ai", providerName: "Local AI", ready: true, hasLocalStats: false, syncEnabled: false, recentDays: [] }])
++  readonly property bool localSelected: provider && provider.providerId === "local-ai"
++  function currentPanel() { return root.bar && typeof root.bar.findPanelWidget === "function" ? (root.bar.findPanelWidget("sero.agents") || root) : root }
++  function showLocal() { selectedProviderId = "local-ai"; root.open() }
++  function activateLocal(action) { if (!localControls.item) return "loading"; localControls.item.activate(action); return localControls.item.tone + ":" + localControls.item.view }
++  function showCheatSheet() { Quickshell.execDetached(["env", "OMARCHY_PATH=/usr/share/omarchy", "omarchy-shell", "shell", "toggle", "sero.shortcuts"]) }
+   // The selection follows the provider, not the slot it happens to sit in: a
+   // provider whose first scan lands while the panel is open would otherwise
+   // shift the list underneath you and swap out what you were reading.
+@@ -301,13 +306,13 @@
+   implicitWidth: button.implicitWidth
+   implicitHeight: button.implicitHeight
+ 
+-  onProviderIndexChanged: if (panelFlick) panelFlick.contentY = 0
++  onProviderIndexChanged: { if (panelFlick) panelFlick.contentY = 0; if (opened) Qt.callLater(function() { if (root.localSelected && localControls.item) localControls.item.focusContent(); else keyCatcher.forceActiveFocus() }) }
+   onOpenedChanged: if (opened) {
+     cursorActive = false
+     nowMs = Date.now()
+     if (panelFlick) panelFlick.contentY = 0
+     usage.refreshLimits()
+-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
++    Qt.callLater(function() { if (root.localSelected && localControls.item) localControls.item.focusContent(); else keyCatcher.forceActiveFocus() })
+   }
+ 
+   Main {
+@@ -332,7 +337,18 @@
+     function hide(): void { root.close() }
+     function toggle(): void { root.toggle() }
+     function refresh(): string { root.refreshNow(); return "ok" }
++    function local(): void { root.currentPanel().showLocal() }
++    function cheatsheet(): void { root.currentPanel().showCheatSheet() }
+     function next(): string { root.selectProvider(root.providerIndex + 1); return "ok" }
++  }
++
++  IpcHandler {
++    target: "sero.local-ai"
++    function open(): void { root.currentPanel().showLocal() }
++    function close(): void { root.close() }
++    function toggle(): void { var p = root.currentPanel(); if (p.opened && p.localSelected) p.close(); else p.showLocal() }
++    function refresh(): string { if (localControls.item) localControls.item.refresh(); return "ok" }
++    function activate(action: string): string { return root.currentPanel().activateLocal(action) }
+   }
+ 
+   BarIconButton {
+@@ -354,7 +370,7 @@
+     owner: root
+     bar: root.bar
+     open: root.opened
+-    focusTarget: keyCatcher
++    focusTarget: root.localSelected && localControls.item ? localControls.item.contentFocus : keyCatcher
+     contentWidth: panel.fittedContentWidth(Style.space(380))
+     // Taller than the control panels on purpose: this one is a dashboard, and
+     // the whole point is reading limits and history without scrolling.
+@@ -400,14 +416,14 @@
+             visible: !!root.provider
+             width: parent.width
+             title: root.provider ? root.provider.providerName : ""
+-            meta: root.heroMeta(root.provider)
++            meta: root.localSelected ? (localControls.item ? localControls.item.ui.eyebrow : "Loading models") : root.heroMeta(root.provider)
+             foreground: root.foreground
+             fontFamily: root.fontFamily
+ 
+             iconComponent: Component {
+               Item {
+                 id: heroMark
+-                property var candidates: root.iconCandidatesForProvider(root.provider, root.surface)
++                property var candidates: root.localSelected ? [] : root.iconCandidatesForProvider(root.provider, root.surface)
+                 // Provider objects are rebuilt on every refresh, which churns the
+                 // array's identity without changing its content. Restart the fallback
+                 // walk only when the URLs change: re-pointing source at a URL whose
+@@ -423,7 +439,7 @@
+                 Image {
+                   id: heroMarkImage
+                   anchors.fill: parent
+-                  source: heroMark.candidateIndex < heroMark.candidates.length ? heroMark.candidates[heroMark.candidateIndex] : ""
++                  source: root.localSelected ? "" : heroMark.candidateIndex < heroMark.candidates.length ? heroMark.candidates[heroMark.candidateIndex] : ""
+                   sourceSize.width: Style.font.display * 2
+                   sourceSize.height: Style.font.display * 2
+                   fillMode: Image.PreserveAspectFit
+@@ -436,7 +452,7 @@
+                 Text {
+                   anchors.centerIn: parent
+                   visible: heroMarkImage.status !== Image.Ready
+-                  text: button.text
++                  text: root.localSelected ? "▣" : button.text
+                   color: root.foreground
+                   font.family: root.fontFamily
+                   font.pixelSize: Style.font.display
+@@ -493,6 +509,40 @@
+             }
+           }
+ 
++          Loader {
++            id: localControls
++            width: parent.width
++            visible: root.localSelected
++            height: visible && item ? item.implicitHeight : 0
++            onLoaded: {
++              item.bar = root.bar
++              item.overlayHost = panelFlick.parent
++              item.dismissRequested.connect(root.close)
++              item.revealRequested.connect(function(y, rowHeight) {
++                var top = localControls.mapToItem(column, 0, y).y
++                if (top < panelFlick.contentY) panelFlick.contentY = Math.max(0, top)
++                else if (top + rowHeight > panelFlick.contentY + panelFlick.height)
++                  panelFlick.contentY = Math.min(Math.max(0, panelFlick.contentHeight - panelFlick.height), top + rowHeight - panelFlick.height)
++              })
++              item.switchRequested.connect(function(direction) { root.selectProvider(root.providerIndex + direction) })
++              item.embeddedActive = Qt.binding(function() { return root.localSelected && root.opened })
++            }
++            Component.onCompleted: setSource(Qt.resolvedUrl("../sero.local-ai/ui/Panel.qml"), { embedded: true })
++          }
++
++          Text {
++            visible: root.localSelected && localControls.status === Loader.Error
++            width: parent.width
++            text: "Local AI could not load. Reinstall or update the Local AI plugin."
++            color: root.urgent
++            font.family: root.fontFamily
++            wrapMode: Text.WordWrap
++          }
++
++          Column {
++            visible: !root.localSelected
++            width: parent.width
++            spacing: Style.space(12)
+           // ---------- Status ----------
+           BorderSurface {
+             visible: !!root.provider && String(root.provider.usageStatusText || "") !== ""
+@@ -689,6 +739,7 @@
+             font.pixelSize: Style.font.caption
+             horizontalAlignment: Text.AlignHCenter
+             elide: Text.ElideRight
++          }
+           }
+         }
+       }

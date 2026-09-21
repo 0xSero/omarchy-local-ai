@@ -91,23 +91,55 @@ function cells(c, group, work) {
     if (work && keys.indexOf(k) >= 0 && word === "stopping") return { text: "freeing", mark: "freeing" }
     if (work && keys.indexOf(k) >= 0 && word !== "sharing") return { text: "claimed", mark: "claimed" }
     if (m && m.state === "error") return { text: "crashed", mark: "crashed" }
-    if (m) return { text: "#" + k.split(":")[1] + " locked", mark: "used" }
+    if (m) return { text: "#" + k.split(":")[1] + " ready", mark: "used" }
     return { text: "free" + (g && g.tempC !== null && g.tempC !== undefined ? " · " + g.tempC + "°" : ""), mark: "free" }
   })
 }
-function cardRows(c, work, nested) {
+// A missing sensor is unknown, not zero. Clamp only the drawing; retain the reading.
+function meter(label, value, max, unit) {
+  var known = typeof value === "number" && isFinite(value) && value >= 0
+  return { label: label, value: known ? (Math.round(value * 10) / 10) + unit : "N/A",
+    fraction: known && max > 0 ? Math.max(0, Math.min(1, value / max)) : null }
+}
+function devices(snap, keys) {
+  return keys.map(function(k) {
+    var g = gpu(snap, k) || {}, m = holder(snap, k), memory = meter("VRAM", g.usedGb, g.vramGb, "")
+    if (memory.fraction !== null) memory.value += "/" + g.vramGb + " GB"
+    return { label: "GPU " + k.split(":")[1], status: m ? m.state : "available", meters: [
+      meter("Temp", g.tempC, 100, "°C"), meter("Usage", g.utilPct, 100, "%"), memory] }
+  })
+}
+function groupModels(snap, group) {
+  return models(snap).filter(function(m) { return m.keys.some(function(k) { return group.keys.indexOf(k) >= 0 }) })
+}
+function cardRows(c, work) {
   var snap = c.snap, out = [sec("gpus")], cs = snap.cards || []
-  for (var i = 0; i < cs.length; i++) { var g = cs[i], free = freeKeys(snap, g).length, held = g.keys.length - free
-    var n = fits(snap, g, 1).length + fits(snap, g, 2).length, can = !work && free > 0 && held === 0 && n > 0   // a type with a model on it is reached through that model
-    out.push(row(g.count + "× " + g.name, work ? g.totalGb + " GB" : can ? n + (n === 1 ? " recipe ›" : " recipes ›") : held ? held + " locked" : n ? "" : "no recipe",
-      can ? "card:" + g.hardwareId : "", { cells: cells(c, g, work), disabled: !work && !can && held === 0 }))
-    if (nested) models(snap).filter(function(m) { return m.keys.some(function(k) { return g.keys.indexOf(k) >= 0 }) }).forEach(function(m) {
-      out.push(row(m.name, m.state === "error" ? "crashed ›" : m.state !== "ready" ? m.state + " ›" : (m.decodeTps || 0) + " tok/s ›", "model:" + m.recipeId,
-        { child: true, urgent: m.state !== "ready", cells: [{ text: ":" + m.port + (m.shareUrl ? " · shared" : ""), mark: "" }] }))
-    })
-  }
-  if (!cs.length) out.push(row("card", "none", "", { urgent: true }))
+  cs.forEach(function(g) {
+    var ms = groupModels(snap, g), free = freeKeys(snap, g).length
+    var failed = ms.some(function(m) { return m.state === "error" })
+    var busy = work && g.keys.some(function(k) { return workKeys(snap).indexOf(k) >= 0 })
+    var status = busy ? opWord(snap) : failed ? "error" : ms.length ? (free ? free + " available" : "running") : "available"
+    out.push(row(g.count + "× " + g.name, status + " ›", work ? "" : "gpu:" + g.hardwareId,
+      { urgent: failed, compact: !work, cells: work ? cells(c, g, work) : undefined, devices: work ? devices(snap, g.keys) : undefined }))
+  })
+  if (!cs.length) out.push(row("GPU", "none detected", "", { urgent: true }))
   return out
+}
+
+function launchModel(c) {
+  var ready = models(c.snap).filter(function(m) { return m.state === "ready" })
+  return ready.filter(function(m) { return m.recipeId === c.launchPick })[0]
+    || ready.filter(function(m) { return m.recipeId === (c.snap.running || {}).recipeId })[0] || ready[0]
+}
+function launchRows(c, m) {
+  if (!m) return [row("open agent", "load a model first", "", { disabled: true })]
+  var snap = c.snap, agents = m.launchable || [], a = agents.indexOf(c.agentPick) >= 0 ? c.agentPick
+    : agents.indexOf((snap.agents || {}).default) >= 0 ? snap.agents.default : agents[0] || ""
+  if (!a) return [row("agent", "none can use this model", "", { disabled: true })]
+  var rows = [row("agent", a, "agent-toggle", { expanded: !!c.agentOpen })]
+  if (c.agentOpen) agents.forEach(function(x) { rows.push(row(x, x === (snap.agents || {}).default ? "default" : "", "agent:" + x, { kind: "dd", selected: x === a })) })
+  rows.push(row("open " + a, "terminal ›", "open-agent:" + a + ":" + m.recipeId, { kind: "primary", compact: true }))
+  return rows
 }
 
 function build(c) {
@@ -152,28 +184,24 @@ function build(c) {
       var cg = cardOfKeys(snap, m.keys)
       o.tone = m.state === "error" ? "error" : "ready"; o.eyebrow = m.state === "error" ? "crashed" : m.state === "ready" ? "ready" : m.state; o.title = m.name
       o.sub = where(snap, m) + " · :" + m.port + (m.shareUrl ? " · shared" : "")
+      if (cg) o.path.push({ n: cg.name.toLowerCase(), v: "card" })
       o.path.push({ n: m.name.toLowerCase(), v: "model" })
+      if (cg) o.rows.push(row("", "", "", { tabs: [{ text: "Models", action: "card:" + cg.hardwareId }, { text: "Stats & agents", on: true, action: "model:" + m.recipeId }] }))
       if (m.state !== "ready") {
         o.rows.push(row("engine", m.note || "stopped unexpectedly", "", { urgent: true, type: "text" }))
         o.rows.push(row("run again", m.name, "run-again", { kind: "primary" })); o.rows.push(row("log", "open ›", "log"))
         o.foot.push(row("stop", m.name, "stop:" + m.recipeId, { kind: "danger" })); return o
       }
-      o.rows.push({ type: "stat", stat: [{ k: "decode", v: String(m.decodeTps || 0), u: "tok/s" }, { k: "prefill", v: m.prefillTps > 0 ? String(m.prefillTps) : "n/a", u: m.prefillTps > 0 ? "tok/s" : "" }], label: "", value: "", action: "", kind: "" })
-      o.rows.push({ type: "stat", stat: [{ k: "tokens today", v: kmg(m.tokensToday || 0), u: "" }, { k: "kv cache", v: m.kvTokens > 0 ? kb(m.kvTokens) : "n/a", u: m.ctxTokens > 0 ? kb(m.ctxTokens) + " ctx" : "" }], label: "", value: "", action: "", kind: "" })
-      o.rows.push(row(where(snap, m), ":" + m.port, "", { cells: m.keys.map(function(k) { var g = gpu(snap, k) || {}; var t = []
-        if (g.tempC !== null && g.tempC !== undefined) t.push(g.tempC + "°"); if (g.utilPct !== null && g.utilPct !== undefined) t.push(g.utilPct + "%"); if (g.usedGb !== null && g.usedGb !== undefined) t.push(Math.round(g.usedGb) + "/" + g.vramGb + "G")
-        return { text: "#" + k.split(":")[1] + (t.length ? " " + t.join(" ") : ""), mark: "used" } }) }))
+      o.rows = o.rows.concat(launchRows(c, m))
+      o.rows.push({ type: "stat", stat: [{ k: "decode · today avg", v: m.decodeTps > 0 ? String(m.decodeTps) : "n/a", u: m.decodeTps > 0 ? "tok/s" : "" }, { k: "prefill · today avg", v: m.prefillTps > 0 ? String(m.prefillTps) : "n/a", u: m.prefillTps > 0 ? "tok/s" : "" }], label: "", value: "", action: "", kind: "" })
+      o.rows.push({ type: "stat", stat: [{ k: "tokens today", v: m.tokensToday == null ? "n/a" : kmg(m.tokensToday), u: "" }, { k: "kv cache", v: m.kvTokens > 0 ? kb(m.kvTokens) : "n/a", u: m.ctxTokens > 0 ? kb(m.ctxTokens) + " ctx" : "" }], label: "", value: "", action: "", kind: "" })
+      o.rows.push(row(where(snap, m), ":" + m.port, "", { devices: devices(snap, m.keys) }))
       o.rows.push(capabilities(m.caps))
-      var agents = m.launchable || [], a = agents.indexOf(c.agentPick) >= 0 ? c.agentPick : (agents.indexOf((snap.agents || {}).default) >= 0 ? snap.agents.default : agents[0] || "")
-      if (agents.length) {
-        o.rows.push(row("agent", a + (c.agentOpen ? " ▴" : " ▾"), "agent-toggle"))
-        if (c.agentOpen) agents.forEach(function(x) { o.rows.push(row(x, x === (snap.agents || {}).default ? "default" : "", "agent:" + x, { kind: "dd", selected: x === a })) })
-      } else o.rows.push(row("agent", "none can use it", "", { urgent: true }))
+      if (m.usageSince) o.rows.push(row("usage tracked since", new Date(m.usageSince).toLocaleTimeString(), ""))
       var sh = snap.share || {}
       if (!sh.available) o.rows.push(row("share", "no tailscale", "", { disabled: true }))
       else if (!m.shareUrl) o.rows.push(row("share", "off · tailnet ›", "share"))
       else o.rows.push(row("share", "on", "share", { chips: [{ text: m.shareUrl.replace(/^https?:\/\//, ""), off: false }, { text: c.copied ? "copied" : "copy", off: false, action: "copy:" + m.recipeId }] }))
-      if (a !== "") o.foot.push(row("open " + a, m.name, "open-agent:" + a + ":" + m.recipeId, { kind: "primary" }))
       o.foot.push(row("stop", m.name, "stop:" + m.recipeId, { kind: "danger" }))
       return o
     }
@@ -182,12 +210,19 @@ function build(c) {
   if (view === "card") {
     var g = cardByHw(snap, c.hw)
     {
-      var free = freeKeys(snap, g), n = Math.max(1, Math.min(c.count || 1, free.length))
-      o.tone = "idle"; o.eyebrow = "idle"; o.title = g.name; o.sub = free.length + " of " + g.keys.length + " free · " + g.vramGb + " GB each"
+      var free = freeKeys(snap, g), n = Math.max(1, Math.min(c.count || 1, g.keys.length))
+      o.tone = "idle"; o.eyebrow = "models"; o.title = g.name; o.sub = free.length + " of " + g.keys.length + " free · " + g.vramGb + " GB each"
       o.path.push({ n: g.name.toLowerCase(), v: "card" }); if (n > 1) o.path.push({ n: n + " cards", v: "card" })
-      if (free.length > 1) { var tabs = []; for (var k = 1; k <= free.length; k++) tabs.push({ text: k + "× · " + k * g.vramGb + " GB", on: k === n, action: "count:" + k }); o.rows.push(row("use", "", "", { tabs: tabs })) }
+      var running = groupModels(snap, g)
+      if (running.length === 1) o.rows.push(row("", "", "", { tabs: [{ text: "Models", on: true, action: "card:" + g.hardwareId }, { text: "Stats & agents", action: "model:" + running[0].recipeId }] }))
+      else if (running.length) {
+        o.rows.push(sec("running"))
+        running.forEach(function(m) { o.rows.push(row(m.name, m.state + " · stats & agents ›", "model:" + m.recipeId)) })
+      }
+      o.rows.push(row(g.count + "× " + g.name, free.length + " available", "", { cells: cells(c, g, false) }))
+      if (g.keys.length > 1) { var tabs = []; for (var k = 1; k <= g.keys.length; k++) tabs.push({ text: k + "×", on: k === n, action: "count:" + k }); o.rows.push(row("GPUs to use", "", "", { tabs: tabs })) }
       var list = fits(snap, g, n)
-      o.rows.push(sec("recipes for " + n + (n > 1 ? " cards" : " card") + " · " + list.length))
+      o.rows.push(sec("models for " + n + (n > 1 ? " GPUs" : " GPU") + " · " + list.length))
       if (!list.length) o.rows.push(row("recipe", "none uses " + n + " cards"))
       var dup = {}; list.forEach(function(r) { dup[r.name] = (dup[r.name] || 0) + 1 })   // two recipes of one model: say which
       list.forEach(function(r) { o.rows.push(row(dup[r.name] > 1 && r.precision ? r.name + " · " + r.precision : r.name, r.running ? "running" : r.onDisk ? gb(r.sizeGb) + " · on disk" : r.partialBytes > 0 ? gb(r.partialBytes / 1073741824) + " of " + gb(r.sizeGb) + " · resume" : gb(r.sizeGb) + " · download", "pick:" + r.id, { selected: c.pick === r.id })) })
@@ -196,9 +231,10 @@ function build(c) {
         o.rows.push(row("context", p.ctxTokens > 0 ? kb(p.ctxTokens) + " per request" : "unknown"))
         o.rows.push(capabilities(p.caps))
       }
-      if (p && p.running) o.foot.push(row("open", p.name, "model:" + p.id, { kind: "primary" }))
+      if (p && p.hardwareId === g.hardwareId && p.cards === n && p.running) o.foot.push(row("open", p.name, "model:" + p.id, { kind: "primary" }))
+      else if (p && p.hardwareId === g.hardwareId && p.cards === n && free.length < n) o.foot.push(row("GPUs in use", "stop a running model to load", "", { disabled: true }))
       else if (p && p.hardwareId === g.hardwareId && p.cards === n) o.foot.push(row(p.onDisk ? "run" : p.partialBytes > 0 ? "resume + run" : "download " + gb(p.sizeGb) + " + run", p.name, "run:" + p.id + ":" + n, { kind: "primary" }))
-      else o.foot.push(row("run", "pick a recipe", "", { disabled: true }))
+      else o.foot.push(row("run", "choose a model", "", { disabled: true }))
       return o
     }
   }
@@ -207,7 +243,16 @@ function build(c) {
   else { var used = ms.reduce(function(a, m) { return a + m.cards }, 0)
     o.tone = crashed.length ? "error" : "ready"; o.eyebrow = crashed.length ? "crashed" : "ready"; o.title = ms.length === 1 ? ms[0].name : ms.length + " models"
     o.sub = "on " + used + " of " + total + " cards" + (ms.some(function(m) { return m.shareUrl }) ? " · shared" : "") }
-  o.rows = cardRows(c, false, true)
+  var launch = launchModel(c)
+  o.rows.push(row("launch agent", c.launcherOpen ? "collapse" : "choose agent and model", "launcher-toggle", { expanded: !!c.launcherOpen }))
+  if (c.launcherOpen && launch) {
+    o.rows.push(row("model", where(snap, launch) + " · " + launch.name, "launch-model-toggle", { expanded: !!c.launchModelOpen }))
+    if (c.launchModelOpen) ms.filter(function(m) { return m.state === "ready" }).forEach(function(m) {
+      o.rows.push(row(where(snap, m), m.name, "launch-model:" + m.recipeId, { kind: "dd", selected: m.recipeId === launch.recipeId }))
+    })
+  }
+  if (c.launcherOpen) o.rows = o.rows.concat(launchRows(c, launch))
+  o.rows = o.rows.concat(cardRows(c, false))
   o.foot = updateRows(snap)
   return o
 }

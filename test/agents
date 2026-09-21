@@ -127,7 +127,7 @@ def run(agent, model, feature='text'):
     (state/'ledger.json').write_text(json.dumps(ledger))
     shutil.copytree(SOURCE/'slots',state/'slots',dirs_exist_ok=True)
     shutil.copyfile(SOURCE/'gateway.key',state/'gateway.key')
-    env=os.environ.copy();env.update(OMARCHY_AI_STATE=str(state),OMARCHY_AI_FOREGROUND='1',NO_COLOR='1',CI='1')
+    env=os.environ.copy();env.update(OMARCHY_AI_STATE=str(state),OMARCHY_AI_FOREGROUND='1',OMARCHY_AI_AGENT_DIR=str(project),NO_COLOR='1',CI='1')
     start=time.monotonic();code=-1;error=''
     try:
         command=subprocess.check_output([str(CLI),'open-agent',agent,model['recipeId']],env=env,text=True,timeout=25)

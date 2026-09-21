@@ -15,35 +15,44 @@ assert(result.rows.some(r => r.label === 'context' && r.value === '256K per requ
 assert(result.rows.some(r => r.chips && r.chips.some(c => c.text === 'video' && !c.off)));
 console.log('UI context, video and unknown capability checks passed');
 
-// Models are children of the GPU group they use; free groups remain selectable.
+// GPU rows stay navigable while occupied. The model list respects physical
+// capacity and never offers a load onto occupied GPUs.
 const running = {...recipe, recipeId: recipe.id, state: 'ready', keys: ['intel-xpu:0','intel-xpu:1'], port: 12434, decodeTps: 42};
 const snap = {state: 'ready', operation: {}, models: [running], gpus: [],
-  cards: [{hardwareId: 'b70', name: 'B70', count: 2, keys: running.keys},
-    {hardwareId: '3090', name: 'RTX 3090', count: 1, keys: ['nvidia:0']}],
+  cards: [{hardwareId: 'b70', name: 'B70', count: 2, keys: running.keys, vramGb: 32},
+    {hardwareId: '3090', name: 'RTX 3090', count: 1, keys: ['nvidia:0'], vramGb: 24}],
   recipes: [recipe, {...recipe, id: 'qwen-single', hardwareId: '3090', cards: 1}]};
 const home = ui.build({snap, view: 'home', localError: ''});
-assert.equal(home.rows[0].label, 'gpus');
-assert.equal(home.rows[1].label, '2× B70');
-assert.equal(home.rows[2].action, 'model:qwen-tp2');
-assert.equal(home.rows[2].child, true);
-assert.equal(home.rows[3].label, '1× RTX 3090');
-const locked = home.rows.find(r => r.label === '2× B70');
-assert.equal(locked.value, '2 locked');
-assert.equal(locked.action, '');
-assert(locked.cells.every(c => /locked/.test(c.text)));
-assert.equal(home.rows.find(r => r.label === '1× RTX 3090').action, 'card:3090');
-const idle = ui.build({snap: {...snap, models: []}, view: 'home', localError: ''});
-assert.equal(idle.rows[0].label, 'gpus');
-assert.equal(idle.rows.find(r => r.label === '2× B70').action, 'card:b70');
-const second = {...running, recipeId: 'qwen-single', keys: ['nvidia:0'], cards: 1, port: 12435};
-const two = ui.build({snap: {...snap, models: [second, running]}, view: 'home', localError: ''});
-assert.equal(two.rows[2].action, 'model:qwen-tp2');
-assert.equal(two.rows[4].action, 'model:qwen-single');
-assert.equal(two.rows.filter(r => r.child).length, 2);
+const gpuRows = home.rows.filter(r => r.action.startsWith('gpu:'));
+assert.equal(gpuRows.length, 2);
+assert.equal(gpuRows[0].action, 'gpu:b70');
+assert.equal(gpuRows[0].value, 'running ›');
+assert.equal(gpuRows[1].action, 'gpu:3090');
+assert.equal(gpuRows[1].value, 'available ›');
 const crashed = ui.build({snap: {...snap, models: [{...running, state: 'error'}]}, view: 'home', localError: ''});
-assert.equal(crashed.rows[2].value, 'crashed ›');
-assert(crashed.rows[1].cells.every(c => c.mark === 'crashed'));
-console.log('UI GPU grouping, model ownership and lock checks passed');
+assert.equal(crashed.rows.find(r => r.action === 'gpu:b70').value, 'error ›');
+assert(!crashed.rows.find(r => r.action === 'gpu:b70').devices);
+const catalog = ui.build({snap, view: 'card', hw: 'b70', count: 2, pick: recipe.id, localError: ''});
+assert(catalog.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'model:qwen-tp2')));
+assert(catalog.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'count:2')));
+assert(catalog.foot.every(r => !r.action.startsWith('run:')));
+assert.equal(catalog.foot[0].label, 'GPUs in use');
+const available = ui.build({snap: {...snap, models: []}, view: 'card', hw: 'b70', count: 2, pick: recipe.id, localError: ''});
+assert.equal(available.foot[0].action, 'run:qwen-tp2:2');
+const stalePick = ui.build({snap, view: 'card', hw: 'b70', count: 1, pick: recipe.id, localError: ''});
+assert(!stalePick.foot.some(r => r.action.startsWith('run:') || r.action.startsWith('model:')));
+const stats = ui.build({snap, view: 'model', slotSel: recipe.id, localError: ''});
+assert(stats.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'card:b70')));
+const partial = {...snap, models: [{...running, keys: ['intel-xpu:0'], cards: 1}]};
+assert.equal(ui.build({snap: partial, view: 'home', localError: ''}).rows.find(r => r.action === 'gpu:b70').value, '1 available ›');
+const multiple = {...snap, models: [
+  {...running, recipeId: 'first', keys: ['intel-xpu:0'], cards: 1},
+  {...running, recipeId: 'second', keys: ['intel-xpu:1'], cards: 1}
+]};
+const multipleView = ui.build({snap: multiple, view: 'card', hw: 'b70', count: 1, localError: ''});
+assert(multipleView.rows.some(r => r.action === 'model:first'));
+assert(multipleView.rows.some(r => r.action === 'model:second'));
+console.log('UI GPU status, navigation, capacity and occupied-load checks passed');
 
 // The update row is the only way an update happens from the card: something staged is the update
 // verb, nothing staged is a plain check, and a disabled check leaves the card alone.
@@ -62,3 +71,42 @@ assert(/^current · checked \d+m ago/.test(current.foot[0].value));
 assert.equal(ui.build({snap: {...snap, update: {enabled: false}}, view: 'home', localError: ''}).foot.length, 0);
 assert.equal(ui.build({snap, view: 'card', hw: 'b70', count: 1, pick: 'qwen-tp2', localError: ''}).foot.some(r => r.action === 'update'), false);
 console.log('UI update row checks passed');
+
+// Meter data must retain missing sensors and reflect per-device readings.
+const sensors = {...snap, gpus: [{key: 'intel-xpu:0', tempC: 41, utilPct: null, usedGb: null, vramGb: 32},
+  {key: 'nvidia:0', tempC: 72, utilPct: 0, usedGb: 18, vramGb: 24}]};
+const overview = ui.build({snap: sensors, view: 'home', localError: ''});
+assert(overview.rows.filter(r => r.action.startsWith('gpu:')).every(r => r.compact && !r.devices && !r.cells));
+const meters = sensors.cards.map(c => ({devices: ui.devices(sensors, c.keys)}));
+assert.equal(meters[0].devices[0].meters[0].fraction, 0.41);
+assert.equal(meters[0].devices[0].meters[1].fraction, null);
+assert.equal(meters[0].devices[0].meters[2].value, 'N/A');
+assert.equal(meters[1].devices[0].meters[1].value, '0%');
+assert.equal(meters[1].devices[0].meters[2].fraction, 0.75);
+assert.equal(meters[1].devices[0].meters[2].value, '18/24 GB');
+assert.equal(ui.meter('Usage', 110, 100, '%').fraction, 1);
+assert.equal(ui.meter('Temp', -1, 100, '°C').fraction, null);
+const launch = ui.build({snap: {...sensors, agents: {default: 'omp'}, models: [{...running, launchable: ['pi', 'omp']}]}, view: 'model', slotSel: recipe.id, localError: ''});
+const index = action => launch.rows.findIndex(r => r.action === action);
+assert(index('agent-toggle') < index('open-agent:omp:qwen-tp2'));
+assert(index('open-agent:omp:qwen-tp2') < launch.rows.findIndex(r => r.type === 'stat'));
+assert(!launch.foot.some(r => r.action.startsWith('open-agent:')));
+assert(launch.rows.some(r => r.devices && r.devices.length === running.keys.length));
+console.log('GPU meter accuracy, missing sensors and top agent controls passed');
+
+// The home launcher targets a ready model explicitly and shares the detail launcher.
+const first = {...running, launchable: ['pi', 'opencode', 'crush']};
+const second = {...first, recipeId: 'other', keys: ['nvidia:0'], launchable: ['pi', 'crush']};
+const launchSnap = {...snap, models: [first, second], running: {recipeId: first.recipeId}, agents: {default: 'opencode'}};
+const main = extra => ui.build({snap: launchSnap, view: 'home', localError: '', launcherOpen: true, ...extra});
+assert(main().rows.some(r => r.action === 'open-agent:opencode:qwen-tp2'));
+assert(main({launchPick: 'other', agentPick: 'crush'}).rows.some(r => r.action === 'open-agent:crush:other'));
+assert(main({launchPick: 'other'}).rows.some(r => r.action === 'open-agent:pi:other'));
+assert(main({launchPick: 'gone'}).rows.some(r => r.action === 'open-agent:opencode:qwen-tp2'));
+assert(main({launchModelOpen: true}).rows.some(r => r.action === 'launch-model:other'));
+assert(main({agentOpen: true}).rows.some(r => r.action === 'agent:crush'));
+assert(!ui.build({snap: {...launchSnap, models: [{...first, state: 'error'}]}, view: 'home', localError: ''}).rows.some(r => r.action.startsWith('open-agent:')));
+console.log('Main-screen agent selection, model routing and stale selection checks passed');
+
+assert(main({launcherOpen: false}).rows.some(r => r.action === 'launcher-toggle'));
+assert(!main({launcherOpen: false}).rows.some(r => r.action.startsWith('open-agent:')));

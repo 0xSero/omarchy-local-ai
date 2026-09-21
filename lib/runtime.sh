@@ -361,7 +361,6 @@ accept() {
   op starting "$id" "chat acceptance" 0
   reply=$(post chat/completions "$(jq -nc --arg m "$served" '{model:$m,stream:false,messages:[{role:"user",content:"Reply with exactly: LOCAL_AI_READY"}]}')") || { fail "chat completion failed"; return 1; }
   jq -e '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|contains("LOCAL_AI_READY")' >/dev/null <<<"$reply" || { fail "chat acceptance failed"; return 1; }
-  usage_note "$(jq -r '.usage.prompt_tokens // 0' <<<"$reply")" "$(jq -r '.usage.completion_tokens // 0' <<<"$reply")" "$id"
   # decode speed, coarsely: this exists to catch a CPU fallback (one or two tok/s), not to benchmark.
   # Engines do not all report usage (TabbyAPI does not), so tokens fall back to words written,
   # thinking included, at 1.3 tokens a word. Two runs, the better counts: the first is cold. The
@@ -375,7 +374,6 @@ accept() {
     toks=$(jq -r '.usage.completion_tokens // 0' <<<"$reply")
     (( toks > 0 )) || toks=$(jq -r '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|[splits("\\s+")|select(length>0)]|length|.*1.3|floor' <<<"$reply")
     tps=$(( toks * 1000000000 / (t1 - t0 + 1) )); (( tps > best )) && best=$tps
-    usage_note "$(jq -r '.usage.prompt_tokens // 0' <<<"$reply")" "$toks" "$id"
   done
   tps=$best
   # a reasoning model whose engine is not splitting: the closing think tag lands in the answer text,
@@ -398,7 +396,6 @@ accept() {
     (( ctoks > 0 )) || ctoks=$(jq -r '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|[splits("\\s+")|select(length>0)]|length|.*1.3|floor' <<<"$reply")
     ns=$(( t1 - t0 )); (( tps > 0 )) && ns=$(( ns - ctoks * 1000000000 / tps )); (( ns < 1000000 )) && ns=1000000
     prefill=$(( ptoks * 1000000000 / ns ))
-    usage_note "$ptoks" "$ctoks" "$id"
   fi
   op starting "$id" "messages acceptance" 0
   # the shapes agents really send: a system prompt plus a prior turn (Messages), instructions plus a

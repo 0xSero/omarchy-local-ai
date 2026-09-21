@@ -9,13 +9,18 @@
 AGENTS=(pi omp opencode ori claude codex grok agy hermes copilot crush)
 ENDPOINT="http://127.0.0.1:$PORT"   # open_agent points it at the model's own port before building the command
 
+agent_directory() {
+  local dir=${OMARCHY_AI_AGENT_DIR:-$(cat "$STATE/agent-dir" 2>/dev/null)}
+  printf '%s\n' "${dir:-$HOME}"
+}
+
 agents_json() { # agents_json <apis-json> -> {"default":"pi","installed":["pi",...],"launchable":[...]} against a model's accepted dialects
   local apis=${1:-[]} def="" found=""
   for a in "${AGENTS[@]}"; do bin_of "$a" >/dev/null 2>&1 && found+="$a "; done   # installed only; one jq pass below splits installed from launchable
   command -v omarchy-default-agent >/dev/null 2>&1 && def=$(omarchy-default-agent 2>/dev/null || true)
-  jq -nc --arg found "$found" --arg d "${def:-}" --argjson apis "$apis" '
+  jq -nc --arg found "$found" --arg d "${def:-}" --arg dir "$(agent_directory)" --argjson apis "$apis" '
     ($found|split(" ")|map(select(.!=""))) as $i
-    | {default:$d, installed:$i,
+    | {default:$d, directory:$dir, installed:$i,
        launchable:[$i[]|. as $a|select($apis|index((if $a=="claude" then "messages" elif $a=="codex" then "responses" else "chat" end))!=null)]}'
 }
 
@@ -49,7 +54,7 @@ agent_command() {
     opencode)
       # opencode resolves {env:NAME} inside its config, so the key stays out of the config text too
       cfg=$(jq -nc --arg u "$ENDPOINT/v1" --arg m "$model" --argjson ctx "$context" --argjson vision "$vision" \
-        '{"$schema":"https://opencode.ai/config.json",provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:"{env:OMARCHY_LOCAL_AI_KEY}"},models:{($m):{name:$m,limit:{context:$ctx,output:$ctx},reasoning:true,options:{reasoningEffort:"xhigh"},modalities:{input:(if $vision then ["text","image"] else ["text"] end),output:["text"]}}}}}}')
+        '{"$schema":"https://opencode.ai/config.json",model:("omarchy-local/"+$m),small_model:("omarchy-local/"+$m),provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:"{env:OMARCHY_LOCAL_AI_KEY}"},models:{($m):{name:$m,limit:{context:$ctx,output:$ctx},reasoning:true,options:{reasoningEffort:"xhigh"},modalities:{input:(if $vision then ["text","image"] else ["text"] end),output:["text"]}}}}}}')
       with_key OMARCHY_LOCAL_AI_KEY
       printf '%s\0' env "OPENCODE_CONFIG_CONTENT=$cfg" "$bin" --model "omarchy-local/$model" ;;
     pi|omp)
@@ -69,7 +74,7 @@ agent_command() {
       # Local llama.cpp decoders cannot read WebP; OMP can preserve PNG/JPEG instead.
       [[ $name == omp ]] && printf '%s\0' OMP_NO_WEBP=1
       # Qwen3.8's chat template rejects OpenAI-style "high"; it allows xhigh/medium/low (xhigh is the model default).
-      printf '%s\0' "$bin" --provider omarchy-local --model "$model" --thinking=xhigh ;;
+      printf '%s\0' "$bin" --provider omarchy-local --model "$model" --thinking xhigh ;;
     crush)
       # crush takes providers from XDG config only, not from OPENAI_BASE_URL, and its XDG data file pins the
       # last chosen model over the config: give it a plugin-owned config and data home
@@ -113,12 +118,15 @@ open_agent() { # open_agent [name] [recipe]: default agent when omitted, the mod
   local -a argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(agent_command "$name" "$model" "$KEY_FILE" "$(jq -r '.ctxTokens // 131072' <<<"$m")" "$(jq -r '.caps.vision // false' <<<"$m")") || return 1
   # the person's own flags for this agent (`omarchy-local-ai agent-args <name> -- <flags>`), e.g. a yolo mode
   if [[ -s $STATE/agents/args/$name ]]; then while IFS= read -r -d '' v; do argv+=("$v"); done <"$STATE/agents/args/$name"; fi
+  local dir; dir=$(agent_directory)
+  [[ -d $dir ]] || { fail "agent folder is unavailable: $dir; choose another folder"; return 1; }
+  # OMP deliberately relocates home to /tmp unless the selected home is allowed.
+  [[ $name == omp && $dir -ef $HOME ]] && argv+=(--allow-home)
+  # UWSM may start the terminal in /tmp. Set cwd inside the terminal process,
+  # after that handoff, and keep paths/arguments positional (including spaces).
+  argv=(bash -c 'cd -- "$1" || exit 1; shift; exec "$@"' omarchy-local-ai-workdir "$dir" "${argv[@]}")
   log "open-agent $name"
   if [[ ${OMARCHY_AI_FOREGROUND:-0} == 1 ]]; then printf '%q ' "${argv[@]}"; echo; return 0; fi
-  # the agent works where the person works: OMARCHY_AI_AGENT_DIR, else the directory recorded by
-  # `omarchy-local-ai agent-dir <path>`, else wherever the shell was started (usually home)
-  local dir=${OMARCHY_AI_AGENT_DIR:-$(cat "$STATE/agent-dir" 2>/dev/null)}
-  [[ -n $dir && -d $dir ]] && cd "$dir"
   # omarchy-launch-tui is the normal terminal path. Do not probe `uwsm-app ping`: current Omarchy
   # turns it into a visible "pong" notification, so a right-click looks like it ran a test action.
   # Keep the newer optional setsid detach and retain UWSM only as a missing-launcher fallback.

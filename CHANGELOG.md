@@ -2,6 +2,27 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.2.0] - 2026-09-21
+
+### Added
+- Optional Local AI tab inside the native Agents panel, using its typography, section headers and separators. The overview has a compact agent launcher and one status row per GPU type; expand or open a model for details.
+- Agent, running-model and project-folder selection at the top of the overview and model view. GPU groups remain browsable while occupied.
+- NVIDIA, Intel Level Zero/DRM and AMD sysfs telemetry adapters with temperature, usage and VRAM meters in model details. Missing sensors show N/A.
+- Incremental vLLM and llama.cpp statistics: today's average non-zero decode/prefill log samples and generated-token counter deltas, with a shared ten-second cache. Other engines show unavailable statistics.
+- Optional Mac/Moonlight bindings and a separate OS status-bar shortcut button with an offline visual guide. The integration installer backs up user configuration and leaves system files untouched.
+
+### Fixed
+- Show share URLs in a fixed full-panel overlay until copied or closed; keep failures and actions visible above the fold.
+- Enter the selected project directory inside the terminal after UWSM starts it; explicitly allow OMP to run in home instead of relocating to a temporary directory.
+- Pass Pi's thinking option as separate arguments and set OpenCode's main and small model in its launch configuration.
+- Replace acceptance-only token totals and fixed acceptance speeds with runtime measurements. The first day's token count starts when tracking begins.
+- Add telemetry and all eleven agent handoff checks to the shipped-bundle tests; include integration assets in the release archive.
+
+### Validation boundaries
+- Pi, OpenCode and Crush terminal startup was checked on the mixed NVIDIA/Intel desktop; all eleven launch adapters have fixture coverage. Startup is not full conversation or tool acceptance for every agent.
+- NVIDIA and Intel telemetry was checked on hardware. AMD has fixture coverage and still needs physical-device acceptance.
+- The final compact layout passed row-data and QML loading checks; final visual acceptance remains open. The offline guide's browser rendering also remains unverified.
+
 ## [5.1.0] - 2026-09-17
 
 ### Added
