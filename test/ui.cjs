@@ -111,21 +111,21 @@ console.log('Main-screen agent selection, model routing and stale selection chec
 assert(main({launcherOpen: false}).rows.some(r => r.action === 'launcher-toggle'));
 assert(!main({launcherOpen: false}).rows.some(r => r.action.startsWith('open-agent:')));
 
-// Sum allocation histories once per GPU group, including stopped models. Unknown
-// and future intervals stay empty; two GPUs serving one model do not double count.
+// Totals include prior days and unloaded models, counting a multi-GPU allocation once.
 const usage = {gpuUsage: [
-  {keys:['nvidia:0','nvidia:1'], bins:[null,100,0], since:'2026-09-21T00:16:00+02:00'},
-  {keys:['nvidia:1'], bins:[null,50,20], since:'2026-09-21T00:18:00+02:00'},
-  {keys:['intel-xpu:0'], bins:[null,900], since:'2026-09-21T00:16:00+02:00'}
+  {keys:['nvidia:0','nvidia:1'], days:{'2026-09-19':100}, estimated:true, since:'2026-09-19'},
+  {keys:['nvidia:1'], days:{'2026-09-20':70}, since:'2026-09-20'},
+  {hardwareId:'rtx', days:{'2026-09-18':30}, since:'2026-09-18'},
+  {keys:['intel-xpu:0'], days:{'2026-09-20':900}, since:'2026-09-20'}
 ]};
-const graph = ui.tokenGraph(usage, {keys:['nvidia:0','nvidia:1']});
-assert.equal(graph.total,170);
-assert.equal(graph.bins[0],null);
-assert.equal(graph.bins[1],150);
-assert.equal(graph.bins[2],20);
-assert.equal(graph.bins[95],null);
-assert.equal(graph.bins.length,96);
-assert.equal(graph.since,'2026-09-21T00:16:00+02:00');
-assert.equal(ui.tokenGraph({}, {keys:['nvidia:0']}).total,0);
-assert(home.rows.filter(r=>r.action.startsWith('gpu:')).every(r=>r.history.bins.length===96));
-console.log('GPU group token history, unknown intervals and allocation deduplication passed');
+const totals = ui.gpuUsage(usage, {keys:['nvidia:0','nvidia:1'],hardwareId:'rtx'});
+assert.equal(totals.total,200);
+assert.equal(totals.estimated,true);
+assert.equal(totals.since,'2026-09-18');
+assert.equal(ui.gpuUsage({}, {keys:['nvidia:0']}).total,0);
+assert(home.rows.filter(r=>r.action.startsWith('gpu:')).every(r=>r.type==='usage'));
+console.log('Historical GPU totals, archive attribution and allocation deduplication passed');
+const ranked = ui.cardRows({snap:{...snap,gpuUsage:[{keys:['nvidia:0'],days:{'2026-09-20':100},since:'2026-09-20'}]}}, false);
+assert.equal(ranked[1].action,'gpu:3090');
+assert.equal(ranked[1].share,1);
+assert.equal(ranked[2].share,0);

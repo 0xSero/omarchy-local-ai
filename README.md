@@ -58,7 +58,7 @@ The status-bar keyboard panel includes a visual guide with searchable shortcuts,
 a window/workspace simulation, agent setup and stream escape instructions.
 Its offline HTML lives at `~/.local/share/omarchy/guides/macos-controls.html`.
 
-Local AI opens with one status row per GPU type and a compact daily token activity graph beneath it. Hover the graph for the observed count in a 15-minute interval. The 24-hour timeline keeps unrecorded intervals blank; the displayed total starts at the indicated tracking time. History stays visible after stopping a model and resets at local midnight.
+Local AI opens with GPU token totals in the same filled-row style as Claude and Codex's model totals. Each GPU group includes retained runtime history and attributable older gateway receipts. Open a row for models or statistics; hover for status and today's total. Zero stays a compact row and unavailable usage shows a dash. vLLM totals carry ≈ because they are reconstructed from rounded runtime rates; llama.cpp and gateway receipts report token counts.
 
 Local AI keeps its GPU controls in those same rows. A running GPU opens its model's
 **Stats & agents**; **Models** lists recipes for one or more of that GPU. Occupied
@@ -71,9 +71,9 @@ Sysman memory and DRM activity counters, and AMD uses amdgpu sysfs with SMI
 inventory. Missing readings stay N/A. Python 3 is required for telemetry. Agent selection
 and launch appear above the model statistics. For vLLM and llama.cpp, decode/prefill show the average
 of non-zero engine log samples since local midnight, collected incrementally.
-Generated tokens use engine counter deltas; the first day starts when tracking
-is installed (shown in the panel). A shared ten-second cache prevents duplicate
-scans from multiple panels. No inference requests are made for monitoring.
+Generated-token totals include retained runtime logs and attributable older gateway
+receipts. vLLM rates produce estimated totals, marked ≈. A shared ten-second cache
+prevents duplicate scans from multiple panels. No inference requests are made for monitoring.
 
 Click **Project folder** (or **Ctrl+O** in Local AI) before opening an agent. The
 folder is remembered, defaults to home, and is entered inside the terminal after
@@ -117,7 +117,7 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 
 Copying a share link opens an opaque overlay covering the panel. The URL and Copy/Close controls stay in the visible viewport even when model details are scrolled. It closes after a successful copy or when dismissed; copy errors remain visible.
 
-## Current experience — v5.3.0
+## Current experience — v5.3.1
 
 Local AI can live beside Claude and Codex in the native Agents view. The overview stays quiet: an expandable launcher and GPU status rows. Model selection, device meters, today's performance, sharing and Stop live in the detail views.
 
@@ -125,7 +125,7 @@ Local AI can live beside Claude and Codex in the native Agents view. The overvie
 |---|---|
 | Terminal launch | All 11 adapters pass the temporary-directory handoff fixture. OMP, Pi, OpenCode and Crush startup checked on Omarchy; Pi and OpenCode also completed real requests on NVIDIA and Intel. Full conversation/tool acceptance for every agent remains separate. |
 | GPU telemetry | NVIDIA and Intel checked on physical hardware. AMD sysfs fixtures pass; physical AMD acceptance is still needed. |
-| Runtime statistics | vLLM and llama.cpp use incremental logs/counters. Unsupported engines show N/A. First-day tokens start when tracking begins; no historical backfill. |
+| Runtime statistics | Retained vLLM/llama.cpp logs and attributable gateway receipts feed historical totals. vLLM counts are marked approximate; unsupported runtime statistics show N/A. |
 | Native layout | Native styling, compact rows and QML load checked. The latest reduction in visible data still needs final visual acceptance. |
 | Mac controls | Main window/app/workspace shortcuts checked through Moonlight. Previous window uses Ctrl+Space, P. The offline guide's browser rendering remains unverified. |
 

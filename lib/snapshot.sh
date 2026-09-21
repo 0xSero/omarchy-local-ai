@@ -67,7 +67,7 @@ models_json() {
       '. + [{recipeId:$id, name:($s.name // $id), port:$s.port, endpoint:("http://127.0.0.1:"+($s.port|tostring)+"/v1"), keys:($s.keys // []), cards:(($s.keys // []) | length),
              state:$st, note:$note, servedModel:(if $served != "" then $served else ($s.accepted.servedModel // "") end), apis:($s.accepted.apis // []),
              caps:(($rec.capabilities // {}) | {chat, vision, video, tools, reasoning}),
-             ctxTokens:($rec.serving.ctxTokens // 0), kvTokens:(if ($rec.serving.kvTokens // 0) > 0 then $rec.serving.kvTokens else ($rec.serving.ctxTokens // 0) end), tokensToday:($metrics[$id].tokensToday // null), usageSince:($metrics[$id].usageSince // ""), statsUpdatedAt:($metrics[$id].statsUpdatedAt // null),
+             ctxTokens:($rec.serving.ctxTokens // 0), kvTokens:(if ($rec.serving.kvTokens // 0) > 0 then $rec.serving.kvTokens else ($rec.serving.ctxTokens // 0) end), tokensToday:($metrics[$id].tokensToday // null), usageEstimated:($metrics[$id].usageEstimated // false), usageSince:($metrics[$id].usageSince // ""), statsUpdatedAt:($metrics[$id].statsUpdatedAt // null),
              decodeTps:($metrics[$id].decodeTps // null), prefillTps:($metrics[$id].prefillTps // null), acceptedAt:($s.accepted.at // ""), startedAt:($s.startedAt // ""),
              launchable:$agents.launchable, shareUrl:(if $share.active then $share.url else "" end), engine:$s.engine, gateway:$s.gateway}]' <<<"$out")
   done < <(jq -r '.slots | keys[]' <<<"$ledger")
@@ -133,7 +133,7 @@ snapshot_write() {
     --arg hw "$hw_id" --argjson focus "$focus" --argjson models "$models" --argjson agents "$(agents_json "$fapis")" --argjson share "$(share_state "$fport")" \
     --arg t "$(now)" --arg note "$note" --argjson recs "$recs" --argjson pbusy "$pbusy" --arg listener "$listener" --argjson claim "$claim" --argjson port "$fport" \
     --arg reg "$(registry_commit)" --arg rsrc "$(recipes_source)" --arg rgen "$(recipes_generated "$RECIPES")" --arg rchk "$(cat "$UPSTREAM_CHECKED" 2>/dev/null || printf 0)" --arg rurl "$RECIPES_URL" \
-    --argjson usage "$(jq -c --arg day "$(date +%F)" 'if .day==$day then [.history[]?] else [] end' "$STATE/runtime-metrics.json" 2>/dev/null || printf '[]')" \
+    --argjson usage "$(jq -c '[.history[]?]' "$STATE/runtime-metrics.json" 2>/dev/null || printf '[]')" \
     --argjson up "$(upstream_json "$hw_id")" '
     def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
     ($recs | map(select(.id==($rec.id // ""))) | .[0]) as $sel

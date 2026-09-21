@@ -16,7 +16,7 @@ plugin add` is a clone, which is why the traffic workflow counts clones as insta
 | `schemaVersion` | `1` | manifest format |
 | `id` | `sero.local-ai` | the plugin identifier; also the IPC target |
 | `name` | `Local AI` | display name |
-| `version` | `5.3.0` | must equal the release tag's version (`release.yml` checks it) |
+| `version` | `5.3.1` | must equal the release tag's version (`release.yml` checks it) |
 | `kinds` | `["bar-widget"]` | it is a bar widget and nothing else |
 | `activation` | `on-demand` | the QML is loaded when the widget is instantiated |
 | `entryPoints.barWidget` | `ui/Panel.qml` | the QML root |

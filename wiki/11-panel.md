@@ -6,7 +6,7 @@ Local AI has two presentations of the same controller: its standalone bar panel 
 
 The overview contains **Launch agent**, collapsed by default, and one status row per GPU type. Expanding the launcher shows the running model, compatible installed agent, project folder and Open action. The selected folder is remembered. A missing folder refuses launch rather than opening elsewhere.
 
-GPU rows show name/count and availability, running or error status. Each group has a compact 24-hour token graph with 15-minute buckets, an observed total and time/value hover readout. Counts are recorded when observed by the existing telemetry sampler; earlier intervals are not backfilled. History survives model unloads and resets at local midnight. They remain clickable when occupied. Open one to choose **Models** or **Stats & agents**. The model picker supports one or more GPUs of the same type; running models remain inspectable, while loading requires enough free GPUs.
+GPU totals use the native Agents model-row layout: name on the left, total on the right, and a proportional fill behind them. The scope is available historical generated tokens, including retained engine logs and attributable gateway receipts. Hover shows status and today's total; ≈ marks estimated vLLM counts. Zero and unavailable states stay one row high. Rows remain clickable when occupied. Open one to choose **Models** or **Stats & agents**. The model picker supports one or more GPUs of the same type; running models remain inspectable, while loading requires enough free GPUs.
 
 Model details put agent launch above today's runtime statistics, context and capability information, with device temperature, utilization and VRAM meters. Missing sensors or unsupported engine statistics show N/A. Per-device readings stay out of the overview.
 
@@ -23,7 +23,7 @@ The embedded view uses the native panel's outer scroll container. Keyboard navig
 | File | Responsibility |
 |---|---|
 | `ui/ui.js` | Pure data: overview, GPU/model selection, launcher, operation and error rows |
-| `ui/TokenGraph.qml` | Lightweight token bars and hover readout |
+| `ui/TokenTotal.qml` | Lightweight token bars and hover readout |
 | `ui/CardRow.qml` | Render rows, sections, disclosures, status, bars and device meters |
 | `ui/Panel.qml` | Snapshot polling, navigation, folder editing, terminal launch and controller verbs |
 | `integrations/agents-panel.patch` | Add Local AI to the native panel and connect scrolling/focus |
@@ -47,7 +47,7 @@ quickshell ipc --any-display -p /usr/share/omarchy/shell call sero.local-ai acti
 
 The panel watches the snapshot file and refreshes more often while working. Runtime telemetry has a shared ten-second cache and file lock, so multiple panel instances do not each rescan the engine logs. It creates no inference traffic.
 
-For vLLM and llama.cpp, decode/prefill are averages of non-zero engine log samples since local midnight, not the one-off acceptance speed. Generated tokens come from engine counter deltas. Tracking begins when first enabled; unknown history is not backfilled. GPU telemetry adapters cover NVIDIA, Intel and AMD, with physical validation currently completed on NVIDIA and Intel.
+For vLLM and llama.cpp, decode/prefill are averages of non-zero engine log samples since local midnight, not the one-off acceptance speed. Generated tokens are backfilled from retained runtime logs and attributable older gateway receipts. vLLM counts are marked approximate. GPU telemetry adapters cover NVIDIA, Intel and AMD, with physical validation currently completed on NVIDIA and Intel.
 
 ## Mac and Moonlight
 

@@ -8,7 +8,6 @@ import re
 import subprocess
 import sys
 import time
-import urllib.request
 
 
 def read_json(path):
@@ -41,32 +40,78 @@ def update_rates(row, text):
             row[kind+'Count'] = row.get(kind+'Count', 0) + 1
 
 
-def tokens(text):
-    values = re.findall(r'^(?:vllm:generation_tokens_total|llamacpp:tokens_predicted_total)(?:\{[^\n]*\})?\s+([\d.eE+\-]+)', text, re.M)
-    return sum(float(v) for v in values) if values else None
+def log_usage(source, text, interval=10):
+    """Replay timestamped engine output; retain a cursor so each sample counts once.
+
+    llama.cpp reports exact completion counts. vLLM reports rounded rates, so
+    rate * log interval is an estimate. Idle log suppression must not turn a
+    long quiet gap into generated tokens.
+    """
+    for line in text.splitlines():
+        try:
+            at = datetime.fromisoformat(line.split(' ', 1)[0].replace('Z', '+00:00')).astimezone()
+        except ValueError:
+            continue
+        source.setdefault('firstAt', at.timestamp())
+        match = re.search(r'(?<!prompt )eval time =.*? /\s*(\d+) tokens', line)
+        count = int(match[1]) if match else None
+        rate = re.search(r'Avg generation throughput: ([\d.]+)', line)
+        if rate:
+            engine = re.search(r'Engine (\d+)', line)
+            engine = engine[1] if engine else '0'
+            previous = source.setdefault('lastLog', {}).get(engine)
+            elapsed = at.timestamp() - previous if previous else interval
+            # A missing idle line, a restart or a clock jump is not a long sample.
+            seconds = elapsed if interval * .5 <= elapsed <= interval * 1.5 else interval
+            count = float(rate[1]) * seconds
+            source['lastLog'][engine] = at.timestamp()
+            source['estimated'] = True
+        if count is not None:
+            day = at.date().isoformat()
+            source.setdefault('days', {})[day] = source.get('days', {}).get(day, 0) + count
 
 
-def update_tokens(row, count, instance):
-    if count is None:
+def archive_usage(state, history, saved):
+    """Import attributable gateway receipts before retained engine log coverage.
+
+    Rebuild this small legacy archive only when the file or coverage changes.
+    Request receipts overlapping engine logs must never be added a second time.
+    """
+    path = state/'usage.jsonl'
+    try:
+        stat = path.stat()
+    except OSError:
         return None
-    delta = None
-    previous = row.get('counter')
-    if previous is not None:
-        delta = count if row.get('instance') != instance or count < previous else count - previous
-        row['tokens'] = row.get('tokens', 0) + delta
-    row.update(counter=count, instance=instance)
-    return delta
-
-
-def record_usage(history, keys, delta, now):
-    # Keep a day's 15-minute buckets per GPU allocation, even after a model stops.
-    # Counts belong to the interval in which they were observed; no backfill.
-    if not keys or delta is None:
-        return
-    key = ",".join(sorted(keys))
-    row = history.setdefault(key, dict(keys=sorted(keys), bins=[None]*96, since=now.isoformat()))
-    bucket = now.hour*4 + now.minute//15
-    row['bins'][bucket] = (row['bins'][bucket] or 0) + delta
+    starts = {}
+    for h in history.values():
+        if h.get('firstAt'):
+            recipe = h['recipe']
+            starts[recipe] = min(starts.get(recipe, h['firstAt']), h['firstAt'])
+    stamp = [stat.st_mtime_ns, stat.st_size, starts]
+    if saved.get('archiveStamp') == stamp:
+        return stamp
+    hardware = {}
+    for hw, entry in read_json(state/'recipes.json').get('hardware', {}).items():
+        for recipe in [entry.get('recipe', {})] + entry.get('recipes', []):
+            if recipe.get('id'):
+                hardware[recipe['id']] = hw
+    for key in list(history):
+        if key.startswith('archive:'):
+            del history[key]
+    for line in path.read_text().splitlines():
+        try:
+            receipt = json.loads(line)
+            recipe, stamp_s = receipt.get('recipe'), float(receipt['t'])
+            count = float(receipt.get('completion', 0))
+            if recipe not in hardware or count < 0 or stamp_s >= starts.get(recipe, float('inf')):
+                continue
+            at = datetime.fromtimestamp(stamp_s).astimezone()
+            source = history.setdefault('archive:'+recipe, dict(recipe=recipe, hardwareId=hardware[recipe], days={}, since=at.isoformat()))
+            day = at.date().isoformat()
+            source['days'][day] = source['days'].get(day, 0) + count
+        except (ValueError, KeyError, TypeError, OverflowError):
+            continue
+    return stamp
 
 
 def collect(state):
@@ -74,44 +119,50 @@ def collect(state):
     day, start = now.date().isoformat(), now.replace(hour=0, minute=0, second=0, microsecond=0)
     cache = state/'runtime-metrics.json'
     saved = read_json(cache)
-    if saved.get('day') == day and 0 <= time.time()-saved.get('sampled', 0) < 10:
+    if saved.get('usageVersion') == 2 and saved.get('day') == day and 0 <= time.time()-saved.get('sampled', 0) < 10:
         return saved['result']
     old = saved.get('models', {})
-    history = saved.get('history', {}) if saved.get('day') == day else {}
+    history = saved.get('history', {})
+    if saved.get('usageVersion') != 2 and saved.get('day') != day:
+        history = {}
     models, result = {}, {}
     for key, slot in read_json(state/'ledger.json').get('slots', {}).items():
         recipe = read_json(state/'slots'/f'{key}.json')
         if recipe.get('engine') not in ('vllm', 'llamacpp', 'llama.cpp', 'llama-cpp'):
             continue
         row = old.get(key, {}).copy()
-        if saved.get('day') != day:
-            row = {k: v for k, v in row.items() if k in ('counter', 'instance')}
-        row.setdefault('since', start.isoformat() if saved.get('day') and row.get('counter') is not None else now.isoformat())
+        if saved.get('day') != day or saved.get('usageVersion') != 2:
+            row = {}
         try:
             info = json.loads(command('docker', 'inspect', slot['engine']))[0]
-            instance = info['Id'] + info['State']['StartedAt']
-            if row.get('logInstance') != instance:
-                row.pop('cursor', None)
-            cursor = row.get('cursor', start.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z'))
+            source_id = 'logs:' + info['Id']
+            source = history.get(source_id, dict(recipe=key, keys=slot.get('keys', []), days={}, since=info['State']['StartedAt']))
+            cursor = source.get('cursor', '1970-01-01T00:00:00Z')
             end = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             logs = subprocess.check_output(['docker', 'logs', '--timestamps', '--since', cursor, '--until', end, slot['engine']], stderr=subprocess.STDOUT, text=True, timeout=6)
-            update_rates(row, '\n'.join(line for line in logs.splitlines() if line.split(' ', 1)[0] > cursor))
-            row.update(cursor=end, logInstance=instance)
-            address = next(n['IPAddress'] for n in info['NetworkSettings']['Networks'].values() if n.get('IPAddress'))
-            port = recipe['launch']['containerPort']
-            with urllib.request.urlopen(f'http://{address}:{port}/metrics', timeout=2) as response:
-                count = tokens(response.read(2*1024*1024).decode())
-            delta = update_tokens(row, count, instance)
-            record_usage(history, slot.get('keys', []), delta, now)
+            logs = '\n'.join(line for line in logs.splitlines() if line.split(' ', 1)[0] > cursor)
+            midnight = start.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+            update_rates(row, '\n'.join(line for line in logs.splitlines() if line.split(' ', 1)[0] >= midnight))
+            env = dict(e.split('=', 1) for e in info.get('Config', {}).get('Env', []) if '=' in e)
+            interval = float(env.get('VLLM_LOG_STATS_INTERVAL', 10))
+            log_usage(source, logs, interval if interval > 0 else 10)
+            source['cursor'] = end
+            history[source_id] = source
+            # Replace the old post-install counter buckets only after replay succeeds.
+            history.pop(','.join(sorted(slot.get('keys', []))), None)
             row['updated'] = now.isoformat()
         except (OSError, ValueError, KeyError, StopIteration, subprocess.SubprocessError):
             pass
         models[key] = row
+    archive_stamp = archive_usage(state, history, saved)
+    for key, row in models.items():
         result[key] = {kind+'Tps': round(row[kind+'Sum']/row[kind+'Count'], 1) if row.get(kind+'Count') else None for kind in ('decode', 'prefill')}
-        result[key].update(tokensToday=round(row.get('tokens', 0)) if 'counter' in row else None,
-                           usageSince=row['since'], statsUpdatedAt=row.get('updated'))
+        sources = [h for h in history.values() if h.get('recipe') == key]
+        result[key].update(tokensToday=round(sum(h.get('days', {}).get(day, 0) for h in sources)) if sources else None,
+                           usageEstimated=any(h.get('estimated') for h in sources),
+                           usageSince=start.isoformat() if sources else '', statsUpdatedAt=row.get('updated'))
     temp = cache.with_suffix('.tmp')
-    temp.write_text(json.dumps(dict(day=day, sampled=time.time(), models=models, result=result, history=history)))
+    temp.write_text(json.dumps(dict(usageVersion=2, archiveStamp=archive_stamp, day=day, sampled=time.time(), models=models, result=result, history=history)))
     temp.replace(cache)
     return result
 

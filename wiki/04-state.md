@@ -115,7 +115,7 @@ Written by `snapshot_write` (`lib/snapshot.sh`) with `mv` from a temp file. Top 
 | `apis`, `caps` | accepted dialects; `{chat, vision, video, tools, reasoning}` from the slot's recipe |
 | `ctxTokens`, `kvTokens`, `acceptedAt`, `startedAt` | from the recipe, acceptance and slot records |
 | `decodeTps`, `prefillTps` | averages of non-zero engine log samples since local midnight; null when unavailable |
-| `tokensToday`, `usageSince`, `statsUpdatedAt` | generated-token counter deltas, tracking start and last successful collection; first-day totals begin when tracking starts |
+| `tokensToday`, `usageEstimated`, `usageSince`, `statsUpdatedAt` | generated tokens from today's retained logs, estimation flag, local midnight and last successful collection |
 | `launchable` | agents that can use this model's dialects |
 | `shareUrl` | the tailnet URL when sharing is active, else `""` |
 | `engine`, `gateway` | container names (used by the log and by hand) |
@@ -170,4 +170,4 @@ Everything else it does is read-only: no container is started, stopped or rename
 
 ## GPU token history
 
-The snapshot includes gpuUsage: a list of GPU allocations with their keys, 96 fifteen-minute token buckets and the tracking start. Null intervals have no reading. The panel sums allocation histories once per GPU group, so a model using two cards in the same group is not doubled. Histories survive unloads and reset at local midnight. Counts belong to the interval in which the collector observed them; earlier activity is not backfilled.
+The snapshot includes gpuUsage: retained sources with GPU keys or a recipe hardware ID, per-day generated-token totals and a coverage start. The panel sums sources once per GPU group, including unloaded models and past days. The collector replays retained timestamped vLLM/llama.cpp logs once, then reads incrementally through its existing ten-second cache. Legacy gateway receipts are included only before log coverage for that recipe; receipts without an attributable recipe are excluded. vLLM totals are estimates from rounded rates and log intervals, with suppressed idle gaps bounded to one interval. Daily runtime speeds still average today's non-zero samples; historical totals survive midnight.

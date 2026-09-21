@@ -2,6 +2,13 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.3.1] - 2026-09-21
+
+### Fixed
+- Lead the overview with historical GPU token totals using the same filled-row geometry, typography and colors as the native Claude/Codex model totals. Remove the separate activity graphs; zero and unavailable usage remain compact rows.
+- Backfill retained vLLM and llama.cpp logs plus attributable older gateway receipts, including models no longer running. Avoid overlapping receipts, preserve totals across unloads and midnight, and read new log output incrementally.
+- Mark vLLM totals as estimates from rounded runtime rates. Keep today's generated-token count and non-zero runtime speed averages in model details, and show today's count with GPU status on hover.
+
 ## [5.3.0] - 2026-09-21
 
 ### Added

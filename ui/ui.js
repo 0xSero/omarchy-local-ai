@@ -112,27 +112,35 @@ function devices(snap, keys) {
 function groupModels(snap, group) {
   return models(snap).filter(function(m) { return m.keys.some(function(k) { return group.keys.indexOf(k) >= 0 }) })
 }
-function tokenGraph(snap, group) {
-  var bins = Array(96).fill(null), since = ""
+function gpuUsage(snap, group) {
+  var total = 0, today = 0, since = "", estimated = false
+  var date = new Date(), day = date.getFullYear() + "-" + ("0" + (date.getMonth()+1)).slice(-2) + "-" + ("0" + date.getDate()).slice(-2)
   ;(snap.gpuUsage || []).forEach(function(h) {
-    if (!(h.keys || []).some(function(k) { return group.keys.indexOf(k) >= 0 })) return
+    if (!(h.hardwareId && h.hardwareId === group.hardwareId) && !(h.keys || []).some(function(k) { return group.keys.indexOf(k) >= 0 })) return
     if (h.since && (!since || h.since < since)) since = h.since
-    ;(h.bins || []).slice(0, 96).forEach(function(n, i) {
-      if (typeof n === "number" && isFinite(n) && n >= 0) bins[i] = (bins[i] || 0) + n
+    estimated = estimated || !!h.estimated
+    Object.keys(h.days || {}).forEach(function(d) {
+      var n = h.days[d]
+      if (typeof n === "number" && isFinite(n) && n >= 0) { total += n; if (d === day) today += n }
     })
+    // Keep the previous sampler's values visible until log replay succeeds.
+    ;(h.bins || []).forEach(function(n) { if (typeof n === "number" && isFinite(n) && n >= 0) total += n })
   })
-  return { bins: bins, total: bins.reduce(function(a, n) { return a + (n || 0) }, 0), since: since }
+  return { total: total, today: today, since: since, estimated: estimated }
 }
 function cardRows(c, work) {
-  var snap = c.snap, out = [sec("gpus")], cs = snap.cards || []
-  cs.forEach(function(g) {
+  var snap = c.snap, out = [sec(work ? "gpus" : "tokens by gpu")], cs = snap.cards || []
+  var totals = cs.map(function(g) { return gpuUsage(snap, g) })
+  var peak = Math.max.apply(null, [1].concat(totals.map(function(h) { return h.total })))
+  cs.forEach(function(g, i) {
     var ms = groupModels(snap, g), free = freeKeys(snap, g).length
     var failed = ms.some(function(m) { return m.state === "error" })
     var busy = work && g.keys.some(function(k) { return workKeys(snap).indexOf(k) >= 0 })
     var status = busy ? opWord(snap) : failed ? "error" : ms.length ? (free ? free + " available" : "running") : "available"
     out.push(row(g.count + "× " + g.name, status + " ›", work ? "" : "gpu:" + g.hardwareId,
-      { urgent: failed, history: work ? undefined : tokenGraph(snap, g), compact: !work, cells: work ? cells(c, g, work) : undefined, devices: work ? devices(snap, g.keys) : undefined }))
+      { type: work ? "row" : "usage", status: status, share: totals[i].total / peak, urgent: failed, history: work ? undefined : totals[i], compact: !work, cells: work ? cells(c, g, work) : undefined, devices: work ? devices(snap, g.keys) : undefined }))
   })
+  if (!work && cs.length) out = [out[0]].concat(out.slice(1).sort(function(a, b) { return b.history.total - a.history.total }))
   if (!cs.length) out.push(row("GPU", "none detected", "", { urgent: true }))
   return out
 }
@@ -205,7 +213,7 @@ function build(c) {
       }
       o.rows = o.rows.concat(launchRows(c, m))
       o.rows.push({ type: "stat", stat: [{ k: "decode · today avg", v: m.decodeTps > 0 ? String(m.decodeTps) : "n/a", u: m.decodeTps > 0 ? "tok/s" : "" }, { k: "prefill · today avg", v: m.prefillTps > 0 ? String(m.prefillTps) : "n/a", u: m.prefillTps > 0 ? "tok/s" : "" }], label: "", value: "", action: "", kind: "" })
-      o.rows.push({ type: "stat", stat: [{ k: "tokens today", v: m.tokensToday == null ? "n/a" : kmg(m.tokensToday), u: "" }, { k: "kv cache", v: m.kvTokens > 0 ? kb(m.kvTokens) : "n/a", u: m.ctxTokens > 0 ? kb(m.ctxTokens) + " ctx" : "" }], label: "", value: "", action: "", kind: "" })
+      o.rows.push({ type: "stat", stat: [{ k: "tokens today", v: m.tokensToday == null ? "n/a" : (m.usageEstimated ? "≈" : "") + kmg(m.tokensToday), u: "" }, { k: "kv cache", v: m.kvTokens > 0 ? kb(m.kvTokens) : "n/a", u: m.ctxTokens > 0 ? kb(m.ctxTokens) + " ctx" : "" }], label: "", value: "", action: "", kind: "" })
       o.rows.push(row(where(snap, m), ":" + m.port, "", { devices: devices(snap, m.keys) }))
       o.rows.push(capabilities(m.caps))
       if (m.usageSince) o.rows.push(row("usage tracked since", new Date(m.usageSince).toLocaleTimeString(), ""))

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import importlib.util
-import io
 import json
 from pathlib import Path
 import tempfile
@@ -26,68 +25,87 @@ class Telemetry(unittest.TestCase):
         self.assertEqual(row['decodeCount'], 3)
         self.assertEqual(row['prefillCount'], 3)
 
-    def test_token_baseline_reset_and_missing(self):
-        row = {}
-        for value, instance in [(100, 'a'), (110, 'a'), (110, 'a'), (None, 'a'), (5, 'b'), (3, 'b')]:
-            runtime.update_tokens(row, value, instance)
-        self.assertEqual(row['tokens'], 18)
-        self.assertEqual(runtime.tokens('vllm:generation_tokens_total{engine="0"} 1.1e3\nvllm:generation_tokens_total{engine="1"} 100'), 1200)
-        self.assertIsNone(runtime.tokens('unavailable'))
+    def test_timestamped_history_and_rate_estimates(self):
+        source = {'days': {}}
+        # Local timestamps keep the test independent of the machine timezone.
+        at = runtime.datetime.now().astimezone().replace(hour=9, minute=0, second=0, microsecond=0)
+        day = at.date().isoformat()
+        def line(minutes, text):
+            return runtime.datetime.fromtimestamp(at.timestamp()+minutes*60).astimezone().isoformat()+' '+text
+        logs = '\n'.join([
+            line(0, 'Engine 000: Avg generation throughput: 20.0'),
+            line(30, 'Engine 000: Avg generation throughput: 2.0'),
+            line(30, 'prompt eval time = 10 ms / 1000 tokens'),
+            line(30, 'eval time = 10 ms / 13 tokens'),
+            'not-a-time eval time = 10 ms / 999 tokens'])
+        runtime.log_usage(source, logs)
+        self.assertEqual(source['days'][day], 233)  # idle gap is NOT 30 minutes of output
+        self.assertTrue(source['estimated'])
+        runtime.log_usage(source, line(31, 'Engine 001: Avg generation throughput: 3.0'), 5)
+        self.assertEqual(source['days'][day], 248)
 
-    def test_cache_and_incremental_logs(self):
+    def test_backfill_migration_cache_and_incremental_logs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory); (state/'slots').mkdir()
+            (state/'ledger.json').write_text(json.dumps({'slots': {'model': {'engine': 'owned', 'keys': ['nvidia:0', 'nvidia:1']}}}))
+            (state/'slots/model.json').write_text(json.dumps({'engine': 'llama-cpp'}))
+            info = [{'Id': 'id', 'State': {'StartedAt': 'session'}}]
+            now = runtime.datetime.now().astimezone()
+            stamp = now.replace(hour=0, minute=0, second=1).astimezone(runtime.timezone.utc).isoformat().replace('+00:00', 'Z')
+            cache = state/'runtime-metrics.json'
+            cache.write_text(json.dumps(dict(day=now.date().isoformat(), sampled=runtime.time.time(), result={}, models={'model': {'decodeSum': 99, 'decodeCount': 1}}, history={'nvidia:0,nvidia:1': {'keys': ['nvidia:0','nvidia:1'], 'bins':[25]+[None]*95}})))
+            with patch.object(runtime, 'command', return_value=json.dumps(info)), patch.object(runtime.subprocess, 'check_output', return_value=stamp+' eval time = 1 ms / 123 tokens (40.00 tokens per second)') as logs:
+                first = runtime.collect(state)
+                self.assertEqual(first['model']['decodeTps'], 40)
+                self.assertEqual(first['model']['tokensToday'], 123)
+                self.assertFalse(first['model']['usageEstimated'])
+                self.assertEqual(runtime.collect(state), first)
+                self.assertEqual(logs.call_count, 1)
+            saved = json.loads(cache.read_text())
+            self.assertEqual(len(saved['history']), 1)  # replaces old 25, never adds it twice
+            self.assertEqual(sum(next(iter(saved['history'].values()))['days'].values()), 123)
+            cursor = next(iter(saved['history'].values()))['cursor']
+            saved['sampled'] = 0; cache.write_text(json.dumps(saved))
+            with patch.object(runtime, 'command', return_value=json.dumps(info)), patch.object(runtime.subprocess, 'check_output', return_value=cursor+' eval time = 1 ms / 123 tokens (40.00 tokens per second)'):
+                self.assertEqual(runtime.collect(state)['model']['tokensToday'], 123)
+            # Unloading and midnight both retain accumulated historical totals.
+            (state/'ledger.json').write_text('{}')
+            saved = json.loads(cache.read_text()); saved['sampled'] = 0; cache.write_text(json.dumps(saved))
+            runtime.collect(state)
+            self.assertEqual(json.loads(cache.read_text())['history'], saved['history'])
+            saved['day'] = '2000-01-01'; cache.write_text(json.dumps(saved))
+            runtime.collect(state)
+            self.assertEqual(json.loads(cache.read_text())['history'], saved['history'])
+
+    def test_legacy_receipts_only_before_log_coverage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            (state/'recipes.json').write_text(json.dumps({'hardware':{'rtx':{'recipe':{'id':'model'},'recipes':[{'id':'older'}]}}}))
+            (state/'usage.jsonl').write_text('\n'.join(json.dumps(r) for r in [
+                {'recipe':'model','t':100,'completion':20},
+                {'recipe':'model','t':200,'completion':30},  # already covered by logs
+                {'recipe':'older','t':100,'completion':10},
+                {'t':100,'completion':99}]))
+            history = {'logs:id':{'recipe':'model','firstAt':150,'days':{}}}
+            stamp = runtime.archive_usage(state, history, {})
+            self.assertEqual(sum(history['archive:model']['days'].values()), 20)
+            self.assertEqual(sum(history['archive:older']['days'].values()), 10)
+            self.assertEqual(history['archive:older']['hardwareId'], 'rtx')
+            self.assertEqual(len(history), 3)
+            runtime.archive_usage(state, history, {'archiveStamp':stamp})
+            self.assertEqual(sum(history['archive:model']['days'].values()), 20)
+
+    def test_failed_replay_preserves_old_history(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory); (state/'slots').mkdir()
             (state/'ledger.json').write_text(json.dumps({'slots': {'model': {'engine': 'owned', 'keys': ['nvidia:0']}}}))
-            (state/'slots/model.json').write_text(json.dumps({'engine': 'llama-cpp', 'launch': {'containerPort': 8010}}))
-            info = [{'Id': 'id', 'State': {'StartedAt': 'session'}, 'NetworkSettings': {'Networks': {'net': {'IPAddress': '127.0.0.1'}}}}]
-            stamp = runtime.datetime.now(runtime.timezone.utc).isoformat().replace('+00:00', 'Z')
-            with patch.object(runtime, 'command', return_value=json.dumps(info)), patch.object(runtime.subprocess, 'check_output', return_value=stamp+' eval time = 1 ms (40.00 tokens per second)') as logs, patch.object(runtime.urllib.request, 'urlopen', side_effect=lambda *a, **k: io.BytesIO(b'llamacpp:tokens_predicted_total 100')) as metrics:
-                first = runtime.collect(state)
-                self.assertEqual(first['model']['decodeTps'], 40)
-                self.assertEqual(first['model']['tokensToday'], 0)
-                self.assertEqual(runtime.collect(state), first)
-                self.assertEqual(logs.call_count, 1)
-                self.assertEqual(metrics.call_count, 1)
-            saved = json.loads((state/'runtime-metrics.json').read_text())
-            saved['day'] = '2000-01-01'; (state/'runtime-metrics.json').write_text(json.dumps(saved))
-            with patch.object(runtime, 'command', return_value=json.dumps(info)), patch.object(runtime.subprocess, 'check_output', return_value=''), patch.object(runtime.urllib.request, 'urlopen', return_value=io.BytesIO(b'llamacpp:tokens_predicted_total 125')):
-                fresh = runtime.collect(state)['model']
-                self.assertEqual(fresh['tokensToday'], 25)
-                self.assertIsNone(fresh['decodeTps'])
-                history = json.loads((state/'runtime-metrics.json').read_text())['history']
-                self.assertEqual(sum(n or 0 for n in history['nvidia:0']['bins']), 25)
-
-    def test_gpu_history_buckets_and_unknown_intervals(self):
-        history = {}
-        now = runtime.datetime.fromisoformat('2026-09-21T14:16:00+02:00')
-        runtime.record_usage(history, ['nvidia:1', 'nvidia:0'], None, now)
-        self.assertEqual(history, {})
-        for delta in (30, 0, 70):
-            runtime.record_usage(history, ['nvidia:1', 'nvidia:0'], delta, now)
-        runtime.record_usage(history, ['intel-xpu:0'], 9, now)
-        row = history['nvidia:0,nvidia:1']
-        self.assertEqual(row['keys'], ['nvidia:0', 'nvidia:1'])
-        self.assertEqual(row['bins'][57], 100)
-        self.assertIsNone(row['bins'][56])
-        self.assertIsNone(row['bins'][58])
-        self.assertEqual(len(row['bins']), 96)
-        self.assertEqual(history['intel-xpu:0']['bins'][57], 9)
-
-    def test_history_survives_unload_and_resets_at_midnight(self):
-        with tempfile.TemporaryDirectory() as directory:
-            state = Path(directory)
-            now = runtime.datetime.now().astimezone()
-            history = {}
-            runtime.record_usage(history, ['nvidia:0'], 15, now)
+            (state/'slots/model.json').write_text(json.dumps({'engine': 'vllm'}))
+            history = {'nvidia:0': {'keys':['nvidia:0'], 'bins':[100]+[None]*95}}
             cache = state/'runtime-metrics.json'
-            saved = dict(day=now.date().isoformat(), sampled=0, models={}, history=history)
-            cache.write_text(json.dumps(saved))
-            runtime.collect(state)
+            cache.write_text(json.dumps(dict(day=runtime.datetime.now().astimezone().date().isoformat(), history=history)))
+            with patch.object(runtime, 'command', side_effect=OSError):
+                runtime.collect(state)
             self.assertEqual(json.loads(cache.read_text())['history'], history)
-            saved['day'] = '2000-01-01'
-            cache.write_text(json.dumps(saved))
-            runtime.collect(state)
-            self.assertEqual(json.loads(cache.read_text())['history'], {})
 
     def test_amd_sysfs_metrics(self):
         with tempfile.TemporaryDirectory() as directory:
