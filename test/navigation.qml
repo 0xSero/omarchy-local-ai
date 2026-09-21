@@ -115,6 +115,13 @@ ShellRoot {
         assertUi(y>=-1 && y+action.height<=viewport.height+1,"load action revealed on selection")
         subject.activate("pick:model1"); wait(40)
         assertUi(!subject.ui.rows.some(function(r){return r.action==="run:model1:1"}),"click selection to collapse")
+        subject.snap=JSON.parse(JSON.stringify(fixtureData))
+        subject.activate("pick:model1"); wait(40)
+        var blocked=subject.ui.rows.findIndex(function(r){return r.label==="GPUs in use"})
+        assertUi(blocked>=0,"occupied GPUs explain why load is unavailable")
+        var reason=findChild(subject.contentFocus,"content-row-"+blocked)
+        var reasonY=reason.mapToItem(viewport,0,0).y
+        assertUi(reasonY>=-1 && reasonY+reason.height<=viewport.height+1,"capacity guidance is revealed")
         console.log("FLOW_PASS",d.tag)
       }
       function test_breadcrumbs_data() { return [{tag:"standalone",mode:false},{tag:"embedded",mode:true}] }

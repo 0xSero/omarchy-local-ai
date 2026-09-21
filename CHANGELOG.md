@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.3.5] - 2026-09-21
+
+### Fixed
+- Reveal capacity guidance when selecting a model while its GPUs are occupied, matching the automatic reveal of an available Load action.
+
 ## [5.3.4] - 2026-09-21
 
 ### Fixed
