@@ -2,6 +2,13 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.3.3] - 2026-09-21
+
+### Fixed
+- Scroll the full standalone page, including headers, folder editing and footer actions; use the native Agents viewport when embedded. Add Home/End and Page Up/Down, reveal keyboard selections, and clamp scrolling after resize.
+- Make every breadcrumb a direct link, wrapping on narrow screens. Clicking the current destination also returns to the top. Allow browsing during deployment work with a visible return-to-progress action and conflicting operations disabled.
+- Add native wheel, keyboard and breadcrumb regression checks across both presentations and three viewport sizes.
+
 ## [5.3.2] - 2026-09-21
 
 ### Fixed

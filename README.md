@@ -18,8 +18,9 @@ Click the new bar icon, choose a free GPU group and recipe, then press **Run**. 
 
 Each GPU type is a clickable row with its current status. Select it to browse models
 for one or more GPUs, or view a running model's stats, agent and Stop controls.
-The standalone panel supports **F11** for more space; actions remain visible while
-contents scroll.
+Every breadcrumb is clickable, so you can jump straight to a GPU group or home.
+The whole page scrolls, including folder editing and bottom actions. **Home/End** and
+**Page Up/Down** navigate the viewport; **F11** expands the standalone panel.
 
 Home also carries one **update** row. A background check reads the registry's recipe file and this plugin's own manifest, and the row appears when either has something newer — the plugin version, and how many new recipes are for the cards you actually have. Nothing is installed behind your back: pressing it applies the new recipes and updates the plugin through `omarchy plugin update`. With nothing to apply the row is just a re-check.
 

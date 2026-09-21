@@ -13,7 +13,7 @@ Panel {
   ipcTarget: "sero.local-ai"
   manageIpc: false
   property bool editingFolder: false
-  function editFolder() { folderInput.text = (snap.agents || {}).directory || Quickshell.env("HOME"); editingFolder = true; Qt.callLater(function() { folderInput.forceActiveFocus(); folderInput.selectAll() }) }
+  function editFolder() { folderInput.text = (snap.agents || {}).directory || Quickshell.env("HOME"); editingFolder = true; Qt.callLater(function() { folderInput.forceActiveFocus(); folderInput.selectAll(); revealItem(folderInput) }) }
   function saveFolder() { var path = folderInput.text; if (path === "~" || path.indexOf("~/") === 0) path = Quickshell.env("HOME") + path.slice(1); act(["agent-dir", path]) }
   property bool embedded: false
   property bool embeddedActive: false
@@ -24,6 +24,9 @@ Panel {
   signal dismissRequested()
   signal switchRequested(int direction)
   signal revealRequested(real y, real rowHeight)
+  readonly property real viewportHeight: embedded && overlayHost ? overlayHost.height : localFlick.height
+  onViewportHeightChanged: scrollBy(0)
+  property bool browseWhileWorking: false
   readonly property bool panelActive: embedded ? embeddedActive : opened
   implicitWidth: button.implicitWidth
   implicitHeight: embedded ? content.implicitHeight : button.implicitHeight
@@ -74,10 +77,11 @@ Panel {
   property var queue: []                // verbs to run after the current one exits
   property int elapsed: 0
   property int cursor: 0
-  readonly property var ui: Ui.build({ snap: snap, view: view, hw: hw, count: count, pick: pick, slotSel: slotSel, launcherOpen: launcherOpen, launchPick: launchPick, launchModelOpen: launchModelOpen, agentPick: agentPick, agentOpen: agentOpen, copied: copied, pending: pending, lastVerb: lastVerb, elapsed: elapsed, localError: localError })
+  readonly property var ui: Ui.build({ snap: snap, view: view, browseWhileWorking: browseWhileWorking, hw: hw, count: count, pick: pick, slotSel: slotSel, launcherOpen: launcherOpen, launchPick: launchPick, launchModelOpen: launchModelOpen, agentPick: agentPick, agentOpen: agentOpen, copied: copied, pending: pending, lastVerb: lastVerb, elapsed: elapsed, localError: localError })
   readonly property string tone: ui.tone
   readonly property color toneColor: tone === "work" ? accent : tone === "error" ? urgent : tone === "ready" ? ink : dim
-  readonly property bool working: tone === "work"
+  readonly property bool working: Ui.isWorking({snap: snap, pending: pending, lastVerb: lastVerb})
+  onWorkingChanged: { if (!working) browseWhileWorking = false; else if (!browseWhileWorking && lastVerb !== "share") Qt.callLater(home) }
   readonly property var all: ui.rows.concat(ui.foot)
   readonly property var actionable: all.map(function(r, i) { return r.action && !r.disabled ? i : -1 }).filter(function(i) { return i >= 0 })
   readonly property int cursorAt: actionable.length ? actionable[Math.min(cursor, actionable.length - 1)] : -1
@@ -95,14 +99,33 @@ Panel {
   function refresh() { if (!poll.running) poll.running = true }
   function go(v) { var p = path.slice(); p.push(v); path = p; cursor = 0; agentOpen = false }
   function back() { if (path.length > 1) { var p = path.slice(); p.pop(); path = p } cursor = 0; agentOpen = false }
-  function home() { path = ["home"]; cursor = 0; agentOpen = false }
+  function home() { path = ["home"]; cursor = 0; agentOpen = false; Qt.callLater(function() { scrollBy(-1e9) }) }
   // verbs hand off to the controller one at a time; run, load, unload and share are done when a snapshot
   // shows their worker, the rest when the process exits
   property bool actionDone: false
   function act(args) { if (action.running) { queue = queue.concat([args]); return } lastVerb = args[0]; actionDone = false; pending = true; pendingTimeout.restart(); action.command = [cli].concat(args); action.running = true }
+  function scrollBy(amount) {
+    if (embedded && overlayHost) {
+      var top = -mapToItem(overlayHost, 0, 0).y
+      // Ask the existing parent viewport to reveal an edge at the desired offset.
+      revealRequested(top + amount + (amount >= 0 ? viewportHeight + 0.01 : 0), 0)
+    }
+    else if (localFlick) localFlick.contentY = Math.max(0, Math.min(Math.max(0, localFlick.contentHeight - localFlick.height), localFlick.contentY + amount))
+  }
+  function revealItem(it) {
+    if (!it) return
+    if (embedded) { revealRequested(it.mapToItem(root, 0, 0).y, it.height); return }
+    var y = it.mapToItem(content, 0, 0).y
+    if (y < localFlick.contentY) scrollBy(y - localFlick.contentY)
+    else if (y + it.height > localFlick.contentY + localFlick.height) scrollBy(y + it.height - localFlick.height - localFlick.contentY)
+  }
+  function navigateCrumb(action) { activate(action); editingFolder = false; Qt.callLater(function() { scrollBy(-1e9); focusContent() }) }
   function activate(a) {
     if (!a) return
     var s = a.split(":"), v = s[0]
+    if (working && Ui.changesDeployment(a)) return
+    if (working && ["home", "card", "gpu", "model", "count", "back"].indexOf(v) >= 0) browseWhileWorking = true
+    if (v === "work") { browseWhileWorking = false; home(); return }
     if (v === "choose-folder") root.editFolder()
     else if (v === "expand") expanded = !expanded
     else if (v === "home") home()
@@ -112,10 +135,10 @@ Panel {
     else if (v === "count") { count = parseInt(s[1], 10) || 1; pick = "" }
     else if (v === "pick") pick = s[1]
     else if (v === "model") { slotSel = s[1]; var model = Ui.modelById(snap, slotSel), group = model ? Ui.cardOfKeys(snap, model.keys) : null; home(); if (group) { hw = group.hardwareId; go("card") } go("model") }
-    else if (v === "run") { if (working) return; var g = Ui.cardByHw(snap, hw), free = g ? Ui.freeKeys(snap, g) : []; home(); act(["run", s[1], Ui.freest(snap, free) || (g ? g.keys[0] : "")].filter(function(x) { return x !== "" })) }
-    else if (v === "run-again") { if (working) return; home(); act(["load"]) }
+    else if (v === "run") { var g = Ui.cardByHw(snap, hw), free = g ? Ui.freeKeys(snap, g) : []; home(); act(["run", s[1], Ui.freest(snap, free) || (g ? g.keys[0] : "")].filter(function(x) { return x !== "" })) }
+    else if (v === "run-again") { home(); act(["load"]) }
     else if (v === "refresh") { localError = ""; refresh() }
-    else if (v === "stop") { if (working) return; home(); act(["unload", s[1]]) }
+    else if (v === "stop") { home(); act(["unload", s[1]]) }
     else if (v === "stop-download") { if (action.running) return; lastVerb = "unload"; actionDone = false; action.command = [cli, "unload"]; action.running = true }
     else if (v === "launcher-toggle") { launcherOpen = !launcherOpen; launchModelOpen = false; agentOpen = false; cursor = 0 }
     else if (v === "launch-model-toggle") { launchModelOpen = !launchModelOpen; agentOpen = false }
@@ -123,9 +146,9 @@ Panel {
     else if (v === "agent-toggle") { agentOpen = !agentOpen; launchModelOpen = false }
     else if (v === "agent") { agentPick = s[1]; agentOpen = false; cursor = root.view === "home" ? 3 : 1 }
     else if (v === "open-agent") { if (agentLaunch.running) return; agentLaunch.command = [cli, "open-agent", s[1], s[2]]; agentLaunch.running = true; say(s[1] + " · " + (Ui.modelById(snap, s[2]) || { name: "" }).name) }
-    else if (v === "share") { if (working) return; act(["share"]) }
-    else if (v === "update") { if (working) return; act(["update"]) }
-    else if (v === "update-check") { if (working) return; act(["update", "--check"]) }
+    else if (v === "share") { act(["share"]) }
+    else if (v === "update") { act(["update"]) }
+    else if (v === "update-check") { act(["update", "--check"]) }
     else if (v === "copy") { var m = Ui.modelById(snap, s[1]); if (copy.running || !m || !m.shareUrl) return; copyUrl = m.shareUrl; copyError = ""; linkOverlay.open() }
     else if (v === "log") { logOpen.running = true; say("log · open") }
   }
@@ -153,8 +176,8 @@ Panel {
   // Sharing opens a fixed overlay; copying is an explicit action.
   onSnapChanged: { if (lastVerb === "share" && slotSel !== "" && view === "model" && !working) { var m = Ui.modelById(snap, slotSel); if (m && m.shareUrl) { lastVerb = ""; activate("copy:" + slotSel) } } }
   onOpenedChanged: { if (opened) { refresh(); if (!working) home() } }
-  onToneChanged: { if (tone === "error" || (tone === "work" && lastVerb !== "share")) home(); cursor = 0 }
-  onViewChanged: { cursor = 0; launchModelOpen = false; editingFolder = false; if (body) body.contentY = 0 }
+  onToneChanged: cursor = 0
+  onViewChanged: { cursor = 0; launchModelOpen = false; editingFolder = false; Qt.callLater(function() { scrollBy(-1e9) }) }
 
   Controls.Popup {
     id: linkOverlay
@@ -248,9 +271,7 @@ Panel {
     padding: 0
     borderSpec: Border.flat(root.popupLine, 1)
     contentWidth: root.expanded ? panel.availableCardWidth : panel.fittedContentWidth(Style.space(360))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight)
-    readonly property real ceiling: panel.fittedContentHeight(root.expanded ? panel.availableCardHeight : Style.space(720)) - panel.verticalContentInset
-    // Fit the scrolling body to the screen as well as the compact panel cap.
+    contentHeight: panel.fittedContentHeight(root.expanded ? panel.availableCardHeight : content.implicitHeight)
     Rectangle { anchors.fill: parent; color: root.popupBg }
     Item { id: popupContent; anchors.fill: parent }
     Item {
@@ -266,6 +287,8 @@ Panel {
         else if (k === Qt.Key_Escape) { if (root.editingFolder) { root.editingFolder = false; root.focusContent() } else if (root.agentOpen || root.launchModelOpen) { root.agentOpen = false; root.launchModelOpen = false; root.cursor = 0 } else if (root.view === "home" && root.launcherOpen) { root.launcherOpen = false; root.cursor = 0 } else if (root.expanded) root.expanded = false; else if (root.view !== "home") root.back(); else root.dismiss() }
         else if (k === Qt.Key_Tab || k === Qt.Key_Backtab) { var direction = (event.modifiers & Qt.ShiftModifier) || k === Qt.Key_Backtab ? -1 : 1; if (root.embedded) root.switchRequested(direction); else root.switchPanel(direction) }
         else if (k === Qt.Key_O && (event.modifiers & Qt.ControlModifier)) root.editFolder()
+        else if (k === Qt.Key_PageDown || k === Qt.Key_PageUp) root.scrollBy((k === Qt.Key_PageDown ? 1 : -1) * root.viewportHeight * 0.85)
+        else if (k === Qt.Key_Home || k === Qt.Key_End) root.scrollBy(k === Qt.Key_Home ? -1e9 : 1e9)
         else if (k === Qt.Key_Down || event.text === "j") root.moveCursor(1)
         else if (k === Qt.Key_Up || event.text === "k") root.moveCursor(-1)
         else if (k === Qt.Key_Return || k === Qt.Key_Enter) { if (r) root.activate(r.action) }
@@ -274,8 +297,21 @@ Panel {
         else return
         event.accepted = true
       }
+      Flickable {
+        id: localFlick
+        objectName: "local-ai-scroll"
+        anchors.fill: parent
+        visible: !root.embedded
+        contentWidth: width; contentHeight: content.implicitHeight
+        clip: true; interactive: visible && contentHeight > height
+        boundsBehavior: Flickable.StopAtBounds
+        onContentHeightChanged: root.scrollBy(0)
+        onHeightChanged: root.scrollBy(0)
+        Controls.ScrollBar.vertical: Controls.ScrollBar { policy: Controls.ScrollBar.AsNeeded }
+      }
       Column {
         id: content
+        parent: root.embedded ? keys : localFlick.contentItem
         anchors.left: parent.left; anchors.right: parent.right
         spacing: root.embedded ? Style.space(10) : 0
         Item {
@@ -307,17 +343,27 @@ Panel {
             }
           }
         }
-        Item { // ---- the path, with back in it
+        Item { // Breadcrumbs wrap on narrow screens; every destination is a link.
           id: crumb
-          visible: root.ui.path.length > 1; width: parent.width; height: visible ? Style.space(38) : 0
+          visible: root.ui.path.length > 1; width: parent.width
+          height: visible ? crumbFlow.implicitHeight + Style.space(12) : 0
           Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: root.hairline }
-          Row {
-            anchors.left: parent.left; anchors.leftMargin: Style.space(12); anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(8)
-            Rectangle { width: Style.space(26); height: Style.space(22); color: backMouse.containsMouse ? root.hoverFill : root.restFill; opacity: root.working ? 0.4 : 1
-              Text { anchors.centerIn: parent; text: "‹"; color: root.fg; font.family: root.mono; font.pixelSize: Style.font.body; textFormat: Text.PlainText }
-              MouseArea { id: backMouse; anchors.fill: parent; hoverEnabled: true; enabled: !root.working; cursorShape: Qt.PointingHandCursor; onClicked: root.back() } }
+          Flow {
+            id: crumbFlow
+            x: Style.space(6); y: Style.space(6); width: parent.width - Style.space(12); spacing: Style.space(2)
             Repeater { model: root.ui.path
-              Text { required property var modelData; required property int index; anchors.verticalCenter: parent.verticalCenter; text: (index ? "›  " : "") + modelData.n; color: index === root.ui.path.length - 1 ? root.fg : root.faint; font.family: root.mono; font.pixelSize: Style.font.caption; textFormat: Text.PlainText } }
+              Button {
+                required property var modelData; required property int index
+                objectName: "breadcrumb-" + index
+                text: (index ? "› " : "") + modelData.n
+                width: Math.min(implicitWidth, crumbFlow.width); clip: true; leftAlign: true
+                fontFamily: root.mono; fontSize: Style.font.caption
+                foreground: index === root.ui.path.length - 1 ? root.ink : root.dim
+                horizontalPadding: Style.space(6); verticalPadding: Style.space(4)
+                focusable: true; tooltipText: modelData.n
+                onClicked: root.navigateCrumb(modelData.action)
+              }
+            }
           }
         }
         Column {
@@ -352,35 +398,30 @@ Panel {
           p: root
           r: ({ type: "row", compact: true, label: "Project folder", value: (root.snap.agents || {}).directory || Quickshell.env("HOME"), action: "choose-folder" })
         }
-        Flickable { // ---- the rows: the one part that scrolls
+        Item { // Rows share the page viewport with headers, editors and bottom actions.
           id: body
           width: parent.width
-          readonly property real room: panel.ceiling - sizeControl.height - slab.height - crumb.height - foot.height - toastBox.height - (folderRow.visible ? folderRow.height : folderEditor.visible ? folderEditor.height : 0)
           readonly property real inset: root.embedded ? 0 : Style.space(12)
-          height: root.embedded ? contentHeight : Math.max(0, root.expanded ? room : Math.min(contentHeight, room))
-          contentHeight: list.implicitHeight + inset * 2; clip: !root.embedded; interactive: !root.embedded; boundsBehavior: Flickable.StopAtBounds
+          height: list.implicitHeight + inset * 2
           Column {
             id: list
             anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: body.inset; spacing: Style.space(10)
             Repeater { id: rowsRep; model: root.ui.rows
-              CardRow { required property var modelData; required property int index; r: modelData; p: root; x: r.child ? Style.space(18) : 0; width: list.width - x; cursor: index === root.cursorAt } }
+              CardRow { required property var modelData; required property int index; objectName: "content-row-" + index; r: modelData; p: root; x: r.child ? Style.space(18) : 0; width: list.width - x; cursor: index === root.cursorAt } }
           }
           function reveal(i) { // keep the cursor row in view
             var it = i < root.ui.rows.length ? rowsRep.itemAt(i) : footRep.itemAt(i - root.ui.rows.length); if (!it) return
-            if (root.embedded) { root.revealRequested(it.mapToItem(root, 0, 0).y, it.height); return }
-            if (i >= root.ui.rows.length) return
-            var y = it.y + Style.space(12), h = it.height
-            if (y < contentY) contentY = Math.max(0, y - Style.space(12)); else if (y + h > contentY + height) contentY = Math.min(contentHeight - height, y + h - height + Style.space(12))
+            root.revealItem(it)
           }
           Connections { target: root; function onCursorAtChanged() { if (root.cursorAt >= 0) Qt.callLater(function() { body.reveal(root.cursorAt) }) } }
         }
-        Column { // ---- the footer: the verbs, pinned
+        Column { // Bottom actions remain reachable through the same scroll viewport.
           id: foot
           visible: root.ui.foot.length > 0; width: parent.width; spacing: 0
-          Rectangle { width: parent.width; height: 1; color: root.hairline; visible: body.contentHeight > body.height }
+          Rectangle { width: parent.width; height: 1; color: root.hairline }
           Column { anchors.left: parent.left; anchors.right: parent.right; anchors.margins: body.inset; spacing: Style.space(10); topPadding: Style.space(12); bottomPadding: Style.space(12)
             Repeater { id: footRep; model: root.ui.foot
-              CardRow { required property var modelData; required property int index; r: modelData; p: root; width: parent.width; cursor: root.ui.rows.length + index === root.cursorAt } } }
+              CardRow { required property var modelData; required property int index; objectName: "footer-row-" + index; r: modelData; p: root; width: parent.width; cursor: root.ui.rows.length + index === root.cursorAt } } }
         }
         Rectangle { // ---- a word that passes
           id: toastBox

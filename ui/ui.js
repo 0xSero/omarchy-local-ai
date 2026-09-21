@@ -1,6 +1,6 @@
 .pragma library
 // The card's content, as data. build(c) turns a snapshot plus the panel's navigation state into
-// the header, the path, the rows and the pinned footer; Panel.qml only draws what comes back and
+// the header, the path, the rows and the footer; Panel.qml only draws what comes back and
 // turns row actions into controller verbs. Nothing here touches Qt.
 //
 // c: { snap, view:"home"|"card"|"model", hw, count, pick, slotSel, agentPick, agentOpen, copied,
@@ -171,21 +171,34 @@ function launchRows(c, m) {
   return rows
 }
 
+function isWorking(c) {
+  return ["download", "starting", "unload", "share"].indexOf(c.snap.state) >= 0 || (c.pending && ["run", "load", "unload", "share"].indexOf(c.lastVerb) >= 0)
+}
+function changesDeployment(action) { return ["run", "run-again", "stop", "share", "update", "update-check"].indexOf((action || "").split(":")[0]) >= 0 }
 function build(c) {
-  var snap = c.snap, ms = models(snap), op = snap.operation || {}, o = { steps: -1, path: [{ n: "local ai", v: "home" }], rows: [], foot: [] }
-  var working = ["download", "starting", "unload", "share"].indexOf(snap.state) >= 0 || (c.pending && ["run", "load", "unload", "share"].indexOf(c.lastVerb) >= 0)
+  var out = buildView(c)
+  if (isWorking(c) && c.browseWhileWorking) {
+    out.rows.unshift(row("Deployment in progress", "View progress ›", "work", { compact: true }))
+    out.rows.concat(out.foot).forEach(function(r) { if (changesDeployment(r.action)) r.disabled = true })
+  }
+  return out
+}
+
+function buildView(c) {
+  var snap = c.snap, ms = models(snap), op = snap.operation || {}, o = { steps: -1, path: [{ n: "local ai", v: "home", action: "home" }], rows: [], foot: [] }
+  var working = isWorking(c)
   var error = !working && c.view === "home" && (c.localError !== "" || snap.state === "error" || (snap.reason || "") !== "")
   var crashed = ms.filter(function(m) { return m.state === "error" })
-  // ---- work: the card is busy; nothing else is clickable
-  if (working) {
+  // ---- work: progress is the default; navigation may inspect other views safely.
+  if (working && !c.browseWhileWorking) {
     var w = snap.state === "download" || snap.state === "starting" || snap.state === "unload" || snap.state === "share" ? opWord(snap) : (c.lastVerb === "unload" ? "stopping" : c.lastVerb === "share" ? "sharing" : snap.selected && !snap.selected.onDisk ? "downloading" : "starting")
     var who = recipeById(snap, op.recipeId) || modelById(snap, op.recipeId) || (snap.selected ? { name: snap.selected.name } : { name: "Local AI" })
     var r = recipeById(snap, op.recipeId) || { sizeGb: 0 }
     o.tone = "work"; o.eyebrow = w; o.title = who.name
     o.sub = w === "downloading" && op.percent > 0 && r.sizeGb ? "weights · " + gb(op.percent / 100 * r.sizeGb) + " of " + gb(r.sizeGb) : (op.detail || { downloading: "weights", pulling: "engine image", starting: "engine warming", checking: "acceptance", stopping: "containers coming down", sharing: "gateway restarting on the tailnet" }[w])
-    if (w !== "stopping" && w !== "sharing") { o.steps = opStep(w); var hw = r.hardwareId ? cardByHw(snap, r.hardwareId) : null; if (hw) o.path.push({ n: hw.name.toLowerCase(), v: "card" }) }
-    else { var wm = modelById(snap, op.recipeId); o.path.push({ n: (wm ? wm.name : who.name).toLowerCase(), v: "model" }) }
-    o.path.push({ n: w, v: "work" })
+    if (w !== "stopping" && w !== "sharing") { o.steps = opStep(w); var hw = r.hardwareId ? cardByHw(snap, r.hardwareId) : null; if (hw) o.path.push({ n: hw.name.toLowerCase(), v: "card", action: "card:" + hw.hardwareId }) }
+    else { var wm = modelById(snap, op.recipeId); o.path.push({ n: (wm ? wm.name : who.name).toLowerCase(), v: "model", action: wm ? "model:" + wm.recipeId : "home" }) }
+    o.path.push({ n: w, v: "work", action: "work" })
     var late = op.expectedSeconds > 0 && c.elapsed > op.expectedSeconds * 1.5
     var pct = op.percent > 0 ? op.percent : (op.expectedSeconds > 0 && c.elapsed > 0 ? Math.min(95, Math.round(c.elapsed * 100 / op.expectedSeconds)) : 0)
     o.rows.push(row(w, late ? mmss(c.elapsed) + " · longer than usual" : pct > 0 ? pct + "%" + (c.elapsed > 0 ? " · " + mmss(c.elapsed) : "") : c.elapsed > 0 ? mmss(c.elapsed) : "…", "", { type: "status" }))
@@ -213,8 +226,8 @@ function build(c) {
       var cg = cardOfKeys(snap, m.keys)
       o.tone = m.state === "error" ? "error" : "ready"; o.eyebrow = m.state === "error" ? "crashed" : m.state === "ready" ? "ready" : m.state; o.title = m.name
       o.sub = where(snap, m) + " · :" + m.port + (m.shareUrl ? " · shared" : "")
-      if (cg) o.path.push({ n: cg.name.toLowerCase(), v: "card" })
-      o.path.push({ n: m.name.toLowerCase(), v: "model" })
+      if (cg) o.path.push({ n: cg.name.toLowerCase(), v: "card", action: "card:" + cg.hardwareId })
+      o.path.push({ n: m.name.toLowerCase(), v: "model", action: "model:" + m.recipeId })
       if (cg) o.rows.push(row("", "", "", { tabs: [{ text: "Models", action: "card:" + cg.hardwareId }, { text: "Stats & agents", on: true, action: "model:" + m.recipeId }] }))
       if (m.state !== "ready") {
         o.rows.push(row("engine", m.note || "stopped unexpectedly", "", { urgent: true, type: "text" }))
@@ -241,7 +254,7 @@ function build(c) {
     {
       var free = freeKeys(snap, g), n = Math.max(1, Math.min(c.count || 1, g.keys.length))
       o.tone = "idle"; o.eyebrow = "models"; o.title = g.name; o.sub = free.length + " of " + g.keys.length + " free · " + g.vramGb + " GB each"
-      o.path.push({ n: g.name.toLowerCase(), v: "card" }); if (n > 1) o.path.push({ n: n + " cards", v: "card" })
+      o.path.push({ n: g.name.toLowerCase(), v: "card", action: "card:" + g.hardwareId }); if (n > 1) o.path.push({ n: n + " cards", v: "card", action: "count:" + n })
       var running = groupModels(snap, g)
       if (running.length === 1) o.rows.push(row("", "", "", { tabs: [{ text: "Models", on: true, action: "card:" + g.hardwareId }, { text: "Stats & agents", action: "model:" + running[0].recipeId }] }))
       else if (running.length) {

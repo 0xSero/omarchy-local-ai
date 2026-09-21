@@ -140,3 +140,19 @@ const separated = ui.build({snap:historySnap,view:'home',localError:''}).rows;
 assert(separated.findIndex(r=>r.label==='deployments') < separated.findIndex(r=>r.label==='tokens by gpu'));
 assert(separated.filter(r=>r.type==='usage').every(r=>!r.action));
 console.log('Deployment controls stay distinct from read-only usage and useful without history');
+
+// Every breadcrumb has a destination, including current GPU counts and running work.
+assert.equal(JSON.stringify(catalog.path.map(p=>p.action)), JSON.stringify(['home','card:b70','count:2']));
+const modelPath = ui.build({snap,view:'model',slotSel:recipe.id,localError:''}).path;
+assert.equal(JSON.stringify(modelPath.map(p=>p.action)), JSON.stringify(['home','card:b70','model:qwen-tp2']));
+for (const state of ['download','starting','unload','share']) {
+  const busy = {...snap,state,operation:{recipeId:recipe.id}};
+  const work = ui.build({snap:busy,view:'home',localError:''});
+  assert(work.path.every(p=>p.action));
+  assert.equal(work.path.at(-1).action,'work');
+  const browse = ui.build({snap:busy,view:'model',slotSel:recipe.id,localError:'',browseWhileWorking:true});
+  assert.equal(browse.rows[0].action,'work');
+  assert(browse.foot.find(r=>r.action==='stop:'+recipe.id).disabled);
+  assert.equal(browse.path.at(-1).action,'model:'+recipe.id);
+}
+console.log('Direct breadcrumbs and browsing during deployment work passed');

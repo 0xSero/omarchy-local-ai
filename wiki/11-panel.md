@@ -16,7 +16,9 @@ The footer contains the update action. A check stages newer recipe/plugin inform
 
 The native view uses Omarchy's Button, PanelSectionHeader, PanelSeparator, fonts and colors. Ordinary rows have no permanent box border. Disclosure headings use a chevron and stronger text, with indented choices. Hover backgrounds have internal padding; only the device header reacts to hover.
 
-The embedded view uses the native panel's outer scroll container. Keyboard navigation reveals the selected row or footer action. Standalone mode retains its own scrolling and F11 expansion; embedded mode uses the space provided by Agents.
+The embedded view uses the native panel's outer scroll container. Standalone mode scrolls the whole page, including headers, folder editing and footer actions, and supports F11 expansion. Mouse wheels work across the content; Home/End and Page Up/Down move the viewport. Keyboard navigation reveals the selected action, and resizing clamps the scroll position.
+
+Every breadcrumb is a direct link, including the current destination, and long paths wrap on narrow screens. Navigation returns to the top. During a deployment you can browse GPU groups and models, then select View progress to return; conflicting deployment actions remain disabled.
 
 ## Source responsibilities
 
@@ -40,6 +42,8 @@ The plugin exposes the sero.local-ai IPC target for open, close, toggle, refresh
 ```bash
 quickshell ipc --any-display -p /usr/share/omarchy/shell call sero.local-ai activate home
 ```
+
+`test/navigation` runs native wheel, keyboard, resize and breadcrumb checks using an isolated controller fixture on Omarchy. It covers standalone and embedded views at 240×180, 380×400 and 600×650, including folder editing, empty/error/progress screens and navigation during deployment work. It requires QtTest and a running Wayland session.
 
 `test/visual` drives row actions and captures the live panel. `test/ui.cjs` checks launcher selection, stale selections, GPU availability, compact overview data and retained detail meters.
 
