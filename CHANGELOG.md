@@ -2,6 +2,13 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.3.7] - 2026-09-21
+
+### Fixed
+- Keep a running recipe available when another GPU can host it. Load another instance with a separate endpoint, without stopping the first model.
+- Expose only assigned Intel render devices so a launch on GPU 1 cannot fall back to the busy GPU 0.
+- Track deployment instances separately from recipe identity, preserving targeted agent launch, restart, unload, rollback and recipe running status.
+
 ## [5.3.6] - 2026-09-21
 
 ### Fixed

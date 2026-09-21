@@ -64,7 +64,7 @@ models_json() {
     apis=$(jq -c '.accepted.apis // []' <<<"$s")
     out=$(jq -c --argjson s "$s" --arg id "$id" --arg st "$mstate" --arg note "$note" --arg served "$served" --argjson agents "$(agents_json "$apis")" --argjson share "$(share_state "$port")" \
       --argjson rec "$(cat "$STATE/slots/$id.json" 2>/dev/null || recipe_by_id "$id")" --argjson metrics "$metrics" \
-      '. + [{recipeId:$id, name:($s.name // $id), port:$s.port, endpoint:("http://127.0.0.1:"+($s.port|tostring)+"/v1"), keys:($s.keys // []), cards:(($s.keys // []) | length),
+      '. + [{recipeId:$id, baseRecipeId:($s.baseRecipeId // $id), name:($s.name // $id), port:$s.port, endpoint:("http://127.0.0.1:"+($s.port|tostring)+"/v1"), keys:($s.keys // []), cards:(($s.keys // []) | length),
              state:$st, note:$note, servedModel:(if $served != "" then $served else ($s.accepted.servedModel // "") end), apis:($s.accepted.apis // []),
              caps:(($rec.capabilities // {}) | {chat, vision, video, tools, reasoning}),
              ctxTokens:($rec.serving.ctxTokens // 0), kvTokens:(if ($rec.serving.kvTokens // 0) > 0 then $rec.serving.kvTokens else ($rec.serving.ctxTokens // 0) end), tokensToday:($metrics[$id].tokensToday // null), usageEstimated:($metrics[$id].usageEstimated // false), usageSince:($metrics[$id].usageSince // ""), statsUpdatedAt:($metrics[$id].statsUpdatedAt // null),
@@ -98,7 +98,7 @@ snapshot_write() {
   fi
   local models; models=$(models_json "$ledger")
   # the model the card looks at: the selected recipe when it runs, else the first one running
-  local focus; focus=$(jq -c --arg sel "$(jq -r '.id // ""' <<<"${rec:-null}")" '(map(select(.state != "stopped")) ) as $up | ([$up[] | select(.recipeId == $sel)] | .[0]) // $up[0] // null' <<<"$models")
+  local focus; focus=$(jq -c --arg gpu "$(gpu_pick)" --arg sel "$(jq -r '.id // ""' <<<"${rec:-null}")" '(map(select(.state != "stopped")) ) as $up | ([$up[] | select((.baseRecipeId // .recipeId) == $sel)] | sort_by(if (.keys | index($gpu)) then 0 else 1 end) | .[0]) // $up[0] // null' <<<"$models")
   if $busy; then state=$(jq -r .op.name <<<"$ledger")
   elif jq -e 'any(.[]; .state == "ready")' >/dev/null <<<"$models"; then state=ready
   elif [[ $(jq -r .error <<<"$ledger") != "" ]]; then state=error
@@ -124,7 +124,7 @@ snapshot_write() {
   done < <(jq -r '[.gpus[].hardwareId|select(.!="")]|unique[]' <<<"$match")
   # the first recipe of each card is the recommended one; a recipe that runs says so
   recs=$(jq -c --argjson models "$models" 'reduce .[] as $r ([]; if any(.[]; .hardwareId==$r.hardwareId) then . + [$r + {recommended:false}] else . + [$r + {recommended:true}] end)
-    | map(.id as $rid | . + {running: (([$models[] | select(.recipeId == $rid and .state != "stopped")] | length) > 0)})' <<<"$recs")
+    | map(.id as $rid | . + {running: (([$models[] | select((.baseRecipeId // .recipeId) == $rid and .state != "stopped")] | length) > 0)})' <<<"$recs")
   local fport listener=none; fport=$(jq -r '.port // 0' <<<"$focus"); (( fport > 0 )) || fport=$PORT
   [[ $(jq -r 'if . == null then "none" else .state end' <<<"$focus") == none ]] && listener=$(PORT=$fport port_listener); local pbusy=false; [[ $listener == other ]] && pbusy=true
   local claim='{"indexes":[],"backends":[],"keys":[],"short":""}'; [[ -n $rec ]] && claim=$(claimed_indexes "$rec" "$match")

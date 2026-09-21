@@ -60,7 +60,7 @@ current_recipe() { # the one recipe for this machine, gated; prints json or fail
   gate=$(gate_reason "$r"); [[ -z $gate ]] || { fail "recipe refused: $gate"; return 1; }
   local ci; ci=$(claimed_indexes "$r" "$m"); [[ $(jq -r .short <<<"$ci") == "" ]] || { fail "$(jq -r .short <<<"$ci")"; return 1; }
   r=$(jq -c --argjson ci "$ci" --argjson m "$m" '. + {gpuIndexes:$ci.indexes, gpuKeys:$ci.keys,
-    gpuRenderNodes:([$m.gpus[] | select(.index as $i | $ci.indexes | index($i)) | .renderNode | select(. != null and . != "")] | unique)}' <<<"$r")
+    gpuRenderNodes:([$m.gpus[] | select(.key as $k | $ci.keys | index($k)) | .renderNode | select(. != null and . != "")] | unique)}' <<<"$r")
   driver_ok "$(jq -r .driver <<<"$m")" "$(jq -r '.minDriver // ""' <<<"$r")" \
     || { fail "needs NVIDIA driver $(jq -r .minDriver <<<"$r") or newer"; return 1; }
   printf '%s\n' "$r"
@@ -92,6 +92,7 @@ w_load() {
   mount_dirs "$r"; write_assets "$r"; ensure_key
   # the slot this model gets, and the models it replaces (the ones on its cards); the recipe file carries both into the phase
   r=$(slot_plan "$r" 2>"$STATE/gate.err") || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
+  id=$(jq -r .id <<<"$r")
   mkdir -p "$STATE/slots"; printf '%s\n' "$r" >"$STATE/recipe.json"
   local victims; victims=$(jq -r '[.victims[]? | select(.id != $id) | .name] | join(", ")' --arg id "$id" <<<"$r")
   [[ -z $victims ]] || log "start $id replaces $victims (same cards)"

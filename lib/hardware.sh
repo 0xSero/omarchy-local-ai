@@ -26,7 +26,7 @@ intel_gpus() {
   [[ -d /sys/bus/pci/drivers/xe && -z ${OMARCHY_AI_DRI_PATH:-} ]] && metrics=$(deadline 8 python3 "$HERE/../lib/intel-metrics.py" "$STATE" 2>/dev/null || printf '{}')
   while IFS= read -r a; do
     [[ -n $a && -e "$dri/pci-$a-render" ]] || continue
-    out=$(jq -c --argjson i "$idx" --argjson t "$(intel_temp "$a")" --argjson m "$metrics" --arg pci "$a" '.+[{backend:"intel-xpu",index:$i,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null,tempC:$t,utilPct:null} + (($m[$pci] // {}) | del(.totalMiB,.activity))]' <<<"$out")
+    out=$(jq -c --argjson i "$idx" --argjson t "$(intel_temp "$a")" --argjson m "$metrics" --arg pci "$a" --arg node "$(canon "$dri/pci-$a-render")" '.+[{backend:"intel-xpu",index:$i,renderNode:$node,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null,tempC:$t,utilPct:null} + (($m[$pci] // {}) | del(.totalMiB,.activity))]' <<<"$out")
     idx=$((idx+1))
   done < <(lspci -Dnn -d "$INTEL_B70_IDS" 2>/dev/null | awk '{print $1}' | sort -u)
   printf '%s' "$out"

@@ -4,7 +4,7 @@
 # A running model is a slot: the recipe's engine on a private bridge network of its own, its port
 # never published, and the attested gateway on 127.0.0.1:<slot port> (12434 for the first model,
 # the next free port for each further one), key enforced. Slots live in the ledger under .slots,
-# keyed by recipe id, with the container names, network, port, the cards they claim and the
+# keyed by instance id (with the original recipe id retained), with the container names, network, port, the cards they claim and the
 # acceptance record. Both containers carry io.omarchy.local-ai=1, .recipe, .registry, .role; only
 # labeled containers are ever touched. A Start replaces the slots whose cards it claims (its own
 # earlier run included): those are set aside first and come back if the new one fails acceptance.
@@ -36,7 +36,18 @@ slot_port() { # slot_port <recipe-id>: its own port when it already runs (agents
 # slot_plan <recipe-json> -> the recipe with .slot {port, net, engine, gateway} and .victims: the slots a Start
 # of it replaces, its own earlier run and every slot holding one of the cards it claims
 slot_plan() {
-  local r=$1 id port; id=$(jq -r .id <<<"$r"); port=$(slot_port "$id") || return 1
+  local r=$1 id base port slots serial=2
+  base=$(jq -r .id <<<"$r"); slots=$(lread | jq -c .slots)
+  # Reuse an overlapping instance, but never evict the same recipe on another GPU.
+  id=$(jq -nr --arg base "$base" --argjson r "$r" --argjson slots "$slots" '
+    [$slots | to_entries[] | select((.value.baseRecipeId // .key)==$base)
+      | select(any(.value.keys[]?; . as $k | $r.gpuKeys | index($k))) | .key][0] // empty')
+  if [[ -z $id ]]; then
+    id=$base
+    while [[ -n $(slot_of "$id") ]]; do id="$base-instance-$serial"; serial=$((serial+1)); done
+  fi
+  r=$(jq -c --arg id "$id" --arg base "$base" '. + {id:$id, baseRecipeId:$base}' <<<"$r")
+  port=$(slot_port "$id") || return 1
   jq -c --argjson p "$port" --arg net "$(net_of "$id")" --arg e "$(engine_of "$id")" --arg g "$(gateway_of "$id")" --argjson slots "$(lread | jq -c .slots)" '
     (.gpuKeys // []) as $keys
     | . + {slot:{port:$p, net:$net, engine:$e, gateway:$g},
@@ -45,7 +56,7 @@ slot_plan() {
 }
 slot_record() { # slot_record <recipe-json>: the new slot in the ledger, unverified until accept() fills .accepted
   local r=$1
-  lwrite '.slots[$id]={port:$r.slot.port, net:$r.slot.net, engine:$r.slot.engine, gateway:$r.slot.gateway, keys:($r.gpuKeys // []), name:($r.model.name // $id), accepted:null, startedAt:$t}' \
+  lwrite '.slots[$id]={baseRecipeId:($r.baseRecipeId // $r.id), port:$r.slot.port, net:$r.slot.net, engine:$r.slot.engine, gateway:$r.slot.gateway, keys:($r.gpuKeys // []), name:($r.model.name // $id), accepted:null, startedAt:$t}' \
     --arg id "$(jq -r .id <<<"$r")" --argjson r "$r" --arg t "$(now)"
 }
 slot_forget() { lwrite 'del(.slots[$id])' --arg id "$1"; }
@@ -226,8 +237,8 @@ engine_argv() { # engine_argv <recipe> -> NUL-separated docker argv
     fi
   else # Intel: render nodes only, resolved per device; no card* control nodes, no whole /dev/dri
     local -a nodes=()
-    for v in "${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}"/*-render; do [[ -e $v ]] || continue; real=$(canon "$v"); nodes+=(--device "$real:$real"); done
-    ((${#nodes[@]})) || { fail "no render nodes found"; return 1; }
+    for v in "${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}"/*-render; do [[ -e $v ]] || continue; real=$(canon "$v"); jq -e --arg node "$real" '(.gpuRenderNodes // []) | index($node) != null' >/dev/null <<<"$r" && nodes+=(--device "$real:$real"); done
+    ((${#nodes[@]})) || { fail "no render nodes for selected Intel GPUs"; return 1; }
     a+=("${nodes[@]}" --volume /dev/dri/by-path:/dev/dri/by-path:ro)
   fi
   v=$(jq -r '.launch.shm//empty' <<<"$r"); [[ -n $v ]] && a+=(--shm-size "$v")

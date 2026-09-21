@@ -188,3 +188,14 @@ assert.equal(ui.loadPlan(full,{id:'new',cards:1},group).replaces[0].recipeId,'ol
 const busySwap=ui.build({snap:{...snap,state:'starting',operation:{recipeId:'second-choice'},recipes:idle.recipes},view:'card',hw:'b70',count:2,pick:'second-choice',localError:'',browseWhileWorking:true});
 assert(busySwap.rows.find(r=>r.action==='run:second-choice:2').disabled);
 console.log('Swap targets match controller allocation; unrelated models and busy guards retained');
+
+// A running one-GPU recipe remains loadable on the other physical GPU.
+const single={...recipe,id:'qwen-one',cards:1,onDisk:true};
+const oneBusy={...snap,recipes:[single],models:[{...running,recipeId:single.id,keys:['intel-xpu:0'],cards:1}]};
+const another=ui.build({snap:oneBusy,view:'card',hw:'b70',count:1,pick:single.id,localError:''});
+assert(another.rows.some(r=>r.label==='Load another instance' && r.action==='run:qwen-one:1'));
+assert.equal(ui.loadPlan(oneBusy,single,oneBusy.cards[0]).gpu,'intel-xpu:1');
+assert.equal(ui.loadPlan(oneBusy,single,oneBusy.cards[0]).replaces.length,0);
+const twoBusy={...oneBusy,models:[...oneBusy.models,{...oneBusy.models[0],recipeId:'qwen-one-instance-2',baseRecipeId:single.id,keys:['intel-xpu:1']}]};
+assert(!ui.build({snap:twoBusy,view:'card',hw:'b70',count:1,pick:single.id,localError:''}).rows.some(r=>r.action==='pick:qwen-one'));
+console.log('Duplicate recipe stays launchable on a free GPU and never replaces the first instance');

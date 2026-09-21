@@ -398,7 +398,7 @@ write_recipes "$(recipe ipc true asset | jq '.launch.ipc="host"')"; "$CLI" snaps
   done
   mkdir -p "$OMARCHY_AI_DRI_PATH"; touch "$TMP/renderD128"
   ln -s "$TMP/renderD128" "$OMARCHY_AI_DRI_PATH/pci-test-render"
-  candidate=$(jq -c '.match.backend="intel-xpu" | .launch.devices=["/dev/dri"] | .launch.arguments=[]' <<<"$r")
+  candidate=$(jq -c --arg node "$(canon "$TMP/renderD128")" '.match.backend="intel-xpu" | .gpuRenderNodes=[$node] | .launch.devices=["/dev/dri"] | .launch.arguments=[]' <<<"$r")
   [[ -z $(gate_reason "$candidate") ]] || fail "legacy Intel declaration refused"
   argv=$(engine_argv "$candidate" | jq -Rsc 'split("\u0000")[:-1]')
   # the expected node goes through canon() too: on a host where /var is a symlink (macOS) the engine
@@ -434,6 +434,12 @@ write_recipes "$(recipe b70 true asset | jq '.launch.mounts=[{source:"/dev/dri/b
 jq '.hardware["intel-arc-pro-b70-32gb"].match={backend:"intel-xpu",vramGb:32,names:["arcprob70"],name:"Intel Arc Pro B70"}' "$OMARCHY_AI_RECIPES" >"$OMARCHY_AI_RECIPES.tmp" && mv "$OMARCHY_AI_RECIPES.tmp" "$OMARCHY_AI_RECIPES"
 SHIM_LSPCI=1 "$CLI" snapshot >/dev/null
 [[ $(snap '[.gpus[]|select(.backend=="intel-xpu")]|length') == 2 && $(snap '.cards[]|select(.backend=="intel-xpu")|.count') == 2 && $(snap '.cards[]|select(.backend=="intel-xpu")|.totalGb') == 64 && $(snap '.cards[]|select(.backend=="intel-xpu")|.recipe.id') == b70 ]] || fail "intel by id" "$(snap .gpus) $(snap .cards)"; pass "two Arc Pro B70 named only by PCI id (old pci.ids) are detected and aggregate as 2× Arc Pro B70 · 64 GB; a card without a render node is left out"
+SHIM_LSPCI=1 "$CLI" run b70 intel-xpu:1
+last_engine=$(grep 'docker run .*--label io.omarchy.local-ai.role=engine' "$SHIM/docker.log" | tail -1)
+[[ $last_engine == *"--device $TMP/dri/pci-0000:c3:00.0-render:"* && $last_engine != *"--device $TMP/dri/pci-0000:84:00.0-render:"* ]] || fail "Intel second GPU isolation" "$last_engine"; pass "Intel launch exposes only the selected second GPU render device"
+SHIM_LSPCI=1 "$CLI" run b70 intel-xpu:0
+[[ $(snap '[.models[]|select(.baseRecipeId=="b70")]|length') == 2 ]] || fail "Intel duplicate instances" "$(snap .models)"; pass "two Intel instances retain separate GPU allocations"
+SHIM_LSPCI=1 "$CLI" unload; "$CLI" gpu auto >/dev/null
 rm -f "$TMP/dri"/*; write_recipes "$(recipe good true asset)"
 
 # AMD ROCm: an RX 6800 XT matches its recipe and Docker receives only KFD plus its assigned render node.
@@ -494,6 +500,22 @@ write_recipes_alts "$(recipe good true asset)" "$(recipe alt-small false dir | j
 "$CLI" recipe alt-small >/dev/null; write_recipes "$(recipe good true asset)" rtx-3090-24gb; export SHIM_GPUS=$'0, NVIDIA GeForce RTX 3090, 24564, 300, 24264'; "$CLI" snapshot >/dev/null
 [[ $(snap .selected.recipeId) == good ]] || fail "pick of another card ignored" "$(snap .selected)"; pass "a pick that is not among the chosen card's recipes falls back to the recommended one"
 unset SHIM_GPUS; "$CLI" recipe auto >/dev/null; write_recipes "$(recipe good true asset)"
+
+# The same recipe can occupy two independent GPUs without replacing its first instance.
+export SHIM_GPUS=$'0, NVIDIA GeForce RTX 4090, 24564, 300, 24264\n1, NVIDIA GeForce RTX 4090, 24564, 300, 24264'
+"$CLI" run good nvidia:0; first_started=$(snap '.models[0].startedAt'); : >"$SHIM/docker.log"
+"$CLI" run good nvidia:1
+[[ $(snap '.models|length') == 2 && $(snap '[.models[].port]|unique|length') == 2 && $(snap '[.models[].baseRecipeId]|unique|join(",")') == good ]] || fail "duplicate recipe slots" "$(snap .models)"; pass "one recipe runs on two free GPUs with separate slots and endpoints"
+! grep -Eq 'docker (stop|rename|rm) omarchy-local-ai-good-(engine|gateway)( |$)' "$SHIM/docker.log" || fail "first instance touched"; pass "loading a second instance leaves the first engine and gateway untouched"
+[[ $(snap '.running.recipeId') == good-instance-2 && $(snap '.models[]|select(.recipeId=="good-instance-2")|.keys|join(",")') == nvidia:1 ]] || fail "replica focus"; pass "selected GPU and model details identify the second instance"
+argv=$("$CLI" open-agent claude good-instance-2); out=$(eval "$argv"); [[ $out == *ANTHROPIC_BASE_URL=http://127.0.0.1:12435* ]] || fail "replica agent route"; pass "agents launch against the chosen instance endpoint"
+"$CLI" run good nvidia:1
+[[ $(snap '.models|length') == 2 && $(snap '.models[]|select(.recipeId=="good-instance-2")|.port') == 12435 && $(snap '.models[]|select(.recipeId=="good")|.startedAt') == "$first_started" ]] || fail "replica restart"; pass "restarting the second instance preserves its endpoint and the first instance"
+"$CLI" unload good-instance-2; SHIM_REPLY=nope "$CLI" run good nvidia:1
+[[ $(snap '.models|length') == 1 && $(snap '.models[0].recipeId') == good && $(snap '.models[0].state') == ready && $(snap .error) == *"chat acceptance failed"* ]] || fail "failed replica isolation"; pass "a failed second instance preserves the running first instance"
+"$CLI" run good nvidia:1; "$CLI" unload good
+[[ $(snap '.models|length') == 1 && $(snap '.models[0].recipeId') == good-instance-2 && $(snap '.recipes[0].running') == true ]] || fail "remaining replica"; pass "unloading the original keeps the replica and recipe running status"
+"$CLI" unload good-instance-2; unset SHIM_GPUS; "$CLI" gpu auto >/dev/null
 
 # the port: something that is not ours listening there is a reason, not a mystery
 "$CLI" snapshot >/dev/null; [[ $(snap .port.number) == 12434 && $(snap .port.busy) == false ]] || fail "port free" "$(snap .port)"; pass "port: number and free"
