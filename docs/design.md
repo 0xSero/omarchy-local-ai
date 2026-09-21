@@ -329,7 +329,7 @@ colour, so any resolution works, and fails loudly rather than clipping when a li
 ## Release contents
 
 `make bundle` packages only the manifest, recipe catalog, license and files in
-`bin/`, `lib/` and `ui/`. The release workflow uploads that archive after
+`bin/`, `lib/`, `ui/` and optional `integrations/` assets. The release workflow uploads that archive after
 `make test` unpacks and tests it. Development tests and docs remain in their
 own directories in the repository; they are not installed from the bundle.
 Tiny multimodal acceptance payloads are embedded in `lib/runtime.sh`.

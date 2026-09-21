@@ -9,34 +9,26 @@ against the tree, and the pages workflow runs it before publishing.
 
 | | |
 |---|---|
-| **Documents** | `main` at `d38f8d2` — **Release v5.0.1** (2026-09-16) |
-| **Plugin version** | 5.0.1 (`manifest.json`) |
+| **Documents** | Release v5.2.0 (2026-09-21) |
+| **Plugin version** | 5.2.0 (`manifest.json`) |
 | **Ledger / snapshot / recipes schema** | `omarchy-local-ai/ledger/2`, `…/snapshot/10`, `…/recipes/1` |
 | **Published** | <https://0xsero.github.io/omarchy-local-ai/> |
 
-These pages describe code, so the check is on the code:
-
-```bash
-git log -1 --format=%h -- bin lib ui manifest.json recipes.json
-```
-
-On `main` that prints the commit above. A commit that only touches `wiki/` changes what these pages
-say without changing what they describe, so it leaves that hash alone.
+The release tag pins the implementation. The site is built from the documentation on main; its workflow checks paths and quoted messages before publication.
 
 This is the plugin only. The data it consumes comes from a second repository, `0xSero/local-ai-registry`
 (see [15 — Registry and CI](15-registry-and-ci.md)).
 
 ## The 30-second version
 
-A bar plugin. One button. It detects the GPUs on the machine, picks the one validated recipe for the
-detected card from a vendored `recipes.json`, downloads the weights, starts **two** containers per
+A bar plugin, optionally inside the native Agents panel. It detects the GPUs on the machine and lets you choose a validated recipe for one or more cards from a vendored `recipes.json`, downloads the weights, starts **two** containers per
 running model (an engine on a private docker network, and an attested gateway on loopback that
 enforces an API key and speaks three API dialects), then proves the model actually works before it
 calls it ready. Ready means: right model served, key enforced, decode not running on the CPU, all
 advertised API dialects answering, tools working if claimed, images and video understood if claimed.
 Anything that fails is rolled back to what was running before, and the reason lands on the card.
 
-Nothing is written into your own config. Agents get the endpoint only when they are launched from
+Agent provider settings are isolated under plugin-owned state. The optional native integration does change your shell layout and, when requested, Hyprland bindings, with dated backups. Agents get the endpoint only when they are launched from
 the panel. Sharing publishes the gateway's own port on the tailnet address, with the key.
 
 ## Pages
@@ -53,9 +45,9 @@ the panel. Sharing publishes the gateway's own port on the tailnet address, with
 | 8 | [Acceptance](08-acceptance.md) | Every probe the plugin runs before it says ready, with its exact threshold |
 | 9 | [Agents](09-agents.md) | The eleven agents, their dialects, the exact environment each one gets, and how the key stays out of argv |
 | 10 | [Sharing on the tailnet](10-sharing.md) | The key, the publish, IPv6, address changes, why not `tailscale serve` |
-| 11 | [The panel](11-panel.md) | `ui/Panel.qml`, `ui/ui.js`, `ui/CardRow.qml`, `ui/Orb.qml`: the three views, compact and full-screen, the rows, the polling, the IPC |
+| 11 | [The panel](11-panel.md) | `ui/Panel.qml`, `ui/ui.js`, `ui/CardRow.qml`: the three views, compact and full-screen, the rows, the polling, the IPC |
 | 12 | [CLI and environment reference](12-cli.md) | Every verb, every environment variable, every refusal |
-| 13 | [Tests](13-tests.md) | The shim harness, what the 176 assertions cover, the rented-GPU harness, the visual helper |
+| 13 | [Tests](13-tests.md) | The shim harness, what the assertions cover, the rented-GPU harness, the visual helper |
 | 14 | [Troubleshooting](14-troubleshooting.md) | Every message the plugin can print, what caused it, what to do |
 | 15 | [Registry and CI](15-registry-and-ci.md) | The registry repository, the export, the three workflows, how a release is cut |
 | 16 | [History](16-history.md) | How the code got here, what each version changed, the state of the work |
@@ -80,29 +72,30 @@ These words are used precisely throughout; the wiki uses them in exactly this se
 | **phase** | The root side of one batched privileged action (`_root <phase>`): `start`, `restore`, `drop`, `stop`, `restart_gateway`, `toolkit`. |
 | **marker** | `$STATE/weights/<recipe-id>.json`. A promise that a specific repository revision was downloaded to a specific path. Never trusted alone: the files must be there too. |
 
+## Current experience
+
+Version 5.2.0 brings Local AI into the native Agents panel with the same section styling as Claude and Codex. Start from an expandable agent launcher and one status row per GPU type. Open a group for models or running-model statistics; temperature, usage and VRAM meters stay in the details.
+
+| Area | Verified | Still to verify |
+|---|---|---|
+| Agents | All eleven adapter handoffs tested; OMP, Pi, OpenCode and Crush terminal startup on Omarchy; real Pi/OpenCode requests on NVIDIA and Intel | Full conversation and tool acceptance for every agent |
+| GPU readings | Physical NVIDIA and Intel; AMD sysfs fixtures | Physical AMD hardware |
+| Today's statistics | Incremental vLLM/llama.cpp logs and counters | Other engines are unavailable; first-day history is not reconstructed |
+| Native panel | Shared native styling, row-data checks, QML loading | Final visual acceptance of the latest compact overview |
+| Mac/Moonlight | Window switching, apps, fullscreen, workspaces and help binding | Offline guide rendering; shifted Command+Tab uses Ctrl+Space, P instead |
+
+See [11 — The panel](11-panel.md) for the interface and [2 — Install](02-install-and-layout.md) for setup, updating and restoration.
+
 ## Reading the source
 
-| File | Lines | Role |
-|---|---|---|
-| `bin/omarchy-local-ai` | 227 | The whole CLI: every verb, the worker entry points, the root-phase entry point |
-| `lib/common.sh` | 122 | Paths, ledger read/write, the op lock, logging |
-| `lib/priv.sh` | 152 | Docker-without-the-docker-group: the pkexec phases and the root-side re-validation |
-| `lib/hardware.sh` | 43 | `nvidia-smi` and Intel PCI enumeration |
-| `lib/recipes.sh` | 150 | The recipe file, hardware match, the gate |
-| `lib/weights.sh` | 278 | Destination, marker, adoption, download |
-| `lib/runtime.sh` | 332 | Slots, container argv, acceptance, rollback |
-| `lib/share.sh` | 100 | The key and the tailnet route |
-| `lib/agents.sh` | 129 | Per-agent launch commands |
-| `lib/snapshot.sh` | 167 | The derived read model |
-| `ui/Panel.qml` | 267 | The card |
-| `ui/ui.js` | 194 | Row data (no Qt) |
-| `ui/CardRow.qml` | 83 | One row |
-| `ui/Orb.qml` | 40 | The state orb |
-| `test/all` | 613 | The shimmed suite |
-| `test/bundle` | 18 | Builds the release archive and runs both suites against its contents |
-| `test/ui.cjs` | 46 | Node checks of the row data |
-| `docs/design.md` | 271 | The design record: decisions, scope, open items, the release process |
-| `Makefile` | 28 | `sync`, `test`, `bundle`, `check` |
-| `recipes.json` | 5732 | The vendored validated recipes |
-
-Line counts are of `main@d38f8d2`; they are here for orientation, not as references.
+| Path | Role |
+|---|---|
+| `bin/omarchy-local-ai` | CLI verbs and worker entry points |
+| `lib/` | Controller, hardware scans, agent adapters and incremental telemetry |
+| `ui/Panel.qml` | Standalone or embedded panel and action dispatch |
+| `ui/ui.js` | Pure row data and navigation choices |
+| `ui/CardRow.qml` | Shared row, disclosure and meter rendering |
+| `integrations/` | Native Agents patch, installer, Mac controls and offline guide |
+| `test/` | Controller, telemetry, terminal handoff, UI and bundle checks |
+| `docs/design.md` | Design record and release process |
+| `recipes.json` | Vendored catalog from the local-ai registry |

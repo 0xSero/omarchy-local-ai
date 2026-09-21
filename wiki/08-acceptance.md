@@ -105,12 +105,4 @@ Behind a password prompt there is no docker to ask, so the deadline decides inst
 
 ## Usage accounting
 
-Every request the plugin itself makes through a gateway appends a line to `$STATE/usage.jsonl`:
-
-```json
-{"t":1758000000,"prompt":42,"completion":12,"recipe":"qwen38-…"}
-```
-
-`tokensToday` on the card is the sum of `completion` for that recipe over the last 24 hours. This is
-the plugin's own traffic only: what an agent does through the gateway is not counted, because the
-gateway does not report back to the plugin.
+Acceptance measurements describe startup qualification. The panel's daily statistics now come from incremental engine telemetry in `lib/runtime-metrics.py`, not requests made by the acceptance harness. See [4 — State](04-state.md).

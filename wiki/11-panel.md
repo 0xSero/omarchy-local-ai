@@ -1,194 +1,55 @@
 # 11 — The panel
 
-Four files in `ui/`, one job: draw the snapshot and issue verbs. `ui/ui.js` decides **what** the rows
-are (pure data, no Qt), `ui/Panel.qml` draws them and runs the verbs, `ui/CardRow.qml` draws one row,
-`ui/Orb.qml` is the state orb.
+Local AI has two presentations of the same controller: its standalone bar panel and an optional third tab inside Omarchy's native Agents view. Both use the same row data, launch handler and snapshot. Native integration is installed from `integrations/install-agents.py`; it patches a user-owned copy of the installed Agents panel and leaves system files untouched.
 
-```
-ui/Panel.qml  ──uses──>  ui/ui.js:build({snap, view, …})  ──returns──>  {tone, eyebrow, title, sub, steps, path, rows, foot}
-    │
-    ├── ui/CardRow.qml   one row (sec | row | status | bar | stat | text)
-    └── ui/Orb.qml       15×15 rounded-pixel field, lit from the centre
-```
+## Overview and details
 
-## ui/Panel.qml
+The overview contains **Launch agent**, collapsed by default, and one status row per GPU type. Expanding the launcher shows the running model, compatible installed agent, project folder and Open action. The selected folder is remembered. A missing folder refuses launch rather than opening elsewhere.
 
-| Property | Value |
+GPU rows show name/count and availability, running or error status. They remain clickable when occupied. Open one to choose **Models** or **Stats & agents**. The model picker supports one or more GPUs of the same type; running models remain inspectable, while loading requires enough free GPUs.
+
+Model details put agent launch above today's runtime statistics, context and capability information, with device temperature, utilization and VRAM meters. Missing sensors or unsupported engine statistics show N/A. Per-device readings stay out of the overview.
+
+The footer contains the update action. A check stages newer recipe/plugin information; applying it uses Omarchy's updater. Sharing and Stop belong to the running model. Copy opens a full-panel URL overlay anchored to the visible viewport, independent of scroll position. Copy URL (or Enter/Ctrl+C) copies and closes it; Close or Escape dismisses it. Failures remain inside the overlay. The keyboard cheat sheet has its own OS status-bar button.
+
+## Styling and scrolling
+
+The native view uses Omarchy's Button, PanelSectionHeader, PanelSeparator, fonts and colors. Ordinary rows have no permanent box border. Disclosure headings use a chevron and stronger text, with indented choices. Hover backgrounds have internal padding; only the device header reacts to hover.
+
+The embedded view uses the native panel's outer scroll container. Keyboard navigation reveals the selected row or footer action. Standalone mode retains its own scrolling and F11 expansion; embedded mode uses the space provided by Agents.
+
+## Source responsibilities
+
+| File | Responsibility |
 |---|---|
-| `moduleName` / `ipcTarget` | `sero.local-ai` — the IPC target the visual helper and tests call |
-| `cli` | `<plugin dir>/bin/omarchy-local-ai`, resolved from `Qt.resolvedUrl("..")` (the QML lives in `ui/`) — the panel runs the plugin's own CLI |
-| `stateDir` | `$XDG_STATE_HOME/omarchy/local-ai`, else `$HOME/.local/state/omarchy/local-ai` |
-| `snap` | the last snapshot read; starts as `{state: "uninitialized"}` |
-| `path` | the navigation stack: `["home"]`, `["home","card"]`, `["home","model"]`, plus `work` during an operation |
-| `expanded` | compact (default) or full-screen; toggled by the header control, the `expand` action or `F11` |
+| `ui/ui.js` | Pure data: overview, GPU/model selection, launcher, operation and error rows |
+| `ui/CardRow.qml` | Render rows, sections, disclosures, status, bars and device meters |
+| `ui/Panel.qml` | Snapshot polling, navigation, folder editing, terminal launch and controller verbs |
+| `integrations/agents-panel.patch` | Add Local AI to the native panel and connect scrolling/focus |
+| `integrations/Shortcuts.qml` | Separate status-bar help button |
 
-### Palette
+The decorative orb has been removed. Model and recipe text is rendered as plain text.
 
-A locked, matte palette: fills rather than borders, sharp corners, no gradients.
+## Keyboard and IPC
 
-| Token | Hex | Used for |
-|---|---|---|
-| `popupBg` | `#1a1a1a` | the card's background |
-| `popupLine` | `#2e2e2e` | its single flat border |
-| `ink` | `#f5f5f5` | titles, primary fills, ready |
-| `fg` | `#bebebe` | values |
-| `dim` | `#8a8a8d` | secondary text |
-| `faint` | `#555555` | disabled text, section words |
-| `urgent` | `#D35F5F` | errors, the danger verb |
-| `accent` | `#e68e0d` | work in progress |
-| `orbField` | `#4b4b4b` | the orb's unlit pixels |
-| `recessed` | `rgba(0,0,0,0.24)` | the state slab, status rows, the toast |
-| `restFill` / `hoverFill` / `selectedFill` | ink at 4% / 8% / 16% | row backgrounds |
+Within Local AI, arrows or j/k move through actions, Enter activates, Backspace returns, and Ctrl+O edits the project folder. In standalone mode F11 expands the panel. The native wrapper handles tab selection and its own panel navigation.
 
-`mono` is the bar's font family. Everything is `Text.PlainText`, so no recipe or model name can ever
-be interpreted as markup.
+The plugin exposes the sero.local-ai IPC target for open, close, toggle, refresh and row activation. For example:
 
-### Tone
-
-```
-tone = "work"   while a verb runs           → accent
-       "error"  when the last verb failed   → urgent
-       "ready"  when a model is up          → ink
-       "idle"   otherwise                   → dim
+```bash
+quickshell ipc --any-display -p /usr/share/omarchy/shell call sero.local-ai activate home
 ```
 
-The bar icon is one square whose colour follows the tone and whose opacity blinks (500 ms each way)
-while working. The tooltip is `Local AI · <the card's title>`.
+`test/visual` drives row actions and captures the live panel. `test/ui.cjs` checks launcher selection, stale selections, GPU availability, compact overview data and retained detail meters.
 
-On a tone change to `error`, or to `work` for anything but a share, the card returns to `home` — an
-operation is never hidden behind a drill-down.
+## Statistics and refresh
 
-### Navigation
+The panel watches the snapshot file and refreshes more often while working. Runtime telemetry has a shared ten-second cache and file lock, so multiple panel instances do not each rescan the engine logs. It creates no inference traffic.
 
-Three places: **home** (every GPU group with one cell per physical card, and each running model
-nested under the group it holds) → **card** (a GPU group: how many cards, which recipe) → **model**
-(one running model: its numbers, capabilities, agent, share, stop). Work and error take the card over
-in between.
+For vLLM and llama.cpp, decode/prefill are averages of non-zero engine log samples since local midnight, not the one-off acceptance speed. Generated tokens come from engine counter deltas. Tracking begins when first enabled; unknown history is not backfilled. GPU telemetry adapters cover NVIDIA, Intel and AMD, with physical validation currently completed on NVIDIA and Intel.
 
-| Key | Action |
-|---|---|
-| `F11` | toggle full-screen |
-| `Esc` | leave full-screen first, else back one level, else close at home |
-| `Tab` / `Shift+Tab` | switch bar panel |
-| `↓` / `j`, `↑` / `k` | move the cursor over actionable rows |
-| `Enter` | run the row's action |
-| `←` / `→` | in the card view: how many cards of this type to use |
-| `Backspace` | back |
+## Mac and Moonlight
 
-A GPU group with a model on it is not itself actionable — it is reached through the nested model row.
-A free group opens the recipe picker.
+The optional profile uses click-to-focus, Command+Tab for the next window, Command+Space for apps and Control+Command+F for fullscreen. Ctrl+Space then P selects the previous window; shifted Command+Tab was unreliable through the stream. Command+W and Command+D are contextual: application tab/bookmark commands in a browser, window close/new terminal in Foot.
 
-### Compact and full-screen
-
-At the top of the card sits a header row: `local ai` on the left, and on the right a control reading
-**full screen ↗** or **compact ↙** (`activate("expand")`, or `F11`). Full-screen mode widens the card
-to `panel.availableCardWidth` and raises the ceiling to the available card height minus the panel's
-vertical inset; compact mode fits the content up to the **720 px** ceiling and 360 px width. Switching
-never changes navigation or the selection, and the footer's verbs stay reachable because only the body
-scrolls — on a short display the body shrinks to zero rather than pushing the verbs off-screen. A
-failed snapshot derivation leaves the previous one on screen.
-
-In compact mode the slab, the path, the header row and the footer are fixed; in full-screen mode the
-body expands to fill the rest.
-
-### The controller
-
-| Object | Does |
-|---|---|
-| `FileView` | watches `$STATE/snapshot.json` (`watchChanges`), takes it on load and on every change |
-| `Process poll` | runs `omarchy-local-ai snapshot`; ignores an answer over 256 KiB |
-| `Process action` | runs one verb at a time; on exit runs the next queued verb, then marks the action done and refreshes |
-| `Process agentLaunch` | `open-agent <agent> <recipe>`; closes the panel on exit 0 |
-| `Process copy` | `wl-copy` the share URL; exit 127 shows *wl-copy · missing* |
-| `Process logOpen` | `omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G $STATE/log` |
-| `Timer` (main) | refresh every **1 s** while pending, **2 s** while working, **10 s** while open, **60 s** while closed |
-| `Timer pendingTimeout` | 20 s: drop the optimistic pending flag if nothing confirms it |
-| `Timer` (elapsed) | 1 s while working, for the running clock |
-
-**Pending is optimistic and then authoritative.** Clicking a row sets `pending` and starts the verb
-immediately, so the card turns busy on the click rather than a second later. `pending` is cleared when
-a snapshot shows the operation (for `run`/`load`/`unload`/`share`) or when the process exits (for
-every other verb). A parse failure of a non-empty answer is ignored; an empty answer becomes
-*no answer*.
-
-When a model disappears while the card was stopping, the panel toasts which card came free:
-`<card name> #<index> · freed`.
-
-### Verbs the panel issues
-
-`load`, `unload`, `unload <recipe>`, `run <recipe> <backend:index>`, `share`, `open-agent <agent> <recipe>`,
-`update`, `update --check`, `copy:<recipe>` (via `wl-copy`), `refresh`, `log`, and `expand` (local to
-the panel — the size control does not touch the controller). The card never calls `gpu`/`recipe` on its
-own: `run` pins both in one process.
-
-### IPC
-
-```
-quickshell ipc --any-display -p /usr/share/omarchy/shell call sero.local-ai <fn> [args]
-```
-
-| Function | Effect |
-|---|---|
-| `open` / `close` / `toggle` | the panel |
-| `load` / `unload` / `refresh` | the corresponding verb |
-| `activate <action>` | runs **any** row action — `card:rtx-3090-24gb`, `count:2`, `pick:<recipe>`, `model:<recipe>`, `run:<recipe>:<n>`, `share`, `copy:<recipe>`, `stop:<recipe>`, `open-agent:<agent>:<recipe>`, `back`, `expand`, `home` — and returns `<tone>:<view>` |
-
-`activate` is what `test/visual` drives and what a scripted screenshot uses.
-
-## ui/ui.js — the rows
-
-`build(c)` returns `{tone, eyebrow, title, sub, steps, path, rows, foot}`. A row is:
-
-```js
-{ type:"row"|"sec"|"stat"|"bar"|"status"|"text", label, value,
-  action:"", kind:""|"primary"|"danger"|"dd",
-  selected, disabled, urgent, child, cells:[{text,mark}], chips:[{text,off,action}],
-  tabs:[{text,on,action}], stat:[{k,v,u}] }
-```
-
-`child: true` marks a row as belonging to the row above it — that is how a running model sits under
-its GPU group. `ui/CardRow.qml` indents it by `Style.space(18)` and draws it at `list.width - x`.
-
-Helpers worth knowing: `gb`, `kb`, `kmg`, `mmss`; `freeKeys`, `freest` (the free card with the most
-memory — a display card carries the desktop, so start elsewhere when there is an elsewhere); `fits(snap, card, n)`
-(the recipes usable with exactly *n* cards); `where(snap, model)` (which card a model is on);
-`workKeys` (the cards a running op touches); `shortError` (the four-word error word: *no card*,
-*no recipe*, *port busy*, *driver*, *out of VRAM*, *too slow*, *stopped*, *acceptance failed*,
-*no answer*, *refused*, *docker*, *disk full*, *error*); `ago` (a unix time as *just now* / *3m ago*);
-`updateRows` (the home footer's one update row — the primary `update` verb when the check staged
-something, and `update-check` otherwise, with no row at all when the check is off).
-
-**Home is grouped, not flattened.** The first section is `gpus`; each GPU group row reads
-`2× RTX 3090` with a second line of one **cell per physical card** — `free · 41°`, `#1 locked`,
-`claimed`, `freeing` or `crashed` — and a datum that is `N recipes ›` when the group is free, or
-`N locked` when it is not. An occupied group is not actionable; each running model appears under it as
-a `child` row (`<model name>` · `<tps> tok/s ›`, or `crashed ›`), and that is where a model is opened
-from. A free group's action is `card:<hardwareId>`.
-
-**Home also carries the update row**, pinned in the footer:
-
-```
-v5.1.1 + 3 for your card ›     a newer release, and three recipes for the cards detected
-registry ›                     a newer registry copy that changes recipes without adding any
-current · checked 2h ago ›     nothing staged; pressing it re-checks
-```
-
-Nothing is adopted on its own, so this row is the only way an update happens from the card — see
-[3 — Recipes](03-recipes.md) and [12 — CLI](12-cli.md). With the check off there is no row at all.
-
-## ui/CardRow.qml
-
-One component, six row types, drawn from the row object: `sec` (a section word), `row` (noun · datum,
-with cells/chips underneath or a count toggle beside it), `status` (verb · progress, larger), `bar`
-(a filled bar, or a sweep while no percentage is known), `stat` (two figures), `text` (a wrapped
-sentence — the one place a whole reason is shown).
-
-## ui/Orb.qml
-
-A 15 × 15 field of rounded pixels, clipped circularly, lit from the centre with a quadratic falloff
-and a smoothstep edge band, with a per-cell phase offset so the shimmer travels. One `NumberAnimation`
-drives `phase` 0 → 1 over the tone's period and loops while the panel is open — **1200 ms** while
-working, **2400 ms** ready, **1800 ms** error, **3200 ms** idle — and the lit radius breathes between
-84 % and 100 % of the field. The orb *is* the state; a download animated by it never carries progress,
-because that is the bar's job. It is built from plain `Rectangle`s on purpose: in this shell a
-`Canvas`'s `requestPaint` does not repaint.
+The OS bar help button opens the offline visual guide installed at ~/.local/share/omarchy/guides/macos-controls.html. The guide includes search, workspace/window examples, agent setup and stream escape instructions. Its browser rendering remains an open acceptance check.

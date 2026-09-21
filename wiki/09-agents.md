@@ -35,12 +35,14 @@ to the model it was launched for, never to "the" model.
 |---|---|---|---|
 | `claude` | `ANTHROPIC_BASE_URL` | `ANTHROPIC_AUTH_TOKEN` | `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_{SONNET,OPUS,HAIKU}_MODEL` all set to the served model; `--model <m>` |
 | `codex` | `-c model_providers.local.base_url=$ENDPOINT/v1` | `LOCAL_AI_KEY` | `-c model_providers.local.wire_api=responses`, `.env_key=LOCAL_AI_KEY`, `-c model_provider=local`, `-c model=<m>` |
-| `opencode` | `OPENCODE_CONFIG_CONTENT` (inline JSON, provider `omarchy-local`, `@ai-sdk/openai-compatible`) | `OMARCHY_LOCAL_AI_KEY`, referenced as `{env:…}` inside the config | `--model omarchy-local/<m>` |
+| `opencode` | `OPENCODE_CONFIG_CONTENT` (inline JSON, provider `omarchy-local`, `@ai-sdk/openai-compatible`) | `OMARCHY_LOCAL_AI_KEY`, referenced as `{env:…}` inside the config | `--model omarchy-local/<m>` plus matching model and small_model configuration |
 | `pi`, `omp` | `models.json` in a plugin-owned agent dir | written into that file | `PI_CODING_AGENT_DIR` / `OMP_CODING_AGENT_DIR`; `--provider omarchy-local --model <m>`. `omp` also gets a `config.yml` so it skips its first-run wizard |
 | `crush` | `crush/crush.json` under `XDG_CONFIG_HOME` | written into that file | `XDG_DATA_HOME` moved too, because crush's data file pins the last chosen model over its config; a mise shim is resolved to the real binary so a mise reinstall cannot hijack it |
 | `copilot` | `COPILOT_PROVIDER_BASE_URL=$ENDPOINT/v1` | `COPILOT_PROVIDER_API_KEY` | `--model <m>` |
 | `grok` | custom model in plugin-owned `GROK_HOME/config.toml` | `XAI_API_KEY`, referenced by `env_key` | `--model omarchy-local`; served model and context come from the selected recipe |
 | `hermes`, `ori`, `agy`, others | `OPENAI_BASE_URL` **and** `OPENAI_API_BASE` | `OPENAI_API_KEY` | `OPENAI_MODEL=<m>` |
+
+Pi and OMP receive --thinking and xhigh as separate arguments. Pi rejects the equals form.
 
 Notes that are not cosmetic:
 
@@ -87,8 +89,7 @@ omarchy-local-ai open-agent [name] [recipe]
 5. the argv is built (above), then `$STATE/agents/args/<name>` is appended if it exists;
 6. with `OMARCHY_AI_FOREGROUND=1` it prints the command instead of launching it (this is how the suite
    inspects argv without spawning a terminal);
-7. it `cd`s to `OMARCHY_AI_AGENT_DIR`, else the directory recorded by `agent-dir`, else wherever the
-   shell was started;
+7. it chooses `OMARCHY_AI_AGENT_DIR`, else the directory recorded by `agent-dir`, else home; a missing directory refuses launch. A positional-argument shell wrapper enters that directory inside the new terminal, after UWSM starts it. OMP receives --allow-home when home was selected;
 8. it opens a terminal:
 
 ```

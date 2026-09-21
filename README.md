@@ -13,17 +13,74 @@ Click the new bar icon, choose a free GPU group and recipe, then press **Run**. 
 ## How it works
 
 1. **Start** downloads the model validated for the card you picked, pulls its engine image, proves the model answers (correct model, keyed, fast enough, all three API dialects, a real tool call), and serves it on `127.0.0.1:12434`. Start another recipe on another card and it runs alongside on the next port; the card lists every running model with its own open-agent and stop.
-2. **Open agent** starts any installed coding agent on it: claude, codex, pi, omp, opencode, ori, grok, agy, hermes, copilot, crush. The endpoint and key travel in the agent's environment. Nothing of yours under `~/.config` is read or written.
+2. **Open agent** starts any installed coding agent on it: claude, codex, pi, omp, opencode, ori, grok, agy, hermes, copilot, crush. The endpoint and key travel in the agent's environment. The launcher keeps its provider settings under plugin-owned state; it does not rewrite your normal agent configuration.
 3. **Share on Tailscale** publishes the same keyed endpoint on your tailnet address. One click, no `tailscale serve`, no root.
 
-Each GPU group lists its running models underneath; occupied GPUs are marked **locked**. Select a model for its stats, agent and Stop controls, or a free GPU group to start another model. Click **full screen** or press **F11** for more space; **compact** or **Escape** returns to the smaller panel. Actions stay visible while the contents scroll.
+Each GPU type is a clickable row with its current status. Select it to browse models
+for one or more GPUs, or view a running model's stats, agent and Stop controls.
+The standalone panel supports **F11** for more space; actions remain visible while
+contents scroll.
 
 Home also carries one **update** row. A background check reads the registry's recipe file and this plugin's own manifest, and the row appears when either has something newer — the plugin version, and how many new recipes are for the cards you actually have. Nothing is installed behind your back: pressing it applies the new recipes and updates the plugin through `omarchy plugin update`. With nothing to apply the row is just a re-check.
+
+## Native Agents panel and Moonlight
+
+To place Local AI inside Omarchy's existing Agents view, update the installed plugin,
+then run on Omarchy:
+
+```bash
+omarchy plugin update sero.local-ai --yes
+cd ~/.config/omarchy/plugins/sero.local-ai
+python3 integrations/install-agents.py --moonlight
+```
+
+Omit `--moonlight` to keep your desktop keybindings. This uses the installed Agents panel, adds Local AI controls, and replaces its bar entry with a local customization.
+A separate keyboard button in the OS bar opens the cheat sheet. System files
+are unchanged; the installer prints the configuration backup location. It refuses
+an incompatible native panel instead of applying a partial patch. Reapply after
+an Omarchy update if you want the updated native panel.
+
+The optional Moonlight shortcuts use **Ctrl+Space**, release, then **K** for help,
+**I** for Local AI, **Enter** for a terminal, or **1–9 / 0** for workspaces.
+**Ctrl+F1** opens the cheat sheet directly. Ordinary Ctrl shortcuts in apps remain
+available. **Command+W** closes an app tab (a window in Foot); **Command+D**
+bookmarks in browsers or opens another tiled terminal in Foot. Common Command
+shortcuts for copy, paste, select, find, save, reload, undo and new tabs are mapped
+to their app equivalents. Enable Moonlight's **Capture system keyboard shortcuts**
+for Command keys to reach the host. **Ctrl+Alt+Shift+Q** disconnects the stream
+and returns to Moonlight while leaving the remote desktop running. Ctrl+Space retains the desktop actions whose
+Super bindings are replaced. Reload Hyprland and restart the running Quickshell instance after install.
+
+The Mac profile uses click-to-focus, **Command+Tab** for the next window,
+**Command+Space** for apps and **Control+Command+F** for fullscreen. Use
+**Ctrl+Space, P** for the previous window (shifted Tab was unreliable through Moonlight).
+The status-bar keyboard panel includes a visual guide with searchable shortcuts,
+a window/workspace simulation, agent setup and stream escape instructions.
+Its offline HTML lives at `~/.local/share/omarchy/guides/macos-controls.html`.
+
+Local AI opens with one status row per GPU type. A running GPU opens its model's
+**Stats & agents**; **Models** lists recipes for one or more of that GPU. Occupied
+GPUs remain browsable, but loading requires enough free GPUs. **Launch agent** at
+the top of the main screen expands the running-model and agent selectors, plus
+the project folder. Choose a model and an installed compatible agent, then press
+**Open** to start it in your terminal. Inside model details, each device has
+temperature, usage and VRAM meters. NVIDIA uses nvidia-smi, Intel uses Level Zero
+Sysman memory and DRM activity counters, and AMD uses amdgpu sysfs with SMI
+inventory. Missing readings stay N/A. Python 3 is required for telemetry. Agent selection
+and launch appear above the model statistics. For vLLM and llama.cpp, decode/prefill show the average
+of non-zero engine log samples since local midnight, collected incrementally.
+Generated tokens use engine counter deltas; the first day starts when tracking
+is installed (shown in the panel). A shared ten-second cache prevents duplicate
+scans from multiple panels. No inference requests are made for monitoring.
+
+Click **Project folder** (or **Ctrl+O** in Local AI) before opening an agent. The
+folder is remembered, defaults to home, and is entered inside the terminal after
+UWSM starts it. OMP receives `--allow-home` when that folder is home. A missing folder refuses launch rather than falling back to `/tmp`.
 
 ## Requirements
 
 - **Docker**, which Omarchy ships. You do not need to be in the `docker` group: Start, Stop, and Share ask for your password once, through Omarchy's own prompt. With *Sudoless Docker* enabled in Omarchy's security settings there is no prompt.
-- **An NVIDIA GPU (8 GB and up), an Intel Arc Pro B70, or an AMD GPU.** The NVIDIA or AMD container toolkit is installed for you inside that same prompt when missing.
+- **A GPU with a validated recipe in the catalog.** The catalog includes NVIDIA, Intel and AMD entries. A telemetry adapter alone does not qualify a model recipe for your hardware. The NVIDIA container toolkit is installed inside the same prompt when missing.
 - **Hugging Face CLI (`hf`)** to download weights when the engine image lacks Python 3 or `huggingface_hub`. Other images can download weights themselves.
 - Optional: `tailscale` for sharing.
 
@@ -56,6 +113,22 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 - **Root does what you asked and nothing else.** Behind the password prompt the plugin's own script runs one batched phase; it takes your identity from pkexec, derives every path from your home, and verifies its inputs against hashes carried on the prompt's own command line.
 - Six rounds of security review on the marketplace listing; the fixes are in the commit history.
 
+Copying a share link opens an opaque overlay covering the panel. The URL and Copy/Close controls stay in the visible viewport even when model details are scrolled. It closes after a successful copy or when dismissed; copy errors remain visible.
+
+## Current experience — v5.2.0
+
+Local AI can live beside Claude and Codex in the native Agents view. The overview stays quiet: an expandable launcher and GPU status rows. Model selection, device meters, today's performance, sharing and Stop live in the detail views.
+
+| Surface | Evidence and remaining work |
+|---|---|
+| Terminal launch | All 11 adapters pass the temporary-directory handoff fixture. OMP, Pi, OpenCode and Crush startup checked on Omarchy; Pi and OpenCode also completed real requests on NVIDIA and Intel. Full conversation/tool acceptance for every agent remains separate. |
+| GPU telemetry | NVIDIA and Intel checked on physical hardware. AMD sysfs fixtures pass; physical AMD acceptance is still needed. |
+| Runtime statistics | vLLM and llama.cpp use incremental logs/counters. Unsupported engines show N/A. First-day tokens start when tracking begins; no historical backfill. |
+| Native layout | Native styling, compact rows and QML load checked. The latest reduction in visible data still needs final visual acceptance. |
+| Mac controls | Main window/app/workspace shortcuts checked through Moonlight. Previous window uses Ctrl+Space, P. The offline guide's browser rendering remains unverified. |
+
+[Plugin guide](https://0xsero.github.io/omarchy-local-ai/) · [Releases](https://github.com/0xSero/omarchy-local-ai/releases)
+
 ## How we know it works
 
 - 29 NVIDIA recipes ran the plugin's own Start path on rented cards, RTX 3060 through RTX 6000 Ada (`test/rented.py` is the harness; its per-card results stay outside the repository).
@@ -64,6 +137,9 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 - Installs, views, downloads, stars and every interaction GitHub records are collected daily on the `stats` branch and rendered at <https://0xsero.github.io/omarchy-local-ai/#17-stats>. No server and no client-side telemetry: they are GitHub's own counts of GitHub's own repository.
 
 ## Remove
+
+If you installed the native integration, first restore the original Agents bar entry, remove the `sero.agents` and `sero.shortcuts` custom entries, and remove the Moonlight include from your Hyprland bindings if enabled. The installer prints a dated backup of those settings; restore selectively if you have since customized them. Restart the shell after restoring.
+
 
 ```bash
 omarchy-local-ai unload            # stops the model, keeps downloads
@@ -75,7 +151,7 @@ rm -rf ~/.cache/omarchy/local-ai ~/.local/state/omarchy/local-ai   # optional
 
 Recipes come from the [local-ai registry](https://github.com/0xSero/local-ai-registry): `make sync REGISTRY=../local-ai-registry` regenerates `recipes.json`. [The design](docs/design.md) documents the controller; `python3 test/rented.py --list` is the rented-GPU harness.
 
-Source layout: `ui/` contains the panel, `bin/` the entry point, `lib/` the controller, `test/` the checks, and `docs/` the design.
+Source layout: `ui/` contains the panel, `bin/` the entry point, `lib/` the controller, `test/` the checks, and `docs/` the design, and `integrations/` the optional native panel, shortcuts and guide.
 
 `make bundle` builds `dist/omarchy-local-ai-<version>.tar.gz` from an explicit list of runtime files plus the license. `make test` unpacks that archive and runs the controller and UI checks against it. GitHub releases attach the same tested bundle; tests, docs, build files and recordings are excluded.
 

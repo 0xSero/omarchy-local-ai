@@ -6,7 +6,7 @@
 |---|---|---|
 | **Registry** | `0xSero/local-ai-registry` | validates one recipe per hardware id on the exact card, then exports the file this plugin vendors as `recipes.json` |
 | **Controller** | `bin/omarchy-local-ai` + `lib/*.sh` | turns a recipe into a running, verified pair of containers, and derives the state the panel reads |
-| **Panel** | `ui/Panel.qml`, `ui/CardRow.qml`, `ui/Orb.qml`, `ui/ui.js` | renders the snapshot and issues verbs |
+| **Panel** | `ui/Panel.qml`, `ui/CardRow.qml`, `ui/ui.js` | renders the snapshot and issues verbs |
 
 The registry is data; the plugin never runs anything from it that the gate has not re-checked.
 `recipes.json` is the only interface between the two repositories, and CI fails if the file and the

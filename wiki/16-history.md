@@ -1,5 +1,9 @@
 # 16 — History
 
+## 5.2.0 — 2026-09-21
+
+Native Agents integration, compact GPU status rows, a shared agent launcher, project-directory and Pi/OpenCode fixes, cross-vendor GPU telemetry, incremental daily runtime statistics, and optional Mac/Moonlight shortcuts with an OS bar guide. Physical AMD and final compact-layout/guide visual acceptance remain open. See the wiki index for the current experience matrix and CHANGELOG for release details.
+
 ## Versions
 
 ### 4.0.0 — 2026-09-08 (the marketplace-verified snapshot, `3f447b9`)
@@ -54,7 +58,7 @@ config. Keyed sharing on the tailnet. A GPU picker. 29 NVIDIA recipes validated 
 
 The release that made the repository match what it ships:
 
-- **The card moved to `ui/`** (`ui/Panel.qml`, `ui/CardRow.qml`, `ui/Orb.qml`, `ui/ui.js`) and the
+- **The card moved to `ui/`** (`ui/Panel.qml`, `ui/CardRow.qml`, `ui/ui.js`) and the
   design document to `docs/design.md`; `manifest.json`'s `entryPoints.barWidget` follows.
 - **Recordings, logos and the preview left the repository**, and the vision/video acceptance inputs
   became tiny base64 payloads embedded in `lib/runtime.sh` — readiness no longer needs loose media
@@ -141,8 +145,7 @@ Two follow-ups worth knowing:
 
 While this wiki was being written, that checkout's `main` moved on: `317d619` released 5.0.0 and
 `d38f8d2` released 5.0.1 — the `ui/` move, the runtime bundle, the embedded acceptance payloads and
-full-screen mode. **These pages document `d38f8d2`.** Anything landed after it needs a re-read of the
-pages it touches; `wiki/verify.py` fails the build when a path or a quoted message stops existing.
+full-screen mode. This is historical context; the wiki index identifies the current documented release. Changes require a re-read of the pages they touch; `wiki/verify.py` fails the build when a path or a quoted message stops existing.
 
 ## Where things are, now
 

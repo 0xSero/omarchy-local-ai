@@ -1,6 +1,13 @@
 # 13 — Tests
 
-Four harnesses: shipped controller logic, real coding agents, GPU recipe qualification, and native panel captures.
+The shipped-bundle suite covers controller logic, telemetry, terminal handoffs and UI row data. Separate harnesses exercise real coding agents, GPU recipe qualification and native panel captures.
+
+## Telemetry and terminal handoff
+
+`test/telemetry.py` checks non-zero speed averages, daily rollover, counter resets, shared caching, Intel DRM deduplication/activity and AMD sysfs readings. These are deterministic fixtures; physical AMD validation remains separate.
+
+`test/agent-launch` exercises all eleven supported adapters through a terminal shim that starts in /tmp. It checks selected and spaced paths, missing-folder refusal, OMP home opt-in, Pi flags and OpenCode's selected model. Real terminal startup has also been checked for OMP, Pi, OpenCode and Crush on Omarchy. The fixtures do not prove every agent's full conversation or tool behavior.
+
 
 ## `test/agents` — installed agents against ready local models
 

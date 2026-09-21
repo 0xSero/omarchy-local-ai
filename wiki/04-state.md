@@ -113,8 +113,9 @@ Written by `snapshot_write` (`lib/snapshot.sh`) with `mv` from a temp file. Top 
 | `note` | the sentence beside a non-ready state (see the rules below) |
 | `servedModel` | what the gateway answers with now, else the accepted one |
 | `apis`, `caps` | accepted dialects; `{chat, vision, video, tools, reasoning}` from the slot's recipe |
-| `ctxTokens`, `kvTokens`, `decodeTps`, `prefillTps`, `acceptedAt`, `startedAt` | from the acceptance record and the slot record |
-| `tokensToday` | completion tokens this model served through its gateway in the last 24 h, from `usage.jsonl` |
+| `ctxTokens`, `kvTokens`, `acceptedAt`, `startedAt` | from the recipe, acceptance and slot records |
+| `decodeTps`, `prefillTps` | averages of non-zero engine log samples since local midnight; null when unavailable |
+| `tokensToday`, `usageSince`, `statsUpdatedAt` | generated-token counter deltas, tracking start and last successful collection; first-day totals begin when tracking starts |
 | `launchable` | agents that can use this model's dialects |
 | `shareUrl` | the tailnet URL when sharing is active, else `""` |
 | `engine`, `gateway` | container names (used by the log and by hand) |

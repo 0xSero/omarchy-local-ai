@@ -29,7 +29,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 
-SOURCE_DIRS = ["bin", "lib", "ui", "test", ".github", "docs"]
+SOURCE_DIRS = ["bin", "lib", "ui", "test", ".github", "docs", "integrations"]
 SOURCE_FILES = ["Makefile", "manifest.json", "recipes.json", "README.md", "CHANGELOG.md"]
 
 # spans that are prose, a command, or a shape — never checked
@@ -54,7 +54,7 @@ IGNORE = re.compile(
 
 # a path: has a slash, no spaces, and starts with a repo-relative directory or a known file
 PATHISH = re.compile(r"^(?:(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._*-]+|(?:bin|lib|ui|test|docs|wiki|\.github)/[A-Za-z0-9._-]+)$")
-PATH_ROOTS = {"bin", "lib", "ui", "test", "docs", "wiki", ".github", "dist"}
+PATH_ROOTS = {"bin", "lib", "ui", "test", "docs", "wiki", ".github", "dist", "integrations"}
 
 PLACEHOLDER = [
     (re.compile(r"<[^>]{0,40}>"), ".*"),      # <recipe>, <backend:index>
