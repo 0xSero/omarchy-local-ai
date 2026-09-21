@@ -6,7 +6,7 @@ Local AI has two presentations of the same controller: its standalone bar panel 
 
 The overview contains **Launch agent**, collapsed by default, and one status row per GPU type. Expanding the launcher shows the running model, compatible installed agent, project folder and Open action. The selected folder is remembered. A missing folder refuses launch rather than opening elsewhere.
 
-GPU rows show name/count and availability, running or error status. They remain clickable when occupied. Open one to choose **Models** or **Stats & agents**. The model picker supports one or more GPUs of the same type; running models remain inspectable, while loading requires enough free GPUs.
+GPU rows show name/count and availability, running or error status. Each group has a compact 24-hour token graph with 15-minute buckets, an observed total and time/value hover readout. Counts are recorded when observed by the existing telemetry sampler; earlier intervals are not backfilled. History survives model unloads and resets at local midnight. They remain clickable when occupied. Open one to choose **Models** or **Stats & agents**. The model picker supports one or more GPUs of the same type; running models remain inspectable, while loading requires enough free GPUs.
 
 Model details put agent launch above today's runtime statistics, context and capability information, with device temperature, utilization and VRAM meters. Missing sensors or unsupported engine statistics show N/A. Per-device readings stay out of the overview.
 
@@ -23,6 +23,7 @@ The embedded view uses the native panel's outer scroll container. Keyboard navig
 | File | Responsibility |
 |---|---|
 | `ui/ui.js` | Pure data: overview, GPU/model selection, launcher, operation and error rows |
+| `ui/TokenGraph.qml` | Lightweight token bars and hover readout |
 | `ui/CardRow.qml` | Render rows, sections, disclosures, status, bars and device meters |
 | `ui/Panel.qml` | Snapshot polling, navigation, folder editing, terminal launch and controller verbs |
 | `integrations/agents-panel.patch` | Add Local AI to the native panel and connect scrolling/focus |

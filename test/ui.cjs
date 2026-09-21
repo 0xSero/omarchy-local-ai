@@ -110,3 +110,22 @@ console.log('Main-screen agent selection, model routing and stale selection chec
 
 assert(main({launcherOpen: false}).rows.some(r => r.action === 'launcher-toggle'));
 assert(!main({launcherOpen: false}).rows.some(r => r.action.startsWith('open-agent:')));
+
+// Sum allocation histories once per GPU group, including stopped models. Unknown
+// and future intervals stay empty; two GPUs serving one model do not double count.
+const usage = {gpuUsage: [
+  {keys:['nvidia:0','nvidia:1'], bins:[null,100,0], since:'2026-09-21T00:16:00+02:00'},
+  {keys:['nvidia:1'], bins:[null,50,20], since:'2026-09-21T00:18:00+02:00'},
+  {keys:['intel-xpu:0'], bins:[null,900], since:'2026-09-21T00:16:00+02:00'}
+]};
+const graph = ui.tokenGraph(usage, {keys:['nvidia:0','nvidia:1']});
+assert.equal(graph.total,170);
+assert.equal(graph.bins[0],null);
+assert.equal(graph.bins[1],150);
+assert.equal(graph.bins[2],20);
+assert.equal(graph.bins[95],null);
+assert.equal(graph.bins.length,96);
+assert.equal(graph.since,'2026-09-21T00:16:00+02:00');
+assert.equal(ui.tokenGraph({}, {keys:['nvidia:0']}).total,0);
+assert(home.rows.filter(r=>r.action.startsWith('gpu:')).every(r=>r.history.bins.length===96));
+console.log('GPU group token history, unknown intervals and allocation deduplication passed');

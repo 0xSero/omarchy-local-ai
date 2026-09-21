@@ -112,6 +112,17 @@ function devices(snap, keys) {
 function groupModels(snap, group) {
   return models(snap).filter(function(m) { return m.keys.some(function(k) { return group.keys.indexOf(k) >= 0 }) })
 }
+function tokenGraph(snap, group) {
+  var bins = Array(96).fill(null), since = ""
+  ;(snap.gpuUsage || []).forEach(function(h) {
+    if (!(h.keys || []).some(function(k) { return group.keys.indexOf(k) >= 0 })) return
+    if (h.since && (!since || h.since < since)) since = h.since
+    ;(h.bins || []).slice(0, 96).forEach(function(n, i) {
+      if (typeof n === "number" && isFinite(n) && n >= 0) bins[i] = (bins[i] || 0) + n
+    })
+  })
+  return { bins: bins, total: bins.reduce(function(a, n) { return a + (n || 0) }, 0), since: since }
+}
 function cardRows(c, work) {
   var snap = c.snap, out = [sec("gpus")], cs = snap.cards || []
   cs.forEach(function(g) {
@@ -120,7 +131,7 @@ function cardRows(c, work) {
     var busy = work && g.keys.some(function(k) { return workKeys(snap).indexOf(k) >= 0 })
     var status = busy ? opWord(snap) : failed ? "error" : ms.length ? (free ? free + " available" : "running") : "available"
     out.push(row(g.count + "× " + g.name, status + " ›", work ? "" : "gpu:" + g.hardwareId,
-      { urgent: failed, compact: !work, cells: work ? cells(c, g, work) : undefined, devices: work ? devices(snap, g.keys) : undefined }))
+      { urgent: failed, history: work ? undefined : tokenGraph(snap, g), compact: !work, cells: work ? cells(c, g, work) : undefined, devices: work ? devices(snap, g.keys) : undefined }))
   })
   if (!cs.length) out.push(row("GPU", "none detected", "", { urgent: true }))
   return out

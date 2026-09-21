@@ -133,6 +133,7 @@ snapshot_write() {
     --arg hw "$hw_id" --argjson focus "$focus" --argjson models "$models" --argjson agents "$(agents_json "$fapis")" --argjson share "$(share_state "$fport")" \
     --arg t "$(now)" --arg note "$note" --argjson recs "$recs" --argjson pbusy "$pbusy" --arg listener "$listener" --argjson claim "$claim" --argjson port "$fport" \
     --arg reg "$(registry_commit)" --arg rsrc "$(recipes_source)" --arg rgen "$(recipes_generated "$RECIPES")" --arg rchk "$(cat "$UPSTREAM_CHECKED" 2>/dev/null || printf 0)" --arg rurl "$RECIPES_URL" \
+    --argjson usage "$(jq -c --arg day "$(date +%F)" 'if .day==$day then [.history[]?] else [] end' "$STATE/runtime-metrics.json" 2>/dev/null || printf '[]')" \
     --argjson up "$(upstream_json "$hw_id")" '
     def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
     ($recs | map(select(.id==($rec.id // ""))) | .[0]) as $sel
@@ -158,7 +159,7 @@ snapshot_write() {
        reason:$why,
        running:(if $focus == null then null else {recipeId:$focus.recipeId, name:$focus.name, cards:$focus.cards, port:$focus.port, state:$focus.state} end),
        models:$models, apis:($focus.apis // []), agents:$agents, share:$share,
-       cards:$cards, recipes:$recs,
+       cards:$cards, recipes:$recs, gpuUsage:$usage,
        selected:(if $sel==null then null else {recipeId:$sel.id, name:$sel.name, hardwareId:$sel.hardwareId, cards:$sel.cards, claims:$sel.claims, indexes:$claim.indexes, keys:$claim.keys, onDisk:$sel.onDisk, partialBytes:$sel.partialBytes, sizeGb:$sel.sizeGb, running:$sel.running} end),
        port:{number:$port, busy:$pbusy, listener:$listener}}' >"$SNAPSHOT.tmp.$$" && mv "$SNAPSHOT.tmp.$$" "$SNAPSHOT" || { rm -f "$SNAPSHOT.tmp.$$"; return 1; }   # a failed derivation leaves no stray file behind
 }

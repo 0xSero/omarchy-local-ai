@@ -58,7 +58,9 @@ The status-bar keyboard panel includes a visual guide with searchable shortcuts,
 a window/workspace simulation, agent setup and stream escape instructions.
 Its offline HTML lives at `~/.local/share/omarchy/guides/macos-controls.html`.
 
-Local AI opens with one status row per GPU type. A running GPU opens its model's
+Local AI opens with one status row per GPU type and a compact daily token activity graph beneath it. Hover the graph for the observed count in a 15-minute interval. The 24-hour timeline keeps unrecorded intervals blank; the displayed total starts at the indicated tracking time. History stays visible after stopping a model and resets at local midnight.
+
+Local AI keeps its GPU controls in those same rows. A running GPU opens its model's
 **Stats & agents**; **Models** lists recipes for one or more of that GPU. Occupied
 GPUs remain browsable, but loading requires enough free GPUs. **Launch agent** at
 the top of the main screen expands the running-model and agent selectors, plus
@@ -115,7 +117,7 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 
 Copying a share link opens an opaque overlay covering the panel. The URL and Copy/Close controls stay in the visible viewport even when model details are scrolled. It closes after a successful copy or when dismissed; copy errors remain visible.
 
-## Current experience — v5.2.0
+## Current experience — v5.3.0
 
 Local AI can live beside Claude and Codex in the native Agents view. The overview stays quiet: an expandable launcher and GPU status rows. Model selection, device meters, today's performance, sharing and Stop live in the detail views.
 

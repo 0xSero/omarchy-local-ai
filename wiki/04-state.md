@@ -167,3 +167,7 @@ Everything else it does is read-only: no container is started, stopped or rename
 `{"error":{"type":"authentication_error","message":"invalid or missing API key"}}` is `gateway`
 (ours); anything else that answers is `other`, which becomes the snapshot's `reason`
 (`port <n> is in use by something else`) and the panel's *port busy*.
+
+## GPU token history
+
+The snapshot includes gpuUsage: a list of GPU allocations with their keys, 96 fifteen-minute token buckets and the tracking start. Null intervals have no reading. The panel sums allocation histories once per GPU group, so a model using two cards in the same group is not doubled. Histories survive unloads and reset at local midnight. Counts belong to the interval in which the collector observed them; earlier activity is not backfilled.

@@ -48,12 +48,25 @@ def tokens(text):
 
 def update_tokens(row, count, instance):
     if count is None:
-        return
+        return None
+    delta = None
     previous = row.get('counter')
     if previous is not None:
         delta = count if row.get('instance') != instance or count < previous else count - previous
         row['tokens'] = row.get('tokens', 0) + delta
     row.update(counter=count, instance=instance)
+    return delta
+
+
+def record_usage(history, keys, delta, now):
+    # Keep a day's 15-minute buckets per GPU allocation, even after a model stops.
+    # Counts belong to the interval in which they were observed; no backfill.
+    if not keys or delta is None:
+        return
+    key = ",".join(sorted(keys))
+    row = history.setdefault(key, dict(keys=sorted(keys), bins=[None]*96, since=now.isoformat()))
+    bucket = now.hour*4 + now.minute//15
+    row['bins'][bucket] = (row['bins'][bucket] or 0) + delta
 
 
 def collect(state):
@@ -64,6 +77,7 @@ def collect(state):
     if saved.get('day') == day and 0 <= time.time()-saved.get('sampled', 0) < 10:
         return saved['result']
     old = saved.get('models', {})
+    history = saved.get('history', {}) if saved.get('day') == day else {}
     models, result = {}, {}
     for key, slot in read_json(state/'ledger.json').get('slots', {}).items():
         recipe = read_json(state/'slots'/f'{key}.json')
@@ -87,7 +101,8 @@ def collect(state):
             port = recipe['launch']['containerPort']
             with urllib.request.urlopen(f'http://{address}:{port}/metrics', timeout=2) as response:
                 count = tokens(response.read(2*1024*1024).decode())
-            update_tokens(row, count, instance)
+            delta = update_tokens(row, count, instance)
+            record_usage(history, slot.get('keys', []), delta, now)
             row['updated'] = now.isoformat()
         except (OSError, ValueError, KeyError, StopIteration, subprocess.SubprocessError):
             pass
@@ -96,7 +111,7 @@ def collect(state):
         result[key].update(tokensToday=round(row.get('tokens', 0)) if 'counter' in row else None,
                            usageSince=row['since'], statsUpdatedAt=row.get('updated'))
     temp = cache.with_suffix('.tmp')
-    temp.write_text(json.dumps(dict(day=day, sampled=time.time(), models=models, result=result)))
+    temp.write_text(json.dumps(dict(day=day, sampled=time.time(), models=models, result=result, history=history)))
     temp.replace(cache)
     return result
 

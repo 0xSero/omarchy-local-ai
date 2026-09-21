@@ -37,7 +37,7 @@ class Telemetry(unittest.TestCase):
     def test_cache_and_incremental_logs(self):
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory); (state/'slots').mkdir()
-            (state/'ledger.json').write_text(json.dumps({'slots': {'model': {'engine': 'owned'}}}))
+            (state/'ledger.json').write_text(json.dumps({'slots': {'model': {'engine': 'owned', 'keys': ['nvidia:0']}}}))
             (state/'slots/model.json').write_text(json.dumps({'engine': 'llama-cpp', 'launch': {'containerPort': 8010}}))
             info = [{'Id': 'id', 'State': {'StartedAt': 'session'}, 'NetworkSettings': {'Networks': {'net': {'IPAddress': '127.0.0.1'}}}}]
             stamp = runtime.datetime.now(runtime.timezone.utc).isoformat().replace('+00:00', 'Z')
@@ -54,6 +54,40 @@ class Telemetry(unittest.TestCase):
                 fresh = runtime.collect(state)['model']
                 self.assertEqual(fresh['tokensToday'], 25)
                 self.assertIsNone(fresh['decodeTps'])
+                history = json.loads((state/'runtime-metrics.json').read_text())['history']
+                self.assertEqual(sum(n or 0 for n in history['nvidia:0']['bins']), 25)
+
+    def test_gpu_history_buckets_and_unknown_intervals(self):
+        history = {}
+        now = runtime.datetime.fromisoformat('2026-09-21T14:16:00+02:00')
+        runtime.record_usage(history, ['nvidia:1', 'nvidia:0'], None, now)
+        self.assertEqual(history, {})
+        for delta in (30, 0, 70):
+            runtime.record_usage(history, ['nvidia:1', 'nvidia:0'], delta, now)
+        runtime.record_usage(history, ['intel-xpu:0'], 9, now)
+        row = history['nvidia:0,nvidia:1']
+        self.assertEqual(row['keys'], ['nvidia:0', 'nvidia:1'])
+        self.assertEqual(row['bins'][57], 100)
+        self.assertIsNone(row['bins'][56])
+        self.assertIsNone(row['bins'][58])
+        self.assertEqual(len(row['bins']), 96)
+        self.assertEqual(history['intel-xpu:0']['bins'][57], 9)
+
+    def test_history_survives_unload_and_resets_at_midnight(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            now = runtime.datetime.now().astimezone()
+            history = {}
+            runtime.record_usage(history, ['nvidia:0'], 15, now)
+            cache = state/'runtime-metrics.json'
+            saved = dict(day=now.date().isoformat(), sampled=0, models={}, history=history)
+            cache.write_text(json.dumps(saved))
+            runtime.collect(state)
+            self.assertEqual(json.loads(cache.read_text())['history'], history)
+            saved['day'] = '2000-01-01'
+            cache.write_text(json.dumps(saved))
+            runtime.collect(state)
+            self.assertEqual(json.loads(cache.read_text())['history'], {})
 
     def test_amd_sysfs_metrics(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.3.0] - 2026-09-21
+
+### Added
+- Compact token activity graphs under each GPU group in the overview. Each has a fixed 24-hour axis, observed-token total and a time/value readout on hover.
+- Fifteen-minute token buckets collected by the existing ten-second telemetry cache. Histories survive model unloads and reset at local midnight; a multi-GPU model is counted once per group. Earlier unrecorded intervals remain blank.
+
 ## [5.2.0] - 2026-09-21
 
 ### Added
