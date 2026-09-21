@@ -24,5 +24,6 @@ env=dict(os.environ,QT_QPA_PLATFORM='wayland',XDG_STATE_HOME=str(base/'state'),O
 p=subprocess.run(['qs','-n','-p',str(base)],env=env,capture_output=True,text=True,timeout=55)
 log=p.stdout+p.stderr;(base/'test.log').write_text(log);print(log)
 assert log.count('NAV_PASS')==42, f"scroll cases passed: {log.count('NAV_PASS')}/42"
+assert log.count('FLOW_PASS')==2, f"flow cases passed: {log.count('FLOW_PASS')}/2"
 assert log.count('CRUMB_PASS')==2, f"breadcrumb cases passed: {log.count('CRUMB_PASS')}/2"
 assert not any(x in log for x in ['ReferenceError','TypeError','Failed to load','Binding loop','NAV_FAIL'])

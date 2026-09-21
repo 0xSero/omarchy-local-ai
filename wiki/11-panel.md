@@ -4,9 +4,9 @@ Local AI has two presentations of the same controller: its standalone bar panel 
 
 ## Overview and details
 
-The overview contains **Launch agent**, collapsed by default, and one status row per GPU type. Expanding the launcher shows the running model, compatible installed agent, project folder and Open action. The selected folder is remembered. A missing folder refuses launch rather than opening elsewhere.
+The overview keeps **Open [agent]** visible for the selected running model, alongside one status row per GPU type. **Launch agent** shows the selected model; expand it to change the model, agent or project folder. The selected folder is remembered. A missing folder refuses launch rather than opening elsewhere.
 
-**Deployments** lists GPU groups in stable order, with the current model and visible status beneath each name. **Manage** opens a running deployment; **Load model** opens the picker for an available group. **Tokens by GPU** is a separate read-only section below deployments, using the native Agents model-row layout. Bars have no deployment action or keyboard focus. They show available historical generated tokens, with today's count on hover and ≈ for estimated vLLM counts. Hide this section when no history is available; zero and unavailable readings otherwise remain compact. The model picker supports one or more GPUs of the same type; running models remain inspectable, while loading requires enough free GPUs.
+**Deployments** lists GPU groups in stable order, with the current model and visible status beneath each name. **Models** always opens the same GPU page: running models first, followed by compatible unloaded models. Open a running model for its agent and stats; select an unloaded model to reveal its details and Load action directly underneath. The view scrolls to that action, and selecting the same model again collapses it. **Tokens by GPU** is a separate read-only section below deployments, using the native Agents model-row layout. Bars have no deployment action or keyboard focus. They show available historical generated tokens, with today's count on hover and ≈ for estimated vLLM counts. Hide this section when no history is available; zero and unavailable readings otherwise remain compact. The model picker supports one or more GPUs of the same type; running models remain inspectable, while loading requires enough free GPUs.
 
 Model details put agent launch above today's runtime statistics, context and capability information, with device temperature, utilization and VRAM meters. Missing sensors or unsupported engine statistics show N/A. Per-device readings stay out of the overview.
 
@@ -43,7 +43,7 @@ The plugin exposes the sero.local-ai IPC target for open, close, toggle, refresh
 quickshell ipc --any-display -p /usr/share/omarchy/shell call sero.local-ai activate home
 ```
 
-`test/navigation` runs native wheel, keyboard, resize and breadcrumb checks using an isolated controller fixture on Omarchy. It covers standalone and embedded views at 240×180, 380×400 and 600×650, including folder editing, empty/error/progress screens and navigation during deployment work. It requires QtTest and a running Wayland session.
+`test/navigation` runs native wheel, keyboard, resize and breadcrumb checks using an isolated controller fixture on Omarchy. It covers standalone and embedded views at 240×180, 380×400 and 600×650, including folder editing, empty/error/progress screens, consistent GPU destinations, inline model actions and navigation during deployment work. It requires QtTest and a running Wayland session.
 
 `test/visual` drives row actions and captures the live panel. `test/ui.cjs` checks launcher selection, stale selections, GPU availability, compact overview data and retained detail meters.
 

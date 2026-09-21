@@ -100,6 +100,23 @@ ShellRoot {
         var link = findChild(subject.contentFocus,"breadcrumb-"+index); assertUi(link !== null, "breadcrumb exists: " + index + " path=" + JSON.stringify(subject.ui.path) + " models=" + subject.snap.models.length)
         subject.revealItem(link); wait(30); mouseClick(link,link.width/2,link.height/2); wait(50)
       }
+      function test_gpu_destination_data() { return [{tag:"standalone",mode:false},{tag:"embedded",mode:true}] }
+      function test_gpu_destination(d) {
+        setup(d.mode,380,400,"home")
+        subject.activate("gpu:test-gpu"); wait(40); same(subject.view,"card")
+        subject.snap=Object.assign({},fixtureData,{models:[]})
+        subject.activate("gpu:test-gpu"); wait(40); same(subject.view,"card")
+        subject.activate("pick:model1"); wait(40)
+        var run=subject.ui.rows.findIndex(function(r){return r.action==="run:model1:1"})
+        assertUi(run>=0,"selected model has inline load action")
+        var action=findChild(subject.contentFocus,"content-row-"+run)
+        assertUi(action!==null,"inline action exists")
+        var y=action.mapToItem(viewport,0,0).y
+        assertUi(y>=-1 && y+action.height<=viewport.height+1,"load action revealed on selection")
+        subject.activate("pick:model1"); wait(40)
+        assertUi(!subject.ui.rows.some(function(r){return r.action==="run:model1:1"}),"click selection to collapse")
+        console.log("FLOW_PASS",d.tag)
+      }
       function test_breadcrumbs_data() { return [{tag:"standalone",mode:false},{tag:"embedded",mode:true}] }
       function test_breadcrumbs(d) {
         setup(d.mode,240,180,"model")

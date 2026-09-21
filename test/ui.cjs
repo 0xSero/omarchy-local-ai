@@ -26,23 +26,25 @@ const home = ui.build({snap, view: 'home', localError: ''});
 const gpuRows = home.rows.filter(r => r.action.startsWith('gpu:'));
 assert.equal(gpuRows.length, 2);
 assert.equal(gpuRows[0].action, 'gpu:b70');
-assert.equal(gpuRows[0].value, 'Manage ›');
+assert.equal(gpuRows[0].value, 'Models ›');
 assert.equal(gpuRows[1].action, 'gpu:3090');
-assert.equal(gpuRows[1].value, 'Load model ›');
+assert.equal(gpuRows[1].value, 'Models ›');
 const crashed = ui.build({snap: {...snap, models: [{...running, state: 'error'}]}, view: 'home', localError: ''});
 assert.equal(crashed.rows.find(r => r.action === 'gpu:b70').status, 'error');
 assert(!crashed.rows.find(r => r.action === 'gpu:b70').devices);
 const catalog = ui.build({snap, view: 'card', hw: 'b70', count: 2, pick: recipe.id, localError: ''});
-assert(catalog.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'model:qwen-tp2')));
+assert(catalog.rows.some(r => r.action === 'model:qwen-tp2'));
 assert(catalog.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'count:2')));
 assert(catalog.foot.every(r => !r.action.startsWith('run:')));
-assert.equal(catalog.foot[0].label, 'GPUs in use');
+assert.equal(catalog.foot.length, 0);
+assert(!catalog.rows.some(r=>r.action.startsWith('run:')));
 const available = ui.build({snap: {...snap, models: []}, view: 'card', hw: 'b70', count: 2, pick: recipe.id, localError: ''});
-assert.equal(available.foot[0].action, 'run:qwen-tp2:2');
+assert(available.rows.some(r=>r.action==='run:qwen-tp2:2'));
 const stalePick = ui.build({snap, view: 'card', hw: 'b70', count: 1, pick: recipe.id, localError: ''});
 assert(!stalePick.foot.some(r => r.action.startsWith('run:') || r.action.startsWith('model:')));
 const stats = ui.build({snap, view: 'model', slotSel: recipe.id, localError: ''});
-assert(stats.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'card:b70')));
+assert(stats.path.some(r => r.action === 'card:b70'));
+assert(!stats.rows.some(r=>r.tabs));
 const partial = {...snap, models: [{...running, keys: ['intel-xpu:0'], cards: 1}]};
 assert.equal(ui.build({snap: partial, view: 'home', localError: ''}).rows.find(r => r.action === 'gpu:b70').status, '1 available');
 const multiple = {...snap, models: [
@@ -109,7 +111,7 @@ assert(!ui.build({snap: {...launchSnap, models: [{...first, state: 'error'}]}, v
 console.log('Main-screen agent selection, model routing and stale selection checks passed');
 
 assert(main({launcherOpen: false}).rows.some(r => r.action === 'launcher-toggle'));
-assert(!main({launcherOpen: false}).rows.some(r => r.action.startsWith('open-agent:')));
+assert(main({launcherOpen: false}).rows.some(r => r.action === 'open-agent:opencode:qwen-tp2'));
 
 // Totals include prior days and unloaded models, counting a multi-GPU allocation once.
 const usage = {gpuUsage: [
@@ -156,3 +158,17 @@ for (const state of ['download','starting','unload','share']) {
   assert.equal(browse.path.at(-1).action,'model:'+recipe.id);
 }
 console.log('Direct breadcrumbs and browsing during deployment work passed');
+
+// Model selection keeps its action directly after its details, before the next recipe.
+const idle = {...snap,models:[],recipes:[recipe,{...recipe,id:'second-choice'}]};
+const picked = ui.build({snap:idle,view:'card',hw:'b70',count:2,pick:recipe.id,localError:''});
+const loadAt=picked.rows.findIndex(r=>r.action==='run:qwen-tp2:2');
+assert(loadAt>picked.rows.findIndex(r=>r.action==='pick:qwen-tp2'));
+assert(loadAt<picked.rows.findIndex(r=>r.action==='pick:second-choice'));
+assert.equal(picked.foot.length,0);
+const blocked = ui.build({snap:{...snap,recipes:idle.recipes},view:'card',hw:'b70',count:2,pick:'second-choice',localError:''});
+assert(blocked.rows.some(r=>r.disabled && r.label==='GPUs in use'));
+assert(!blocked.rows.some(r=>r.action.startsWith('run:')));
+assert.equal(catalog.rows.filter(r=>r.action==='model:qwen-tp2').length,1);
+assert(!catalog.rows.some(r=>r.action==='pick:qwen-tp2'));
+console.log('Consistent GPU destinations, one-click launch and inline model actions passed');

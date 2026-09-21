@@ -16,8 +16,9 @@ Click the new bar icon, choose a free GPU group and recipe, then press **Run**. 
 2. **Open agent** starts any installed coding agent on it: claude, codex, pi, omp, opencode, ori, grok, agy, hermes, copilot, crush. The endpoint and key travel in the agent's environment. The launcher keeps its provider settings under plugin-owned state; it does not rewrite your normal agent configuration.
 3. **Share on Tailscale** publishes the same keyed endpoint on your tailnet address. One click, no `tailscale serve`, no root.
 
-Each GPU type is a clickable row with its current status. Select it to browse models
-for one or more GPUs, or view a running model's stats, agent and Stop controls.
+Each GPU type opens its running models and compatible model list. Select a model
+to reveal its Load action directly underneath, or open a running model for its agent,
+stats and Stop controls. The overview keeps the selected agent's Open button visible.
 Every breadcrumb is clickable, so you can jump straight to a GPU group or home.
 The whole page scrolls, including folder editing and bottom actions. **Home/End** and
 **Page Up/Down** navigate the viewport; **F11** expands the standalone panel.

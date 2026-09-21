@@ -130,10 +130,9 @@ Panel {
     else if (v === "expand") expanded = !expanded
     else if (v === "home") home()
     else if (v === "back") back()
-    else if (v === "gpu") { var group = Ui.cardByHw(snap, s[1]), running = group ? Ui.groupModels(snap, group) : []; hw = s[1]; count = 1; pick = ""; home(); go("card"); if (running.length === 1) { slotSel = running[0].recipeId; go("model") } }
-    else if (v === "card") { hw = s[1]; count = 1; pick = ""; home(); go("card") }
+    else if (v === "gpu" || v === "card") { hw = s[1]; count = 1; pick = ""; home(); go("card") }
     else if (v === "count") { count = parseInt(s[1], 10) || 1; pick = "" }
-    else if (v === "pick") pick = s[1]
+    else if (v === "pick") { pick = pick === s[1] ? "" : s[1]; Qt.callLater(function() { var i = ui.rows.findIndex(function(r) { return r.action === "run:" + pick + ":" + count }); if (i >= 0) body.reveal(i) }) }
     else if (v === "model") { slotSel = s[1]; var model = Ui.modelById(snap, slotSel), group = model ? Ui.cardOfKeys(snap, model.keys) : null; home(); if (group) { hw = group.hardwareId; go("card") } go("model") }
     else if (v === "run") { var g = Ui.cardByHw(snap, hw), free = g ? Ui.freeKeys(snap, g) : []; home(); act(["run", s[1], Ui.freest(snap, free) || (g ? g.keys[0] : "")].filter(function(x) { return x !== "" })) }
     else if (v === "run-again") { home(); act(["load"]) }

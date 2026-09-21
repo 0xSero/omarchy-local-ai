@@ -2,6 +2,13 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.3.4] - 2026-09-21
+
+### Fixed
+- Give every GPU row the same destination: its running models and compatible model list. Remove the duplicate Models / Stats & agents navigation buttons; use the direct breadcrumb links to move between levels.
+- Put a selected model's details and Load action immediately below that model, revealing the action on selection. Running models open directly and appear only once; remove the disconnected picker footer.
+- Keep the home agent-launch action visible even when its configuration is collapsed, with the selected model shown above it.
+
 ## [5.3.3] - 2026-09-21
 
 ### Fixed

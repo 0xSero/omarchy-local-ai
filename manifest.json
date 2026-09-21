@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "5.3.3",
+  "version": "5.3.4",
   "author": "0xSero",
   "license": "MIT",
   "description": "Run local models and coding agents from the Omarchy bar or an optional Local AI tab inside Agents. Browse GPU groups, choose models for one or more GPUs, and launch installed agents in your project folder. See GPU temperature, usage and VRAM, plus today\u2019s runtime statistics where supported. Includes NVIDIA, Intel and AMD telemetry adapters, keyed Tailscale sharing, and optional Mac/Moonlight shortcuts with a status-bar guide. Model availability depends on validated recipes for your hardware.",

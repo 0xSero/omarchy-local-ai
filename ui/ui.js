@@ -138,7 +138,7 @@ function cardRows(c, work) {
     var detail = (failed ? "Needs attention" : ms.length ? "Running" : "Available") + " · "
       + (ms.length === 1 ? ms[0].name : ms.length ? ms.length + " models" : "no model loaded")
       + (ms.length && free ? " · " + free + " free" : "")
-    out.push(row(g.count + "× " + g.name, work ? status : ms.length ? "Manage ›" : "Load model ›", work ? "" : "gpu:" + g.hardwareId,
+    out.push(row(g.count + "× " + g.name, work ? status : "Models ›", work ? "" : "gpu:" + g.hardwareId,
       { status: status, detail: work ? "" : detail, urgent: failed, compact: !work,
         cells: work ? cells(c, g, work) : undefined, devices: work ? devices(snap, g.keys) : undefined }))
   })
@@ -228,7 +228,6 @@ function buildView(c) {
       o.sub = where(snap, m) + " · :" + m.port + (m.shareUrl ? " · shared" : "")
       if (cg) o.path.push({ n: cg.name.toLowerCase(), v: "card", action: "card:" + cg.hardwareId })
       o.path.push({ n: m.name.toLowerCase(), v: "model", action: "model:" + m.recipeId })
-      if (cg) o.rows.push(row("", "", "", { tabs: [{ text: "Models", action: "card:" + cg.hardwareId }, { text: "Stats & agents", on: true, action: "model:" + m.recipeId }] }))
       if (m.state !== "ready") {
         o.rows.push(row("engine", m.note || "stopped unexpectedly", "", { urgent: true, type: "text" }))
         o.rows.push(row("run again", m.name, "run-again", { kind: "primary" })); o.rows.push(row("log", "open ›", "log"))
@@ -256,27 +255,27 @@ function buildView(c) {
       o.tone = "idle"; o.eyebrow = "models"; o.title = g.name; o.sub = free.length + " of " + g.keys.length + " free · " + g.vramGb + " GB each"
       o.path.push({ n: g.name.toLowerCase(), v: "card", action: "card:" + g.hardwareId }); if (n > 1) o.path.push({ n: n + " cards", v: "card", action: "count:" + n })
       var running = groupModels(snap, g)
-      if (running.length === 1) o.rows.push(row("", "", "", { tabs: [{ text: "Models", on: true, action: "card:" + g.hardwareId }, { text: "Stats & agents", action: "model:" + running[0].recipeId }] }))
-      else if (running.length) {
-        o.rows.push(sec("running"))
-        running.forEach(function(m) { o.rows.push(row(m.name, m.state + " · stats & agents ›", "model:" + m.recipeId)) })
+      if (running.length) {
+        o.rows.push(sec("running models"))
+        running.forEach(function(m) { o.rows.push(row(m.name, "Open ›", "model:" + m.recipeId, { detail: (m.state === "ready" ? "Ready" : m.state) + " · " + where(snap, m), compact: true })) })
       }
       o.rows.push(row(g.count + "× " + g.name, free.length + " available", "", { cells: cells(c, g, false) }))
       if (g.keys.length > 1) { var tabs = []; for (var k = 1; k <= g.keys.length; k++) tabs.push({ text: k + "×", on: k === n, action: "count:" + k }); o.rows.push(row("GPUs to use", "", "", { tabs: tabs })) }
-      var list = fits(snap, g, n)
-      o.rows.push(sec("models for " + n + (n > 1 ? " GPUs" : " GPU") + " · " + list.length))
-      if (!list.length) o.rows.push(row("recipe", "none uses " + n + " cards"))
+      var list = fits(snap, g, n).filter(function(r) { return !modelById(snap, r.id) })
+      o.rows.push(sec("load a model · " + n + (n > 1 ? " GPUs" : " GPU") + " · " + list.length))
+      if (!list.length) o.rows.push(row("models", "no unloaded models for " + n + " GPU" + (n > 1 ? "s" : "")))
       var dup = {}; list.forEach(function(r) { dup[r.name] = (dup[r.name] || 0) + 1 })   // two recipes of one model: say which
-      list.forEach(function(r) { o.rows.push(row(dup[r.name] > 1 && r.precision ? r.name + " · " + r.precision : r.name, r.running ? "running" : r.onDisk ? gb(r.sizeGb) + " · on disk" : r.partialBytes > 0 ? gb(r.partialBytes / 1073741824) + " of " + gb(r.sizeGb) + " · resume" : gb(r.sizeGb) + " · download", "pick:" + r.id, { selected: c.pick === r.id })) })
-      var p = recipeById(snap, c.pick)
-      if (p && p.hardwareId === g.hardwareId && p.cards === n) {
-        o.rows.push(row("context", p.ctxTokens > 0 ? kb(p.ctxTokens) + " per request" : "unknown"))
-        o.rows.push(capabilities(p.caps))
-      }
-      if (p && p.hardwareId === g.hardwareId && p.cards === n && p.running) o.foot.push(row("open", p.name, "model:" + p.id, { kind: "primary" }))
-      else if (p && p.hardwareId === g.hardwareId && p.cards === n && free.length < n) o.foot.push(row("GPUs in use", "stop a running model to load", "", { disabled: true }))
-      else if (p && p.hardwareId === g.hardwareId && p.cards === n) o.foot.push(row(p.onDisk ? "run" : p.partialBytes > 0 ? "resume + run" : "download " + gb(p.sizeGb) + " + run", p.name, "run:" + p.id + ":" + n, { kind: "primary" }))
-      else o.foot.push(row("run", "choose a model", "", { disabled: true }))
+      list.forEach(function(r) {
+        var selected = c.pick === r.id
+        o.rows.push(row(dup[r.name] > 1 && r.precision ? r.name + " · " + r.precision : r.name,
+          r.onDisk ? gb(r.sizeGb) + " · on disk" : r.partialBytes > 0 ? gb(r.partialBytes / 1073741824) + " of " + gb(r.sizeGb) + " · resume" : gb(r.sizeGb) + " · download",
+          "pick:" + r.id, { selected: selected, expanded: selected }))
+        if (!selected) return
+        o.rows.push(row("context", r.ctxTokens > 0 ? kb(r.ctxTokens) + " per request" : "unknown", "", { child: true, compact: true }))
+        o.rows.push(capabilities(r.caps))
+        if (free.length < n) o.rows.push(row("GPUs in use", "stop a running model to load", "", { disabled: true, child: true }))
+        else o.rows.push(row(r.onDisk ? "Load model" : r.partialBytes > 0 ? "Resume download & load" : "Download & load", r.sizeGb > 0 ? gb(r.sizeGb) : "", "run:" + r.id + ":" + n, { kind: "primary", child: true, compact: true }))
+      })
       return o
     }
   }
@@ -286,14 +285,14 @@ function buildView(c) {
     o.tone = crashed.length ? "error" : "ready"; o.eyebrow = crashed.length ? "crashed" : "ready"; o.title = ms.length === 1 ? ms[0].name : ms.length + " models"
     o.sub = "on " + used + " of " + total + " cards" + (ms.some(function(m) { return m.shareUrl }) ? " · shared" : "") }
   var launch = launchModel(c)
-  o.rows.push(row("launch agent", c.launcherOpen ? "collapse" : "choose agent and model", "launcher-toggle", { expanded: !!c.launcherOpen }))
+  o.rows.push(row("launch agent", launch ? where(snap, launch) + " · " + launch.name : "load a model first", "launcher-toggle", { expanded: !!c.launcherOpen }))
   if (c.launcherOpen && launch) {
     o.rows.push(row("model", where(snap, launch) + " · " + launch.name, "launch-model-toggle", { expanded: !!c.launchModelOpen }))
     if (c.launchModelOpen) ms.filter(function(m) { return m.state === "ready" }).forEach(function(m) {
       o.rows.push(row(where(snap, m), m.name, "launch-model:" + m.recipeId, { kind: "dd", selected: m.recipeId === launch.recipeId }))
     })
   }
-  if (c.launcherOpen) o.rows = o.rows.concat(launchRows(c, launch))
+  o.rows = o.rows.concat(c.launcherOpen ? launchRows(c, launch) : launchRows(c, launch).slice(-1))
   o.rows = o.rows.concat(cardRows(c, false), usageRows(snap))
   o.foot = updateRows(snap)
   return o
