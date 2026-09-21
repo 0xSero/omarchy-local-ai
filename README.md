@@ -58,7 +58,7 @@ The status-bar keyboard panel includes a visual guide with searchable shortcuts,
 a window/workspace simulation, agent setup and stream escape instructions.
 Its offline HTML lives at `~/.local/share/omarchy/guides/macos-controls.html`.
 
-Local AI opens with GPU token totals in the same filled-row style as Claude and Codex's model totals. Each GPU group includes retained runtime history and attributable older gateway receipts. Open a row for models or statistics; hover for status and today's total. Zero stays a compact row and unavailable usage shows a dash. vLLM totals carry ≈ because they are reconstructed from rounded runtime rates; llama.cpp and gateway receipts report token counts.
+Local AI opens with an agent launcher and a **Deployments** section. Each GPU group shows its current model and status, with **Manage** or **Load model** as an explicit action. Deployment order stays stable. Below it, **Tokens by GPU** reports historical totals in the native Claude/Codex filled-row style; these bars are read-only and do not open controls. The usage section appears once history is available, and includes retained runtime logs and attributable older gateway receipts. vLLM totals carry ≈ because they are reconstructed from rounded rates.
 
 Local AI keeps its GPU controls in those same rows. A running GPU opens its model's
 **Stats & agents**; **Models** lists recipes for one or more of that GPU. Occupied
@@ -117,7 +117,7 @@ State: `~/.local/state/omarchy/local-ai/` (0700; `log` has every step). Weights:
 
 Copying a share link opens an opaque overlay covering the panel. The URL and Copy/Close controls stay in the visible viewport even when model details are scrolled. It closes after a successful copy or when dismissed; copy errors remain visible.
 
-## Current experience — v5.3.1
+## Current experience — v5.3.2
 
 Local AI can live beside Claude and Codex in the native Agents view. The overview stays quiet: an expandable launcher and GPU status rows. Model selection, device meters, today's performance, sharing and Stop live in the detail views.
 

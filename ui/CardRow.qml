@@ -20,7 +20,7 @@ Item {
   readonly property color labelColor: r.disabled ? p.faint : r.kind === "danger" || r.urgent ? p.urgent : p.ink
   readonly property color valueColor: r.disabled ? p.faint : r.urgent ? p.urgent : p.dim
   implicitHeight: r.type === "sec" ? Style.space(46) : r.type === "bar" ? Style.space(6) : r.type === "stat" ? Style.space(56) : r.type === "status" ? Style.space(46)
-    : r.type === "usage" ? tokenTotal.implicitHeight : r.type === "text" ? wrapped.implicitHeight + Style.space(20) : (disclosure || r.kind === "dd" || r.compact) ? Style.space(34) : Style.space(46) + (hasMeters ? telemetry.implicitHeight : hasLine2 ? Style.space(22) : 0)
+    : r.type === "usage" ? tokenTotal.implicitHeight : r.detail ? Style.space(58) : r.type === "text" ? wrapped.implicitHeight + Style.space(20) : (disclosure || r.kind === "dd" || r.compact) ? Style.space(34) : Style.space(46) + (hasMeters ? telemetry.implicitHeight : hasLine2 ? Style.space(22) : 0)
 
   PanelSeparator { visible: r.type === "sec"; anchors.top: parent.top; anchors.topMargin: Style.space(8); width: parent.width; foreground: p.ink }
   PanelSectionHeader {
@@ -54,15 +54,21 @@ Item {
   }
   Text { // line one: the noun
     visible: r.type === "row" || r.type === "status"
-    anchors.left: parent.left; anchors.leftMargin: pad + indent + (disclosure ? Style.space(20) : 0); y: hasLine2 || hasMeters ? Style.space(8) : (item.height - height) / 2
+    anchors.left: parent.left; anchors.leftMargin: pad + indent + (disclosure ? Style.space(20) : 0); y: hasLine2 || hasMeters || r.detail ? Style.space(8) : (item.height - height) / 2
     width: parent.width - anchors.leftMargin - pad - value.width - Style.space(12)
     text: r.label; color: labelColor; font.family: p.mono; font.pixelSize: Style.font.bodySmall; font.bold: disclosure; elide: Text.ElideRight; textFormat: Text.PlainText
   }
   Text { // line one: the datum
     id: value; visible: (r.type === "row" && !(r.tabs && r.tabs.length)) || r.type === "status"
-    anchors.right: parent.right; anchors.rightMargin: pad; y: hasLine2 || hasMeters ? Style.space(8) : (item.height - height) / 2
+    anchors.right: parent.right; anchors.rightMargin: pad; y: hasLine2 || hasMeters || r.detail ? Style.space(8) : (item.height - height) / 2
     text: r.value; color: r.type === "status" ? p.ink : valueColor; font.family: p.mono; font.pixelSize: r.type === "status" ? Style.fontPx(1.25) : Style.font.caption; textFormat: Text.PlainText
     width: Math.min(implicitWidth, item.width * 0.6); elide: Text.ElideLeft
+  }
+  Text {
+    visible: !!r.detail
+    anchors { left: parent.left; right: parent.right; leftMargin: pad; rightMargin: pad; bottom: parent.bottom; bottomMargin: Style.space(8) }
+    text: r.detail || ""; color: r.urgent ? p.urgent : p.dim
+    font.family: p.mono; font.pixelSize: Style.font.caption; elide: Text.ElideRight; textFormat: Text.PlainText
   }
   Row { // the count toggle, beside the noun
     visible: r.type === "row" && !!(r.tabs && r.tabs.length); anchors.right: parent.right; anchors.rightMargin: pad; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(4)
@@ -117,7 +123,7 @@ Item {
     id: tokenTotal
     visible: r.type === "usage"
     width: parent.width
-    r: item.r; p: item.p; cursor: item.cursor
+    r: item.r; p: item.p
   }
   Row { // two figures
     visible: r.type === "stat"; anchors.fill: parent; spacing: Style.space(4)

@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.3.2] - 2026-09-21
+
+### Fixed
+- Separate deployment management from token reporting. The overview shows stable GPU deployment rows with the running model, visible status, and explicit Manage or Load model actions.
+- Move historical token totals into a separate read-only section below deployments. Usage bars no longer launch model controls or take keyboard focus; hide the section when no usage has been recorded.
+
 ## [5.3.1] - 2026-09-21
 
 ### Fixed

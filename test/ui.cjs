@@ -26,11 +26,11 @@ const home = ui.build({snap, view: 'home', localError: ''});
 const gpuRows = home.rows.filter(r => r.action.startsWith('gpu:'));
 assert.equal(gpuRows.length, 2);
 assert.equal(gpuRows[0].action, 'gpu:b70');
-assert.equal(gpuRows[0].value, 'running ›');
+assert.equal(gpuRows[0].value, 'Manage ›');
 assert.equal(gpuRows[1].action, 'gpu:3090');
-assert.equal(gpuRows[1].value, 'available ›');
+assert.equal(gpuRows[1].value, 'Load model ›');
 const crashed = ui.build({snap: {...snap, models: [{...running, state: 'error'}]}, view: 'home', localError: ''});
-assert.equal(crashed.rows.find(r => r.action === 'gpu:b70').value, 'error ›');
+assert.equal(crashed.rows.find(r => r.action === 'gpu:b70').status, 'error');
 assert(!crashed.rows.find(r => r.action === 'gpu:b70').devices);
 const catalog = ui.build({snap, view: 'card', hw: 'b70', count: 2, pick: recipe.id, localError: ''});
 assert(catalog.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'model:qwen-tp2')));
@@ -44,7 +44,7 @@ assert(!stalePick.foot.some(r => r.action.startsWith('run:') || r.action.startsW
 const stats = ui.build({snap, view: 'model', slotSel: recipe.id, localError: ''});
 assert(stats.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'card:b70')));
 const partial = {...snap, models: [{...running, keys: ['intel-xpu:0'], cards: 1}]};
-assert.equal(ui.build({snap: partial, view: 'home', localError: ''}).rows.find(r => r.action === 'gpu:b70').value, '1 available ›');
+assert.equal(ui.build({snap: partial, view: 'home', localError: ''}).rows.find(r => r.action === 'gpu:b70').status, '1 available');
 const multiple = {...snap, models: [
   {...running, recipeId: 'first', keys: ['intel-xpu:0'], cards: 1},
   {...running, recipeId: 'second', keys: ['intel-xpu:1'], cards: 1}
@@ -123,9 +123,20 @@ assert.equal(totals.total,200);
 assert.equal(totals.estimated,true);
 assert.equal(totals.since,'2026-09-18');
 assert.equal(ui.gpuUsage({}, {keys:['nvidia:0']}).total,0);
-assert(home.rows.filter(r=>r.action.startsWith('gpu:')).every(r=>r.type==='usage'));
+assert(home.rows.filter(r=>r.action.startsWith('gpu:')).every(r=>r.type==='row' && !r.history));
 console.log('Historical GPU totals, archive attribution and allocation deduplication passed');
-const ranked = ui.cardRows({snap:{...snap,gpuUsage:[{keys:['nvidia:0'],days:{'2026-09-20':100},since:'2026-09-20'}]}}, false);
-assert.equal(ranked[1].action,'gpu:3090');
+const historySnap = {...snap,gpuUsage:[{keys:['nvidia:0'],days:{'2026-09-20':100},since:'2026-09-20'}]};
+const ranked = ui.usageRows(historySnap);
+assert.equal(ranked[1].label,'1× RTX 3090');
 assert.equal(ranked[1].share,1);
 assert.equal(ranked[2].share,0);
+assert(ranked.every(r=>!r.action));
+assert.equal(ui.usageRows(snap).length,0);
+const controls = ui.cardRows({snap:historySnap},false);
+assert.equal(controls[1].action,'gpu:b70'); // control order never follows token rank
+assert.equal(controls[1].detail,'Running · Qwen');
+assert.equal(controls[2].detail,'Available · no model loaded');
+const separated = ui.build({snap:historySnap,view:'home',localError:''}).rows;
+assert(separated.findIndex(r=>r.label==='deployments') < separated.findIndex(r=>r.label==='tokens by gpu'));
+assert(separated.filter(r=>r.type==='usage').every(r=>!r.action));
+console.log('Deployment controls stay distinct from read-only usage and useful without history');

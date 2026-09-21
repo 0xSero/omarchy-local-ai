@@ -9,8 +9,8 @@ against the tree, and the pages workflow runs it before publishing.
 
 | | |
 |---|---|
-| **Documents** | Release v5.3.1 (2026-09-21) |
-| **Plugin version** | 5.3.1 (`manifest.json`) |
+| **Documents** | Release v5.3.2 (2026-09-21) |
+| **Plugin version** | 5.3.2 (`manifest.json`) |
 | **Ledger / snapshot / recipes schema** | `omarchy-local-ai/ledger/2`, `…/snapshot/10`, `…/recipes/1` |
 | **Published** | <https://0xsero.github.io/omarchy-local-ai/> |
 
@@ -74,7 +74,7 @@ These words are used precisely throughout; the wiki uses them in exactly this se
 
 ## Current experience
 
-Version 5.3.1 brings Local AI into the native Agents panel with the same section styling as Claude and Codex. Start from an expandable agent launcher and one status row per GPU type, with historical token totals in the same filled rows as the native provider model totals. Open a group for models or running-model statistics; temperature, usage and VRAM meters stay in the details.
+Version 5.3.2 brings Local AI into the native Agents panel with the same section styling as Claude and Codex. Start from an expandable agent launcher and one status row per GPU type, with explicit management actions and visible model status. A separate read-only section shows historical totals using the native provider model-row styling. Open a group for models or running-model statistics; temperature, usage and VRAM meters stay in the details.
 
 | Area | Verified | Still to verify |
 |---|---|---|

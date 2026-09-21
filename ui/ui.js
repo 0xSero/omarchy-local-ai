@@ -129,20 +129,30 @@ function gpuUsage(snap, group) {
   return { total: total, today: today, since: since, estimated: estimated }
 }
 function cardRows(c, work) {
-  var snap = c.snap, out = [sec(work ? "gpus" : "tokens by gpu")], cs = snap.cards || []
-  var totals = cs.map(function(g) { return gpuUsage(snap, g) })
-  var peak = Math.max.apply(null, [1].concat(totals.map(function(h) { return h.total })))
-  cs.forEach(function(g, i) {
+  var snap = c.snap, out = [sec(work ? "gpus" : "deployments")], cs = snap.cards || []
+  cs.forEach(function(g) {
     var ms = groupModels(snap, g), free = freeKeys(snap, g).length
     var failed = ms.some(function(m) { return m.state === "error" })
     var busy = work && g.keys.some(function(k) { return workKeys(snap).indexOf(k) >= 0 })
     var status = busy ? opWord(snap) : failed ? "error" : ms.length ? (free ? free + " available" : "running") : "available"
-    out.push(row(g.count + "× " + g.name, status + " ›", work ? "" : "gpu:" + g.hardwareId,
-      { type: work ? "row" : "usage", status: status, share: totals[i].total / peak, urgent: failed, history: work ? undefined : totals[i], compact: !work, cells: work ? cells(c, g, work) : undefined, devices: work ? devices(snap, g.keys) : undefined }))
+    var detail = (failed ? "Needs attention" : ms.length ? "Running" : "Available") + " · "
+      + (ms.length === 1 ? ms[0].name : ms.length ? ms.length + " models" : "no model loaded")
+      + (ms.length && free ? " · " + free + " free" : "")
+    out.push(row(g.count + "× " + g.name, work ? status : ms.length ? "Manage ›" : "Load model ›", work ? "" : "gpu:" + g.hardwareId,
+      { status: status, detail: work ? "" : detail, urgent: failed, compact: !work,
+        cells: work ? cells(c, g, work) : undefined, devices: work ? devices(snap, g.keys) : undefined }))
   })
-  if (!work && cs.length) out = [out[0]].concat(out.slice(1).sort(function(a, b) { return b.history.total - a.history.total }))
   if (!cs.length) out.push(row("GPU", "none detected", "", { urgent: true }))
   return out
+}
+function usageRows(snap) {
+  var rows = (snap.cards || []).map(function(g) {
+    return row(g.count + "× " + g.name, "", "", { type: "usage", history: gpuUsage(snap, g) })
+  }).sort(function(a, b) { return b.history.total - a.history.total })
+  if (!rows.some(function(r) { return r.history.since })) return []
+  var peak = Math.max(1, rows[0].history.total)
+  rows.forEach(function(r) { r.share = r.history.total / peak })
+  return [sec("tokens by gpu")].concat(rows)
 }
 
 function launchModel(c) {
@@ -271,7 +281,7 @@ function build(c) {
     })
   }
   if (c.launcherOpen) o.rows = o.rows.concat(launchRows(c, launch))
-  o.rows = o.rows.concat(cardRows(c, false))
+  o.rows = o.rows.concat(cardRows(c, false), usageRows(snap))
   o.foot = updateRows(snap)
   return o
 }
