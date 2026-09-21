@@ -1,39 +1,39 @@
 {
-  "updated": "2026-09-20",
+  "updated": "2026-09-21",
   "repo": {
-    "stars": 24,
+    "stars": 25,
     "forks": 9,
     "watchers": 0,
     "open_issues": 2,
-    "size_kb": 27657
+    "size_kb": 27668
   },
   "clones": {
-    "days": 21,
+    "days": 22,
     "first": "2026-08-29",
-    "last": "2026-09-18",
-    "total": 1158,
+    "last": "2026-09-19",
+    "total": 1280,
     "peak_day": "2026-09-16",
     "peak": 184,
-    "daily_uniques_sum": 541,
-    "uniques_14d": 384
+    "daily_uniques_sum": 596,
+    "uniques_14d": 412
   },
   "views": {
-    "days": 21,
+    "days": 22,
     "first": "2026-08-29",
-    "last": "2026-09-18",
-    "total": 610,
+    "last": "2026-09-19",
+    "total": 658,
     "peak_day": "2026-09-16",
     "peak": 118,
-    "daily_uniques_sum": 347,
-    "uniques_14d": 302
+    "daily_uniques_sum": 375,
+    "uniques_14d": 324
   },
   "stars": {
-    "days": 1,
+    "days": 2,
     "first": "2026-09-20",
-    "last": "2026-09-20",
+    "last": "2026-09-21",
     "first_count": 24,
-    "last_count": 24,
-    "gained": 0
+    "last_count": 25,
+    "gained": 1
   },
   "downloads": {
     "total": 5,
@@ -148,8 +148,8 @@
     ]
   },
   "interactions": {
-    "day": "2026-09-20",
-    "stars": 24,
+    "day": "2026-09-21",
+    "stars": 25,
     "forks": 9,
     "watchers": 0,
     "issues": {
@@ -170,8 +170,8 @@
   "referrers": [
     {
       "referrer": "github.com",
-      "count": 52,
-      "uniques": 41
+      "count": 55,
+      "uniques": 42
     },
     {
       "referrer": "t.co",
@@ -180,13 +180,13 @@
     },
     {
       "referrer": "Google",
-      "count": 10,
-      "uniques": 10
+      "count": 12,
+      "uniques": 11
     },
     {
       "referrer": "DuckDuckGo",
-      "count": 6,
-      "uniques": 4
+      "count": 7,
+      "uniques": 5
     },
     {
       "referrer": "search.brave.com",
@@ -198,20 +198,20 @@
     {
       "path": "/0xSero/omarchy-local-ai",
       "title": "Overview",
-      "count": 402,
-      "uniques": 292
+      "count": 424,
+      "uniques": 307
     },
     {
       "path": "/0xSero/omarchy-local-ai/pull/2",
       "title": "/pull/2",
-      "count": 18,
-      "uniques": 12
+      "count": 23,
+      "uniques": 13
     },
     {
       "path": "/0xSero/omarchy-local-ai/pulls",
       "title": "/pulls",
-      "count": 18,
-      "uniques": 11
+      "count": 22,
+      "uniques": 13
     },
     {
       "path": "/0xSero/omarchy-local-ai/releases/tag/v4.1.0",
@@ -222,32 +222,32 @@
     {
       "path": "/0xSero/omarchy-local-ai/issues",
       "title": "/issues",
-      "count": 13,
-      "uniques": 10
+      "count": 15,
+      "uniques": 12
     },
     {
       "path": "/0xSero/omarchy-local-ai/pull/3",
       "title": "/pull/3",
-      "count": 11,
-      "uniques": 7
+      "count": 12,
+      "uniques": 8
     },
     {
       "path": "/0xSero/omarchy-local-ai/tree/main",
       "title": "/tree/main",
+      "count": 11,
+      "uniques": 10
+    },
+    {
+      "path": "/0xSero/omarchy-local-ai/compare/3f447b938284a01b2b8e7258c021ba3f4804e480...a85de0cfadfc7380579f3326f091da82aff85995",
+      "title": "/compare/3f447b938284a01b2b8e7258c021ba3f4804e480...a85de0cfadfc7380579f3326f091da82aff85995",
       "count": 10,
-      "uniques": 9
+      "uniques": 6
     },
     {
       "path": "/0xSero/omarchy-local-ai/blob/main/test/rented-results",
       "title": "/blob/main/test/rented-results",
       "count": 8,
       "uniques": 7
-    },
-    {
-      "path": "/0xSero/omarchy-local-ai/compare/3f447b938284a01b2b8e7258c021ba3f4804e480...a85de0cfadfc7380579f3326f091da82aff85995",
-      "title": "/compare/3f447b938284a01b2b8e7258c021ba3f4804e480...a85de0cfadfc7380579f3326f091da82aff85995",
-      "count": 8,
-      "uniques": 4
     },
     {
       "path": "/0xSero/omarchy-local-ai/pull/9",
