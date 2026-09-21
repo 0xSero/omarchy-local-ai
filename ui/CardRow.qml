@@ -28,8 +28,7 @@ Item {
     text: r.label.toUpperCase(); foreground: p.ink; fontFamily: p.mono
   }
   Button { // Same control states and borders as the native provider buttons.
-    anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.leftMargin: item.indent
-    height: hasMeters ? Style.space(34) : parent.height
+    anchors.fill: parent
     visible: r.type === "row" && !(r.tabs && r.tabs.length)
     enabled: item.actionable; bordered: false; selected: primary || !!r.selected
     hasCursor: item.cursor; foreground: p.ink; fontFamily: p.mono

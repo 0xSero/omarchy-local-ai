@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.3.6] - 2026-09-21
+
+### Fixed
+- Make the whole actionable row clickable, including indented choices and device meters; nested Copy buttons activate only their own action.
+- Offer Swap model when a selected model needs occupied GPUs. Show which running models will be replaced, then use the controller's existing load and rollback path. Models on other GPUs keep running.
+
 ## [5.3.5] - 2026-09-21
 
 ### Fixed

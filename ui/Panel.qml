@@ -134,7 +134,7 @@ Panel {
     else if (v === "count") { count = parseInt(s[1], 10) || 1; pick = "" }
     else if (v === "pick") { pick = pick === s[1] ? "" : s[1]; Qt.callLater(function() { var i = ui.rows.findIndex(function(r) { return r.child && (r.disabled || r.action.indexOf("run:") === 0) }); if (i >= 0) body.reveal(i) }) }
     else if (v === "model") { slotSel = s[1]; var model = Ui.modelById(snap, slotSel), group = model ? Ui.cardOfKeys(snap, model.keys) : null; home(); if (group) { hw = group.hardwareId; go("card") } go("model") }
-    else if (v === "run") { var g = Ui.cardByHw(snap, hw), free = g ? Ui.freeKeys(snap, g) : []; home(); act(["run", s[1], Ui.freest(snap, free) || (g ? g.keys[0] : "")].filter(function(x) { return x !== "" })) }
+    else if (v === "run") { var recipe = Ui.recipeById(snap, s[1]), g = recipe ? Ui.cardByHw(snap, recipe.hardwareId) : null; if (!g) return; var plan = Ui.loadPlan(snap, recipe, g); home(); act(["run", s[1], plan.gpu]) }
     else if (v === "run-again") { home(); act(["load"]) }
     else if (v === "refresh") { localError = ""; refresh() }
     else if (v === "stop") { home(); act(["unload", s[1]]) }

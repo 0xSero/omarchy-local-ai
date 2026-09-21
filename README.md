@@ -8,7 +8,7 @@ Run validated local models, open coding agents and share endpoints from the Omar
 omarchy plugin add https://github.com/0xSero/omarchy-local-ai.git --enable
 ```
 
-Click the new bar icon, choose a free GPU group and recipe, then press **Run**. The card shows the download size, context and capabilities before launch. When it says **ready**, the model has passed its acceptance checks.
+Click the new bar icon, choose a GPU group and recipe, then press **Load model** (or **Swap model** for occupied GPUs). The card shows the download size, context and capabilities before launch. When it says **ready**, the model has passed its acceptance checks.
 
 ## How it works
 
@@ -17,8 +17,9 @@ Click the new bar icon, choose a free GPU group and recipe, then press **Run**. 
 3. **Share on Tailscale** publishes the same keyed endpoint on your tailnet address. One click, no `tailscale serve`, no root.
 
 Each GPU type opens its running models and compatible model list. Select a model
-to reveal its Load action directly underneath, or open a running model for its agent,
+to reveal its Load or Swap action directly underneath, or open a running model for its agent,
 stats and Stop controls. The overview keeps the selected agent's Open button visible.
+The entire actionable row is clickable. A swap names the models it will replace, preserves models on other GPUs, and restores the previous model if the new one fails acceptance.
 Every breadcrumb is clickable, so you can jump straight to a GPU group or home.
 The whole page scrolls, including folder editing and bottom actions. **Home/End** and
 **Page Up/Down** navigate the viewport; **F11** expands the standalone panel.
@@ -62,9 +63,8 @@ Its offline HTML lives at `~/.local/share/omarchy/guides/macos-controls.html`.
 
 Local AI opens with an agent launcher and a **Deployments** section. Each GPU group shows its current model and status, with **Manage** or **Load model** as an explicit action. Deployment order stays stable. Below it, **Tokens by GPU** reports historical totals in the native Claude/Codex filled-row style; these bars are read-only and do not open controls. The usage section appears once history is available, and includes retained runtime logs and attributable older gateway receipts. vLLM totals carry ≈ because they are reconstructed from rounded rates.
 
-Local AI keeps its GPU controls in those same rows. A running GPU opens its model's
-**Stats & agents**; **Models** lists recipes for one or more of that GPU. Occupied
-GPUs remain browsable, but loading requires enough free GPUs. **Launch agent** at
+Local AI keeps its GPU controls in those same rows. Each GPU group opens its running models
+and compatible recipes for one or more GPUs. Occupied GPUs offer a model swap. **Launch agent** at
 the top of the main screen expands the running-model and agent selectors, plus
 the project folder. Choose a model and an installed compatible agent, then press
 **Open** to start it in your terminal. Inside model details, each device has

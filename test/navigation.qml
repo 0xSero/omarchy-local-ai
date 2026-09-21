@@ -34,11 +34,22 @@ ShellRoot {
         }
       }
     }
+    Local.CardRow {
+      id: hitRow
+      parent: viewport; width: viewport.width; z: 100
+      visible: test.checkHitAreas
+      r: ({type:"row",label:"Model",value:"Open",action:"open"})
+      p: ({ink:subject.ink,dim:subject.dim,faint:subject.faint,fg:subject.fg,accent:subject.accent,urgent:subject.urgent,restFill:subject.restFill,hairline:subject.hairline,selectedFill:subject.selectedFill,mono:subject.mono,panelActive:false,activate:function(a){test.hitAction=a;test.hits++}})
+    }
     TestCase {
       id: test
       name: "Navigation"
       when: true
       property var fixtureData
+      property bool checkHitAreas: false
+      property int hits: 0
+      property string hitAction: ""
+      function cleanup() { checkHitAreas=false }
       function assertUi(condition, message) {
         if (!condition) console.log("NAV_FAIL",message,subject.embedded,viewport.width,viewport.height,subject.view)
         verify(condition,message)
@@ -117,12 +128,28 @@ ShellRoot {
         assertUi(!subject.ui.rows.some(function(r){return r.action==="run:model1:1"}),"click selection to collapse")
         subject.snap=JSON.parse(JSON.stringify(fixtureData))
         subject.activate("pick:model1"); wait(40)
-        var blocked=subject.ui.rows.findIndex(function(r){return r.label==="GPUs in use"})
-        assertUi(blocked>=0,"occupied GPUs explain why load is unavailable")
+        var blocked=subject.ui.rows.findIndex(function(r){return r.label==="Swap model"})
+        assertUi(blocked>=0,"occupied GPUs offer model swap")
         var reason=findChild(subject.contentFocus,"content-row-"+blocked)
         var reasonY=reason.mapToItem(viewport,0,0).y
-        assertUi(reasonY>=-1 && reasonY+reason.height<=viewport.height+1,"capacity guidance is revealed")
+        assertUi(reasonY>=-1 && reasonY+reason.height<=viewport.height+1,"swap action is revealed")
         console.log("FLOW_PASS",d.tag)
+      }
+      function test_hit_areas_data() { return [{tag:"narrow",w:240},{tag:"regular",w:380}] }
+      function test_hit_areas(d) {
+        viewport.width=d.w; viewport.height=400; checkHitAreas=true
+        for (var extra of [{detail:"Ready on GPU 0"},{kind:"dd"},{expanded:false},{devices:[{label:"GPU 0",meters:[]}]}]) {
+          hitRow.r=Object.assign({type:"row",label:"Model",value:"Open",action:"open"},extra);wait(30)
+          for(var point of [[2,2],[d.w-2,2],[2,hitRow.height-2],[d.w-2,hitRow.height-2],[d.w/2,hitRow.height/2]]) {
+            hits=0;mouseClick(hitRow,point[0],point[1]);same(hits,1);same(hitAction,"open")
+          }
+        }
+        // A nested copy control must not also trigger the parent Share action.
+        hitRow.r={type:"row",label:"Share",value:"On",action:"share",chips:[{text:"Copy",action:"copy"}]};wait(30)
+        hits=0;mouseClick(hitRow,24,hitRow.height-15);same(hits,1);same(hitAction,"copy")
+        hitRow.r={type:"row",label:"Disabled",value:"",action:"open",disabled:true};wait(30)
+        hits=0;mouseClick(hitRow,d.w/2,hitRow.height/2);same(hits,0)
+        console.log("HIT_PASS",d.tag)
       }
       function test_breadcrumbs_data() { return [{tag:"standalone",mode:false},{tag:"embedded",mode:true}] }
       function test_breadcrumbs(d) {

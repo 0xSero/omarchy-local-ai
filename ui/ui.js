@@ -43,6 +43,18 @@ function cardOfKeys(snap, keys) { var cs = snap.cards || []; for (var i = 0; i <
 function gpu(snap, key) { var gs = snap.gpus || []; for (var i = 0; i < gs.length; i++) if (gs[i].key === key) return gs[i]; return null }
 function freeKeys(snap, c) { return c.keys.filter(function(k) { return !holder(snap, k) }) }
 function freest(snap, keys) { return keys.slice().sort(function(a, b) { var ga = gpu(snap, a) || {}, gb = gpu(snap, b) || {}; return ((gb.vramGb || 0) - (gb.usedGb || 0)) - ((ga.vramGb || 0) - (ga.usedGb || 0)) })[0] || "" }   // the display card carries the desktop: start elsewhere when there is an elsewhere
+// Match the controller's chosen-GPU-first allocation so the UI names the actual replacements.
+function loadPlan(snap, recipe, group) {
+  var chosen = freest(snap, freeKeys(snap, group)) || group.keys[0], keys = []
+  var claims = recipe.claims; if (!claims || !Object.keys(claims).length) { claims = {}; claims[group.hardwareId] = recipe.cards || 1 }
+  Object.keys(claims).forEach(function(hw) {
+    var pool = (snap.gpus || []).filter(function(g) { return g.hardwareId === hw }).map(function(g) { return g.key })
+    if (!pool.length) pool = (cardByHw(snap, hw) || {keys:[]}).keys.slice()
+    pool.sort(function(a,b) { return (a === chosen ? 0 : 1) - (b === chosen ? 0 : 1) })
+    keys = keys.concat(pool.slice(0, claims[hw]))
+  })
+  return { gpu: chosen, keys: keys, replaces: models(snap).filter(function(m) { return m.recipeId === recipe.id || m.keys.some(function(k) { return keys.indexOf(k) >= 0 }) }) }
+}
 function fits(snap, c, n) { return (snap.recipes || []).filter(function(r) { return r.hardwareId === c.hardwareId && r.cards === n }) }
 function where(snap, m) { var c = cardOfKeys(snap, m.keys); return (m.cards > 1 ? m.cards + "× " : "") + (c ? c.name : "card") }
 function workKeys(snap) { // the cards a running op touches: the model it stops, or the claim of the recipe it starts
@@ -273,8 +285,9 @@ function buildView(c) {
         if (!selected) return
         o.rows.push(row("context", r.ctxTokens > 0 ? kb(r.ctxTokens) + " per request" : "unknown", "", { child: true, compact: true }))
         o.rows.push(capabilities(r.caps))
-        if (free.length < n) o.rows.push(row("GPUs in use", "stop a running model to load", "", { disabled: true, child: true }))
-        else o.rows.push(row(r.onDisk ? "Load model" : r.partialBytes > 0 ? "Resume download & load" : "Download & load", r.sizeGb > 0 ? gb(r.sizeGb) : "", "run:" + r.id + ":" + n, { kind: "primary", child: true, compact: true }))
+        var plan = loadPlan(snap, r, g)
+        if (plan.replaces.length) o.rows.push(row("Will replace", plan.replaces.map(function(m) { return m.name + " · " + where(snap, m) }).join(", "), "", { type: "text", child: true }))
+        o.rows.push(row(plan.replaces.length ? (r.onDisk ? "Swap model" : "Download & swap") : r.onDisk ? "Load model" : r.partialBytes > 0 ? "Resume download & load" : "Download & load", r.sizeGb > 0 ? gb(r.sizeGb) : "", "run:" + r.id + ":" + n, { kind: "primary", child: true, compact: true }))
       })
       return o
     }

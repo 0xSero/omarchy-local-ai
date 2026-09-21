@@ -167,8 +167,24 @@ assert(loadAt>picked.rows.findIndex(r=>r.action==='pick:qwen-tp2'));
 assert(loadAt<picked.rows.findIndex(r=>r.action==='pick:second-choice'));
 assert.equal(picked.foot.length,0);
 const blocked = ui.build({snap:{...snap,recipes:idle.recipes},view:'card',hw:'b70',count:2,pick:'second-choice',localError:''});
-assert(blocked.rows.some(r=>r.disabled && r.label==='GPUs in use'));
-assert(!blocked.rows.some(r=>r.action.startsWith('run:')));
+assert(blocked.rows.some(r=>r.label==='Will replace' && r.value.includes(running.name)));
+assert(blocked.rows.some(r=>r.label==='Download & swap' && r.action==='run:second-choice:2' && !r.disabled));
 assert.equal(catalog.rows.filter(r=>r.action==='model:qwen-tp2').length,1);
 assert(!catalog.rows.some(r=>r.action==='pick:qwen-tp2'));
 console.log('Consistent GPU destinations, one-click launch and inline model actions passed');
+
+// Allocation preview follows the controller: chosen GPU first, then device order.
+const group={hardwareId:'test',keys:['nvidia:0','nvidia:1','nvidia:2']};
+const allocation={cards:[group],gpus:group.keys.map(key=>({key,hardwareId:'test',vramGb:24,usedGb:0})),models:[
+ {recipeId:'old',name:'Old',keys:['nvidia:0'],state:'ready'},
+ {recipeId:'unrelated',name:'Other',keys:['intel-xpu:0'],state:'ready'}]};
+let plan=ui.loadPlan(allocation,{id:'new',cards:1},group);
+assert.equal(plan.gpu,'nvidia:1'); assert.equal(plan.replaces.length,0);
+plan=ui.loadPlan(allocation,{id:'new',cards:2},group);
+assert.equal(JSON.stringify(plan.keys),JSON.stringify(['nvidia:1','nvidia:0']));
+assert.equal(JSON.stringify(plan.replaces.map(m=>m.recipeId)),JSON.stringify(['old']));
+const full={...allocation,models:[{...allocation.models[0],keys:group.keys},allocation.models[1]]};
+assert.equal(ui.loadPlan(full,{id:'new',cards:1},group).replaces[0].recipeId,'old');
+const busySwap=ui.build({snap:{...snap,state:'starting',operation:{recipeId:'second-choice'},recipes:idle.recipes},view:'card',hw:'b70',count:2,pick:'second-choice',localError:'',browseWhileWorking:true});
+assert(busySwap.rows.find(r=>r.action==='run:second-choice:2').disabled);
+console.log('Swap targets match controller allocation; unrelated models and busy guards retained');
