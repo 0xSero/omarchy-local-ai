@@ -48,7 +48,8 @@ either. The point is that a file the suite depends on but the bundle forgets is 
 user.
 
 No GPU, no docker, **no network**: it shims every external command and drives the real CLI end to end.
-Needs `bash` and `jq`; the UI checks need Node.
+Needs `bash` and `jq`; the UI and native-view checks need Node. The runtime itself needs neither
+Node nor a GPU: it needs `bash`, `jq`, `curl` and Docker.
 
 The suite converts a shimmed argv with `jq -Rsc 'split("\u0000") | if .[-1] == "" then .[:-1] else . end'`.
 The trailing field is dropped only when it is empty, because jq 1.6 (Ubuntu 22.04, Pop!_OS) strips the
