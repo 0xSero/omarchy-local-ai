@@ -544,7 +544,10 @@ phase_stop() { # phase_stop [recipe-id] [--purge]: one pair, or every container 
     while IFS= read -r c; do [[ -n $c ]] && { printf 'reason %s could not be removed\n' "$c"; return 1; }; done < <(owned_names)
     docker network ls --filter "label=$LABEL=1" -q 2>/dev/null | xargs -r docker network rm >/dev/null 2>&1 || true
   fi
-  if (( purge )); then docker images --filter "label=$LABEL=1" -q 2>/dev/null | xargs -r docker rmi >/dev/null 2>&1 || true
+  if (( purge )); then
+    # an engine that runs as root inside its container leaves root-owned files in its scratch mount; only root can take them back
+    local scratch; scratch=$(canon "$MODELS/../scratch"); [[ $scratch == "$HOME_DIR"/.cache/omarchy/local-ai/scratch ]] && rm -rf -- "$scratch"
+    docker images --filter "label=$LABEL=1" -q 2>/dev/null | xargs -r docker rmi >/dev/null 2>&1 || true
     docker image ls --format '{{.Repository}}@{{.Digest}}' 2>/dev/null | grep -Fx -f <(jq -r '.gateway.image, (.hardware[].recipes[].image)' "$RECIPES") | xargs -r docker rmi >/dev/null 2>&1 || true; fi
   return 0
 }
