@@ -67,17 +67,26 @@ in the registry.
 ```make
 REGISTRY ?= ../local-ai-registry
 REGISTRY_EXPORT = $(REGISTRY)/plugin/recipes.json
+REGISTRY_REF ?= origin/main
 
 # The build's own stamp, not content: a rebase or a squash rewrites the commit they
 # come from, and the registry's own check drops them for the same reason.
 PROVENANCE = del(.registryCommit, .generatedAt)
 
+# The published export is what the registry commits at its origin/main, not what a
+# checkout happens to have in its working tree: that can be ahead of the published
+# export (work in progress) or behind it (a stale clone).
 sync:
-	cp "$(REGISTRY_EXPORT)" recipes.json
+	published > recipes.json
 
 sync-check:
-	diff -q <(jq -S '$(PROVENANCE)' "$(REGISTRY_EXPORT)") <(jq -S '$(PROVENANCE)' recipes.json)
+	published > "$T"
+	diff -q <(jq -S '$(PROVENANCE)' "$T") <(jq -S '$(PROVENANCE)' recipes.json)
 ```
+
+where `published` prints the registry's published export: `git -C $(REGISTRY) show $(REGISTRY_REF):plugin/recipes.json`
+when that ref exists, and the checkout's own file when it does not, so a plain directory of files
+still works.
 
 `test/sync` checks that contract without a registry checkout: it publishes the vendored copy as a
 stand-in, then asks what the check makes of a re-stamp (current), of a withdrawn card (drift, named),

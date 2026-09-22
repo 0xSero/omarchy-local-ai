@@ -17,7 +17,13 @@ bundle:
 # The registry authors recipes.json and publishes it at plugin/recipes.json, where its own CI keeps it
 # current. This repo only vendors that file: `make sync` takes it verbatim and `make sync-check` fails when
 # the vendored copy has fallen behind it. No recipe is ever written here.
+#
+# "Published" means the file the registry commits at its origin/main, not whatever a checkout happens to
+# have in its working tree: a contributor's registry checkout can be ahead of the published export (work in
+# progress) or behind it (a stale clone), and neither is this repository's business. The working tree is read
+# only when there is no such ref, so a plain directory of files still works.
 REGISTRY_EXPORT = $(REGISTRY)/plugin/recipes.json
+REGISTRY_REF ?= origin/main
 
 # The two provenance fields are the build's own stamp, derived from the last registry commit, so a rebase or
 # a squash rewrites them without changing one exported recipe. The registry's own check drops them before
@@ -25,17 +31,20 @@ REGISTRY_EXPORT = $(REGISTRY)/plugin/recipes.json
 PROVENANCE = del(.registryCommit, .generatedAt)
 
 sync:
-	@test -f "$(REGISTRY_EXPORT)" || { echo "sync: no $(REGISTRY_EXPORT) - set REGISTRY=<registry checkout>" >&2; exit 2; }
-	cp "$(REGISTRY_EXPORT)" recipes.json
+	@test -d "$(REGISTRY)" || { echo "sync: set REGISTRY=<registry checkout>" >&2; exit 2; }
+	published() { if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >/dev/null 2>&1; then git -C "$(REGISTRY)" show "$(REGISTRY_REF):plugin/recipes.json"; else cat "$(REGISTRY_EXPORT)"; fi; }; published > recipes.json
 	@jq -r '"recipes.json: \(.hardware|length) hardware ids from registry \(.registryCommit[:12]), \([.hardware[] | (.recipe.id), (.recipes[]?.id)] | length) recipes"' recipes.json
 
 sync-check:
-	@test -f "$(REGISTRY_EXPORT)" || { echo "sync-check: no $(REGISTRY_EXPORT) - set REGISTRY=<registry checkout>" >&2; exit 2; }
-	@if diff -q <(jq -S '$(PROVENANCE)' "$(REGISTRY_EXPORT)") <(jq -S '$(PROVENANCE)' recipes.json) >/dev/null; then \
+	@test -d "$(REGISTRY)" || { echo "sync-check: set REGISTRY=<registry checkout>" >&2; exit 2; }
+	@T=$$(mktemp); trap 'rm -f "$$T"' EXIT; \
+	published() { if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >/dev/null 2>&1; then git -C "$(REGISTRY)" show "$(REGISTRY_REF):plugin/recipes.json"; else cat "$(REGISTRY_EXPORT)"; fi; }; \
+	published > "$$T"; \
+	if diff -q <(jq -S '$(PROVENANCE)' "$$T") <(jq -S '$(PROVENANCE)' recipes.json) >/dev/null; then \
 	  echo "recipes.json: current with the registry, $$(jq -r '.hardware|length' recipes.json) hardware ids"; \
 	else \
-	  echo "recipes.json has fallen behind $(REGISTRY_EXPORT); run make sync" >&2; \
-	  diff <(jq -rS '$(PROVENANCE) | .hardware | keys[]' "$(REGISTRY_EXPORT)") <(jq -rS '$(PROVENANCE) | .hardware | keys[]' recipes.json) | grep -E '^[<>]' | sed 's/^/  /' >&2 || true; \
+	  echo "recipes.json has fallen behind the registry's published export; run make sync" >&2; \
+	  diff <(jq -rS '$(PROVENANCE) | .hardware | keys[]' "$$T") <(jq -rS '$(PROVENANCE) | .hardware | keys[]' recipes.json) | grep -E '^[<>]' | sed 's/^/  /' >&2 || true; \
 	  exit 1; \
 	fi
 
