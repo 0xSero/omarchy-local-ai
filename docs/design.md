@@ -54,12 +54,13 @@ omarchy-local-ai/                    the plugin directory as installed (marketpl
 Gone from the tree: `lib/` (13 files), `ui/` (two presentations), `native/`, `scripts/`, `integrations/`,
 `wiki/`, `media/`, `dist/`, `lib/*.py`. The repository is the plugin and nothing else.
 
-Line budget of what ships: about 1,360 lines of code (850 bash, 270 QML, 180 JS, 60 installers) and
-one data file, against 3,884 today. The card's floor comes from using Omarchy's own kit for everything
-it provides (`Panel`, `BarIconButton`, `KeyboardPanel`, `PanelKeyCatcher`, `CursorSurface`, `Button`,
-`PanelSectionHeader`, `PanelSeparator`, `TextField`, `Style`, `Color`) and hand-rolling only what it does
-not: the scroll viewport, the progress bar and the toast. The count is a consequence of the drop list in section 8, not a
-target that was cut to.
+Line budget of what ships: about 1,400 lines of code (820 bash, 390 QML, 180 JS, 40 installers) and
+one data file, against 3,884 before. The card's floor comes from using Omarchy's own kit for everything
+it provides (`Panel`, `BarIconButton`, `KeyboardPanel`, `PanelHero`, `Button`, `PanelSectionHeader`,
+`PanelSeparator`, `Style`, `Color`) and hand-rolling only what it does not: the scroll viewport, the
+progress bar and the per-card cells. While an operation runs the card shows that operation and nothing
+else; there is no navigation during work, no verb queue and no toast. The count is a consequence of the
+drop list in section 8, not a target that was cut to.
 
 ## 3. `bin/omarchy-local-ai`
 
