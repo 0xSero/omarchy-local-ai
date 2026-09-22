@@ -1,106 +1,89 @@
 import QtQuick
+import QtQuick.Controls as Controls
 import qs.Commons
 import qs.Ui
 
-// One row of the card, drawn from a row object produced by Model.js. p is the Panel (palette, cursor,
-// activate). Types: sec (a section word), row (noun · datum, with cells or chips under it, or tabs
-// beside it), status (verb · progress), bar, stat (two figures), text (a wrapped reason).
+// One row of the card, drawn from a row object produced by Model.js. p is the Panel: palette, cursor, activate, act.
 Item {
   id: item
   required property var r
   required property var p
   property bool cursor: false
   readonly property bool actionable: !!r.action && !r.disabled
-  readonly property bool primary: r.kind === "primary"
-  readonly property bool disclosure: typeof r.expanded === "boolean"
-  readonly property bool hasLine2: !!(r.cells && r.cells.length) || !!(r.chips && r.chips.length)
-  readonly property real pad: Style.space(12)
-  readonly property real indent: r.kind === "dd" ? Style.space(12) : 0
-  readonly property color labelColor: r.disabled ? p.faint : r.kind === "danger" || r.urgent ? p.urgent : p.ink
-  readonly property color valueColor: r.disabled ? p.faint : r.urgent ? p.urgent : p.dim
-  implicitHeight: r.type === "sec" ? Style.space(46) : r.type === "bar" ? Style.space(6) : r.type === "stat" ? Style.space(56) : r.type === "status" ? Style.space(46)
-    : r.detail ? Style.space(58) : r.type === "text" ? wrapped.implicitHeight + Style.space(20) : (disclosure || r.kind === "dd" || r.compact) ? Style.space(34) : Style.space(46) + (hasLine2 ? Style.space(22) : 0)
+  readonly property real pad: Style.space(16)
+  readonly property color lead: r.dim || r.disabled ? p.dim : p.ink
+  implicitHeight: r.type === "gap" ? Style.space(10) : r.type === "num2" ? Style.space(52) : r.type === "bars" ? (r.big ? Style.space(76) : Style.space(40)) : r.type === "prog" ? Style.space(40)
+    : r.type === "gpu" ? Style.space(24) : r.type === "h" ? Style.space(30) : r.type === "hbar" ? Style.space(22) : r.type === "spark" ? Style.space(48) : r.type === "axis" ? Style.space(16)
+    : r.type === "text" ? wrapped.implicitHeight + Style.space(16) : r.type === "field" ? Style.space(40) : r.type === "opt" ? Style.space(30) : Style.space(34)
 
-  PanelSeparator { visible: r.type === "sec"; anchors.top: parent.top; anchors.topMargin: Style.space(8); width: parent.width; foreground: p.ink }
-  PanelSectionHeader {
-    visible: r.type === "sec"; anchors.left: parent.left; anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(4)
-    text: r.label.toUpperCase(); foreground: p.ink; fontFamily: p.mono
-  }
-  Button { // the same control states and borders as the native provider buttons
-    anchors.fill: parent
-    visible: r.type === "row" && !(r.tabs && r.tabs.length)
-    enabled: item.actionable; bordered: false; selected: primary || !!r.selected
-    hasCursor: item.cursor; foreground: p.ink; fontFamily: p.mono
-    onClicked: p.activate(r.action)
-  }
-  Text {
-    textFormat: Text.PlainText
-    visible: disclosure; x: pad; anchors.verticalCenter: parent.verticalCenter
-    text: r.expanded ? "▾" : "▸"; color: p.ink; font.family: p.mono; font.pixelSize: Style.font.body
-  }
-  Rectangle {
-    anchors.fill: parent; visible: r.type === "status" || r.type === "text"
-    color: p.restFill; border.width: 1; border.color: p.hairline
-  }
-  Rectangle { // the bar: a fill when a step reports a percent, a sweep while it cannot
-    visible: r.type === "bar"; anchors.fill: parent; color: p.restFill
-    Rectangle {
-      id: fill; readonly property bool sweeping: (r.percent || 0) === 0; property real sweepX: 0
-      height: parent.height; color: p.accent; width: sweeping ? parent.width * 0.25 : Math.max(2, parent.width * (r.percent || 0) / 100); x: sweeping ? sweepX : 0
-      NumberAnimation on sweepX { running: r.type === "bar" && fill.sweeping && p.opened; loops: Animation.Infinite; from: 0; to: fill.parent.width * 0.75; duration: 1400; easing.type: Easing.InOutSine }
-      Behavior on width { enabled: !fill.sweeping; NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-    }
-  }
-  Text { // line one: the noun
-    textFormat: Text.PlainText
-    visible: r.type === "row" || r.type === "status"
-    anchors.left: parent.left; anchors.leftMargin: pad + indent + (disclosure ? Style.space(20) : 0); y: hasLine2 || r.detail ? Style.space(8) : (item.height - height) / 2
-    width: parent.width - anchors.leftMargin - pad - value.width - Style.space(12)
-    text: r.label; color: labelColor; font.family: p.mono; font.pixelSize: Style.font.bodySmall; font.bold: disclosure; elide: Text.ElideRight
-  }
-  Text { // line one: the datum
-    textFormat: Text.PlainText
-    id: value; visible: (r.type === "row" && !(r.tabs && r.tabs.length)) || r.type === "status"
-    anchors.right: parent.right; anchors.rightMargin: pad; y: hasLine2 || r.detail ? Style.space(8) : (item.height - height) / 2
-    text: r.value; color: r.type === "status" ? p.ink : valueColor; font.family: p.mono; font.pixelSize: r.type === "status" ? Style.font.subtitle : Style.font.caption
-    width: Math.min(implicitWidth, item.width * 0.6); elide: Text.ElideLeft
-  }
-  Text {
-    textFormat: Text.PlainText
-    visible: !!r.detail
-    anchors { left: parent.left; right: parent.right; leftMargin: pad; rightMargin: pad; bottom: parent.bottom; bottomMargin: Style.space(8) }
-    text: r.detail || ""; color: r.urgent ? p.urgent : p.dim
-    font.family: p.mono; font.pixelSize: Style.font.caption; elide: Text.ElideRight
-  }
-  Row { // the count toggle, beside the noun
-    visible: r.type === "row" && !!(r.tabs && r.tabs.length); anchors.right: parent.right; anchors.rightMargin: pad; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(4)
-    Repeater { model: r.tabs || []
-      Button { required property var modelData; text: modelData.text; selected: !!modelData.on; bordered: true
-        foreground: p.ink; fontFamily: p.mono; fontSize: Style.font.caption; verticalPadding: Style.space(4)
-        onClicked: p.activate(modelData.action) } }
-  }
-  Row { // line two: cells (one per physical card) or chips (capabilities)
-    visible: hasLine2; anchors.left: parent.left; anchors.leftMargin: pad; anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(10); spacing: Style.space(6)
-    Repeater { model: (r.cells || []).concat(r.chips || [])
-      Rectangle { required property var modelData; readonly property bool isCell: modelData.mark !== undefined
-        readonly property color markColor: modelData.mark === "used" ? p.ink : modelData.mark === "claimed" ? p.accent : modelData.mark === "freeing" ? Qt.rgba(p.accent.r, p.accent.g, p.accent.b, 0.5) : modelData.mark === "crashed" ? p.urgent : "transparent"
-        width: cellText.implicitWidth + Style.space(14) + (isCell && modelData.mark !== "" ? Style.space(12) : 0); height: Style.space(20); color: modelData.off ? "transparent" : p.restFill
-        Rectangle { visible: parent.isCell && modelData.mark !== ""; x: Style.space(7); anchors.verticalCenter: parent.verticalCenter; width: Style.space(7); height: width; color: parent.markColor; border.width: modelData.mark === "free" ? 1 : 0; border.color: p.faint }
-        Text { textFormat: Text.PlainText; id: cellText; anchors.right: parent.right; anchors.rightMargin: Style.space(7); anchors.verticalCenter: parent.verticalCenter; text: modelData.text; color: modelData.off ? p.faint : modelData.mark === "used" ? p.fg : p.dim; font.strikeout: !!modelData.off; font.family: p.mono; font.pixelSize: Style.font.caption } } }
-  }
-  Row { // two figures
-    visible: r.type === "stat"; anchors.fill: parent; spacing: Style.space(4)
-    Repeater { model: r.stat || []
-      Rectangle { required property var modelData; width: (parent.width - Style.space(4)) / 2; height: parent.height; color: "transparent"
-        Column { anchors.left: parent.left; anchors.leftMargin: pad; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(3)
-          PanelSectionHeader { text: modelData.k.toUpperCase(); foreground: p.ink; fontFamily: p.mono }
-          Row { spacing: Style.space(5)
-            Text { textFormat: Text.PlainText; text: modelData.v; color: p.ink; font.family: p.mono; font.pixelSize: Style.font.title }
-            Text { textFormat: Text.PlainText; anchors.baseline: parent.children[0].baseline; text: modelData.u; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption } } } } }
-  }
-  Text { // a wrapped datum: the one place a whole reason is shown
-    textFormat: Text.PlainText
-    id: wrapped; visible: r.type === "text"; anchors.left: parent.left; anchors.right: parent.right; anchors.margins: pad; anchors.verticalCenter: parent.verticalCenter
-    text: r.label + " · " + r.value; color: r.urgent ? p.urgent : p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-  }
+  Rectangle { anchors.fill: parent; visible: item.cursor && item.actionable; color: p.hoverFill }
+  MouseArea { anchors.fill: parent; enabled: item.actionable; cursorShape: Qt.PointingHandCursor; onClicked: p.activate(r.action) }
+
+  // two figures side by side
+  Row { visible: r.type === "num2"; x: pad; anchors.verticalCenter: parent.verticalCenter; width: parent.width - pad * 2
+    Repeater { model: r.type === "num2" ? [r.a, r.b] : []
+      Column { required property var modelData; required property int index; width: parent.width / 2; spacing: Style.space(2)
+        Text { textFormat: Text.PlainText; text: modelData.v; color: p.ink; font.family: p.mono; font.pixelSize: Style.font.display; anchors.right: index ? parent.right : undefined }
+        Text { textFormat: Text.PlainText; text: modelData.k; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; anchors.right: index ? parent.right : undefined } } } }
+  // bars: one per day, the last one in ink
+  Row { visible: r.type === "bars"; x: pad; width: parent.width - pad * 2; height: parent.height - Style.space(10); anchors.bottom: parent.bottom; spacing: Style.space(3)
+    Repeater { model: r.type === "bars" ? r.values : []
+      Rectangle { required property var modelData; required property int index; width: (parent.width - Style.space(3) * (r.values.length - 1)) / r.values.length; anchors.bottom: parent.bottom
+        readonly property real peak: Math.max.apply(null, r.values.concat([1])); height: Math.max(2, parent.height * modelData / peak); color: index === r.hi ? p.fg : p.faint } } }
+  // progress
+  Item { visible: r.type === "prog"; x: pad; width: parent.width - pad * 2; height: parent.height
+    Text { textFormat: Text.PlainText; y: Style.space(6); text: r.left || ""; color: p.fg; font.family: p.mono; font.pixelSize: Style.font.bodySmall }
+    Text { textFormat: Text.PlainText; y: Style.space(6); anchors.right: parent.right; text: r.right || ""; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.bodySmall }
+    Rectangle { anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(8); width: parent.width; height: 3; color: p.faint
+      Rectangle { id: fill; readonly property bool sweeping: (r.pct || 0) === 0; property real sweepX: 0; height: parent.height; color: p.fg; width: sweeping ? parent.width * 0.25 : parent.width * (r.pct || 0) / 100; x: sweeping ? sweepX : 0
+        NumberAnimation on sweepX { running: r.type === "prog" && fill.sweeping && p.opened; loops: Animation.Infinite; from: 0; to: fill.parent.width * 0.75; duration: 1400; easing.type: Easing.InOutSine } } } }
+  // a reason, wrapped
+  Text { id: wrapped; textFormat: Text.PlainText; visible: r.type === "text"; x: pad; width: parent.width - pad * 2; anchors.verticalCenter: parent.verticalCenter
+    text: (r.lead ? r.lead + " " : "") + (r.text || ""); color: p.fg; font.family: p.mono; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAtWordBoundaryOrAnywhere }
+  // one GPU: index, name, temperature, load bar, memory
+  Item { visible: r.type === "gpu"; x: pad; width: parent.width - pad * 2; height: parent.height
+    readonly property color c: r.busy ? p.fg : p.dim
+    Text { textFormat: Text.PlainText; x: 0; anchors.verticalCenter: parent.verticalCenter; text: r.idx || ""; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption }
+    Text { textFormat: Text.PlainText; x: Style.space(28); width: Style.space(96); elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter; text: r.name || ""; color: r.busy ? p.ink : p.dim; font.family: p.mono; font.pixelSize: Style.font.caption }
+    Text { textFormat: Text.PlainText; x: Style.space(130); anchors.verticalCenter: parent.verticalCenter; text: r.temp || ""; color: parent.c; font.family: p.mono; font.pixelSize: Style.font.caption }
+    Rectangle { x: Style.space(166); width: parent.width - Style.space(166) - Style.space(70); height: 3; anchors.verticalCenter: parent.verticalCenter; color: p.faint
+      Rectangle { width: parent.width * (r.pct || 0) / 100; height: parent.height; color: p.fg } }
+    Text { textFormat: Text.PlainText; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: r.used !== "" ? r.used + " / " + r.total : r.total; color: parent.c; font.family: p.mono; font.pixelSize: Style.font.caption } }
+  // a section word with a figure at the right
+  Item { visible: r.type === "h"; x: pad; width: parent.width - pad * 2; height: parent.height
+    Text { textFormat: Text.PlainText; anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(4); text: r.label || ""; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; font.letterSpacing: 1.5 }
+    Text { textFormat: Text.PlainText; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(4); text: r.right || ""; color: p.fg; font.family: p.mono; font.pixelSize: Style.font.caption } }
+  // a horizontal bar with a label and a figure
+  Item { visible: r.type === "hbar"; x: pad; width: parent.width - pad * 2; height: parent.height
+    Text { textFormat: Text.PlainText; width: Style.space(90); elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter; text: r.label || ""; color: p.fg; font.family: p.mono; font.pixelSize: Style.font.caption }
+    Rectangle { x: Style.space(100); width: parent.width - Style.space(100) - Style.space(56); height: 5; anchors.verticalCenter: parent.verticalCenter; color: p.faint
+      Rectangle { width: parent.width * (r.pct || 0) / 100; height: parent.height; color: p.fg } }
+    Text { textFormat: Text.PlainText; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: r.right || ""; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption } }
+  // a line over time
+  Canvas { visible: r.type === "spark"; x: pad; width: parent.width - pad * 2; height: parent.height - Style.space(8); y: Style.space(4)
+    onPaint: { var ctx = getContext("2d"), vs = r.values || [], n = vs.length, ok = vs.filter(function(v) { return v != null }), max = Math.max.apply(null, ok.concat([1])); ctx.clearRect(0, 0, width, height)
+      ctx.strokeStyle = p.fg; ctx.lineWidth = 1.2; ctx.beginPath(); var started = false
+      for (var i = 0; i < n; i++) { if (vs[i] == null) { started = false; continue } var px = n > 1 ? i / (n - 1) * width : 0, py = height - vs[i] / max * (height - 4) - 2; if (started) ctx.lineTo(px, py); else ctx.moveTo(px, py); started = true }
+      ctx.stroke() }
+    Component.onCompleted: requestPaint(); onVisibleChanged: requestPaint()
+    Connections { target: item; function onRChanged() { requestPaint() } } }
+  // axis labels under a chart
+  Row { visible: r.type === "axis"; x: pad; width: parent.width - pad * 2; anchors.verticalCenter: parent.verticalCenter
+    Repeater { model: r.type === "axis" ? r.labels : []
+      Text { required property var modelData; textFormat: Text.PlainText; width: parent.width / r.labels.length; horizontalAlignment: Text.AlignHCenter; text: modelData; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption } } }
+  // an option with a radio mark
+  Item { visible: r.type === "opt"; x: pad; width: parent.width - pad * 2; height: parent.height
+    Text { textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter; text: (r.on ? "● " : "○ ") + (r.label || ""); color: r.disabled ? p.faint : r.on ? p.ink : p.fg; font.family: p.mono; font.pixelSize: Style.font.bodySmall }
+    Text { textFormat: Text.PlainText; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: r.small || ""; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption } }
+  // the project folder, editable
+  Controls.TextField { id: field; visible: r.type === "field"; x: pad; width: parent.width - pad * 2; anchors.verticalCenter: parent.verticalCenter
+    text: r.value || ""; color: p.ink; selectionColor: p.hoverFill; selectedTextColor: p.ink; font.family: p.mono; font.pixelSize: Style.font.bodySmall; placeholderText: "project folder"
+    background: Rectangle { color: "transparent"; border.color: field.activeFocus ? p.dim : p.faint; border.width: 1 }
+    onAccepted: { var v = text; if (v === "~" || v.indexOf("~/") === 0) v = p.home + v.slice(1); p.act(["agent-dir", v]); p.focusContent() }
+    Keys.onEscapePressed: p.focusContent() }
+  // a row: name, detail, and the verb at the right
+  Item { visible: r.type === "row"; x: pad; width: parent.width - pad * 2; height: parent.height
+    Text { textFormat: Text.PlainText; id: lbl; anchors.verticalCenter: parent.verticalCenter; text: r.label || ""; color: item.lead; font.family: p.mono; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight; width: Math.min(implicitWidth, parent.width - verb.width - Style.space(20)) }
+    Text { textFormat: Text.PlainText; anchors.left: lbl.right; anchors.leftMargin: Style.space(8); anchors.right: verb.left; anchors.rightMargin: Style.space(10); anchors.verticalCenter: parent.verticalCenter; text: r.small || ""; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+    Text { textFormat: Text.PlainText; id: verb; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: r.verb ? r.verb + " ›" : ""; color: item.actionable ? p.ink : p.faint; font.family: p.mono; font.pixelSize: Style.font.bodySmall } }
 }

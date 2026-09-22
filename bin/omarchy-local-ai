@@ -136,17 +136,19 @@ policy_check() {
 # One detector per vendor, each printing a JSON array of {backend,index,product,totalMiB,usedMiB,freeMiB,renderNode}.
 nvidia_gpus() {
   command -v nvidia-smi >/dev/null 2>&1 || { printf '[]'; return; }
-  local rows; rows=$(deadline 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,memory.free,driver_version --format=csv,noheader,nounits 2>/dev/null || true)
+  local rows; rows=$(deadline 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,memory.free,driver_version,temperature.gpu,utilization.gpu --format=csv,noheader,nounits 2>/dev/null || true)
   [[ -n $rows ]] || { printf '[]'; return; }
   jq -Rsc 'split("\n")|map(select(length>0)|split(",")|map(gsub("^ +| +$";"")))
-    |map({backend:"nvidia",index:(.[0]|tonumber),product:.[1],totalMiB:(.[2]|tonumber),usedMiB:(.[3]|tonumber),freeMiB:(.[4]|tonumber),renderNode:null,driver:.[5]})' <<<"$rows"
+    |map({backend:"nvidia",index:(.[0]|tonumber),product:.[1],totalMiB:(.[2]|tonumber),usedMiB:(.[3]|tonumber),freeMiB:(.[4]|tonumber),renderNode:null,driver:.[5],
+          tempC:(.[6] // null | try tonumber catch null), utilPct:(.[7] // null | try tonumber catch null)})' <<<"$rows"
 }
+intel_temp() { local h f; for h in /sys/bus/pci/devices/"$1"/hwmon/hwmon*; do for f in "$h"/temp*_label; do [[ -f $f && $(cat "$f" 2>/dev/null) == pkg ]] && { awk '{printf "%d", $1/1000}' "${f%_label}_input" 2>/dev/null; return; }; done; done; printf null; }
 intel_gpus() { # Battlemage cards by PCI id (8086:e223), one per render node, so an old pci.ids never hides one
   command -v lspci >/dev/null 2>&1 || { printf '[]'; return; }
   local dri="${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}" a idx=0 out='[]'
   while IFS= read -r a; do
     [[ -n $a && -e "$dri/pci-$a-render" ]] || continue
-    out=$(jq -c --argjson i "$idx" --arg node "$(canon "$dri/pci-$a-render")" '.+[{backend:"intel-xpu",index:$i,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null,renderNode:$node,driver:""}]' <<<"$out")
+    out=$(jq -c --argjson i "$idx" --arg node "$(canon "$dri/pci-$a-render")" --argjson t "$(intel_temp "$a")" '.+[{backend:"intel-xpu",index:$i,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null,renderNode:$node,driver:"",tempC:$t,utilPct:null}]' <<<"$out")
     idx=$((idx+1))
   done < <(lspci -Dnn -d 8086:e223 2>/dev/null | awk '{print $1}' | sort -u)
   printf '%s' "$out"
@@ -155,14 +157,14 @@ amd_gpus() {
   local smi static metric; smi=${OMARCHY_AI_AMD_SMI:-$(command -v amd-smi 2>/dev/null || true)}
   [[ -n $smi && -x $smi ]] || { printf '[]'; return; }
   static=$(deadline 10 "$smi" static --json 2>/dev/null) || { printf '[]'; return; }
-  metric=$(deadline 10 "$smi" metric --mem-usage --json 2>/dev/null) || metric='{}'
+  metric=$(deadline 10 "$smi" metric --mem-usage --temperature --usage --json 2>/dev/null) || metric='{}'
   jq -nc --argjson s "$static" --argjson m "$metric" '
     ($m.gpu_data // []) as $md
     | [($s.gpu_data // [])[] | . as $g | ([$md[]? | select(.gpu==$g.gpu)] | .[0] // {}) as $u
         | select(($g.asic.market_name // "") != "")
         | {backend:"amd-rocm", index:($g.gpu|tonumber), product:$g.asic.market_name,
            totalMiB:($g.vram.size.value // $u.mem_usage.total_vram.value // 0), usedMiB:($u.mem_usage.used_vram.value // null), freeMiB:($u.mem_usage.free_vram.value // null),
-           renderNode:(("/dev/dri/by-path/pci-" + ($g.bus.bdf // "") + "-render")), driver:""}]' 2>/dev/null || printf '[]'
+           renderNode:(("/dev/dri/by-path/pci-" + ($g.bus.bdf // "") + "-render")), driver:"", tempC:($u.temperature.edge.value // null), utilPct:($u.usage.gfx_activity.value // null)}]' 2>/dev/null || printf '[]'
 }
 gpus_json() { # every GPU, with the driver version once
   [[ -n ${OMARCHY_AI_HARDWARE_JSON:-} ]] && { jq -c . <<<"$OMARCHY_AI_HARDWARE_JSON"; return; }
@@ -184,7 +186,7 @@ match_hardware() {
     | {hardwareId:($use.hardwareId // ""), driver:($hw.driver // ""),
        reason:(if $use!=null and $use.hardwareId!="" then "" elif ($gpus|length)==0 then "no supported GPU detected" else ("no validated recipe for "+(($use // $gpus[0]).product)+" yet") end),
        gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // "")), renderNode:(.renderNode // null),
-                       usedGb:(if .usedMiB==null then null else ((.usedMiB/1024*10|round)/10) end), freeMiB:(.freeMiB // null), totalMiB:(.totalMiB // 0)}]}' "$RECIPES"
+                       usedGb:(if .usedMiB==null then null else ((.usedMiB/1024*10|round)/10) end), freeMiB:(.freeMiB // null), totalMiB:(.totalMiB // 0), tempC:(.tempC // null), utilPct:(.utilPct // null)}]}' "$RECIPES"
 }
 # claim_gpus <recipe> <match> [key...] -> {keys, indexes, renderNodes, short}: the cards a start takes, the
 # asked-for ones first, then free ones of the recipe's type; short names the refusal when there are not enough
@@ -417,7 +419,8 @@ gateway_argv() { # the attested gateway, as the caller's uid, on loopback only, 
   printf '%s\0' docker run --detach --name "$(gateway_name "$id")" --restart unless-stopped --network "$(net_name "$id")" --user "$RUN_AS" \
     --publish "127.0.0.1:$SLOT_PORT:12434" --label "$LABEL=1" --label "$LABEL.recipe=$id" --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=gateway" --label "$LABEL.keys=$KEYS_CSV" --label "$LABEL.port=$SLOT_PORT" \
     --env "UPSTREAM=http://engine:$(jq -r .launch.port <<<"$r")" --env "MODEL=$(jq -r '.servedName // ""' <<<"$r")" \
-    --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY_FILE:/run/gateway.key:ro" "$(gateway_image)"
+    --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY_FILE:/run/gateway.key:ro" \
+    --env GATEWAY_USAGE_LOG=/var/lib/local-ai/usage.jsonl --volume "$STATE/usage:/var/lib/local-ai" "$(gateway_image)"
 }
 read_argv() { local f; f=$(mktemp) || return 1; if ! "$@" >"$f"; then rm -f "$f"; return 1; fi; ARGV=(); local v; while IFS= read -r -d '' v; do ARGV+=("$v"); done <"$f"; rm -f "$f"; ((${#ARGV[@]})); }
 api() { curl -fsS --max-time "${2:-30}" --max-filesize 1048576 -H "@$AUTH_FILE" "http://127.0.0.1:$SLOT_PORT/v1/$1"; }
@@ -570,7 +573,7 @@ phase_run() { # phase_run <phase> <op-name> <recipe-id> [args] -> 0 or 1
 
 # ------------------------------------------------------------------ workers (user, detached)
 ensure_key() { # the gateway's bearer secret and the curl header file that carries it; 0600, never in argv
-  state_dir
+  state_dir; mkdir -p "$STATE/usage"   # the gateway appends one line per answer here, as the user
   [[ -s $KEY_FILE ]] || { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$KEY_FILE.tmp.$$" && mv -f "$KEY_FILE.tmp.$$" "$KEY_FILE"; }
   local want; want="Authorization: Bearer $(cat "$KEY_FILE")"
   [[ -f $AUTH_FILE && $(cat "$AUTH_FILE") == "$want" ]] || { printf '%s\n' "$want" >"$AUTH_FILE.tmp.$$" && mv -f "$AUTH_FILE.tmp.$$" "$AUTH_FILE"; }
@@ -624,12 +627,13 @@ agent_dialect() { case $1 in claude) printf messages ;; codex) printf responses 
 agents_json() { # agents_json <apis-json> -> {default, directory, installed, launchable}
   local apis=${1:-[]} found="" a def=""
   for a in "${AGENTS[@]}"; do agent_bin "$a" >/dev/null 2>&1 && found+="$a "; done
-  command -v omarchy-default-agent >/dev/null 2>&1 && def=$(omarchy-default-agent 2>/dev/null || true)
+  def=$(agent_pick); [[ -n $def && " $found" == *" $def "* ]] || { def=""; command -v omarchy-default-agent >/dev/null 2>&1 && def=$(omarchy-default-agent 2>/dev/null || true); }
   jq -nc --arg found "$found" --arg d "${def:-}" --arg dir "$(agent_dir)" --argjson apis "$apis" '
     ($found|split(" ")|map(select(.!=""))) as $i
     | {default:$d, directory:$dir, installed:$i, launchable:[$i[]|. as $a|select($apis|index((if $a=="claude" then "messages" elif $a=="codex" then "responses" else "chat" end))!=null)]}'
 }
 agent_dir() { local d; d=${OMARCHY_AI_AGENT_DIR:-$(cat "$STATE/agent-dir" 2>/dev/null || true)}; printf '%s\n' "${d:-$HOME_DIR}"; }
+agent_pick() { cat "$STATE/agent" 2>/dev/null || true; }   # the agent the card opens, chosen on the card
 with_key() { printf '%s\0' bash -c 'k=$(cat "$1") || exit 1; shift; while [[ $1 != -- ]]; do export "$1=$k"; shift; done; shift; exec "$@"' omarchy-local-ai-agent "$KEY_FILE" "$@" --; }
 # agent_argv <name> <model> <endpoint> <context> <vision> -> NUL-separated argv. The key reaches the agent through its
 # environment (with_key) or a plugin-owned 0600 file, never argv; no file the user owns is read or written.
@@ -665,7 +669,7 @@ agent_launch() { # agent_launch [name] [recipe-id]: the default agent when omitt
   local name=${1:-} which=${2:-} snap m model v dir; snap=$(cat "$SNAPSHOT" 2>/dev/null || printf '{}')
   if [[ -n $which ]]; then m=$(jq -c --arg id "$which" '[.models[]? | select(.recipeId == $id)] | .[0] // null' <<<"$snap"); else m=$(jq -c '(.running.recipeId // "") as $id | [.models[]? | select(.recipeId == $id)] | .[0] // null' <<<"$snap"); fi
   [[ $m != null && $(jq -r .state <<<"$m") == ready ]] || { fail "load a model first"; return 1; }
-  [[ -n $name ]] || { name=$(jq -r '.agents.default // ""' <<<"$snap"); name=${name:-pi}; }
+  [[ -n $name ]] || { name=$(jq -r '.agents.default // ""' <<<"$snap"); name=${name:-$(jq -r '.agents.installed[0] // "pi"' <<<"$snap")}; }
   printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$name" || { fail "unknown agent $name"; return 1; }
   jq -e --arg a "$name" '.launchable|index($a)!=null' <<<"$m" >/dev/null || { fail "$name cannot use this model: its API dialect did not pass acceptance"; return 1; }
   model=$(jq -r .servedModel <<<"$m")
@@ -710,6 +714,22 @@ models_json() { # one record per slot, its state observed
   done < <(jq -r '.slots | keys[]' <<<"$ledger")
   printf '%s' "$out"
 }
+stats_json() { # tokens by day and by model over 7 days, decode speed now and per hour over 24 h, from the gateway's usage log
+  local f="$STATE/usage/usage.jsonl" now day0 h m sec
+  [[ -s $f ]] || { printf '{"today":0,"days":[0,0,0,0,0,0,0],"byModel":[],"decode":null,"hours":[]}'; return; }
+  [[ $(fsize "$f") -gt 4194304 ]] && { tail -n 20000 "$f" >"$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"; }
+  now=$(date +%s); h=$(date +%H); m=$(date +%M); sec=$(date +%S); day0=$(( now - 10#$h*3600 - 10#$m*60 - 10#$sec ))
+  tail -n 50000 "$f" | jq -sc --argjson now "$now" --argjson day0 "$day0" '
+    def tps: select(.completion > 0 and .ms > .ttft_ms) | .completion / ((.ms - .ttft_ms) / 1000);
+    def avg: if length > 0 then (add / length) else null end;
+    [.[] | select(type == "object" and .t >= $day0 - 6*86400)] as $r
+    | {today: ([$r[] | select(.t >= $day0) | .completion + .prompt] | add // 0),
+       days: [range(6; -1; -1) as $i | ([$r[] | select(.t >= $day0 - $i*86400 and .t < $day0 - ($i-1)*86400) | .completion + .prompt] | add // 0)],
+       byModel: ($r | group_by(.model) | map({model: .[0].model, tokens: (map(.completion + .prompt) | add)}) | sort_by(-.tokens)),
+       decode: ([$r[] | select(.t >= $now - 600) | tps] | avg | if . == null then null else (. * 10 | round / 10) end),
+       hours: [range(23; -1; -1) as $i | ([$r[] | select(.t >= $now - ($i+1)*3600 and .t < $now - $i*3600) | tps] | avg | if . == null then null else round end)]}' 2>/dev/null \
+    || printf '{"today":0,"days":[0,0,0,0,0,0,0],"byModel":[],"decode":null,"hours":[]}'
+}
 snapshot_write() {
   state_dir
   local ledger match hw_id reason state="" note="" busy=false pid statusText="" helpText=""
@@ -748,13 +768,13 @@ snapshot_write() {
   command -v docker >/dev/null 2>&1 || { statusText="Setup required"; helpText="Docker is not installed"; }
   jq -nc --argjson l "$ledger" --argjson match "$match" --arg state "$state" --arg reason "$reason" --arg hw "$hw_id" --argjson focus "$focus" --argjson models "$models" \
     --argjson agents "$(agents_json "$(jq -c '.apis // []' <<<"$focus")")" --arg t "$(now)" --arg note "$note" --argjson recs "$recs" --argjson pbusy "$pbusy" --arg listener "$listener" --argjson port "$fport" \
-    --arg reg "$(registry_commit)" --arg rgen "$(jq -r '.generatedAt // ""' "$RECIPES")" --arg statusText "$statusText" --arg helpText "$helpText" --arg last "$(jq -r '.last // ""' <<<"$ledger")" '
+    --arg reg "$(registry_commit)" --arg rgen "$(jq -r '.generatedAt // ""' "$RECIPES")" --arg statusText "$statusText" --arg helpText "$helpText" --arg last "$(jq -r '.last // ""' <<<"$ledger")" --argjson stats "$(stats_json)" '
     def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
     ([$models[] | select(.state != "stopped") | .keys[]]) as $busyKeys
     | ($match.gpus | group_by([.backend, .product, .vramGb]) | map((.[0]) as $g | length as $n | ([.[] | select(.key as $k | $busyKeys | index($k))] | length) as $used
         | {hardwareId:$g.hardwareId, backend:$g.backend, product:$g.product, name:($g.product|short), vramGb:$g.vramGb, count:$n, totalGb:(($g.vramGb//0)*$n), keys:map(.key), chosen:(map(.chosen)|any),
            recipe:($recs|map(select(.hardwareId==$g.hardwareId))|.[0] // null), claimed:$used, idle:($n-$used)}) | sort_by(-(.totalGb//0), .name)) as $cards
-    | {schemaVersion:"omarchy-local-ai/snapshot/11", updatedAt:$t, state:$state, error:(if $l.error!="" then $l.error else $note end),
+    | {schemaVersion:"omarchy-local-ai/snapshot/12", updatedAt:$t, state:$state, error:(if $l.error!="" then $l.error else $note end), stats:$stats,
        statusText:$statusText, helpText:$helpText,
        operation:{name:$l.op.name, recipeId:$l.op.recipeId, detail:$l.op.detail, percent:$l.op.percent, startedAt:$l.op.startedAt, expectedSeconds:(if $l.op.name=="starting" then ($l.lastStartSeconds//0) else 0 end)},
        hardwareId:$hw, gpus:$match.gpus, registry:{commit:$reg, generatedAt:$rgen}, reason:(if $hw=="" then $reason elif $pbusy then ("port \($port) is in use by something else") else "" end),
@@ -775,6 +795,7 @@ Usage: omarchy-local-ai <command>
   install                  set up what a first run needs (the NVIDIA container toolkit on NVIDIA hosts)
   remove                   stop everything and delete the containers, images, weights and state
   agent-dir <path>         the folder agents open in
+  agent-default <name>     the agent the card opens
   gpu [auto|<key>]         which card the card looks at first
 EOF
 }
@@ -790,7 +811,7 @@ case $cmd in
   *)
     missing=""; for t in jq curl; do command -v "$t" >/dev/null 2>&1 || missing+=" $t"; done
     if [[ -n $missing ]]; then broken="missing tool:$missing"; elif ! recipes_ok; then broken="recipes.json is missing or broken: reinstall the plugin"; fi
-    if [[ -n ${broken:-} ]]; then fail "$broken" || :; [[ $cmd == snapshot ]] && printf '{"schemaVersion":"omarchy-local-ai/snapshot/11","state":"error","error":"%s","statusText":"Setup required","helpText":"%s","operation":{},"models":[],"cards":[],"recipes":[],"gpus":[],"agents":{},"reason":""}\n' "$broken" "$broken"; exit 1; fi
+    if [[ -n ${broken:-} ]]; then fail "$broken" || :; [[ $cmd == snapshot ]] && printf '{"schemaVersion":"omarchy-local-ai/snapshot/12","state":"error","error":"%s","statusText":"Setup required","helpText":"%s","operation":{},"models":[],"cards":[],"recipes":[],"gpus":[],"agents":{},"reason":""}\n' "$broken" "$broken"; exit 1; fi
     RUN_AS="$(id -u):$(id -g)"
     case $cmd in
       snapshot) snapshot_write; cat "$SNAPSHOT" ;;
@@ -805,7 +826,8 @@ case $cmd in
             [[ -z ${1:-} || $1 =~ ^[a-z0-9][a-z0-9.-]{0,63}$ ]] || { fail "unload [recipe-id]"; exit 1; }
             spawn unload "${1:-}" __worker unload "${1:-}" ;;
       agent) snapshot_write; agent_launch "${1:-}" "${2:-}" 2>"$STATE/agent.err" || { m=$(sed -n '$s/^local-ai: //p' "$STATE/agent.err"); log "error: ${m:-agent launch failed}"; ledger_write '.error=$e' --arg e "${m:-agent launch failed (see $LOGFILE)}"; snapshot_write; exit 1; } ;;
-      agent-dir) [[ -d ${1:-} ]] && { state_dir; (cd -- "$1" && pwd) >"$STATE/agent-dir"; log "agent-dir $1"; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;
+      agent-dir) [[ -d ${1:-} ]] && { state_dir; (cd -- "$1" && pwd) >"$STATE/agent-dir"; log "agent-dir $1"; snapshot_write; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;
+      agent-default) printf '%s\n' "${AGENTS[@]}" | grep -qx -- "${1:-}" || { fail "agent-default <name>"; exit 1; }; state_dir; printf '%s' "$1" >"$STATE/agent"; log "agent-default $1"; snapshot_write ;;
       gpu) case ${1:-} in ""|auto) rm -f "$STATE/gpu" ;; *) [[ $1 =~ ^[a-z-]+:[0-9]+$ ]] || { fail "gpu <backend:index>"; exit 1; }; state_dir; printf '%s' "$1" >"$STATE/gpu" ;; esac; snapshot_write; jq -c .gpus "$SNAPSHOT" ;;
       install) state_dir; m=$(match_hardware)
             if [[ $(jq -r '.gpus[] | select(.chosen) | .backend' <<<"$m") == nvidia ]] && ! docker info 2>/dev/null | grep -qi nvidia; then

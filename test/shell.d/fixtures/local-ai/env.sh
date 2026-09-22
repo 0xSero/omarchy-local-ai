@@ -49,7 +49,7 @@ printf '[{"type":"file","path":"model.safetensors","size":4096,"lfs":{"oid":"%s"
 # ---------------------------------------------------------------- shims
 cat >"$TMP/bin/nvidia-smi" <<'EOF'
 #!/bin/bash
-if [[ -n ${SHIM_GPUS:-} ]]; then sed "s/$/, ${SHIM_DRIVER:-580.65.06}/" <<<"$SHIM_GPUS"; else echo "0, NVIDIA GeForce RTX 4090, 24564, 300, 24264, ${SHIM_DRIVER:-580.65.06}"; fi
+if [[ -n ${SHIM_GPUS:-} ]]; then sed "s/$/, ${SHIM_DRIVER:-580.65.06}, 41, 0/" <<<"$SHIM_GPUS"; else echo "0, NVIDIA GeForce RTX 4090, 24564, 300, 24264, ${SHIM_DRIVER:-580.65.06}, 41, 0"; fi
 EOF
 cat >"$TMP/bin/docker" <<'EOF'
 #!/bin/bash

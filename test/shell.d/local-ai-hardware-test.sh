@@ -85,8 +85,8 @@ pass "agents open in the chosen folder"
 
 # the record the card reads
 "$CLI" snapshot >/dev/null
-for k in schemaVersion state error statusText helpText operation hardwareId gpus cards recipes models running agents port registry updatedAt; do jq -e --arg k "$k" 'has($k)' "$STATE/snapshot.json" >/dev/null || fail "snapshot field $k"; done
-[[ $(snap .schemaVersion) == "omarchy-local-ai/snapshot/11" && $(mode "$STATE/snapshot.json") == 600 ]] || fail "snapshot shape"
+for k in schemaVersion state error statusText helpText operation hardwareId gpus cards recipes models running agents port registry updatedAt stats; do jq -e --arg k "$k" 'has($k)' "$STATE/snapshot.json" >/dev/null || fail "snapshot field $k"; done
+[[ $(snap .schemaVersion) == "omarchy-local-ai/snapshot/12" && $(mode "$STATE/snapshot.json") == 600 ]] || fail "snapshot shape"
 pass "the snapshot carries every field the card renders, privately"
 SHIM_PORT_BUSY=1 "$CLI" unload >/dev/null; SHIM_PORT_BUSY=1 "$CLI" snapshot >/dev/null
 [[ $(snap .statusText) == "Port in use" && $(snap '.port.busy') == true ]] || fail "port busy" "$(snap .port)"
@@ -94,3 +94,24 @@ pass "a foreign listener on the gateway port is a status line on the card"
 mv "$STATE/state.json" "$STATE/ledger.json"; "$CLI" snapshot >/dev/null
 [[ -f $STATE/state.json && ! -f $STATE/ledger.json ]] || fail "5.x ledger"
 pass "a 5.x ledger is adopted by rename"
+
+# temperature and utilisation ride along with every GPU; a shim that prints neither leaves them null
+"$CLI" snapshot >/dev/null
+[[ $(snap '.gpus[0].tempC') == 41 && $(snap '.gpus[0].utilPct') == 0 ]] || fail "gpu telemetry" "$(snap '.gpus[0]')"
+pass "the snapshot carries each GPU's temperature and utilisation"
+
+# tokens and speed come from the gateway's usage log, by day and by model, as the user
+mkdir -p "$STATE/usage"; now=$(date +%s)
+printf '{"t":%s,"api":"chat","model":"m1","prompt":100,"completion":50,"estimated":false,"ttft_ms":200,"ms":1200}\n{"t":%s,"api":"messages","model":"m2","prompt":10,"completion":20,"estimated":false,"ttft_ms":100,"ms":600}\n{"t":%s,"api":"chat","model":"m1","prompt":1,"completion":1,"estimated":true,"ttft_ms":50,"ms":60}\nnot json\n' "$now" "$((now-60))" "$((now-3*86400))" >"$STATE/usage/usage.jsonl"
+"$CLI" snapshot >/dev/null
+[[ $(snap .stats.today) == 180 && $(snap '.stats.days|length') == 7 && $(snap '.stats.days[6]') == 180 && $(snap '.stats.days[3]') == 2 && $(snap '.stats.byModel[0].model') == m1 && $(snap '.stats.byModel[0].tokens') == 152 ]] || fail "stats" "$(snap .stats)"
+[[ $(snap .stats.decode) == 45 && $(snap '.stats.hours|length') == 24 && $(snap '.stats.hours[23]') == 45 ]] || fail "decode" "$(snap .stats)"
+pass "tokens by day and by model and decode speed are derived from the usage log; a bad line is skipped"
+
+# the agent the card opens is chosen on the card and remembered
+"$CLI" agent-default codex >/dev/null
+[[ $(cat "$STATE/agent") == codex && $(snap '.agents.default') == codex ]] || fail "agent-default" "$(snap .agents)"
+"$CLI" agent-default nope >/dev/null 2>&1 && fail "agent-default accepts anything"
+rm -f "$STATE/agent"
+pass "agent-default records the chosen agent and refuses an unknown one"
+
