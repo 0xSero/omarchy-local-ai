@@ -2,6 +2,25 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [5.4.0] - 2026-09-22
+
+### Added
+- Omarchy's native Local AI tab is generated from this plugin instead of copied by hand. `make native OMARCHY=<checkout>` writes its row data, row component and token bars from `ui/`, `make native-check` fails when the copy has drifted, and `test/native` checks the same contract without a checkout. A card change is now made once here and published with one command.
+- `native/backend-command.js` holds the one part of the native view that is native to it: resolving the installed controller from Omarchy's plugin registry.
+
+### Changed
+- `recipes.json` is now taken verbatim from the registry's published export (`make sync`), and `make check` fails when the vendored copy has fallen behind it, so the registry is the only place a recipe is authored. The plugin's CI checks out the registry to run that comparison, and a daily job commits the export when it moves — the same export the plugin already stages at runtime, so an installed plugin sees new recipes without waiting for a release.
+- Each model is one row on a GPU page, and that row is the action: **Download & run**, **Load**, **Resume & load**, **Load another** or **Swap**, naming its size, with its context and capabilities beside it. Selecting a model no longer reveals a separate button underneath, and a model whose load would replace a running one names the models being replaced in its own row.
+- A GPU page no longer repeats the card as a row. Its title and breadcrumb already name the card, so the per-card state moves into the subtitle.
+
+### Validation
+- The suite now reads the same on jq 1.6 (Ubuntu 22.04, Pop!_OS) and on 1.7+: its argv conversion drops the trailing field only when it is empty, because jq 1.6 strips the final NUL in `-Rsc` where 1.7 and later keep it.
+- The click suite passes on Omarchy: 42 scroll cases, 2 hit-area cases, 2 flow cases and 2 breadcrumb cases, no failures.
+
+### Fixed
+- `manifest.json`'s `description` — the listing's own words — names the supported hardware and the validated recipe count again: 77 recipes across 37 cards, NVIDIA RTX 30/40/50, RTX Ada, RTX Pro Blackwell, Intel Arc Pro B70 and AMD ROCm. 5.2.0 replaced the paragraph that named them with one that did not, and the listing reads this field at the published commit.
+- Every `Text` in `ui/CardRow.qml` and `ui/TokenTotal.qml` whose `text` is not a bare literal now declares `textFormat: Text.PlainText`. Omarchy's own scan requires it, and the native copies already did: `Text.AutoText` promotes a string that looks like markup and fetches `<img src>` from it, and a model name, a device label, a share URL or a refusal sentence can carry the opening `<`.
+
 ## [5.3.7] - 2026-09-21
 
 ### Fixed

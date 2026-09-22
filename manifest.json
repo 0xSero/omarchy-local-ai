@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "5.3.7",
+  "version": "5.4.0",
   "author": "0xSero",
   "license": "MIT",
-  "description": "Run local models and coding agents from the Omarchy bar or an optional Local AI tab inside Agents. Browse GPU groups, choose models for one or more GPUs, and launch installed agents in your project folder. See GPU temperature, usage and VRAM, plus today\u2019s runtime statistics where supported. Includes NVIDIA, Intel and AMD telemetry adapters, keyed Tailscale sharing, and optional Mac/Moonlight shortcuts with a status-bar guide. Model availability depends on validated recipes for your hardware.",
+  "description": "Local models and coding agents on your own GPUs, from the Omarchy bar or the optional Local AI tab inside Agents. 77 validated recipes across 37 cards: NVIDIA RTX 30/40/50, RTX Ada, RTX Pro Blackwell, Intel Arc Pro B70 and AMD ROCm. Run several models at once, each on its own GPU group, up to 256K context. Open claude, codex, pi, omp, opencode, crush, grok, copilot or hermes on a running model, nothing written to your config. Share the same keyed endpoint on your tailnet in one click, with live speed, GPU telemetry and today's runtime statistics on the card.",
   "kinds": [
     "bar-widget"
   ],

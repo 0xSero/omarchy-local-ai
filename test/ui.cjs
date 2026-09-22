@@ -10,9 +10,11 @@ assert(chips.some(x => x.text === 'reasoning ?'));
 const recipe = {id: 'qwen-tp2', name: 'Qwen', hardwareId: 'b70', cards: 2, ctxTokens: 262144, caps: {vision: true, video: true}};
 const result = ui.build({snap: {state: 'idle', operation: {}, models: [], gpus: [],
   cards: [{hardwareId: 'b70', name: 'B70', count: 2, keys: ['intel-xpu:0','intel-xpu:1'], vramGb: 32}], recipes: [recipe]},
-  view: 'card', hw: 'b70', count: 2, pick: 'qwen-tp2', localError: ''});
-assert(result.rows.some(r => r.label === 'context' && r.value === '256K per request'));
-assert(result.rows.some(r => r.chips && r.chips.some(c => c.text === 'video' && !c.off)));
+  view: 'card', hw: 'b70', count: 2, localError: ''});
+const oneRow = result.rows.find(r => r.action === 'run:qwen-tp2:2');
+assert(/256K ctx/.test(oneRow.detail), 'the model row carries its context');
+assert(/ · video/.test(oneRow.detail), 'the model row carries a capability the recipe passed');
+assert(/ · tools\?/.test(oneRow.detail), 'a capability the recipe does not declare stays unknown');
 console.log('UI context, video and unknown capability checks passed');
 
 // GPU rows stay navigable while occupied. The model list respects physical
@@ -32,16 +34,18 @@ assert.equal(gpuRows[1].value, 'Models ›');
 const crashed = ui.build({snap: {...snap, models: [{...running, state: 'error'}]}, view: 'home', localError: ''});
 assert.equal(crashed.rows.find(r => r.action === 'gpu:b70').status, 'error');
 assert(!crashed.rows.find(r => r.action === 'gpu:b70').devices);
-const catalog = ui.build({snap, view: 'card', hw: 'b70', count: 2, pick: recipe.id, localError: ''});
+const catalog = ui.build({snap, view: 'card', hw: 'b70', count: 2, localError: ''});
 assert(catalog.rows.some(r => r.action === 'model:qwen-tp2'));
 assert(catalog.rows.some(r => r.tabs && r.tabs.some(t => t.action === 'count:2')));
-assert(catalog.foot.every(r => !r.action.startsWith('run:')));
+assert(!catalog.rows.some(r => r.label.startsWith('2× B70')), 'the GPU page does not repeat the card as a row');
+assert(/of 2 free/.test(catalog.sub), 'the card page names its per-card state in the subtitle');
 assert.equal(catalog.foot.length, 0);
-assert(!catalog.rows.some(r=>r.action.startsWith('run:')));
-const available = ui.build({snap: {...snap, models: []}, view: 'card', hw: 'b70', count: 2, pick: recipe.id, localError: ''});
+assert(!catalog.rows.some(r=>r.action.startsWith('run:')), 'a model that would replace the running one is not offered');
+const available = ui.build({snap: {...snap, models: []}, view: 'card', hw: 'b70', count: 2, localError: ''});
 assert(available.rows.some(r=>r.action==='run:qwen-tp2:2'));
-const stalePick = ui.build({snap, view: 'card', hw: 'b70', count: 1, pick: recipe.id, localError: ''});
-assert(!stalePick.foot.some(r => r.action.startsWith('run:') || r.action.startsWith('model:')));
+const noFit = ui.build({snap, view: 'card', hw: 'b70', count: 1, localError: ''});
+assert(!noFit.rows.some(r => r.action.startsWith('run:')), 'no model fits one GPU of this card');
+assert(noFit.rows.some(r => r.action === 'model:qwen-tp2'), 'the running model still opens');
 const stats = ui.build({snap, view: 'model', slotSel: recipe.id, localError: ''});
 assert(stats.path.some(r => r.action === 'card:b70'));
 assert(!stats.rows.some(r=>r.tabs));
@@ -71,7 +75,7 @@ const current = ui.build({snap: {...snap, update: {enabled: true, plugin: {curre
 assert.equal(current.foot[0].action, 'update-check');
 assert(/^current · checked \d+m ago/.test(current.foot[0].value));
 assert.equal(ui.build({snap: {...snap, update: {enabled: false}}, view: 'home', localError: ''}).foot.length, 0);
-assert.equal(ui.build({snap, view: 'card', hw: 'b70', count: 1, pick: 'qwen-tp2', localError: ''}).foot.some(r => r.action === 'update'), false);
+assert.equal(ui.build({snap, view: 'card', hw: 'b70', count: 1, localError: ''}).foot.some(r => r.action === 'update'), false);
 console.log('UI update row checks passed');
 
 // Meter data must retain missing sensors and reflect per-device readings.
@@ -161,17 +165,20 @@ console.log('Direct breadcrumbs and browsing during deployment work passed');
 
 // Model selection keeps its action directly after its details, before the next recipe.
 const idle = {...snap,models:[],recipes:[recipe,{...recipe,id:'second-choice'}]};
-const picked = ui.build({snap:idle,view:'card',hw:'b70',count:2,pick:recipe.id,localError:''});
-const loadAt=picked.rows.findIndex(r=>r.action==='run:qwen-tp2:2');
-assert(loadAt>picked.rows.findIndex(r=>r.action==='pick:qwen-tp2'));
-assert(loadAt<picked.rows.findIndex(r=>r.action==='pick:second-choice'));
-assert.equal(picked.foot.length,0);
-const blocked = ui.build({snap:{...snap,recipes:idle.recipes},view:'card',hw:'b70',count:2,pick:'second-choice',localError:''});
-assert(blocked.rows.some(r=>r.label==='Will replace' && r.value.includes(running.name)));
-assert(blocked.rows.some(r=>r.label==='Download & swap' && r.action==='run:second-choice:2' && !r.disabled));
+const free = ui.build({snap:idle,view:'card',hw:'b70',count:2,localError:''});
+const runs = free.rows.filter(r => r.action.startsWith('run:'));
+assert.equal(runs.length, 2, 'each free model is one row');
+assert(runs.every(r => /Download & run/.test(r.value)), 'the row itself is the action');
+assert(/^Download & run/.test(runs[0].value), 'the action names what it will do');
+assert.equal(free.foot.length, 0, 'no action waits at the bottom');
+assert(!free.rows.some(r => r.action.startsWith('pick:')), 'no model row needs a selection first');
+const occupied = ui.build({snap:{...snap,recipes:idle.recipes},view:'card',hw:'b70',count:2,localError:''});
+const swapAt = occupied.rows.findIndex(r => r.action === 'run:second-choice:2');
+assert(swapAt >= 0, 'a model that needs occupied GPUs is still one row');
+assert(/replaces .*Qwen/.test(occupied.rows[swapAt].detail), 'that row names what it replaces before the click');
+assert.equal(occupied.rows.filter(r => r.action.startsWith('run:')).length, 1, 'the running recipe is not offered twice');
 assert.equal(catalog.rows.filter(r=>r.action==='model:qwen-tp2').length,1);
-assert(!catalog.rows.some(r=>r.action==='pick:qwen-tp2'));
-console.log('Consistent GPU destinations, one-click launch and inline model actions passed');
+console.log('One row per model, that row is the action, and the GPU page repeats no card row');
 
 // Allocation preview follows the controller: chosen GPU first, then device order.
 const group={hardwareId:'test',keys:['nvidia:0','nvidia:1','nvidia:2']};
@@ -185,17 +192,17 @@ assert.equal(JSON.stringify(plan.keys),JSON.stringify(['nvidia:1','nvidia:0']));
 assert.equal(JSON.stringify(plan.replaces.map(m=>m.recipeId)),JSON.stringify(['old']));
 const full={...allocation,models:[{...allocation.models[0],keys:group.keys},allocation.models[1]]};
 assert.equal(ui.loadPlan(full,{id:'new',cards:1},group).replaces[0].recipeId,'old');
-const busySwap=ui.build({snap:{...snap,state:'starting',operation:{recipeId:'second-choice'},recipes:idle.recipes},view:'card',hw:'b70',count:2,pick:'second-choice',localError:'',browseWhileWorking:true});
+const busySwap=ui.build({snap:{...snap,state:'starting',operation:{recipeId:'second-choice'},recipes:idle.recipes},view:'card',hw:'b70',count:2,localError:'',browseWhileWorking:true});
 assert(busySwap.rows.find(r=>r.action==='run:second-choice:2').disabled);
 console.log('Swap targets match controller allocation; unrelated models and busy guards retained');
 
 // A running one-GPU recipe remains loadable on the other physical GPU.
 const single={...recipe,id:'qwen-one',cards:1,onDisk:true};
 const oneBusy={...snap,recipes:[single],models:[{...running,recipeId:single.id,keys:['intel-xpu:0'],cards:1}]};
-const another=ui.build({snap:oneBusy,view:'card',hw:'b70',count:1,pick:single.id,localError:''});
-assert(another.rows.some(r=>r.label==='Load another instance' && r.action==='run:qwen-one:1'));
+const another=ui.build({snap:oneBusy,view:'card',hw:'b70',count:1,localError:''});
+assert(another.rows.some(r=>/^Load another/.test(r.value) && r.action==='run:qwen-one:1'), 'a second instance is one row that says so');
 assert.equal(ui.loadPlan(oneBusy,single,oneBusy.cards[0]).gpu,'intel-xpu:1');
 assert.equal(ui.loadPlan(oneBusy,single,oneBusy.cards[0]).replaces.length,0);
 const twoBusy={...oneBusy,models:[...oneBusy.models,{...oneBusy.models[0],recipeId:'qwen-one-instance-2',baseRecipeId:single.id,keys:['intel-xpu:1']}]};
-assert(!ui.build({snap:twoBusy,view:'card',hw:'b70',count:1,pick:single.id,localError:''}).rows.some(r=>r.action==='pick:qwen-one'));
+assert(!ui.build({snap:twoBusy,view:'card',hw:'b70',count:1,localError:''}).rows.some(r=>r.action==='run:qwen-one:1'), 'a third instance is not offered while both GPUs are taken');
 console.log('Duplicate recipe stays launchable on a free GPU and never replaces the first instance');

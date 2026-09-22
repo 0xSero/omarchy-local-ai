@@ -43,7 +43,7 @@ Per backend:
 | Backend | Added |
 |---|---|
 | `nvidia` | `--gpus device=<i>`, or `--gpus "device=0,2"` for a multi-card claim — **quoted**, because docker parses the value as a csv and unquoted `device=0,2` reads as "device 0 plus count 1" (`cannot set both Count and DeviceIDs`) |
-| anything else (Intel) | `--device <real>:<real>` for every `*-render` node under `/dev/dri/by-path` (symlinks resolved), plus `--volume /dev/dri/by-path:/dev/dri/by-path:ro`. No control nodes, never the whole `/dev/dri`; none found is `no render nodes found` |
+| anything else (Intel) | `--device <real>:<real>` for every `*-render` node under `/dev/dri/by-path` (symlinks resolved), plus `--volume /dev/dri/by-path:/dev/dri/by-path:ro`. No control nodes, never the whole `/dev/dri`; none found is `no render nodes for selected Intel GPUs` |
 
 Then `--shm-size` when the recipe sets `launch.shm`, the mounts, the environment, the entrypoint, the
 image and the recipe's arguments.

@@ -120,6 +120,33 @@ counters), and a step that dies must not lose the day's traffic. The second is f
 file is a *window*, and the aggregations group by day across all files taking the maximum reading, so
 the next successful run re-records a day this one missed.
 
+### 1.7 The native view is generated from this repository (2026-09-22)
+
+Omarchy's Local AI tab is this plugin's card drawn inside Omarchy's own Agents
+panel, and it is the only version of the card that ships inside Omarchy. Its row
+data, row component and token bars *are* `ui/ui.js`, `ui/CardRow.qml` and
+`ui/TokenTotal.qml`; `native/backend-command.js` is the one part that is native
+to it, and `shell/plugins/agents/LocalAi.qml` (the view inside that panel) and
+`manifest.json` stay hand-written in Omarchy's tree.
+
+Three files that are copies are three files that drift, so they are generated:
+
+    make native OMARCHY=~/omarchy          # write them into an Omarchy checkout
+    make native-check OMARCHY=~/omarchy     # fail when they have drifted
+
+`test/native` checks the same contract without a checkout. Adopting Omarchy's own
+explicit-`textFormat` rule in `ui/` is what makes the copies byte-identical
+rather than merely equivalent: Omarchy's `qml-text-format-scan.py` requires an
+explicit `textFormat` on every `Text` whose `text` is not a bare literal, because
+`Text.AutoText` promotes a string that looks like markup and fetches `<img src>`
+from it. `ui/CardRow.qml` and `ui/TokenTotal.qml` had the same hole and now
+declare `Text.PlainText` on every one of them.
+
+The 4,871-line alternative — the whole plugin vendored into Omarchy's tree — was
+closed in favour of this view. There is one repository to edit, one release number
+across the plugin, the view and the marketplace listing, and one command between an
+edit and the copy Omarchy ships.
+
 ## The vendored file contract (`recipes.json`)
 
 Per hardware id: `match {backend, vramGb, names[]}` and `recipe`:

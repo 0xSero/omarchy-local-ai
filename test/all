@@ -376,14 +376,14 @@ write_recipes "$(recipe ipc true asset | jq '.launch.ipc="host"')"; "$CLI" snaps
     .launch.mounts=[] | .launch.devices=["/dev/nvidia-uvm"] | .launch.arguments=["--device","CUDA0"]')
   img=$(jq -r .launch.image <<<"$r")
   [[ -z $(gate_reason "$r") ]] || fail "UVM declaration refused"
-  argv=$(engine_argv "$r" | jq -Rsc 'split("\u0000")[:-1]')
+  argv=$(engine_argv "$r" | jq -Rsc 'split("\u0000") | if .[-1] == "" then .[:-1] else . end')
   jq -e --arg img "$img" '. as $a | index($img) as $i |
     ([range($i) | select($a[.] == "--device") | $a[.+1]] == ["/dev/nvidia-uvm"]) and
     (.[$i+1:] == ["--device","CUDA0"])' <<<"$argv" >/dev/null || fail "UVM must precede the image; CUDA0 is an engine argument"
   for filter in 'del(.launch.devices)' '.launch.devices=null' '.launch.devices=[]'; do
     candidate=$(jq -c "$filter" <<<"$r")
     [[ -z $(gate_reason "$candidate") ]] || fail "empty device declaration refused: $filter"
-    argv=$(engine_argv "$candidate" | jq -Rsc 'split("\u0000")[:-1]')
+    argv=$(engine_argv "$candidate" | jq -Rsc 'split("\u0000") | if .[-1] == "" then .[:-1] else . end')
     jq -e --arg img "$img" 'index($img) as $i | .[:$i] | index("--device") == null' <<<"$argv" >/dev/null || fail "empty device declaration added host access: $filter"
   done
   for devices in '["/dev/nvidia0"]' '["/dev/nvidia-uvm-tools"]' '["/dev/nvidia-uvm:/dev/nvidia-uvm"]' \
@@ -400,7 +400,7 @@ write_recipes "$(recipe ipc true asset | jq '.launch.ipc="host"')"; "$CLI" snaps
   ln -s "$TMP/renderD128" "$OMARCHY_AI_DRI_PATH/pci-test-render"
   candidate=$(jq -c --arg node "$(canon "$TMP/renderD128")" '.match.backend="intel-xpu" | .gpuRenderNodes=[$node] | .launch.devices=["/dev/dri"] | .launch.arguments=[]' <<<"$r")
   [[ -z $(gate_reason "$candidate") ]] || fail "legacy Intel declaration refused"
-  argv=$(engine_argv "$candidate" | jq -Rsc 'split("\u0000")[:-1]')
+  argv=$(engine_argv "$candidate" | jq -Rsc 'split("\u0000") | if .[-1] == "" then .[:-1] else . end')
   # the expected node goes through canon() too: on a host where /var is a symlink (macOS) the engine
   # reports the resolved path, and comparing it against $TMP would fail for the wrong reason
   jq -e --arg img "$img" --arg node "$(canon "$TMP/renderD128")" '. as $a | index($img) as $i |
@@ -853,7 +853,7 @@ SHIM_RUN_FAIL=omarchy-local-ai-good-engine OMARCHY_AI_MODEL_ROOT=/nonexistent-ro
 SHIM_RUN_FAIL=omarchy-local-ai-good-engine "$CLI" load
 [[ $(snap .error) == *"engine failed to start"* || $(snap .error) == *"engine exited"* ]] || fail "start failure" "$(snap .state) $(snap .error)"
 [[ $(cat "$SHIM/containers/omarchy-local-ai-good-engine/state") == running && $(cat "$SHIM/containers/omarchy-local-ai-good-gateway/state") == running && ! -d $SHIM/containers/omarchy-local-ai-good-engine-previous ]] || fail "start failure rollback" "$(ls "$SHIM/containers")"; pass "engine start failure is reported (the previous model restored when there was one)"
-grep -q "rollback" "$OMARCHY_AI_STATE/log" || fail "logged"; pass "every worker step is in the log"
+grep -qE "rollback: .+" "$OMARCHY_AI_STATE/log" || fail "the rollback reason is not in the log" "$(grep rollback "$OMARCHY_AI_STATE/log" | tail -1)"; pass "the log names the rollback and its reason"
 
 # an engine that crashes at once under docker's restart policy is caught in seconds, with its last line, and rolled back
 SHIM_CRASHLOOP=1 OMARCHY_AI_TIMEOUT=60 "$CLI" load

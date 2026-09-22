@@ -35,6 +35,7 @@ Item {
     onClicked: p.activate(r.action)
   }
   Text {
+    textFormat: Text.PlainText
     visible: disclosure; x: pad; anchors.verticalCenter: parent.verticalCenter
     text: r.expanded ? "▾" : "▸"; color: p.ink; font.family: p.mono; font.pixelSize: Style.font.body
   }
@@ -52,22 +53,25 @@ Item {
     }
   }
   Text { // line one: the noun
+    textFormat: Text.PlainText
     visible: r.type === "row" || r.type === "status"
     anchors.left: parent.left; anchors.leftMargin: pad + indent + (disclosure ? Style.space(20) : 0); y: hasLine2 || hasMeters || r.detail ? Style.space(8) : (item.height - height) / 2
     width: parent.width - anchors.leftMargin - pad - value.width - Style.space(12)
-    text: r.label; color: labelColor; font.family: p.mono; font.pixelSize: Style.font.bodySmall; font.bold: disclosure; elide: Text.ElideRight; textFormat: Text.PlainText
+    text: r.label; color: labelColor; font.family: p.mono; font.pixelSize: Style.font.bodySmall; font.bold: disclosure; elide: Text.ElideRight
   }
   Text { // line one: the datum
+    textFormat: Text.PlainText
     id: value; visible: (r.type === "row" && !(r.tabs && r.tabs.length)) || r.type === "status"
     anchors.right: parent.right; anchors.rightMargin: pad; y: hasLine2 || hasMeters || r.detail ? Style.space(8) : (item.height - height) / 2
-    text: r.value; color: r.type === "status" ? p.ink : valueColor; font.family: p.mono; font.pixelSize: r.type === "status" ? Style.fontPx(1.25) : Style.font.caption; textFormat: Text.PlainText
+    text: r.value; color: r.type === "status" ? p.ink : valueColor; font.family: p.mono; font.pixelSize: r.type === "status" ? Style.fontPx(1.25) : Style.font.caption
     width: Math.min(implicitWidth, item.width * 0.6); elide: Text.ElideLeft
   }
   Text {
+    textFormat: Text.PlainText
     visible: !!r.detail
     anchors { left: parent.left; right: parent.right; leftMargin: pad; rightMargin: pad; bottom: parent.bottom; bottomMargin: Style.space(8) }
     text: r.detail || ""; color: r.urgent ? p.urgent : p.dim
-    font.family: p.mono; font.pixelSize: Style.font.caption; elide: Text.ElideRight; textFormat: Text.PlainText
+    font.family: p.mono; font.pixelSize: Style.font.caption; elide: Text.ElideRight
   }
   Row { // the count toggle, beside the noun
     visible: r.type === "row" && !!(r.tabs && r.tabs.length); anchors.right: parent.right; anchors.rightMargin: pad; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(4)
@@ -83,7 +87,7 @@ Item {
         readonly property color markColor: modelData.mark === "used" ? p.ink : modelData.mark === "claimed" ? p.accent : modelData.mark === "freeing" ? Qt.rgba(p.accent.r, p.accent.g, p.accent.b, 0.5) : modelData.mark === "crashed" ? p.urgent : "transparent"
         width: cellText.implicitWidth + Style.space(14) + (isCell && modelData.mark !== "" ? Style.space(12) : 0); height: Style.space(20); color: modelData.off ? "transparent" : p.restFill
         Rectangle { visible: parent.isCell && modelData.mark !== ""; x: Style.space(7); anchors.verticalCenter: parent.verticalCenter; width: Style.space(7); height: width; color: parent.markColor; border.width: modelData.mark === "free" ? 1 : 0; border.color: p.faint }
-        Text { id: cellText; anchors.right: parent.right; anchors.rightMargin: Style.space(7); anchors.verticalCenter: parent.verticalCenter; text: modelData.text; color: modelData.off ? p.faint : modelData.mark === "used" || modelData.action ? p.fg : p.dim; font.strikeout: !!modelData.off; font.family: p.mono; font.pixelSize: Style.fontPx(0.8); textFormat: Text.PlainText }
+        Text { textFormat: Text.PlainText; id: cellText; anchors.right: parent.right; anchors.rightMargin: Style.space(7); anchors.verticalCenter: parent.verticalCenter; text: modelData.text; color: modelData.off ? p.faint : modelData.mark === "used" || modelData.action ? p.fg : p.dim; font.strikeout: !!modelData.off; font.family: p.mono; font.pixelSize: Style.fontPx(0.8) }
         MouseArea { anchors.fill: parent; z: 1; enabled: !!modelData.action; cursorShape: Qt.PointingHandCursor; onClicked: p.activate(modelData.action) } } }
   }
   Column { // Per-device sensors, with the exact value beside each proportional meter.
@@ -104,8 +108,8 @@ Item {
             Column {
               required property var modelData
               width: (parent.width - Style.space(28)) / 3; spacing: Style.space(5)
-              Text { width: parent.width; text: (modelData.label === "Temp" ? device.deviceLabel + " " : "") + modelData.label; color: p.dim; font.family: p.mono; font.pixelSize: Style.fontPx(0.8) }
-              Text { width: parent.width; text: modelData.value; color: modelData.fraction === null ? p.faint : p.ink; font.family: p.mono; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
+              Text { textFormat: Text.PlainText; width: parent.width; text: (modelData.label === "Temp" ? device.deviceLabel + " " : "") + modelData.label; color: p.dim; font.family: p.mono; font.pixelSize: Style.fontPx(0.8) }
+              Text { textFormat: Text.PlainText; width: parent.width; text: modelData.value; color: modelData.fraction === null ? p.faint : p.ink; font.family: p.mono; font.pixelSize: Style.font.caption; elide: Text.ElideRight }
               Rectangle {
                 width: parent.width; height: Style.space(4); radius: height / 2; color: p.selectedFill
                 Rectangle { width: parent.width * (modelData.fraction || 0); height: parent.height; radius: parent.radius; color: Util.alpha(p.ink, 0.55)
@@ -131,11 +135,12 @@ Item {
         Column { anchors.left: parent.left; anchors.leftMargin: pad; anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(3)
           PanelSectionHeader { text: modelData.k.toUpperCase(); foreground: p.ink; fontFamily: p.mono }
           Row { spacing: Style.space(5)
-            Text { text: modelData.v; color: p.ink; font.family: p.mono; font.pixelSize: Style.fontPx(1.35); textFormat: Text.PlainText }
-            Text { anchors.baseline: parent.children[0].baseline; text: modelData.u; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; textFormat: Text.PlainText } } } } }
+            Text { textFormat: Text.PlainText; text: modelData.v; color: p.ink; font.family: p.mono; font.pixelSize: Style.fontPx(1.35) }
+            Text { textFormat: Text.PlainText; anchors.baseline: parent.children[0].baseline; text: modelData.u; color: p.dim; font.family: p.mono; font.pixelSize: Style.font.caption } } } } }
   }
   Text { // a wrapped datum: the one place a whole reason is shown
+    textFormat: Text.PlainText
     id: wrapped; visible: r.type === "text"; anchors.left: parent.left; anchors.right: parent.right; anchors.margins: pad; anchors.verticalCenter: parent.verticalCenter
-    text: r.label + " · " + r.value; color: r.urgent ? p.urgent : p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; wrapMode: Text.WrapAtWordBoundaryOrAnywhere; textFormat: Text.PlainText
+    text: r.label + " · " + r.value; color: r.urgent ? p.urgent : p.dim; font.family: p.mono; font.pixelSize: Style.font.caption; wrapMode: Text.WrapAtWordBoundaryOrAnywhere
   }
 }

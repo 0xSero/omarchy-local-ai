@@ -6,7 +6,8 @@
     "qwen359b-exl3-4bpw-256k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.5-9B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 262144\n  cache_size: 262144\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n  # Qwen3.5/3.8 think before answering; split that into reasoning_content instead of leaking it as text\n  reasoning: true\n  start_in_reasoning: auto\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
     "qwen3827b-exl3-4bpw-128k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.8-27B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 131072\n  cache_size: 131072\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n  # Qwen3.5/3.8 think before answering; split that into reasoning_content instead of leaking it as text\n  reasoning: true\n  start_in_reasoning: auto\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
     "qwen3827b-exl3-4bpw-256k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.8-27B-EXL3-4bpw\n  backend: exllamav3\n  max_seq_len: 262144\n  cache_size: 262144\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [192]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n  # Qwen3.5/3.8 think before answering; split that into reasoning_content instead of leaking it as text\n  reasoning: true\n  start_in_reasoning: auto\n\ndraft_model:\n  draft_mode: disabled\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
-    "qwen38-chat-template.jinja": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- set reasoning_instructions = '' %}\n{%- if enable_thinking is undefined or enable_thinking is true %}\n    {%- set resolved_reasoning_effort = reasoning_effort|default('xhigh') %}\n    {%- if resolved_reasoning_effort in ('high', 'max', 'auto') %}\n        {%- set resolved_reasoning_effort = 'xhigh' %}\n    {%- elif resolved_reasoning_effort in ('minimal', 'min', 'off') %}\n        {%- set resolved_reasoning_effort = 'low' %}\n    {%- endif %}\n    {%- if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}\n        {{- raise_exception('Unexpected reasoning effort ' ~ reasoning_effort ~ '. Supported types are xhigh (default), medium, and low.') }}\n    {%- endif %}\n    {%- if resolved_reasoning_effort == 'xhigh' %}\n        {%- set reasoning_instructions = 'Reasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.' %}\n    {%- elif resolved_reasoning_effort == 'low' %}\n        {%- set reasoning_instructions = 'Reasoning effort is set to low. Keep your thinking brief and focused, moving directly to the conclusion without unnecessary elaboration.' %}\n    {%- endif %}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if reasoning_instructions %}\n        {{- reasoning_instructions + '\\n\\n' }}\n    {%- endif %}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '<|im_start|>system\\n' + (reasoning_instructions + '\\n\\n' if reasoning_instructions else '')  + content + '<|im_end|>\\n' }}\n        {%- elif reasoning_instructions %}\n            {{- '<|im_start|>system\\n' + reasoning_instructions + '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- elif reasoning_instructions %}\n        {{- '<|im_start|>system\\n' + reasoning_instructions + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if preserve_thinking is undefined or preserve_thinking is true or loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is defined and tool_call.arguments != '' %}\n                    {%- for args_name, args_value in tool_call.arguments|items %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | string if args_value is string else args_value | tojson | safe %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- else %}\n        {{- '<think>\\n' }}\n    {%- endif %}\n{%- endif %}"
+    "qwen3827b-exl3-sc-3-00bpw-h4-v4-128k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.8-27B-EXL3-SC3bpw-H4-V4\n  backend: exllamav3\n  max_seq_len: 131072\n  cache_size: 132096\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [512]\n  chunk_size: 1024\n  output_chunking: true\n  max_batch_size: 2\n  vision: true\n  vision_offload: true\n  reasoning: true\n  start_in_reasoning: always\n  reasoning_start_token: \" thinking\"\n  reasoning_end_token: \"</think>\"\n  template_vars_default:\n    enable_thinking: true\n  tool_format: qwen3_coder\n\ndraft_model:\n  draft_mode: mtp\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n",
+    "qwen3827b-exl3-sc-4-00bpw-h5-256k-q4-tabbyapi-config.yml": "network:\n  host: 0.0.0.0\n  port: 5000\n  disable_auth: true\n  disable_fetch_requests: true\n  send_tracebacks: false\n  api_servers: [\"OAI\"]\n  sse_ping_interval: 15\n\nlogging:\n  log_prompt: false\n  log_generation_params: false\n  log_requests: false\n  log_chat_completion_requests: false\n\nmodel:\n  model_dir: /workspace/models\n  inline_model_loading: false\n  use_dummy_models: false\n  model_name: Qwen3.8-27B-EXL3-SC4bpw-H5\n  backend: exllamav3\n  max_seq_len: 262144\n  cache_size: 263168\n  cache_mode: Q4\n  tensor_parallel: false\n  gpu_split_auto: true\n  autosplit_reserve: [512]\n  chunk_size: 2048\n  output_chunking: true\n  max_batch_size: 2\n  vision: true\n  vision_offload: true\n  reasoning: true\n  start_in_reasoning: always\n  reasoning_start_token: \" thinking\"\n  reasoning_end_token: \"</think>\"\n  template_vars_default:\n    enable_thinking: true\n  tool_format: qwen3_coder\n\ndraft_model:\n  draft_mode: mtp\n\nsampling:\n  override_preset:\n\nmemory:\n  sysmem_recurrent_cache: 4096\n  sysmem_kv_cache: 0\n  cuda_malloc_async: true\n"
   },
   "gateway": {
     "image": "ghcr.io/0xsero/gateway@sha256:6b3f953f12cd32b0e2351515999c6c3312d4732692473607565e8296fd35226a",
@@ -18,7 +19,7 @@
       "workflow": "https://github.com/0xSero/local-ai-images/actions/runs/35164534977"
     }
   },
-  "generatedAt": "2026-09-17T00:03:37Z",
+  "generatedAt": "2026-09-19T08:53:03Z",
   "hardware": {
     "intel-arc-pro-b70-32gb": {
       "match": {
@@ -65,6 +66,7 @@
           ],
           "capAdd": [],
           "containerPort": 8010,
+          "devices": [],
           "entrypoint": null,
           "environment": {
             "BATCH": "8192",
@@ -79,6 +81,7 @@
           },
           "image": "ghcr.io/0xsero/qwen38-b70-attested@sha256:6ce7771eaa155e31916ac3144bd3aa34bed6584b9a43052a8f6b583b9c8f5db1",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -96,6 +99,7 @@
           "shm": "8g"
         },
         "minDriver": "",
+        "minEngine": "",
         "model": {
           "id": "qwen3-8-27b",
           "name": "Qwen3.8-27B",
@@ -141,6 +145,9 @@
             "arguments": [],
             "capAdd": [],
             "containerPort": 8010,
+            "devices": [
+              "/dev/dri"
+            ],
             "entrypoint": "/entrypoint.sh",
             "environment": {
               "BATCH": "8192",
@@ -155,6 +162,7 @@
             },
             "image": "ghcr.io/0xsero/qwen38-b70-attested@sha256:6ce7771eaa155e31916ac3144bd3aa34bed6584b9a43052a8f6b583b9c8f5db1",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": true,
@@ -172,6 +180,7 @@
             "shm": "8g"
           },
           "minDriver": "",
+          "minEngine": "",
           "model": {
             "id": "qwen3-8-27b",
             "name": "Qwen3.8-27B",
@@ -262,12 +271,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang-rocm:v0.5.18-rocm720-mi30x-20260823@sha256:8805fe3744f9b549b4e329b37134bce6ce4afd7ec749ea1249507bcbcea10096",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -280,6 +291,7 @@
           "shm": "16g"
         },
         "minDriver": "",
+        "minEngine": "",
         "model": {
           "id": "qwen3-8-27b",
           "name": "Qwen3.8-27B",
@@ -350,12 +362,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/venv/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang-rocm:v0.5.13.post1-rocm720-mi30x-20260623@sha256:a8320f425ebec3dd2f3330816b65bcef8bd3eadf634f39ebfb84db2ae282b084",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -368,6 +382,7 @@
             "shm": "16g"
           },
           "minDriver": "",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-2-6b",
             "name": "LFM2.5-2.6B",
@@ -447,12 +462,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/venv/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang-rocm:v0.5.18-rocm720-mi30x-20260823@sha256:8805fe3744f9b549b4e329b37134bce6ce4afd7ec749ea1249507bcbcea10096",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -465,6 +482,7 @@
             "shm": "16g"
           },
           "minDriver": "",
+          "minEngine": "",
           "model": {
             "id": "ornith-1-5-35b-a3b",
             "name": "Ornith-1.5-35B-A3B",
@@ -491,206 +509,6 @@
           }
         }
       ]
-    },
-    "rx-7900-xtx-24gb": {
-      "match": {
-        "backend": "amd-rocm",
-        "name": "AMD Radeon RX 7900 XTX",
-        "names": [
-          "rx7900xtx"
-        ],
-        "vramGb": 24
-      },
-      "recipe": {
-        "capabilities": {
-          "chat": true,
-          "reasoning": true,
-          "tools": false,
-          "vision": false
-        },
-        "engine": "vllm",
-        "id": "qwen35-9b-bf16-rx7900xtx-vllm-tp1",
-        "image": {
-          "attestation": null,
-          "provenance": "upstream-published"
-        },
-        "launch": {
-          "arguments": [
-            "Qwen/Qwen3.5-9B",
-            "--revision",
-            "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
-            "--served-model-name",
-            "qwen3.5-9b",
-            "--host",
-            "0.0.0.0",
-            "--port",
-            "8000",
-            "--max-model-len",
-            "32768",
-            "--gpu-memory-utilization",
-            "0.90",
-            "--trust-remote-code",
-            "--reasoning-parser",
-            "qwen3",
-            "--attention-backend",
-            "TRITON_ATTN"
-          ],
-          "capAdd": [],
-          "containerPort": 8000,
-          "entrypoint": null,
-          "environment": {
-            "HF_HOME": "/root/.cache/huggingface",
-            "VLLM_ROCM_USE_AITER": "0",
-            "FLASH_ATTENTION_TRITON_AMD_ENABLE": "TRUE"
-          },
-          "image": "vllm/vllm-openai-rocm@sha256:e5e47f6aaab675c252c381f0dac237b31b10d87bb74d092b07fb4065efd7f5a1",
-          "ipc": null,
-          "mounts": [
-            {
-              "read_only": false,
-              "source": "~/.cache/huggingface",
-              "target": "/root/.cache/huggingface"
-            }
-          ],
-          "networkMode": "bridge",
-          "securityOpt": [],
-          "shm": "16g"
-        },
-        "minDriver": "",
-        "model": {
-          "id": "qwen3-5-9b",
-          "name": "Qwen3.5-9B",
-          "precision": "BF16",
-          "repository": "Qwen/Qwen3.5-9B",
-          "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
-          "servedName": "qwen3.5-9b",
-          "sizeGb": 19.3
-        },
-        "serving": {
-          "concurrency": 2,
-          "ctxTokens": 32768
-        },
-        "speed": {
-          "tps": 0
-        },
-        "validated": {
-          "acceptedAt": null,
-          "harness": null
-        },
-        "weights": {
-          "subdir": ""
-        }
-      }
-    },
-    "rx-7900-xtx-24gb-tp2": {
-      "match": {
-        "backend": "amd-rocm",
-        "gpuCount": 2,
-        "name": "AMD Radeon RX 7900 XTX",
-        "names": [
-          "rx7900xtx"
-        ],
-        "vramGb": 24
-      },
-      "recipe": {
-        "capabilities": {
-          "chat": true,
-          "reasoning": true,
-          "tools": true,
-          "vision": true
-        },
-        "engine": "vllm",
-        "id": "qwen38-int4-rx7900xtx-vllm-tp2",
-        "image": {
-          "attestation": null,
-          "provenance": "upstream-published"
-        },
-        "launch": {
-          "arguments": [
-            "RedHatAI/Qwen3.8-27B-INT4",
-            "--revision",
-            "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
-            "--served-model-name",
-            "qwen3.8-27b",
-            "--host",
-            "0.0.0.0",
-            "--port",
-            "8000",
-            "--tensor-parallel-size",
-            "2",
-            "--mm-encoder-tp-mode",
-            "data",
-            "--gpu-memory-utilization",
-            "0.90",
-            "--trust-remote-code",
-            "--reasoning-parser",
-            "qwen3",
-            "--enable-auto-tool-choice",
-            "--tool-call-parser",
-            "qwen3_coder",
-            "--attention-backend",
-            "TRITON_ATTN",
-            "--max-num-seqs",
-            "8",
-            "--chat-template",
-            "/opt/omarchy/qwen38-chat-template.jinja"
-          ],
-          "capAdd": [],
-          "containerPort": 8000,
-          "entrypoint": null,
-          "environment": {
-            "HF_HOME": "/root/.cache/huggingface",
-            "VLLM_ROCM_USE_AITER": "0",
-            "FLASH_ATTENTION_TRITON_AMD_ENABLE": "TRUE",
-            "NCCL_P2P_DISABLE": "1"
-          },
-          "image": "vllm/vllm-openai-rocm@sha256:e5e47f6aaab675c252c381f0dac237b31b10d87bb74d092b07fb4065efd7f5a1",
-          "ipc": null,
-          "mounts": [
-            {
-              "read_only": false,
-              "source": "~/.cache/huggingface",
-              "target": "/root/.cache/huggingface"
-            },
-            {
-              "source": "asset/qwen38-chat-template.jinja",
-              "target": "/opt/omarchy/qwen38-chat-template.jinja",
-              "read_only": true
-            }
-          ],
-          "networkMode": "bridge",
-          "securityOpt": [],
-          "shm": "16g"
-        },
-        "minDriver": "",
-        "model": {
-          "id": "qwen3-8-27b",
-          "name": "Qwen3.8-27B",
-          "precision": "INT4",
-          "repository": "RedHatAI/Qwen3.8-27B-INT4",
-          "revision": "bf08f3dbd9a324e53956920aad378a1f1b6dd24a",
-          "servedName": "qwen3.8-27b",
-          "sizeGb": 35.5
-        },
-        "serving": {
-          "concurrency": 8,
-          "ctxTokens": 262144
-        },
-        "speed": {
-          "tps": 0
-        },
-        "validated": {
-          "acceptedAt": null,
-          "harness": null
-        },
-        "weights": {
-          "subdir": ""
-        },
-        "cards": 2,
-        "assets": {
-          "qwen38-chat-template.jinja": "{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(value=0) %}\n{%- macro render_content(content, do_vision_count, is_system_content=false) %}\n    {%- if content is string %}\n        {{- content }}\n    {%- elif content is iterable and content is not mapping %}\n        {%- for item in content %}\n            {%- if 'image' in item or 'image_url' in item or item.type == 'image' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain images.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set image_count.value = image_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Picture ' ~ image_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|image_pad|><|vision_end|>' }}\n            {%- elif 'video' in item or item.type == 'video' %}\n                {%- if is_system_content %}\n                    {{- raise_exception('System message cannot contain videos.') }}\n                {%- endif %}\n                {%- if do_vision_count %}\n                    {%- set video_count.value = video_count.value + 1 %}\n                {%- endif %}\n                {%- if add_vision_id %}\n                    {{- 'Video ' ~ video_count.value ~ ': ' }}\n                {%- endif %}\n                {{- '<|vision_start|><|video_pad|><|vision_end|>' }}\n            {%- elif 'text' in item %}\n                {{- item.text }}\n            {%- else %}\n                {{- raise_exception('Unexpected item type in content.') }}\n            {%- endif %}\n        {%- endfor %}\n    {%- elif content is none or content is undefined %}\n        {{- '' }}\n    {%- else %}\n        {{- raise_exception('Unexpected content type.') }}\n    {%- endif %}\n{%- endmacro %}\n{%- if not messages %}\n    {{- raise_exception('No messages provided.') }}\n{%- endif %}\n{%- set reasoning_instructions = '' %}\n{%- if enable_thinking is undefined or enable_thinking is true %}\n    {%- set resolved_reasoning_effort = reasoning_effort|default('xhigh') %}\n    {%- if resolved_reasoning_effort in ('high', 'max', 'auto') %}\n        {%- set resolved_reasoning_effort = 'xhigh' %}\n    {%- elif resolved_reasoning_effort in ('minimal', 'min', 'off') %}\n        {%- set resolved_reasoning_effort = 'low' %}\n    {%- endif %}\n    {%- if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}\n        {{- raise_exception('Unexpected reasoning effort ' ~ reasoning_effort ~ '. Supported types are xhigh (default), medium, and low.') }}\n    {%- endif %}\n    {%- if resolved_reasoning_effort == 'xhigh' %}\n        {%- set reasoning_instructions = 'Reasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.' %}\n    {%- elif resolved_reasoning_effort == 'low' %}\n        {%- set reasoning_instructions = 'Reasoning effort is set to low. Keep your thinking brief and focused, moving directly to the conclusion without unnecessary elaboration.' %}\n    {%- endif %}\n{%- endif %}\n{%- if tools and tools is iterable and tools is not mapping %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if reasoning_instructions %}\n        {{- reasoning_instructions + '\\n\\n' }}\n    {%- endif %}\n    {{- \"# Tools\\n\\nYou have access to the following functions:\\n\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\" }}\n    {{- '\\n\\nIf you choose to call a function ONLY reply in the following format with NO suffix:\\n\\n<tool_call>\\n<function=example_function_name>\\n<parameter=example_parameter_1>\\nvalue_1\\n</parameter>\\n<parameter=example_parameter_2>\\nThis is the value for the second parameter\\nthat can span\\nmultiple lines\\n</parameter>\\n</function>\\n</tool_call>\\n\\n<IMPORTANT>\\nReminder:\\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\\n- Required parameters MUST be specified\\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\\n</IMPORTANT>' }}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '\\n\\n' + content }}\n        {%- endif %}\n    {%- endif %}\n    {{- '<|im_end|>\\n' }}\n{%- else %}\n    {%- if messages[0].role == 'system' %}\n        {%- set content = render_content(messages[0].content, false, true)|trim %}\n        {%- if content %}\n            {{- '<|im_start|>system\\n' + (reasoning_instructions + '\\n\\n' if reasoning_instructions else '')  + content + '<|im_end|>\\n' }}\n        {%- elif reasoning_instructions %}\n            {{- '<|im_start|>system\\n' + reasoning_instructions + '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- elif reasoning_instructions %}\n        {{- '<|im_start|>system\\n' + reasoning_instructions + '<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for message in messages[::-1] %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- if ns.multi_step_tool and message.role == \"user\" %}\n        {%- set content = render_content(message.content, false)|trim %}\n        {%- if not(content.startswith('<tool_response>') and content.endswith('</tool_response>')) %}\n            {%- set ns.multi_step_tool = false %}\n            {%- set ns.last_query_index = index %}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if ns.multi_step_tool %}\n    {{- raise_exception('No user query found in messages.') }}\n{%- endif %}\n{%- for message in messages %}\n    {%- set content = render_content(message.content, true)|trim %}\n    {%- if message.role == \"system\" %}\n        {%- if not loop.first %}\n            {{- raise_exception('System message must be at the beginning.') }}\n        {%- endif %}\n    {%- elif message.role == \"user\" %}\n        {{- '<|im_start|>' + message.role + '\\n' + content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {%- set reasoning_content = '' %}\n        {%- if message.reasoning_content is string %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- endif %}\n        {%- set reasoning_content = reasoning_content|trim %}\n        {%- if preserve_thinking is undefined or preserve_thinking is true or loop.index0 > ns.last_query_index %}\n            {{- '<|im_start|>' + message.role + '\\n<think>\\n' + reasoning_content + '\\n</think>\\n\\n' + content }}\n        {%- else %}\n            {{- '<|im_start|>' + message.role + '\\n' + content }}\n        {%- endif %}\n        {%- if message.tool_calls and message.tool_calls is iterable and message.tool_calls is not mapping %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if tool_call.function is defined %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {%- if loop.first %}\n                    {%- if content|trim %}\n                        {{- '\\n\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- else %}\n                        {{- '<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                    {%- endif %}\n                {%- else %}\n                    {{- '\\n<tool_call>\\n<function=' + tool_call.name + '>\\n' }}\n                {%- endif %}\n                {%- if tool_call.arguments is defined and tool_call.arguments != '' %}\n                    {%- for args_name, args_value in tool_call.arguments|items %}\n                        {{- '<parameter=' + args_name + '>\\n' }}\n                        {%- set args_value = args_value | string if args_value is string else args_value | tojson | safe %}\n                        {{- args_value }}\n                        {{- '\\n</parameter>\\n' }}\n                    {%- endfor %}\n                {%- endif %}\n                {{- '</function>\\n</tool_call>' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if loop.previtem and loop.previtem.role != \"tool\" %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- content }}\n        {{- '\\n</tool_response>' }}\n        {%- if not loop.last and loop.nextitem.role != \"tool\" %}\n            {{- '<|im_end|>\\n' }}\n        {%- elif loop.last %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- else %}\n        {{- raise_exception('Unexpected message role.') }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- '<think>\\n\\n</think>\\n\\n' }}\n    {%- else %}\n        {{- '<think>\\n' }}\n    {%- endif %}\n{%- endif %}\n"
-        }
-      }
     },
     "rtx-2000-ada-16gb": {
       "match": {
@@ -751,12 +569,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -769,6 +589,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -793,7 +614,81 @@
         "weights": {
           "subdir": ""
         }
-      }
+      },
+      "recipes": [
+        {
+          "capabilities": {
+            "chat": true,
+            "reasoning": true,
+            "tools": true,
+            "vision": true
+          },
+          "engine": "tabbyapi",
+          "id": "qwen3827b-exl3-sc3bpw-v4-rtx2000ada-tabbyapi-tp1",
+          "image": {
+            "attestation": null,
+            "provenance": "upstream-release"
+          },
+          "launch": {
+            "arguments": [
+              "main.py",
+              "--config",
+              "/app/config.yml"
+            ],
+            "capAdd": [],
+            "containerPort": 5000,
+            "devices": [],
+            "entrypoint": "/opt/venv/bin/python3",
+            "environment": {
+              "NVIDIA_VISIBLE_DEVICES": "all"
+            },
+            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:1c13dd17416660856e9962aeee8498827f0acd604eb36795128a03ddfe03c6ef",
+            "ipc": null,
+            "kind": "docker",
+            "mounts": [
+              {
+                "read_only": true,
+                "source": "${MODEL_ROOT}/qwen3-8-27b-exl3-sc3bpw-h4-v4",
+                "target": "/workspace/models"
+              },
+              {
+                "read_only": true,
+                "source": "asset/qwen3827b-exl3-sc-3-00bpw-h4-v4-128k-q4-tabbyapi-config.yml",
+                "target": "/app/config.yml"
+              }
+            ],
+            "networkMode": null,
+            "securityOpt": [],
+            "shm": "8g"
+          },
+          "minDriver": "535.0",
+          "minEngine": "",
+          "model": {
+            "id": "qwen3-8-27b",
+            "name": "Qwen3.8-27B",
+            "precision": "SC 3.00bpw H4 V4",
+            "repository": "turboderp/Qwen3.8-27B-exl3",
+            "revision": "004a887127d8304ca2d5475d3a3c41f1761fdd27",
+            "servedName": "Qwen3.8-27B-EXL3-SC3bpw-H4-V4",
+            "sizeGb": 12.12
+          },
+          "serving": {
+            "concurrency": 2,
+            "ctxTokens": 131072,
+            "kvTokens": 132096
+          },
+          "speed": {
+            "tps": 28
+          },
+          "validated": {
+            "acceptedAt": "2026-09-19T02:33:27Z",
+            "harness": "omp_accept.py (identity, chat, reasoning, tools, vision) + tabby_sweep.py"
+          },
+          "weights": {
+            "subdir": "Qwen3.8-27B-EXL3-SC3bpw-H4-V4"
+          }
+        }
+      ]
     },
     "rtx-3060-12gb": {
       "match": {
@@ -825,12 +720,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -848,6 +745,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -929,12 +827,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -947,6 +847,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -1028,12 +929,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -1046,6 +949,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -1127,12 +1031,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -1145,6 +1051,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -1199,12 +1106,14 @@
             ],
             "capAdd": [],
             "containerPort": 8080,
+            "devices": [],
             "entrypoint": "/app/llama-server",
             "environment": {
               "LLAMA_CACHE": "/root/.cache/huggingface"
             },
             "image": "ghcr.io/ggml-org/llama.cpp:server-cuda12-b10481@sha256:b2497f8834f5ecb4e38530f6bf2734b8e0be107ff48e4720145911c86930f2ce",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -1217,6 +1126,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-8b-a1b",
             "name": "LFM2.5-8B-A1B",
@@ -1299,12 +1209,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -1317,6 +1229,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -1371,12 +1284,14 @@
             ],
             "capAdd": [],
             "containerPort": 8080,
+            "devices": [],
             "entrypoint": "/app/llama-server",
             "environment": {
               "LLAMA_CACHE": "/root/.cache/huggingface"
             },
             "image": "ghcr.io/ggml-org/llama.cpp:server-cuda12-b10481@sha256:b2497f8834f5ecb4e38530f6bf2734b8e0be107ff48e4720145911c86930f2ce",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -1389,6 +1304,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-8b-a1b",
             "name": "LFM2.5-8B-A1B",
@@ -1446,12 +1362,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -1469,6 +1387,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -1523,12 +1442,14 @@
             ],
             "capAdd": [],
             "containerPort": 8080,
+            "devices": [],
             "entrypoint": "/app/llama-server",
             "environment": {
               "LLAMA_CACHE": "/root/.cache/huggingface"
             },
             "image": "ghcr.io/ggml-org/llama.cpp:server-cuda12-b10481@sha256:b2497f8834f5ecb4e38530f6bf2734b8e0be107ff48e4720145911c86930f2ce",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -1541,6 +1462,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-5-9b",
             "name": "Qwen3.5-9B",
@@ -1598,12 +1520,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -1621,6 +1545,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "gemma-4-12b-it",
           "name": "Gemma-4-12B-it",
@@ -1693,12 +1618,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -1711,6 +1638,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-2-6b",
             "name": "LFM2.5-2.6B",
@@ -1775,12 +1703,14 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {
               "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
             },
             "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -1798,6 +1728,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-6-35b-a3b",
             "name": "Qwen3.6-35B-A3B",
@@ -1863,12 +1794,14 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {
               "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
             },
             "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -1886,6 +1819,7 @@
             "shm": "32g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-6-35b-a3b",
             "name": "Qwen3.6-35B-A3B",
@@ -1951,12 +1885,14 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {
               "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
             },
             "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -1974,6 +1910,7 @@
             "shm": "32g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-6-35b-a3b",
             "name": "Qwen3.6-35B-A3B",
@@ -2038,12 +1975,14 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {
               "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
             },
             "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -2061,6 +2000,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-8-27b",
             "name": "Qwen3.8-27B",
@@ -2127,10 +2067,12 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {},
             "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -2148,6 +2090,7 @@
             "shm": "8g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-8-27b",
             "name": "Qwen3.8-27B",
@@ -2213,12 +2156,14 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {
               "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
             },
             "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -2236,6 +2181,7 @@
             "shm": "32g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-8-27b",
             "name": "Qwen3.8-27B",
@@ -2259,6 +2205,78 @@
           },
           "weights": {
             "subdir": ""
+          }
+        },
+        {
+          "capabilities": {
+            "chat": true,
+            "reasoning": true,
+            "tools": true,
+            "vision": true
+          },
+          "engine": "tabbyapi",
+          "id": "qwen3827b-exl3-sc4bpw-rtx3090-tabbyapi-tp1",
+          "image": {
+            "attestation": null,
+            "provenance": "upstream-release"
+          },
+          "launch": {
+            "arguments": [
+              "main.py",
+              "--config",
+              "/app/config.yml"
+            ],
+            "capAdd": [],
+            "containerPort": 5000,
+            "devices": [],
+            "entrypoint": "/opt/venv/bin/python3",
+            "environment": {
+              "NVIDIA_VISIBLE_DEVICES": "all"
+            },
+            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:1c13dd17416660856e9962aeee8498827f0acd604eb36795128a03ddfe03c6ef",
+            "ipc": null,
+            "kind": "docker",
+            "mounts": [
+              {
+                "read_only": true,
+                "source": "${MODEL_ROOT}/qwen3-8-27b-exl3-sc4bpw-h5",
+                "target": "/workspace/models"
+              },
+              {
+                "read_only": true,
+                "source": "asset/qwen3827b-exl3-sc-4-00bpw-h5-256k-q4-tabbyapi-config.yml",
+                "target": "/app/config.yml"
+              }
+            ],
+            "networkMode": null,
+            "securityOpt": [],
+            "shm": "8g"
+          },
+          "minDriver": "535.0",
+          "minEngine": "",
+          "model": {
+            "id": "qwen3-8-27b",
+            "name": "Qwen3.8-27B",
+            "precision": "SC 4.00bpw H5",
+            "repository": "turboderp/Qwen3.8-27B-exl3",
+            "revision": "4acd9ad5af224ec9e8815a54d71a033f378a7e9d",
+            "servedName": "Qwen3.8-27B-EXL3-SC4bpw-H5",
+            "sizeGb": 15.59
+          },
+          "serving": {
+            "concurrency": 2,
+            "ctxTokens": 262144,
+            "kvTokens": 263168
+          },
+          "speed": {
+            "tps": 41
+          },
+          "validated": {
+            "acceptedAt": "2026-09-18T21:49:18Z",
+            "harness": "omp_accept.py (identity, chat, reasoning, tools, vision) + tabby_sweep.py"
+          },
+          "weights": {
+            "subdir": "Qwen3.8-27B-EXL3-SC4bpw-H5"
           }
         }
       ]
@@ -2293,12 +2311,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -2316,6 +2336,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "gemma-4-12b-it",
           "name": "Gemma-4-12B-it",
@@ -2381,12 +2402,14 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {
               "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
             },
             "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -2404,6 +2427,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-8-27b",
             "name": "Qwen3.8-27B",
@@ -2450,12 +2474,14 @@
             ],
             "capAdd": [],
             "containerPort": 5000,
+            "devices": [],
             "entrypoint": "/opt/venv/bin/python3",
             "environment": {
               "NVIDIA_VISIBLE_DEVICES": "all"
             },
             "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": true,
@@ -2473,6 +2499,7 @@
             "shm": "8g"
           },
           "minDriver": "535.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-8-27b",
             "name": "Qwen3.8-27B",
@@ -2530,12 +2557,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -2553,6 +2582,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -2629,12 +2659,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -2647,6 +2679,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-2-6b",
             "name": "LFM2.5-2.6B",
@@ -2729,12 +2762,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -2747,6 +2782,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -2772,6 +2808,512 @@
           "subdir": ""
         }
       }
+    },
+    "rtx-4060-laptop-8gb": {
+      "match": {
+        "backend": "nvidia",
+        "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "names": [
+          "rtx4060laptopgpu"
+        ],
+        "vramGb": 8
+      },
+      "recipe": {
+        "capabilities": {
+          "chat": true,
+          "reasoning": null,
+          "tools": null,
+          "vision": null
+        },
+        "engine": "llama.cpp",
+        "id": "lfm25-26b-qad-q4-0-rtx4060-laptop-llamacpp-tp1",
+        "image": {
+          "attestation": null,
+          "provenance": "upstream"
+        },
+        "launch": {
+          "arguments": [
+            "--device",
+            "CUDA0",
+            "--model",
+            "/models/LFM2.5-2.6B-QAD-Q4_0.gguf",
+            "--alias",
+            "LFM2.5-2.6B-QAD-Q4_0.gguf",
+            "--ctx-size",
+            "8192",
+            "--parallel",
+            "1",
+            "--n-gpu-layers",
+            "999",
+            "--fit",
+            "off",
+            "--flash-attn",
+            "on",
+            "--no-mmproj",
+            "--jinja",
+            "--metrics",
+            "--perf",
+            "--threads",
+            "8",
+            "--threads-batch",
+            "8",
+            "--batch-size",
+            "512",
+            "--ubatch-size",
+            "128",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8080",
+            "--reasoning-budget",
+            "0"
+          ],
+          "capAdd": [],
+          "containerPort": 8080,
+          "devices": [
+            "/dev/nvidia-uvm"
+          ],
+          "entrypoint": "/app/llama-server",
+          "environment": {},
+          "image": "ghcr.io/ggml-org/llama.cpp@sha256:87c812ce5a8955364c665229d0848e07a2cf38fbd387d83530bc4575a22ffaa1",
+          "ipc": null,
+          "kind": "docker",
+          "mounts": [
+            {
+              "read_only": true,
+              "source": "${MODEL_ROOT}/lfm26-qad-q4",
+              "target": "/models"
+            }
+          ],
+          "networkMode": "bridge",
+          "securityOpt": [],
+          "shm": null
+        },
+        "minDriver": "570.0",
+        "minEngine": "",
+        "model": {
+          "id": "lfm2-5-2-6b",
+          "name": "LFM2.5-2.6B",
+          "precision": "QAD-Q4_0",
+          "repository": "LiquidAI/LFM2.5-2.6B-GGUF",
+          "revision": "84022ce711b28455e8c4fc364ce68c00cf995875",
+          "servedName": "LFM2.5-2.6B-QAD-Q4_0.gguf",
+          "sizeGb": 1.594
+        },
+        "serving": {
+          "concurrency": 1,
+          "ctxTokens": 8192,
+          "kvTokens": 0
+        },
+        "speed": {
+          "tps": 124
+        },
+        "validated": {
+          "acceptedAt": "2026-09-11T20:49:14.598848Z",
+          "harness": "accept_recipe.py with pinned llama.cpp, one warmup plus three sequential samples"
+        },
+        "weights": {
+          "subdir": ""
+        }
+      },
+      "recipes": [
+        {
+          "capabilities": {
+            "chat": true,
+            "reasoning": null,
+            "tools": null,
+            "vision": null
+          },
+          "engine": "llama.cpp",
+          "id": "gemma4-12b-qat-q4-0-rtx4060-laptop-llamacpp-tp1",
+          "image": {
+            "attestation": null,
+            "provenance": "upstream"
+          },
+          "launch": {
+            "arguments": [
+              "--device",
+              "CUDA0",
+              "--model",
+              "/models/gemma-4-12b-it-qat-q4_0.gguf",
+              "--alias",
+              "gemma-4-12B-it-qat-q4_0-gguf",
+              "--ctx-size",
+              "2048",
+              "--parallel",
+              "1",
+              "--n-gpu-layers",
+              "999",
+              "--fit",
+              "off",
+              "--flash-attn",
+              "on",
+              "--no-mmproj",
+              "--jinja",
+              "--metrics",
+              "--perf",
+              "--threads",
+              "8",
+              "--threads-batch",
+              "8",
+              "--batch-size",
+              "128",
+              "--ubatch-size",
+              "64",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "8080",
+              "--reasoning-budget",
+              "0",
+              "--verbosity",
+              "4"
+            ],
+            "capAdd": [],
+            "containerPort": 8080,
+            "devices": [
+              "/dev/nvidia-uvm"
+            ],
+            "entrypoint": "/app/llama-server",
+            "environment": {},
+            "image": "ghcr.io/ggml-org/llama.cpp@sha256:87c812ce5a8955364c665229d0848e07a2cf38fbd387d83530bc4575a22ffaa1",
+            "ipc": null,
+            "kind": "docker",
+            "mounts": [
+              {
+                "read_only": true,
+                "source": "${MODEL_ROOT}/gemma12-qat-q4",
+                "target": "/models"
+              }
+            ],
+            "networkMode": "bridge",
+            "securityOpt": [],
+            "shm": null
+          },
+          "minDriver": "570.0",
+          "minEngine": "",
+          "model": {
+            "id": "gemma-4-12b-it-qat-q4-0-unquantized",
+            "name": "gemma-4-12B-it-qat-q4_0-unquantized",
+            "precision": "Q4_0",
+            "repository": "google/gemma-4-12B-it-qat-q4_0-gguf",
+            "revision": "29d097773436b69ff9feafd636ab4cf873786537",
+            "servedName": "gemma-4-12B-it-qat-q4_0-gguf",
+            "sizeGb": 6.976
+          },
+          "serving": {
+            "concurrency": 1,
+            "ctxTokens": 2048,
+            "kvTokens": 0
+          },
+          "speed": {
+            "tps": 30
+          },
+          "validated": {
+            "acceptedAt": "2026-09-11T20:53:31.215248Z",
+            "harness": "accept_recipe.py with pinned llama.cpp, one warmup plus three sequential samples"
+          },
+          "weights": {
+            "subdir": ""
+          }
+        },
+        {
+          "capabilities": {
+            "chat": true,
+            "reasoning": null,
+            "tools": null,
+            "vision": null
+          },
+          "engine": "llama.cpp",
+          "id": "gemma4-e4b-qat-q4-0-rtx4060-laptop-llamacpp-tp1",
+          "image": {
+            "attestation": null,
+            "provenance": "upstream"
+          },
+          "launch": {
+            "arguments": [
+              "--device",
+              "CUDA0",
+              "--model",
+              "/models/gemma-4-E4B_q4_0-it.gguf",
+              "--alias",
+              "gemma-4-E4B-it-qat-q4_0-gguf",
+              "--ctx-size",
+              "8192",
+              "--parallel",
+              "1",
+              "--n-gpu-layers",
+              "999",
+              "--fit",
+              "off",
+              "--flash-attn",
+              "on",
+              "--no-mmproj",
+              "--jinja",
+              "--metrics",
+              "--perf",
+              "--threads",
+              "8",
+              "--threads-batch",
+              "8",
+              "--batch-size",
+              "512",
+              "--ubatch-size",
+              "128",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "8080",
+              "--reasoning-budget",
+              "0"
+            ],
+            "capAdd": [],
+            "containerPort": 8080,
+            "devices": [
+              "/dev/nvidia-uvm"
+            ],
+            "entrypoint": "/app/llama-server",
+            "environment": {},
+            "image": "ghcr.io/ggml-org/llama.cpp@sha256:87c812ce5a8955364c665229d0848e07a2cf38fbd387d83530bc4575a22ffaa1",
+            "ipc": null,
+            "kind": "docker",
+            "mounts": [
+              {
+                "read_only": true,
+                "source": "${MODEL_ROOT}/gemma-e4b-qat-q4",
+                "target": "/models"
+              }
+            ],
+            "networkMode": "bridge",
+            "securityOpt": [],
+            "shm": null
+          },
+          "minDriver": "570.0",
+          "minEngine": "",
+          "model": {
+            "id": "gemma-4-e4b-it-qat-q4-0-unquantized",
+            "name": "gemma-4-E4B-it-qat-q4_0-unquantized",
+            "precision": "Q4_0",
+            "repository": "google/gemma-4-E4B-it-qat-q4_0-gguf",
+            "revision": "4b4a2c1d584be7264f87aac328a1bc739ce81b6c",
+            "servedName": "gemma-4-E4B-it-qat-q4_0-gguf",
+            "sizeGb": 5.155
+          },
+          "serving": {
+            "concurrency": 1,
+            "ctxTokens": 8192,
+            "kvTokens": 0
+          },
+          "speed": {
+            "tps": 62
+          },
+          "validated": {
+            "acceptedAt": "2026-09-11T20:50:10.359661Z",
+            "harness": "accept_recipe.py with pinned llama.cpp, one warmup plus three sequential samples"
+          },
+          "weights": {
+            "subdir": ""
+          }
+        },
+        {
+          "capabilities": {
+            "chat": true,
+            "reasoning": null,
+            "tools": null,
+            "vision": null
+          },
+          "engine": "llama.cpp",
+          "id": "lfm25-8b-a1b-q4-k-m-rtx4060-laptop-llamacpp-tp1",
+          "image": {
+            "attestation": null,
+            "provenance": "upstream"
+          },
+          "launch": {
+            "arguments": [
+              "--device",
+              "CUDA0",
+              "--model",
+              "/models/LFM2.5-8B-A1B-Q4_K_M.gguf",
+              "--alias",
+              "LFM2.5-8B-A1B-GGUF",
+              "--ctx-size",
+              "8192",
+              "--parallel",
+              "1",
+              "--n-gpu-layers",
+              "999",
+              "--fit",
+              "off",
+              "--flash-attn",
+              "on",
+              "--no-mmproj",
+              "--jinja",
+              "--metrics",
+              "--perf",
+              "--threads",
+              "8",
+              "--threads-batch",
+              "8",
+              "--batch-size",
+              "512",
+              "--ubatch-size",
+              "128",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "8080",
+              "--reasoning-budget",
+              "0",
+              "--verbosity",
+              "4"
+            ],
+            "capAdd": [],
+            "containerPort": 8080,
+            "devices": [
+              "/dev/nvidia-uvm"
+            ],
+            "entrypoint": "/app/llama-server",
+            "environment": {},
+            "image": "ghcr.io/ggml-org/llama.cpp@sha256:87c812ce5a8955364c665229d0848e07a2cf38fbd387d83530bc4575a22ffaa1",
+            "ipc": null,
+            "kind": "docker",
+            "mounts": [
+              {
+                "read_only": true,
+                "source": "${MODEL_ROOT}/lfm8-q4",
+                "target": "/models"
+              }
+            ],
+            "networkMode": "bridge",
+            "securityOpt": [],
+            "shm": null
+          },
+          "minDriver": "570.0",
+          "minEngine": "",
+          "model": {
+            "id": "lfm2-5-8b-a1b",
+            "name": "LFM2.5-8B-A1B",
+            "precision": "Q4_K_M",
+            "repository": "LiquidAI/LFM2.5-8B-A1B-GGUF",
+            "revision": "49c14831707011e64d70b2ebd8462ba08d608434",
+            "servedName": "LFM2.5-8B-A1B-GGUF",
+            "sizeGb": 5.156
+          },
+          "serving": {
+            "concurrency": 1,
+            "ctxTokens": 8192,
+            "kvTokens": 0
+          },
+          "speed": {
+            "tps": 158
+          },
+          "validated": {
+            "acceptedAt": "2026-09-11T20:58:02.717489Z",
+            "harness": "accept_recipe.py with pinned llama.cpp, one warmup plus three sequential samples"
+          },
+          "weights": {
+            "subdir": ""
+          }
+        },
+        {
+          "capabilities": {
+            "chat": true,
+            "reasoning": null,
+            "tools": null,
+            "vision": null
+          },
+          "engine": "llama.cpp",
+          "id": "qwen38-27b-ud-iq2-xxs-rtx4060-laptop-llamacpp-tp1",
+          "image": {
+            "attestation": null,
+            "provenance": "upstream"
+          },
+          "launch": {
+            "arguments": [
+              "--device",
+              "CUDA0",
+              "--model",
+              "/models/Qwen3.8-27B-UD-IQ2_XXS.gguf",
+              "--alias",
+              "Qwen3.8-27B-GGUF",
+              "--ctx-size",
+              "2048",
+              "--parallel",
+              "1",
+              "--n-gpu-layers",
+              "999",
+              "--fit",
+              "off",
+              "--flash-attn",
+              "on",
+              "--no-mmproj",
+              "--jinja",
+              "--metrics",
+              "--perf",
+              "--threads",
+              "8",
+              "--threads-batch",
+              "8",
+              "--batch-size",
+              "128",
+              "--ubatch-size",
+              "64",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "8080",
+              "--reasoning-budget",
+              "0"
+            ],
+            "capAdd": [],
+            "containerPort": 8080,
+            "devices": [
+              "/dev/nvidia-uvm"
+            ],
+            "entrypoint": "/app/llama-server",
+            "environment": {},
+            "image": "ghcr.io/ggml-org/llama.cpp@sha256:87c812ce5a8955364c665229d0848e07a2cf38fbd387d83530bc4575a22ffaa1",
+            "ipc": null,
+            "kind": "docker",
+            "mounts": [
+              {
+                "read_only": true,
+                "source": "${MODEL_ROOT}/qwen38-27b-ud-iq2-xxs",
+                "target": "/models"
+              }
+            ],
+            "networkMode": "bridge",
+            "securityOpt": [],
+            "shm": null
+          },
+          "minDriver": "570.0",
+          "minEngine": "",
+          "model": {
+            "id": "qwen3-8-27b",
+            "name": "Qwen3.8-27B",
+            "precision": "UD-IQ2_XXS",
+            "repository": "unsloth/Qwen3.8-27B-GGUF",
+            "revision": "4ca720788d1e01f1bff70c033e0d0028fd02e502",
+            "servedName": "Qwen3.8-27B-GGUF",
+            "sizeGb": 7.266
+          },
+          "serving": {
+            "concurrency": 1,
+            "ctxTokens": 2048,
+            "kvTokens": 0
+          },
+          "speed": {
+            "tps": 17
+          },
+          "validated": {
+            "acceptedAt": "2026-09-11T20:51:50.388759Z",
+            "harness": "accept_recipe.py with pinned llama.cpp, one warmup plus three sequential samples"
+          },
+          "weights": {
+            "subdir": ""
+          }
+        }
+      ]
     },
     "rtx-4060-ti-16gb": {
       "match": {
@@ -2803,12 +3345,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -2826,6 +3370,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -2907,12 +3452,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -2925,6 +3472,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -2981,12 +3529,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -3004,6 +3554,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -3060,12 +3611,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -3083,6 +3636,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -3139,12 +3693,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -3162,6 +3718,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -3216,12 +3773,14 @@
             ],
             "capAdd": [],
             "containerPort": 8080,
+            "devices": [],
             "entrypoint": "/app/llama-server",
             "environment": {
               "LLAMA_CACHE": "/root/.cache/huggingface"
             },
             "image": "ghcr.io/ggml-org/llama.cpp:server-cuda12-b10481@sha256:b2497f8834f5ecb4e38530f6bf2734b8e0be107ff48e4720145911c86930f2ce",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -3234,6 +3793,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-5-9b",
             "name": "Qwen3.5-9B",
@@ -3291,12 +3851,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -3314,6 +3876,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -3370,12 +3933,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -3393,6 +3958,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -3447,12 +4013,14 @@
             ],
             "capAdd": [],
             "containerPort": 8080,
+            "devices": [],
             "entrypoint": "/app/llama-server",
             "environment": {
               "LLAMA_CACHE": "/root/.cache/huggingface"
             },
             "image": "ghcr.io/ggml-org/llama.cpp:server-cuda12-b10481@sha256:b2497f8834f5ecb4e38530f6bf2734b8e0be107ff48e4720145911c86930f2ce",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -3465,6 +4033,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-5-9b",
             "name": "Qwen3.5-9B",
@@ -3522,12 +4091,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -3545,6 +4116,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -3599,12 +4171,14 @@
             ],
             "capAdd": [],
             "containerPort": 8080,
+            "devices": [],
             "entrypoint": "/app/llama-server",
             "environment": {
               "LLAMA_CACHE": "/root/.cache/huggingface"
             },
             "image": "ghcr.io/ggml-org/llama.cpp:server-cuda12-b10481@sha256:b2497f8834f5ecb4e38530f6bf2734b8e0be107ff48e4720145911c86930f2ce",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -3617,6 +4191,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-5-9b",
             "name": "Qwen3.5-9B",
@@ -3674,12 +4249,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -3697,6 +4274,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "gemma-4-12b-it",
           "name": "Gemma-4-12B-it",
@@ -3769,12 +4347,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -3787,6 +4367,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-2-6b",
             "name": "LFM2.5-2.6B",
@@ -3851,12 +4432,14 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {
               "VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS": "0"
             },
             "image": "vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -3874,6 +4457,7 @@
             "shm": "16g"
           },
           "minDriver": "570.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-8-27b",
             "name": "Qwen3.8-27B",
@@ -3920,12 +4504,14 @@
             ],
             "capAdd": [],
             "containerPort": 5000,
+            "devices": [],
             "entrypoint": "/opt/venv/bin/python3",
             "environment": {
               "NVIDIA_VISIBLE_DEVICES": "all"
             },
             "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": true,
@@ -3943,6 +4529,7 @@
             "shm": "8g"
           },
           "minDriver": "535.0",
+          "minEngine": "",
           "model": {
             "id": "qwen3-8-27b",
             "name": "Qwen3.8-27B",
@@ -4025,12 +4612,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -4043,6 +4632,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -4099,12 +4689,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -4122,6 +4714,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -4203,12 +4796,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu12@sha256:c3479164c16d9a8ef33053914c07bfd372007c36c675f629095f2c925c7e7e30",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -4221,6 +4816,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "lfm2-5-2-6b",
           "name": "LFM2.5-2.6B",
@@ -4277,12 +4873,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -4300,6 +4898,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -4356,12 +4955,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -4379,6 +4980,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -4435,12 +5037,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -4458,6 +5062,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b",
           "name": "Qwen3.5-9B",
@@ -4514,12 +5119,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -4537,6 +5144,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-8-27b",
           "name": "Qwen3.8-27B",
@@ -4583,12 +5191,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/bin/bash",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -4606,6 +5216,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "gemma-4-12b-it",
             "name": "Gemma-4-12B-it",
@@ -4677,12 +5288,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -4695,6 +5308,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-2-6b",
             "name": "LFM2.5-2.6B",
@@ -4770,12 +5384,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -4788,6 +5404,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "ornith-1-5-35b-a3b",
             "name": "Ornith-1.5-35B-A3B",
@@ -4845,12 +5462,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -4868,6 +5487,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-8-27b",
           "name": "Qwen3.8-27B",
@@ -4924,12 +5544,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -4947,6 +5569,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-8-27b",
           "name": "Qwen3.8-27B",
@@ -5003,12 +5626,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -5026,6 +5651,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "gemma-4-12b-it",
           "name": "Gemma-4-12B-it",
@@ -5098,12 +5724,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -5116,6 +5744,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-2-6b",
             "name": "LFM2.5-2.6B",
@@ -5139,6 +5768,78 @@
           },
           "weights": {
             "subdir": ""
+          }
+        },
+        {
+          "capabilities": {
+            "chat": true,
+            "reasoning": true,
+            "tools": true,
+            "vision": true
+          },
+          "engine": "tabbyapi",
+          "id": "qwen3827b-exl3-sc4bpw-rtxpro4000-tabbyapi-tp1",
+          "image": {
+            "attestation": null,
+            "provenance": "upstream-release"
+          },
+          "launch": {
+            "arguments": [
+              "main.py",
+              "--config",
+              "/app/config.yml"
+            ],
+            "capAdd": [],
+            "containerPort": 5000,
+            "devices": [],
+            "entrypoint": "/opt/venv/bin/python3",
+            "environment": {
+              "NVIDIA_VISIBLE_DEVICES": "all"
+            },
+            "image": "ghcr.io/theroyallab/tabbyapi:cu13@sha256:1c13dd17416660856e9962aeee8498827f0acd604eb36795128a03ddfe03c6ef",
+            "ipc": null,
+            "kind": "docker",
+            "mounts": [
+              {
+                "read_only": true,
+                "source": "${MODEL_ROOT}/qwen3-8-27b-exl3-sc4bpw-h5",
+                "target": "/workspace/models"
+              },
+              {
+                "read_only": true,
+                "source": "asset/qwen3827b-exl3-sc-4-00bpw-h5-256k-q4-tabbyapi-config.yml",
+                "target": "/app/config.yml"
+              }
+            ],
+            "networkMode": null,
+            "securityOpt": [],
+            "shm": "8g"
+          },
+          "minDriver": "535.0",
+          "minEngine": "",
+          "model": {
+            "id": "qwen3-8-27b",
+            "name": "Qwen3.8-27B",
+            "precision": "SC 4.00bpw H5",
+            "repository": "turboderp/Qwen3.8-27B-exl3",
+            "revision": "4acd9ad5af224ec9e8815a54d71a033f378a7e9d",
+            "servedName": "Qwen3.8-27B-EXL3-SC4bpw-H5",
+            "sizeGb": 15.59
+          },
+          "serving": {
+            "concurrency": 1,
+            "ctxTokens": 262144,
+            "kvTokens": 263168
+          },
+          "speed": {
+            "tps": 76
+          },
+          "validated": {
+            "acceptedAt": "2026-09-18T19:13:05Z",
+            "harness": "omp_accept.py (identity, chat, reasoning, tools, vision) + tabby_sweep.py"
+          },
+          "weights": {
+            "subdir": "Qwen3.8-27B-EXL3-SC4bpw-H5"
           }
         }
       ]
@@ -5173,12 +5874,14 @@
           ],
           "capAdd": [],
           "containerPort": 5000,
+          "devices": [],
           "entrypoint": "/opt/venv/bin/python3",
           "environment": {
             "NVIDIA_VISIBLE_DEVICES": "all"
           },
           "image": "ghcr.io/0xsero/tabbyapi-exl3@sha256:3d35e4979f5de7fd3b1621e4acd70035fa24ab78e941f4b569ab30fe1d1e7448",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -5196,6 +5899,7 @@
           "shm": "8g"
         },
         "minDriver": "535.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-8-27b",
           "name": "Qwen3.8-27B",
@@ -5242,12 +5946,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/bin/bash",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -5265,6 +5971,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "gemma-4-12b-it",
             "name": "Gemma-4-12B-it",
@@ -5336,12 +6043,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -5354,6 +6063,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-2-6b",
             "name": "LFM2.5-2.6B",
@@ -5429,12 +6139,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -5447,6 +6159,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "ornith-1-5-35b-a3b",
             "name": "Ornith-1.5-35B-A3B",
@@ -5531,12 +6244,14 @@
           ],
           "capAdd": [],
           "containerPort": 30000,
+          "devices": [],
           "entrypoint": "/opt/sglang/bin/python",
           "environment": {
             "HF_HOME": "/root/.cache/huggingface"
           },
           "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": false,
@@ -5549,6 +6264,7 @@
           "shm": "16g"
         },
         "minDriver": "575.0",
+        "minEngine": "",
         "model": {
           "id": "qwen3-8-27b",
           "name": "Qwen3.8-27B",
@@ -5595,12 +6311,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/bin/bash",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -5618,6 +6336,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "gemma-4-12b-it",
             "name": "Gemma-4-12B-it",
@@ -5667,6 +6386,7 @@
             ],
             "capAdd": [],
             "containerPort": 8000,
+            "devices": [],
             "entrypoint": null,
             "environment": {
               "CACHE_MODE": "vram",
@@ -5694,6 +6414,7 @@
             },
             "image": "localinferencelab/vllm@sha256:7a425c6864b951bbc368111490a4b0ac69d8cd0dd4987075b2c7d40b753b1bf5",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": true,
@@ -5716,6 +6437,7 @@
             "shm": "16g"
           },
           "minDriver": "",
+          "minEngine": "",
           "model": {
             "id": "glm-5-3-flash",
             "name": "GLM-5.3-Flash",
@@ -5789,12 +6511,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -5807,6 +6531,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "lfm2-5-2-6b",
             "name": "LFM2.5-2.6B",
@@ -5882,12 +6607,14 @@
             ],
             "capAdd": [],
             "containerPort": 30000,
+            "devices": [],
             "entrypoint": "/opt/sglang/bin/python",
             "environment": {
               "HF_HOME": "/root/.cache/huggingface"
             },
             "image": "lmsysorg/sglang:dev-cu13@sha256:6cd4635214f279e0a43019f88e3120d407567640a58aa7dcc0085e3d91402cc4",
             "ipc": null,
+            "kind": "docker",
             "mounts": [
               {
                 "read_only": false,
@@ -5900,6 +6627,7 @@
             "shm": "16g"
           },
           "minDriver": "575.0",
+          "minEngine": "",
           "model": {
             "id": "ornith-1-5-35b-a3b",
             "name": "Ornith-1.5-35B-A3B",
@@ -5971,10 +6699,12 @@
           ],
           "capAdd": [],
           "containerPort": 8080,
+          "devices": [],
           "entrypoint": null,
           "environment": {},
           "image": "ghcr.io/ggml-org/llama.cpp@sha256:9e4536dfc7ec47fb9be2db36b25cca1eab45667509e3a1938356268d10d8d2cc",
           "ipc": null,
+          "kind": "docker",
           "mounts": [
             {
               "read_only": true,
@@ -5987,6 +6717,7 @@
           "shm": "8g"
         },
         "minDriver": "",
+        "minEngine": "",
         "model": {
           "id": "qwen3-5-9b-base",
           "name": "Qwen3.5-9B-Base",
@@ -5998,7 +6729,8 @@
         },
         "serving": {
           "concurrency": 1,
-          "ctxTokens": 65536
+          "ctxTokens": 65536,
+          "kvTokens": 65536
         },
         "speed": {
           "tps": 66
@@ -6011,8 +6743,75 @@
           "subdir": ""
         }
       }
+    },
+    "xdna2-krackan-16gb": {
+      "match": {
+        "backend": "amd-npu",
+        "name": "AMD NPU Krackan",
+        "names": [
+          "npukrackan",
+          "ryzenainpu"
+        ],
+        "vramGb": 16
+      },
+      "recipe": {
+        "capabilities": {
+          "chat": true,
+          "reasoning": false,
+          "tools": false,
+          "vision": false
+        },
+        "engine": "flm",
+        "id": "qwen35-9b-npu2-xdna2-krackan-16gb-flm-tp1",
+        "image": {
+          "attestation": null,
+          "provenance": "upstream"
+        },
+        "launch": {
+          "arguments": [],
+          "capAdd": [],
+          "containerPort": 52626,
+          "devices": [],
+          "entrypoint": null,
+          "environment": {},
+          "image": "",
+          "ipc": null,
+          "kind": "host",
+          "mounts": [],
+          "networkMode": "bridge",
+          "securityOpt": [],
+          "shm": null
+        },
+        "minDriver": "",
+        "minEngine": "1.0.4",
+        "model": {
+          "id": "qwen3-5-9b",
+          "name": "Qwen3.5-9B",
+          "precision": "Q4NX",
+          "repository": "FastFlowLM/Qwen3.5-9B-NPU2",
+          "revision": "eb89ce72f46131fd55d62ecfec42fd653fa20c86",
+          "servedName": "qwen3.5:9b",
+          "sizeGb": 8.67,
+          "tag": "qwen3.5:9b"
+        },
+        "serving": {
+          "concurrency": 1,
+          "ctxTokens": 32768,
+          "kvTokens": 32768
+        },
+        "speed": {
+          "tps": 5
+        },
+        "validated": {
+          "acceptedAt": "2026-09-17T06:00:58Z",
+          "harness": "omarchy-local-ai plugin Start on AMD NPU Krackan; LOCAL_AI_READY with served=qwen3.5:9b"
+        },
+        "weights": {
+          "subdir": "Qwen3.5-9B-NPU2"
+        }
+      }
     }
   },
-  "registryCommit": "b864949a913602ad8d1e7e8f974c138ebdd35c0c",
+  "registryCommit": "205216a5feb2f102139225bda3f893367b0644c5",
   "schemaVersion": "omarchy-local-ai/recipes/1"
 }

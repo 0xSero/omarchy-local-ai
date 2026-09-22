@@ -18,7 +18,7 @@ Scripts that matter to this plugin:
 
 | Script | Role |
 |---|---|
-| `export_plugin_recipes.py` | emits `recipes.json` from the records and stamps `registryCommit`; this is what the plugin's `make sync` runs |
+| `export_plugin_recipes.py` | emits `recipes.json` from the records and stamps `registryCommit`; it runs in the registry's own `make plugin-recipes` and CI, never here |
 | `check_plugin_gate.py` | runs the **same gate rules** over every validated Docker recipe, so a recipe that the plugin would refuse cannot be published |
 | `recommend.py` | keeps exactly one *recommended* recipe per card, by the tier map |
 | `validate_rented.py` | rents the exact card, runs the recipe's own image, materialises weights and assets where the plugin would bind-mount them, runs acceptance, promotes |
@@ -53,20 +53,31 @@ context.
 flowchart LR
   Records["registry/ records"] --> Export["scripts/export_plugin_recipes.py"]
   Export --> Published["registry plugin/recipes.json"]
-  Export --> Vendored["plugin recipes.json (make sync)"]
+  Published -- "make sync, verbatim" --> Vendored["plugin recipes.json"]
   Published -- "HTTPS, TTL 6 h" --> Live["$STATE/recipes.json"]
   Vendored --> Use{"recipes_select"}
   Live --> Use
   Use --> Gate["gate_reason, per launch"]
 ```
 
-The plugin's `make sync` is the only writer of its own `recipes.json`:
+This repository has no export logic of its own: `make sync` copies the published file verbatim and
+`make sync-check` fails when the vendored copy has fallen behind it, so a recipe can only ever be written
+in the registry.
 
 ```make
 REGISTRY ?= ../local-ai-registry
+REGISTRY_EXPORT = $(REGISTRY)/plugin/recipes.json
+
 sync:
-	python3 $(REGISTRY)/scripts/export_plugin_recipes.py --out recipes.json
+	cp "$(REGISTRY_EXPORT)" recipes.json
+
+sync-check:
+	cmp -s "$(REGISTRY_EXPORT)" recipes.json || fail
 ```
+
+The registry's CI is what keeps `plugin/recipes.json` current (`git diff --exit-code` after regenerating it),
+and this repository's `registry.yml` takes it on a schedule, so the two never drift: the vendored copy is
+only ever as new as the published one, and a sync commit here carries nothing but that file.
 
 After a sync the stamp moves with the registry, even when no recipe content changed — the two files
 differ only in `registryCommit` and `generatedAt` when the registry has moved on without touching
@@ -83,14 +94,26 @@ jobs.test:
   runs-on: ubuntu-latest
   steps:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8   # v5.0.0, pinned by commit
-    - run: make test
+      with: {path: plugin}
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      with: {repository: 0xSero/local-ai-registry, path: registry}
+    - run: make -C plugin check REGISTRY="$GITHUB_WORKSPACE/registry"
 ```
 
-`make test` = `bash test/bundle`, which builds `dist/omarchy-local-ai-<version>.tar.gz`, asserts its
-contents are exactly the runtime list, unpacks it and runs both suites against the unpacked copy. No
-docker, no GPU, no network: the suite is the shimmed one described in [13 — Tests](13-tests.md). A push
-is therefore tested as the shipped artifact, not as a checkout. Actions are pinned by commit SHA, not
-by tag.
+The registry is checked out beside the plugin so `make check` can fail on a vendored copy that has
+fallen behind the published export, instead of only checking that it parses. `make test` = `bash test/bundle`,
+which builds `dist/omarchy-local-ai-<version>.tar.gz`, asserts its contents are exactly the runtime list,
+unpacks it and runs both suites against the unpacked copy. No docker, no GPU, no network: the suite is the
+shimmed one described in [13 — Tests](13-tests.md). A push is therefore tested as the shipped artifact, not as
+a checkout. Actions are pinned by commit SHA, not by tag.
+
+### `registry.yml` — daily
+
+The vendored `recipes.json` is only a copy of the published one, and a user's plugin stages the published one
+at runtime anyway ([3 — Recipes](03-recipes.md)), so this job exists only for a *fresh* install. Daily, and on
+demand, it checks out the registry beside the plugin, runs `make sync`, and commits `recipes.json` when the
+published file has moved. A sync commit carries nothing but that file, and its message names the new stamp and the
+hardware count. It needs `contents: write` to push.
 
 ### `release.yml` — on a `v*` tag
 
@@ -171,6 +194,6 @@ check: test
 ```
 
 It asserts the file's schema version, that the stamp looks like a commit, that the gateway image is
-digest-pinned, and that there is at least one hardware entry. The stricter relationship — that the
-file is exactly what the registry exports at the commit it names — is the registry's own test suite's
-job, since only the registry can regenerate it.
+digest-pinned, and that there is at least one hardware entry. When a registry checkout is present at
+`$(REGISTRY)` — which CI provides — it also runs `sync-check` and fails when the vendored copy differs from
+the published export, so the relationship is enforced on every push rather than only described here.

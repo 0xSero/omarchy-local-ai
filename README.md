@@ -166,7 +166,7 @@ MIT. Self-built images carry a build attestation you can verify with `gh attesta
 Capture the actual Quickshell panel over SSH, without Moonlight's video stream:
 
 ```sh
-./test/visual omarchy --output HDMI-A-3 --action card:rtx-3090-24gb --action count:2 --action pick:qwen38-awq-int4-rtx3090-vllm-tp2 --save /tmp/local-ai.jpg
+./test/visual omarchy --output HDMI-A-3 --action card:rtx-3090-24gb --action count:2 --action model:qwen38-awq-int4-rtx3090-vllm-tp2 --save /tmp/local-ai.jpg
 open /tmp/local-ai.jpg
 ```
 

@@ -50,6 +50,11 @@ user.
 No GPU, no docker, **no network**: it shims every external command and drives the real CLI end to end.
 Needs `bash` and `jq`; the UI checks need Node.
 
+The suite converts a shimmed argv with `jq -Rsc 'split("\u0000") | if .[-1] == "" then .[:-1] else . end'`.
+The trailing field is dropped only when it is empty, because jq 1.6 (Ubuntu 22.04, Pop!_OS) strips the
+final NUL in `-Rsc` where 1.7 and later keep it: an unconditional `[:-1]` silently eats the last real
+argument there, and the same suite then reads differently on the two.
+
 `test/all` is TAP-flavoured: `ok <n> - <what>` per assertion, `not ok` plus a diagnostic and an
 immediate exit on the first failure, and a final `1..<n>` plan.
 
@@ -217,7 +222,7 @@ What it does **not** cover: docker itself, bind-mount realisation, and the previ
 
 Over SSH it exports `XDG_RUNTIME_DIR`/`WAYLAND_DISPLAY`, calls the panel's IPC (`open`, then each
 `activate <action>`) and captures the output with `grim`. Only **navigation and presentation** actions are accepted
-(`home`, `back`, `expand`, `agent-toggle`, `card:<hw>`, `count:<n>`, `pick:<id>`, `model:<id>`) — the
+(`home`, `back`, `expand`, `agent-toggle`, `card:<hw>`, `count:<n>`, `model:<id>`, `run:<recipe>:<cards>`) — the
 helper can never start or stop a model. The host name and every action are regex-validated before they reach a shell. Because
 the image comes from the live desktop, this checks the deployed QML and the deployed `recipes.json`
 together; that is the only test that does.

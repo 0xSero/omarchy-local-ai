@@ -7,10 +7,17 @@
 | **Registry** | `0xSero/local-ai-registry` | validates one recipe per hardware id on the exact card, then exports the file this plugin vendors as `recipes.json` |
 | **Controller** | `bin/omarchy-local-ai` + `lib/*.sh` | turns a recipe into a running, verified pair of containers, and derives the state the panel reads |
 | **Panel** | `ui/Panel.qml`, `ui/CardRow.qml`, `ui/ui.js` | renders the snapshot and issues verbs |
+| **Native view** | `native/` here, generated into `omarchy.agents` | the same card inside Omarchy's own Agents panel |
 
 The registry is data; the plugin never runs anything from it that the gate has not re-checked.
 `recipes.json` is the only interface between the two repositories, and CI fails if the file and the
 registry commit it claims disagree.
+
+The native view is not a second implementation: its row data, row component and token bars are this
+plugin's own `ui/` files, copied by `scripts/export_native_view.py`, and only the part that resolves the
+installed controller lives there. Edit the card here, run `make native OMARCHY=<checkout>`, and the copy
+Omarchy ships is current; `make native-check` is what fails when it is not. The one native-only file is
+`native/backend-command.js`.
 
 ## Topology
 

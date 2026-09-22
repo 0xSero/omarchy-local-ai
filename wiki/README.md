@@ -9,8 +9,8 @@ against the tree, and the pages workflow runs it before publishing.
 
 | | |
 |---|---|
-| **Documents** | Release v5.3.2 (2026-09-21) |
-| **Plugin version** | 5.3.2 (`manifest.json`) |
+| **Documents** | Release v5.4.0 (2026-09-22) |
+| **Plugin version** | 5.4.0 (`manifest.json`) |
 | **Ledger / snapshot / recipes schema** | `omarchy-local-ai/ledger/2`, `…/snapshot/10`, `…/recipes/1` |
 | **Published** | <https://0xsero.github.io/omarchy-local-ai/> |
 
@@ -49,7 +49,7 @@ the panel. Sharing publishes the gateway's own port on the tailnet address, with
 | 12 | [CLI and environment reference](12-cli.md) | Every verb, every environment variable, every refusal |
 | 13 | [Tests](13-tests.md) | The shim harness, what the assertions cover, the rented-GPU harness, the visual helper |
 | 14 | [Troubleshooting](14-troubleshooting.md) | Every message the plugin can print, what caused it, what to do |
-| 15 | [Registry and CI](15-registry-and-ci.md) | The registry repository, the export, the three workflows, how a release is cut |
+| 15 | [Registry and CI](15-registry-and-ci.md) | The registry repository, the export, the four workflows, how a release is cut |
 | 16 | [History](16-history.md) | How the code got here, what each version changed, the state of the work |
 | 17 | [Stats](17-stats.md) | The installs, views, downloads, stars and interactions GitHub records, read live from the `stats` branch |
 
@@ -74,14 +74,14 @@ These words are used precisely throughout; the wiki uses them in exactly this se
 
 ## Current experience
 
-Version 5.3.2 brings Local AI into the native Agents panel with the same section styling as Claude and Codex. Start from an expandable agent launcher and one status row per GPU type, with explicit management actions and visible model status. A separate read-only section shows historical totals using the native provider model-row styling. Open a group for models or running-model statistics; temperature, usage and VRAM meters stay in the details.
+Version 5.4.0 brings Local AI into the native Agents panel with the same section styling as Claude and Codex, and Omarchy's native view is now generated from this plugin instead of copied by hand, so the two cannot drift. A GPU page names the card once — in its title and breadcrumb — and each model is a single row that is its own action: **Download & run**, **Load**, **Resume & load**, **Load another** or **Swap**, with its size, context and capabilities beside it. A swap names the models it replaces before it happens, and rolls back if it fails. A separate read-only section shows historical totals using the native provider model-row styling; open a group for models or running-model statistics, and temperature, usage and VRAM meters stay in the details.
 
 | Area | Verified | Still to verify |
 |---|---|---|
 | Agents | All eleven adapter handoffs tested; OMP, Pi, OpenCode and Crush terminal startup on Omarchy; real Pi/OpenCode requests on NVIDIA and Intel | Full conversation and tool acceptance for every agent |
 | GPU readings | Physical NVIDIA and Intel; AMD sysfs fixtures | Physical AMD hardware |
 | Today's statistics | Incremental vLLM/llama.cpp logs and counters | Other engines are unavailable; first-day history is not reconstructed |
-| Native panel | Shared native styling, row-data checks, QML loading | Final visual acceptance of the latest compact overview |
+| Native panel | The generated view is current with `ui/` on every run, row-data checks, the click suite (42 scroll, 2 hit-area, 2 flow, 2 breadcrumb cases) on Omarchy | Final visual acceptance of the compact overview |
 | Mac/Moonlight | Window switching, apps, fullscreen, workspaces and help binding | Offline guide rendering; shifted Command+Tab uses Ctrl+Space, P instead |
 
 See [11 — The panel](11-panel.md) for the interface and [2 — Install](02-install-and-layout.md) for setup, updating and restoration.
@@ -93,9 +93,14 @@ See [11 — The panel](11-panel.md) for the interface and [2 — Install](02-ins
 | `bin/omarchy-local-ai` | CLI verbs and worker entry points |
 | `lib/` | Controller, hardware scans, agent adapters and incremental telemetry |
 | `ui/Panel.qml` | Standalone or embedded panel and action dispatch |
-| `ui/ui.js` | Pure row data and navigation choices |
+| `ui/ui.js` | Pure row data and navigation choices — the one source of the card's contract |
 | `ui/CardRow.qml` | Shared row, disclosure and meter rendering |
+| `ui/TokenTotal.qml` | The three token bars |
 | `integrations/` | Native Agents patch, installer, Mac controls and offline guide |
-| `test/` | Controller, telemetry, terminal handoff, UI and bundle checks |
+| `scripts/export_native_view.py` | Writes Omarchy's native view into a checkout from `ui/`; `--check` writes nothing and fails when it has drifted |
+| `native/backend-command.js` | The one part of the native view that is native to it, and the only hand-written file there: it resolves the installed controller from Omarchy's plugin registry. The three shared files are generated into Omarchy's checkout, never kept here |
+| `test/` | Controller, telemetry, terminal handoff, UI, bundle and native-view checks |
+| `.github/workflows/` | The suite, the registry sync, the release and the traffic archive |
 | `docs/design.md` | Design record and release process |
-| `recipes.json` | Vendored catalog from the local-ai registry |
+| `recipes.json` | Vendored catalog, taken verbatim from the local-ai registry |
+| `Makefile` | `sync`, `native`, `native-check`, `test`, `check`, `bundle` — every generator and gate |

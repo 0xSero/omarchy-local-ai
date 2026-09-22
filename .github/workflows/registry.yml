@@ -1,0 +1,31 @@
+name: registry
+# The registry is the source of truth for recipes; this repo only vendors its export. The plugin's
+# runtime already stages that export on every install (lib/update.sh), so this job only keeps the copy
+# committed here from falling behind the published one for a fresh install.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: 0xSero/local-ai-registry
+          path: registry
+      - name: Take the registry's export when it has moved
+        run: |
+          make sync REGISTRY=registry
+          if git diff --quiet recipes.json; then
+            echo "recipes.json is current with the registry"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add recipes.json
+          git commit -m "recipes: take the registry's export ($(jq -r '.registryCommit[:12]' recipes.json), $(jq -r '.hardware | length' recipes.json) hardware)"
+          git push

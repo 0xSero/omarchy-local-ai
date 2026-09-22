@@ -31,6 +31,12 @@ Every breadcrumb is a direct link, including the current destination, and long p
 | `integrations/agents-panel.patch` | Add Local AI to the native panel and connect scrolling/focus |
 | `integrations/Shortcuts.qml` | Separate status-bar help button |
 
+The native view inside Omarchy's Agents panel is not a second source. Its row data, row component and
+token bars are copies of the first three files above, written by `scripts/export_native_view.py`, and only
+its view (`shell/plugins/agents/LocalAi.qml`) is hand-written in Omarchy's tree because the native panel
+owns the header, tabs, theme and viewport. `make native-check OMARCHY=<checkout>` fails when a copy has
+drifted from the file it came from.
+
 The decorative orb has been removed. Model and recipe text is rendered as plain text.
 
 ## Keyboard and IPC

@@ -20,12 +20,14 @@ Item {
     Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
   }
   Text {
+    textFormat: Text.PlainText
     id: name
     anchors { left: parent.left; leftMargin: Style.space(8); right: total.left; rightMargin: Style.space(8); verticalCenter: parent.verticalCenter }
     text: r.label; color: r.urgent ? p.urgent : p.ink
     font.family: p.mono; font.pixelSize: Style.font.bodySmall; elide: Text.ElideRight
   }
   Text {
+    textFormat: Text.PlainText
     id: total
     anchors { right: parent.right; rightMargin: Style.space(8); verticalCenter: parent.verticalCenter }
     text: root.usage.since ? (root.usage.estimated ? "≈" : "") + Ui.kmg(Math.round(root.usage.total)) : "—"
