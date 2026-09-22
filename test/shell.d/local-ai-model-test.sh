@@ -17,7 +17,9 @@ const c = (snap, extra) => Object.assign({ snap, view: "home", hw: "", count: 1,
 let o = M.build(c(base))
 assertEqual(o.tone, "idle"); assertEqual(o.title, "Local AI"); assert(o.sub.indexOf("1 cards free") === 0, o.sub)
 assert(o.rows.some(r => r.action === "gpu:rtx-4090-24gb"), "a card row opens the card view")
-assert(o.rows.some(r => r.label === "open agent" && r.disabled), "no agent without a model")
+assert(!o.rows.some(r => /agent/.test(r.label)), "no launcher rows without a model")
+assert(o.rows.some(r => r.type === "text" && r.label === "no model running"), "the hint to pick a model")
+assert(o.rows.filter(r => r.action === "gpu:rtx-4090-24gb").every(r => r.kind === "primary"), "card rows are highlighted")
 
 // card view: one row per recipe, and that row is the action
 o = M.build(c(base, { view: "card", hw: "rtx-4090-24gb" }))

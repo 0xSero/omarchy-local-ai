@@ -173,10 +173,12 @@ function build(c) {
   if (!ms.length) { o.tone = any ? "idle" : "error"; o.eyebrow = any ? "idle" : "no card"; o.title = "Local AI"; o.sub = any ? total + " cards free · nothing running" : "no supported GPU" }
   else { o.tone = crashed.length ? "error" : "ready"; o.eyebrow = crashed.length ? "crashed" : "ready"; o.title = ms.length === 1 ? ms[0].name : ms.length + " models"; o.sub = "on " + ms.reduce(function(a, m) { return a + m.cards }, 0) + " of " + total + " cards" }
   if (snap.statusText) o.rows.push(row(snap.statusText.toLowerCase(), snap.helpText || "", "", { type: "text", urgent: snap.statusText !== "Unsupported GPU" }))
-  var launch = launchModel(snap)
-  o.rows.push(row("launch agent", launch ? where(snap, launch) + " · " + launch.name : "load a model first", "launcher-toggle", { expanded: !!c.launcherOpen }))
-  o.rows = o.rows.concat(c.launcherOpen ? launchRows(c, launch) : launchRows(c, launch).slice(-1))
-  o.rows = o.rows.concat(cardRows(snap, false))
+  var launch = launchModel(snap), deployments = cardRows(snap, false)
+  if (launch) {   // agents only exist once a model runs; until then the card rows are the one thing to click
+    o.rows.push(row("launch agent", where(snap, launch) + " · " + launch.name, "launcher-toggle", { expanded: !!c.launcherOpen }))
+    o.rows = o.rows.concat(c.launcherOpen ? launchRows(c, launch) : launchRows(c, launch).slice(-1))
+  } else if (any) { o.rows.push(row("no model running", "pick a card below, then a model to load", "", { type: "text" })); deployments.forEach(function(r) { if (r.action) r.kind = "primary" }) }
+  o.rows = o.rows.concat(deployments)
   return o
 }
 
