@@ -8,7 +8,7 @@ SHELL := /bin/bash
 .PHONY: sync sync-check native native-check check test bundle
 
 BUNDLE = dist/omarchy-local-ai-$(shell jq -r .version manifest.json).tar.gz
-RUNTIME = manifest.json recipes.json LICENSE bin/omarchy-local-ai $(wildcard lib/*.sh lib/*.py) $(wildcard ui/*.qml) ui/ui.js $(wildcard integrations/*.py integrations/*.patch integrations/*.lua integrations/*.qml integrations/*.html)
+RUNTIME = manifest.json recipes.json LICENSE bin/omarchy-local-ai $(wildcard lib/*.sh lib/*.py) $(wildcard ui/*.qml) ui/ui.js
 
 bundle:
 	mkdir -p dist

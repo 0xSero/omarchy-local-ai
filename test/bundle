@@ -7,7 +7,7 @@ bundle="dist/omarchy-local-ai-$(jq -r .version manifest.json).tar.gz"
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 while IFS= read -r file; do
   case "$file" in
-    manifest.json|recipes.json|LICENSE|bin/omarchy-local-ai|lib/*.sh|lib/*.py|ui/*.qml|ui/ui.js|integrations/*.py|integrations/*.patch|integrations/*.lua|integrations/*.qml|integrations/*.html) ;;
+    manifest.json|recipes.json|LICENSE|bin/omarchy-local-ai|lib/*.sh|lib/*.py|ui/*.qml|ui/ui.js) ;;
     *) echo "Unexpected release file: $file" >&2; exit 1 ;;
   esac
 done < <(tar -tzf "$bundle")

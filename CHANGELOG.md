@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [Unreleased]
+
+### Removed
+- The `integrations/` directory (Moonlight bindings, the macOS shortcut button and guide, the Agents-panel patch and its installer). They were one person's desktop setup, not part of the plugin; they live outside this repository now.
+
 ## [5.4.0] - 2026-09-22
 
 ### Added

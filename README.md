@@ -26,61 +26,6 @@ The whole page scrolls, including folder editing and bottom actions. **Home/End*
 
 Home also carries one **update** row. A background check reads the registry's recipe file and this plugin's own manifest, and the row appears when either has something newer — the plugin version, and how many new recipes are for the cards you actually have. Nothing is installed behind your back: pressing it applies the new recipes and updates the plugin through `omarchy plugin update`. With nothing to apply the row is just a re-check.
 
-## Native Agents panel and Moonlight
-
-To place Local AI inside Omarchy's existing Agents view, update the installed plugin,
-then run on Omarchy:
-
-```bash
-omarchy plugin update sero.local-ai --yes
-cd ~/.config/omarchy/plugins/sero.local-ai
-python3 integrations/install-agents.py --moonlight
-```
-
-Omit `--moonlight` to keep your desktop keybindings. This uses the installed Agents panel, adds Local AI controls, and replaces its bar entry with a local customization.
-A separate keyboard button in the OS bar opens the cheat sheet. System files
-are unchanged; the installer prints the configuration backup location. It refuses
-an incompatible native panel instead of applying a partial patch. Reapply after
-an Omarchy update if you want the updated native panel.
-
-The optional Moonlight shortcuts use **Ctrl+Space**, release, then **K** for help,
-**I** for Local AI, **Enter** for a terminal, or **1–9 / 0** for workspaces.
-**Ctrl+F1** opens the cheat sheet directly. Ordinary Ctrl shortcuts in apps remain
-available. **Command+W** closes an app tab (a window in Foot); **Command+D**
-bookmarks in browsers or opens another tiled terminal in Foot. Common Command
-shortcuts for copy, paste, select, find, save, reload, undo and new tabs are mapped
-to their app equivalents. Enable Moonlight's **Capture system keyboard shortcuts**
-for Command keys to reach the host. **Ctrl+Alt+Shift+Q** disconnects the stream
-and returns to Moonlight while leaving the remote desktop running. Ctrl+Space retains the desktop actions whose
-Super bindings are replaced. Reload Hyprland and restart the running Quickshell instance after install.
-
-The Mac profile uses click-to-focus, **Command+Tab** for the next window,
-**Command+Space** for apps and **Control+Command+F** for fullscreen. Use
-**Ctrl+Space, P** for the previous window (shifted Tab was unreliable through Moonlight).
-The status-bar keyboard panel includes a visual guide with searchable shortcuts,
-a window/workspace simulation, agent setup and stream escape instructions.
-Its offline HTML lives at `~/.local/share/omarchy/guides/macos-controls.html`.
-
-Local AI opens with an agent launcher and a **Deployments** section. Each GPU group shows its current model and status, with **Manage** or **Load model** as an explicit action. Deployment order stays stable. Below it, **Tokens by GPU** reports historical totals in the native Claude/Codex filled-row style; these bars are read-only and do not open controls. The usage section appears once history is available, and includes retained runtime logs and attributable older gateway receipts. vLLM totals carry ≈ because they are reconstructed from rounded rates.
-
-Local AI keeps its GPU controls in those same rows. Each GPU group opens its running models
-and compatible recipes for one or more GPUs. Occupied GPUs offer a model swap. **Launch agent** at
-the top of the main screen expands the running-model and agent selectors, plus
-the project folder. Choose a model and an installed compatible agent, then press
-**Open** to start it in your terminal. Inside model details, each device has
-temperature, usage and VRAM meters. NVIDIA uses nvidia-smi, Intel uses Level Zero
-Sysman memory and DRM activity counters, and AMD uses amdgpu sysfs with SMI
-inventory. Missing readings stay N/A. Python 3 is required for telemetry. Agent selection
-and launch appear above the model statistics. For vLLM and llama.cpp, decode/prefill show the average
-of non-zero engine log samples since local midnight, collected incrementally.
-Generated-token totals include retained runtime logs and attributable older gateway
-receipts. vLLM rates produce estimated totals, marked ≈. A shared ten-second cache
-prevents duplicate scans from multiple panels. No inference requests are made for monitoring.
-
-Click **Project folder** (or **Ctrl+O** in Local AI) before opening an agent. The
-folder is remembered, defaults to home, and is entered inside the terminal after
-UWSM starts it. OMP receives `--allow-home` when that folder is home. A missing folder refuses launch rather than falling back to `/tmp`.
-
 ## Requirements
 
 - **Docker**, which Omarchy ships. You do not need to be in the `docker` group: Start, Stop, and Share ask for your password once, through Omarchy's own prompt. With *Sudoless Docker* enabled in Omarchy's security settings there is no prompt.
@@ -155,7 +100,7 @@ rm -rf ~/.cache/omarchy/local-ai ~/.local/state/omarchy/local-ai   # optional
 
 Recipes come from the [local-ai registry](https://github.com/0xSero/local-ai-registry): `make sync REGISTRY=../local-ai-registry` regenerates `recipes.json`. [The design](docs/design.md) documents the controller; `python3 test/rented.py --list` is the rented-GPU harness.
 
-Source layout: `ui/` contains the panel, `bin/` the entry point, `lib/` the controller, `test/` the checks, and `docs/` the design, and `integrations/` the optional native panel, shortcuts and guide.
+Source layout: `ui/` contains the panel, `bin/` the entry point, `lib/` the controller, `test/` the checks, and `docs/` the design.
 
 `make bundle` builds `dist/omarchy-local-ai-<version>.tar.gz` from an explicit list of runtime files plus the license. `make test` unpacks that archive and runs the controller and UI checks against it. GitHub releases attach the same tested bundle; tests, docs, build files and recordings are excluded.
 
