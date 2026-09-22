@@ -114,7 +114,10 @@ amd_gpus_from_rocm_smi() {
         [[ -n $bdf ]] && break
       done
     fi
-    if [[ -z $bdf && -n $card && -e /sys/class/drm/$card/device ]]; then
+    # Fall back to the card column only when rocm-smi did not report a Card Model.
+    # A present model that matches no drm card must not borrow cardN: on a hybrid
+    # host that name is a different GPU, and sysfs telemetry then overwrites VRAM.
+    if [[ -z $bdf && -z ${model:-} && -n $card && -e /sys/class/drm/$card/device ]]; then
       bdf=$(basename "$(readlink /sys/class/drm/$card/device 2>/dev/null)" 2>/dev/null) || bdf=''
     fi
     out=$(jq -c --argjson i "$i" --arg p "$product" --argjson t "$bytes" --argjson u "${used:-0}" --arg bdf "${bdf:-}" \
@@ -139,7 +142,7 @@ amd_gpus_from_rocm_smi() {
     NR>1 && dv && cs && vt && vu {
       card = $(dv); product = $(cs); bytes = $(vt); used = $(vu)
       if (product == "" || bytes == "") next
-      print card, product, bytes, used, $(cm)
+      print card, product, bytes, used, (cm ? $(cm) : "")
     }')
   printf '%s' "$out"
 }
