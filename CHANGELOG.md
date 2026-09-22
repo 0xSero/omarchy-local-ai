@@ -15,6 +15,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - A GPU page no longer repeats the card as a row. Its title and breadcrumb already name the card, so the per-card state moves into the subtitle.
 
 ### Validation
+- The 128 KiB fixture asserts that the snapshot names the recipe file it used rather than a stamp from that file, so a registry refresh cannot break it.
 - The suite now reads the same on jq 1.6 (Ubuntu 22.04, Pop!_OS) and on 1.7+: its argv conversion drops the trailing field only when it is empty, because jq 1.6 strips the final NUL in `-Rsc` where 1.7 and later keep it.
 - The click suite passes on Omarchy: 42 scroll cases, 2 hit-area cases, 2 flow cases and 2 breadcrumb cases, no failures.
 

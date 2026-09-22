@@ -911,7 +911,8 @@ jq -c '.pad=("x"*200000)' "$R_VENDORED" >"$TMP/fat.json"
 (( $(wc -c <"$TMP/fat.json") > 131072 )) || fail "the fat fixture is not past the ceiling"
 rm -f "$OMARCHY_AI_STATE/recipes.next.json"
 out=$(OMARCHY_AI_RECIPES="$TMP/fat.json" OMARCHY_AI_MANIFEST_URL= "$CLI" snapshot) || fail "snapshot failed on a recipes file past 128 KiB"
-[[ $(jq -r '.registryFile.generatedAt' <<<"$out") == 2026-09-17T00:03:37Z && $(jq -r '.update.recipes|has("relevant")' <<<"$out") == true ]] || fail "a recipes file past 128 KiB broke the snapshot" "$out"; pass "a recipes file past Linux's 128 KiB argument ceiling still produces a snapshot"
+want=$(jq -r .generatedAt "$R_VENDORED")   # the file's own stamp, so a registry sync cannot break this
+[[ $(jq -r '.registryFile.generatedAt' <<<"$out") == "$want" && $(jq -r '.update.recipes|has("relevant")' <<<"$out") == true ]] || fail "a recipes file past 128 KiB broke the snapshot" "$out"; pass "a recipes file past Linux's 128 KiB argument ceiling still produces a snapshot"
 rm -f "$OMARCHY_AI_STATE/recipes.json" "$OMARCHY_AI_STATE/recipes.next.json" "$OMARCHY_AI_STATE/upstream.checked" "$OMARCHY_AI_STATE/manifest.remote.json"
 
 # A recipe's published context and media claims must survive the gateway and agent configuration.
