@@ -9,6 +9,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - `native/backend-command.js` holds the one part of the native view that is native to it: resolving the installed controller from Omarchy's plugin registry.
 
 ### Changed
+- The native view's backend gate requires 5.4.0 or newer, so it runs only against a controller whose rows it was generated from. `test/native` covers the boundary: 5.4.0, 5.4.1 and 5.10.0 launch, 5.3.7 and everything older or newer does not, and a missing backend never does.
 - `recipes.json` is now taken verbatim from the registry's published export (`make sync`), and `make check` fails when the vendored copy has fallen behind it, so the registry is the only place a recipe is authored. The plugin's CI checks out the registry to run that comparison, and a daily job commits the export when it moves — the same export the plugin already stages at runtime, so an installed plugin sees new recipes without waiting for a release.
 - Each model is one row on a GPU page, and that row is the action: **Download & run**, **Load**, **Resume & load**, **Load another** or **Swap**, naming its size, with its context and capabilities beside it. Selecting a model no longer reveals a separate button underneath, and a model whose load would replace a running one names the models being replaced in its own row.
 - A GPU page no longer repeats the card as a row. Its title and breadcrumb already name the card, so the per-card state moves into the subtitle.
