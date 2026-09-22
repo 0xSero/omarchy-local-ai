@@ -42,33 +42,24 @@ it into Omarchy by the Elsewhen route (a package plus a ~100-line PR). The card'
   its container leaves root-owned files (13k such files exist from the 5.x vLLM cache under `cache/vllm`).
 - README, CHANGELOG `[6.0.0]`, workflows (`make bundle` before publish; the daily registry sync commits the v2 export).
 
-## State on the box (2026-09-22 evening)
+## State on the box (2026-09-23 early morning)
 
-- The real install `~/.config/omarchy/plugins/sero.local-ai` is a checkout of branch `v6` (commit 878d428); `omarchy plugin
-  update sero.local-ai` fast-forwards that branch. The `sero.local-ai-next` test copy and its bar entry are gone
-  (`shell.json.bak-v6` holds the layout before). `sero.local-ai` sits on the bar before Agents. Shell restarted:
-  no error or warning for the plugin in the journal; the card polls the backend; state idle, 0 models, the exited
-  5.x containers removed; `ledger.json.5x` is the 5.4.0 ledger backup.
-- A long-running Claude session runs the MTP campaign in tmux session `mtp` on the Mac
-  (`~/local-omarchy/registry-v6`, branch `mtp-campaign`, scope `MTP-CAMPAIGN.md`, log `MTP-CAMPAIGN.log`).
-  It waits for the Vast balance to go positive before renting.
+- The REAL install `~/.config/omarchy/plugins/sero.local-ai` is back on `main` (23e9b02, 5.4.0) with the
+  Agents-tab shell integration; do not touch it. The Local AI mark was removed from the bar; the Agents tab
+  carries Local AI. The shell's own `LocalAi.js` was patched in place (backup `LocalAi.js.bak-launcher`) so
+  the launcher rows only show once a model runs.
+- The NEW card (this branch, 58b1f65+) is installed as a separate copy `~/.config/omarchy/plugins/sero.local-ai-next`
+  (manifest id `sero.local-ai-next`, state dir `~/.local/state/omarchy/local-ai-next`, shares the weights cache
+  and port 12434 with the real install, so run one at a time). It sits on the bar before Agents. The shell
+  could not be restarted while the screen was locked; a waiter restarts it on unlock. Backup `shell.json.bak-next`.
+- Gateway image with the usage log: ghcr.io/0xsero/gateway@sha256:f92b8d2c… (attested, pinned in recipes.json);
+  PR gateway-usage → main in 0xSero/local-ai-images.
 
 ## Pending work, in order
 
-1. Sero clicks "Local AI" on the bar: the only check not done from a shell. The shell log shows the same
-   duplicate-IpcHandler warning the 5.4.0 plugin always logged (328 times in the journal); not a regression.
-2. Release 6.0.0 on `main`: merge `v6` (it contains the three local `main` commits), tag, let the release workflow
-   publish; retarget marketplace issue #5990; update the box's real install with `omarchy plugin update sero.local-ai --yes`,
-   then remove the `sero.local-ai-next` test copy and its bar entry.
-3. The upstream PR (Elsewhen route): Install › AI / Remove › AI menu entries pointing at the two installers, a
-   paragraph under "Local LLMs" in `manual/17-ai.md`, a migration test modelled on `elsewhen-default-migration-test.sh`.
-   `~/omarchy` on the Mac is a clean fork checkout on current upstream.
-4. Registry: Sero's recommendation rule (16 GB and up → Qwen3.8-27B EXL3 with vision and full KV; 12 GB → Qwen3.5-9B;
-   below → LFM2.5) is a three-line change to `TIERS` in `scripts/recommend.py` plus nine validation runs
-   (seven 16 GB cards on turboderp's sc3bpw, the RTX 4000 Ada, vision on the 3090 Ti and 5090 4bpw builds).
-   Mia-AiLab's `Qwen3.8-27B-EXL3-3.5bpw` (14.3 GB, EXL3 1.4.2, text-only, sha 19441ac8) loads on our attested
-   TabbyAPI image (exllamav3 1.4.2) and could be a text-only candidate; their fork (MTP, DFlash2, NVFP4 KV) would be
-   a new engine and image.
+- Sero looks at the new card on the box (home, stats, open, a load on a 3090). Fix what is off.
+- Upstream PR (Elsewhen route) in the Omarchy style: menu entries, manual paragraph, migration test.
+- Release 6.0.0 on `main` once the card holds; retarget the marketplace issue.
 
 ## Verification commands
 
