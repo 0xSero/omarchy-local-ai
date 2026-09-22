@@ -11,7 +11,7 @@ const gpu = { key: "nvidia:0", backend: "nvidia", index: 0, product: "NVIDIA GeF
 const card = { hardwareId: "rtx-4090-24gb", backend: "nvidia", product: gpu.product, name: "RTX 4090", vramGb: 24, count: 1, totalGb: 24, keys: ["nvidia:0"], chosen: true, claimed: 0, idle: 1 }
 const recipe = { id: "test-a", name: "Test Model", engine: "llama.cpp", sizeGb: 19, ctxTokens: 131072, kvTokens: 131072, caps: { chat: true, tools: true, vision: false, reasoning: false }, onDisk: false, partialBytes: 0, hardwareId: "rtx-4090-24gb", cards: 1, recommended: true, running: false, gate: "" }
 const base = { state: "idle", error: "", statusText: "", helpText: "", operation: { name: "", recipeId: "", detail: "", percent: 0, startedAt: "", expectedSeconds: 0 }, hardwareId: "rtx-4090-24gb", gpus: [gpu], cards: [card], recipes: [recipe], models: [], running: null, agents: { default: "pi", directory: "/home/u", installed: ["pi", "claude"], launchable: [] }, selected: null, reason: "", port: { number: 12434, busy: false, listener: "none" } }
-const c = (snap, extra) => Object.assign({ snap, view: "home", hw: "", count: 1, slotSel: "", launcherOpen: false, launchPick: "", launchModelOpen: false, agentPick: "", agentOpen: false, pending: false, lastVerb: "", elapsed: 0, localError: "", browseWhileWorking: false }, extra || {})
+const c = (snap, extra) => Object.assign({ snap, view: "home", hw: "", count: 1, slotSel: "", launcherOpen: false, agentPick: "", agentOpen: false, pending: false, lastVerb: "", elapsed: 0, localError: "" }, extra || {})
 
 // home, idle
 let o = M.build(c(base))
@@ -75,8 +75,7 @@ const unsupported = Object.assign({}, base, { hardwareId: "", statusText: "Unsup
 o = M.build(c(unsupported))
 assertEqual(o.tone, "error"); assertEqual(o.title, "no recipe")
 
-// browsing while working disables deployment actions
-o = M.build(c(starting, { view: "card", hw: "rtx-4090-24gb", browseWhileWorking: true }))
-assertEqual(o.rows[0].action, "work")
-assert(o.rows.filter(r => /^run:/.test(r.action)).every(r => r.disabled), "loads are disabled while working")
+// working: navigation is not offered; the card shows the operation
+o = M.build(c(starting, { view: "card", hw: "rtx-4090-24gb" }))
+assertEqual(o.tone, "work"); assert(!o.rows.some(r => /^run:/.test(r.action)), "no loads while working")
 JS
