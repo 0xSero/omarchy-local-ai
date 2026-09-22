@@ -2,6 +2,8 @@
 # native: write Omarchy's native view from this plugin's own UI (OMARCHY=<checkout>)
 # check: tests plus a recipes.json sanity check
 REGISTRY ?= ../local-ai-registry
+# Process substitution and $() in the recipes below: dash, the default /bin/sh on Ubuntu, has neither.
+SHELL := /bin/bash
 
 .PHONY: sync sync-check native native-check check test bundle
 
@@ -17,6 +19,11 @@ bundle:
 # the vendored copy has fallen behind it. No recipe is ever written here.
 REGISTRY_EXPORT = $(REGISTRY)/plugin/recipes.json
 
+# The two provenance fields are the build's own stamp, derived from the last registry commit, so a rebase or
+# a squash rewrites them without changing one exported recipe. The registry's own check drops them before
+# comparing, and so does this one: a re-stamp alone is not drift here, a stale recipe still is.
+PROVENANCE = del(.registryCommit, .generatedAt)
+
 sync:
 	@test -f "$(REGISTRY_EXPORT)" || { echo "sync: no $(REGISTRY_EXPORT) - set REGISTRY=<registry checkout>" >&2; exit 2; }
 	cp "$(REGISTRY_EXPORT)" recipes.json
@@ -24,9 +31,13 @@ sync:
 
 sync-check:
 	@test -f "$(REGISTRY_EXPORT)" || { echo "sync-check: no $(REGISTRY_EXPORT) - set REGISTRY=<registry checkout>" >&2; exit 2; }
-	@cmp -s "$(REGISTRY_EXPORT)" recipes.json \
-	  && echo "recipes.json: current with the registry ($(REGISTRY))" \
-	  || { echo "recipes.json is behind $(REGISTRY_EXPORT); run make sync" >&2; exit 1; }
+	@if diff -q <(jq -S '$(PROVENANCE)' "$(REGISTRY_EXPORT)") <(jq -S '$(PROVENANCE)' recipes.json) >/dev/null; then \
+	  echo "recipes.json: current with the registry, $$(jq -r '.hardware|length' recipes.json) hardware ids"; \
+	else \
+	  echo "recipes.json has fallen behind $(REGISTRY_EXPORT); run make sync" >&2; \
+	  diff <(jq -rS '$(PROVENANCE) | .hardware | keys[]' "$(REGISTRY_EXPORT)") <(jq -rS '$(PROVENANCE) | .hardware | keys[]' recipes.json) | grep -E '^[<>]' | sed 's/^/  /' >&2 || true; \
+	  exit 1; \
+	fi
 
 native:
 	@test -n "$(OMARCHY)" || { echo "native: set OMARCHY=<path to an Omarchy checkout>" >&2; exit 2; }
@@ -39,6 +50,7 @@ native-check:
 test:
 	bash test/bundle
 	bash test/native
+	bash test/sync
 
 check: test
 	@jq -e '.schemaVersion=="omarchy-local-ai/recipes/1" and (.registryCommit|test("^[0-9a-f]{40}$$")) and (.gateway.image|test("@sha256:[0-9a-f]{64}$$")) and (.hardware|length>0)' recipes.json >/dev/null \

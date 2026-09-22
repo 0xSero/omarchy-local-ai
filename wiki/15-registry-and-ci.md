@@ -68,16 +68,25 @@ in the registry.
 REGISTRY ?= ../local-ai-registry
 REGISTRY_EXPORT = $(REGISTRY)/plugin/recipes.json
 
+# The build's own stamp, not content: a rebase or a squash rewrites the commit they
+# come from, and the registry's own check drops them for the same reason.
+PROVENANCE = del(.registryCommit, .generatedAt)
+
 sync:
 	cp "$(REGISTRY_EXPORT)" recipes.json
 
 sync-check:
-	cmp -s "$(REGISTRY_EXPORT)" recipes.json || fail
+	diff -q <(jq -S '$(PROVENANCE)' "$(REGISTRY_EXPORT)") <(jq -S '$(PROVENANCE)' recipes.json)
 ```
 
-The registry's CI is what keeps `plugin/recipes.json` current (`git diff --exit-code` after regenerating it),
-and this repository's `registry.yml` takes it on a schedule, so the two never drift: the vendored copy is
-only ever as new as the published one, and a sync commit here carries nothing but that file.
+`test/sync` checks that contract without a registry checkout: it publishes the vendored copy as a
+stand-in, then asks what the check makes of a re-stamp (current), of a withdrawn card (drift, named),
+and of `make sync` (the published file, verbatim).
+
+The registry's CI is what keeps `plugin/recipes.json` current, and it compares the same two fields
+dropped; this repository's `registry.yml` takes the export on a schedule, and the release runs
+`make check` before it publishes. So the two never drift: the vendored copy is only ever as new as the
+published one, and a sync commit here carries nothing but that file.
 
 After a sync the stamp moves with the registry, even when no recipe content changed — the two files
 differ only in `registryCommit` and `generatedAt` when the registry has moved on without touching
