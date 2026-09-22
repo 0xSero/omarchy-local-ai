@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 import subprocess
 import os
+import time
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +17,32 @@ def module(name):
 runtime, intel = module('runtime-metrics'), module('intel-metrics')
 
 class Telemetry(unittest.TestCase):
+    @unittest.skipUnless(hasattr(time, 'tzset'), 'requires local timezone control')
+    def test_daily_rates_use_local_midnight_on_dst_transition_days(self):
+        original_datetime = runtime.datetime
+        for month, day, offset, log_hour in [(3, 8, '-05:00', 5), (11, 1, '-04:00', 4)]:
+            with self.subTest(month=month), tempfile.TemporaryDirectory() as directory:
+                class Clock(original_datetime):
+                    @classmethod
+                    def now(cls, tz=None):
+                        value = cls(2026, month, day, 12, tzinfo=runtime.timezone.utc)
+                        return value.astimezone(tz) if tz else value.astimezone().replace(tzinfo=None)
+                state = Path(directory); (state/'slots').mkdir()
+                (state/'ledger.json').write_text(json.dumps({'slots': {'model': {'engine': 'owned'}}}))
+                (state/'slots/model.json').write_text(json.dumps({'engine': 'llama-cpp'}))
+                info = [{'Id': 'fixture', 'State': {'StartedAt': 'session'}}]
+                stamp = f'2026-{month:02d}-{day:02d}T{log_hour:02d}:30:00Z'
+                logs = stamp+' eval time = 1 ms / 3 tokens (30.00 tokens per second)'
+                try:
+                    with patch.dict(os.environ, {'TZ': 'EST5EDT,M3.2.0,M11.1.0'}):
+                        time.tzset()
+                        with patch.object(runtime, 'datetime', Clock), patch.object(runtime, 'command', return_value=json.dumps(info)), patch.object(runtime.subprocess, 'check_output', return_value=logs):
+                            result = runtime.collect(state)['model']
+                        self.assertEqual(result['usageSince'], f'2026-{month:02d}-{day:02d}T00:00:00{offset}')
+                        self.assertEqual(result['decodeTps'], 30)
+                finally:
+                    time.tzset()
+
     def test_nonzero_average(self):
         row = {}
         runtime.update_rates(row, 'Avg prompt throughput: 200.0 tokens/s, Avg generation throughput: 20.0 tokens/s\nAvg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s\nAvg prompt throughput: 400.0 tokens/s, Avg generation throughput: 40.0 tokens/s')

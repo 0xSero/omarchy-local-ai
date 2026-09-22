@@ -116,7 +116,9 @@ def archive_usage(state, history, saved):
 
 def collect(state):
     now = datetime.now().astimezone()
-    day, start = now.date().isoformat(), now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day = now.date().isoformat()
+    # Midnight can have a different UTC offset than now on DST transition days.
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None).astimezone()
     cache = state/'runtime-metrics.json'
     saved = read_json(cache)
     if saved.get('usageVersion') == 2 and saved.get('day') == day and 0 <= time.time()-saved.get('sampled', 0) < 10:
