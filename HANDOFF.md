@@ -42,9 +42,20 @@ it into Omarchy by the Elsewhen route (a package plus a ~100-line PR). The card'
   its container leaves root-owned files (13k such files exist from the 5.x vLLM cache under `cache/vllm`).
 - README, CHANGELOG `[6.0.0]`, workflows (`make bundle` before publish; the daily registry sync commits the v2 export).
 
+## State on the box (2026-09-22 evening)
+
+- The real install `~/.config/omarchy/plugins/sero.local-ai` is a checkout of branch `v6` (commit 878d428); `omarchy plugin
+  update sero.local-ai` fast-forwards that branch. The `sero.local-ai-next` test copy and its bar entry are gone
+  (`shell.json.bak-v6` holds the layout before). `sero.local-ai` sits on the bar before Agents. Shell restarted:
+  no error or warning for the plugin in the journal; the card polls the backend; state idle, 0 models, the exited
+  5.x containers removed; `ledger.json.5x` is the 5.4.0 ledger backup.
+- A long-running Claude session runs the MTP campaign in tmux session `mtp` on the Mac
+  (`~/local-omarchy/registry-v6`, branch `mtp-campaign`, scope `MTP-CAMPAIGN.md`, log `MTP-CAMPAIGN.log`).
+  It waits for the Vast balance to go positive before renting.
+
 ## Pending work, in order
 
-1. Sero clicks "Local AI (next)" on the bar: the only check not done from a shell. The shell log shows the same
+1. Sero clicks "Local AI" on the bar: the only check not done from a shell. The shell log shows the same
    duplicate-IpcHandler warning the 5.4.0 plugin always logged (328 times in the journal); not a regression.
 2. Release 6.0.0 on `main`: merge `v6` (it contains the three local `main` commits), tag, let the release workflow
    publish; retarget marketplace issue #5990; update the box's real install with `omarchy plugin update sero.local-ai --yes`,
