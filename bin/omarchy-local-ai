@@ -1,250 +1,806 @@
-#!/usr/bin/env bash
-# omarchy:summary=Run the validated local models for this machine's GPUs and open coding agents on them
-# omarchy:args=<snapshot|load|unload [recipe]|open-agent [name] [recipe]|share [--key value]|gpu [key]|recipe [id]|recipes [update]|update [--check]|agent-dir <path>>
-#
-# `snapshot` is a pure read that rewrites the state file the panel watches. `load` and `unload`
-# spawn a worker that holds the op lock; everything they do is logged. `open-agent` launches an
-# agent with a running model's endpoint in its environment. `share` toggles the tailnet route.
-# Several models run at once, one engine+gateway pair each (lib/runtime.sh); a Start replaces only
-# the models on the cards it claims.
-set -euo pipefail
-HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")")" && pwd)
-SELF="$HERE/$(basename "${BASH_SOURCE[0]}")"
-# shellcheck source=../lib/common.sh
-source "$HERE/../lib/common.sh"
-# shellcheck source=../lib/priv.sh
-source "$HERE/../lib/priv.sh"
-# shellcheck source=../lib/hardware.sh
-source "$HERE/../lib/hardware.sh"
-# shellcheck source=../lib/recipes.sh
-source "$HERE/../lib/recipes.sh"
-# shellcheck source=../lib/update.sh
-source "$HERE/../lib/update.sh"
-# shellcheck source=../lib/weights.sh
-source "$HERE/../lib/weights.sh"
-# shellcheck source=../lib/share.sh
-source "$HERE/../lib/share.sh"
-# shellcheck source=../lib/runtime.sh
-source "$HERE/../lib/runtime.sh"
-# shellcheck source=../lib/agents.sh
-source "$HERE/../lib/agents.sh"
-# shellcheck source=../lib/snapshot.sh
-source "$HERE/../lib/snapshot.sh"
+#!/bin/bash
 
-# tools or the recipe file missing: say so where the card reads it, even though nothing else can run
-missing=""; for t in jq curl; do command -v "$t" >/dev/null 2>&1 || missing+=" $t"; done
-if [[ -n $missing ]]; then broken="missing tool:$missing (sudo pacman -S$missing)"
-elif ! recipes_ok; then broken="recipes.json is missing or broken: reinstall the plugin"; fi
-if [[ -n ${broken:-} ]]; then
-  fail "$broken" || :
-  [[ ${1:-snapshot} == snapshot ]] && printf '{"state":"error","error":"%s","operation":{},"model":null,"reason":"","share":{},"agents":{},"models":[]}\n' "$broken"
-  exit 1
+# omarchy:summary=Run the validated local model for this machine's GPU and open coding agents on it
+# omarchy:args=<snapshot|load <recipe> [gpu...]|unload [model]|agent <name> [model]|install|remove>
+# omarchy:requires-sudo=true
+
+# One recipe per GPU, validated in the registry and vendored in recipes.json. A run is three facts
+# made true in order: the weights are on disk and verified (as the user), the engine and gateway
+# containers exist (root, behind one polkit prompt unless sudoless Docker is on), and the gateway
+# answered one real request (inside that same prompt, with rollback to the previous run on failure).
+#
+# The card watches $STATE/snapshot.json, which `snapshot` rewrites from the ledger and reality, and
+# issues the verbs below. Long operations run in a detached worker so closing the card kills nothing.
+#
+# Root trusts nothing a user could write: the caller comes from pkexec, every path from the caller's
+# account, the recipe from the file beside this script, re-checked against the policy in this file.
+# Only a recipe id and GPU keys cross the boundary.
+
+set -euo pipefail
+
+HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+SELF="$HERE/$(basename -- "${BASH_SOURCE[0]}")"
+RECIPES="${OMARCHY_AI_RECIPES:-$HERE/../recipes.json}"
+LABEL=io.omarchy.local-ai
+CTR="${OMARCHY_AI_CONTAINER:-omarchy-local-ai}"
+PORT="${OMARCHY_AI_PORT:-12434}"
+POLL="${OMARCHY_AI_POLL:-2}"
+TIMEOUT="${OMARCHY_AI_TIMEOUT:-3600}"
+AGENTS=(pi omp opencode ori claude codex grok agy hermes copilot crush muse cursor-agent)
+ROOT_PHASE="${OMARCHY_AI_ROOT_PHASE:-}"
+
+# The privileged process must not resolve docker, curl or jq from a caller-controlled PATH, and its
+# checks must not change with an inherited locale. pkexec sanitizes both; pin them here as well.
+if ((EUID == 0)); then
+  export PATH=/usr/bin:/usr/sbin:/bin:/sbin
+  export LC_ALL=C.UTF-8
 fi
 
-spawn() { # spawn <op-name> <recipe-id> <worker-verb> [args]: detach a worker; it takes the lock itself and reports through the ledger
+# paths: as the user, from the environment; as root, only ever from resolve_caller (below)
+set_paths() { # set_paths <home>
+  HOME_DIR=$1
+  STATE="${OMARCHY_AI_STATE:-${XDG_STATE_HOME:-$HOME_DIR/.local/state}/omarchy/local-ai}"
+  MODELS="${OMARCHY_AI_MODEL_ROOT:-$HOME_DIR/.cache/omarchy/local-ai/models}"
+  LEDGER="$STATE/state.json"; SNAPSHOT="$STATE/snapshot.json"; LOGFILE="$STATE/log"
+  KEY_FILE="$STATE/gateway.key"; AUTH_FILE="$STATE/gateway.auth"; HF_HEADER="$STATE/hf.header"
+}
+((EUID == 0)) || set_paths "${OMARCHY_AI_USER_HOME:-$HOME}"
+umask 077   # everything under $STATE is private; weights and assets get their own modes below
+
+# ------------------------------------------------------------------ common
+LEDGER_EMPTY='{"schemaVersion":"omarchy-local-ai/ledger/2","op":{"name":"","recipeId":"","pid":0,"startedAt":"","detail":"","percent":0},"error":"","slots":{},"lastStartSeconds":0}'
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+fail() { printf 'local-ai: %s\n' "$*" >&2; return 1; }
+log() { if [[ -n $ROOT_PHASE ]]; then printf '%s %s\n' "$(now)" "$*" >&2; else state_dir; printf '%s %s\n' "$(now)" "$*" >>"$LOGFILE"; fi; }
+deadline() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
+canon() { realpath -m -- "$1" 2>/dev/null || printf '%s\n' "$1"; }
+state_dir() {
+  [[ -n $ROOT_PHASE ]] && return 0
+  mkdir -p "$STATE" && chmod 700 "$STATE"
+  # a 5.x install: same slot shape, one rename
+  [[ -f $STATE/ledger.json && ! -f $LEDGER ]] && mv -f "$STATE/ledger.json" "$LEDGER"
+  chmod 600 "$LEDGER" "$SNAPSHOT" "$LOGFILE" "$KEY_FILE" 2>/dev/null || true
+}
+ledger_read() { if [[ -f $LEDGER ]]; then jq -c '.slots = (.slots // {})' "$LEDGER"; else printf '%s\n' "$LEDGER_EMPTY"; fi; }
+ledger_write() { # ledger_write <jq-filter> [jq-args...]: atomic read-modify-write under a short lock
+  local f=$1; shift; state_dir
+  { flock 9; jq -c "$@" "$f" <<<"$(ledger_read)" >"$LEDGER.tmp.$$" && mv -f "$LEDGER.tmp.$$" "$LEDGER"; } 9>"$STATE/ledger.lock"
+}
+op() { # op <name> <recipe-id> [detail] [percent]: what the card shows while a worker runs
+  ledger_write '.op={name:$n,recipeId:$r,pid:($p|tonumber),startedAt:(if .op.startedAt=="" or .op.name!=$n then $t else .op.startedAt end),detail:$d,percent:($c|tonumber)} | .error=""' \
+    --arg n "$1" --arg r "$2" --arg p "$$" --arg t "$(now)" --arg d "${3:-}" --arg c "${4:-0}"
+  log "op $1 ${3:-}"; snapshot_write
+}
+op_done() { ledger_write '.op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0} | .error=""'; snapshot_write; }
+oops() { log "error: $1"; ledger_write '.error=$e | .op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0}' --arg e "$1"; snapshot_write; exit 1; }
+busy_pid() { local p; p=$(ledger_read | jq -r '.op.pid'); [[ $p -gt 0 ]] && kill -0 "$p" 2>/dev/null && printf '%s' "$p"; return 0; }
+guard() { # the one operation lock; fd 8 lives as long as the worker and reaches no child
+  state_dir; exec 8>"$STATE/op.lock"; flock -n 8 || { fail "another operation is running"; return 1; }
+}
+run_child() { "$@" 8>&- 9>&-; }
+spawn_child() { "$@" 8>&- 9>&- & }
+worker_exit() { # a worker that dies without op_done or oops leaves a reason, never a silent idle
+  local rc=$? p; p=$(ledger_read | jq -r '.op.pid')
+  [[ -f $STATE/cancel ]] && return 0
+  if [[ $p == "$$" ]]; then
+    log "error: worker exited unexpectedly (status $rc) during $(ledger_read | jq -r '.op.detail')"
+    ledger_write '.error=$e | .op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0}' --arg e "stopped unexpectedly while $(ledger_read | jq -r '.op.detail') (see $LOGFILE)"
+    snapshot_write
+  fi; return 0
+}
+spawn() { # spawn <op-name> <recipe-id> <worker-verb> [args]: a detached worker that takes the lock and reports through the ledger
   local name=$1 rid=$2; shift 2; state_dir
   if [[ ${OMARCHY_AI_FOREGROUND:-0} == 1 ]]; then "$SELF" "$@" >/dev/null 2>>"$LOGFILE" || true; return; fi
-  # the worker is its own session so closing the panel's process never kills it; its pid goes into
-  # the ledger right away so the panel turns busy on the next snapshot, not a second later
-  if command -v setsid >/dev/null 2>&1; then setsid "$SELF" "$@" >/dev/null 2>>"$LOGFILE" </dev/null & disown
-  else "$SELF" "$@" >/dev/null 2>>"$LOGFILE" </dev/null & disown; fi
-  op_pending "$name" "$!" "$rid"
+  setsid "$SELF" "$@" >/dev/null 2>>"$LOGFILE" </dev/null & disown
+  ledger_write '.op=(if .op.pid==0 then {name:$n,recipeId:$r,pid:($p|tonumber),startedAt:$t,detail:"starting",percent:0} else .op end) | .error=""' --arg n "$name" --arg p "$!" --arg r "$rid" --arg t "$(now)"
+  snapshot_write
 }
 
-current_recipe() { # the one recipe for this machine, gated; prints json or fails out loud
-  local m id r gate
-  m=$(match_hardware); id=$(jq -r .hardwareId <<<"$m")
-  [[ -n $id ]] || { fail "$(jq -r .reason <<<"$m")"; return 1; }
-  r=$(recipe_for "$id") || return 1
-  r=$(jq -c --argjson m "$m" '. + {gpuIndex:$m.gpu.index, gpuRenderNode:($m.gpu.renderNode // ""), match:{backend:$m.gpu.backend}}' <<<"$r")
-  gate=$(gate_reason "$r"); [[ -z $gate ]] || { fail "recipe refused: $gate"; return 1; }
-  local ci; ci=$(claimed_indexes "$r" "$m"); [[ $(jq -r .short <<<"$ci") == "" ]] || { fail "$(jq -r .short <<<"$ci")"; return 1; }
-  r=$(jq -c --argjson ci "$ci" --argjson m "$m" '. + {gpuIndexes:$ci.indexes, gpuKeys:$ci.keys,
-    gpuRenderNodes:([$m.gpus[] | select(.key as $k | $ci.keys | index($k)) | .renderNode | select(. != null and . != "")] | unique)}' <<<"$r")
-  driver_ok "$(jq -r .driver <<<"$m")" "$(jq -r '.minDriver // ""' <<<"$r")" \
-    || { fail "needs NVIDIA driver $(jq -r .minDriver <<<"$r") or newer"; return 1; }
-  printf '%s\n' "$r"
+# ------------------------------------------------------------------ recipes
+recipes_ok() { jq -e '.schemaVersion=="omarchy-local-ai/recipes/2" and (.hardware|type=="object") and (.gateway.image|test("@sha256:[0-9a-f]{64}$"))' "$RECIPES" >/dev/null 2>&1; }
+registry_commit() { jq -r '.registryCommit // ""' "$RECIPES"; }
+gateway_image() { jq -r '.gateway.image' "$RECIPES"; }
+recipes_for() { jq -c --arg h "$1" '.hardware[$h].recipes // [] | .[]' "$RECIPES"; }   # one per line, the recommended first
+recipe_by_id() { # recipe_by_id <id> -> the recipe with its hardwareId, or nothing
+  jq -ce --arg id "$1" '[.hardware | to_entries[] | .key as $h | .value.recipes[] | select(.id==$id) | . + {hardwareId:$h}] | .[0] // empty' "$RECIPES" 2>/dev/null
 }
-slot_recipe() { # slot_recipe <recipe-id> -> the recipe a slot was started from, as recorded; fails when there is no such slot
-  [[ -s $STATE/slots/$1.json ]] || { fail "no model $1 is running"; return 1; }
-  cat "$STATE/slots/$1.json"
+# policy_check <recipe-json>: what this file will run and nothing else. Prints the refusal, or nothing.
+# Schema 2 cannot express mounts, devices, IPC, capabilities or security options; what is left to check
+# is that every string used to build a path or a command is what its field promises.
+policy_check() {
+  jq -r '
+    def bad($s): $s;
+    if (.id|test("^[a-z0-9][a-z0-9.-]{0,63}$")|not) then "invalid recipe id"
+    elif (.image|test("^[a-z0-9./_:-]+@sha256:[0-9a-f]{64}$")|not) then "image is not digest-pinned"
+    elif ((.launch.port|type)!="number" or .launch.port<1 or .launch.port>65535) then "invalid container port"
+    elif ([.weights[]? | select((.repository|test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))|not)]|length)>0 then "invalid weights repository"
+    elif ([.weights[]? | select((.revision|test("^[0-9a-f]{40,64}$"))|not)]|length)>0 then "weights revision is not pinned"
+    elif ([.weights[]? | select(.layout!="dir" and .layout!="hub")]|length)>0 then "unknown weights layout"
+    elif ([.weights[]? | select(((.mountPath|test("^/[A-Za-z0-9_./-]+$")) and (.mountPath|contains("..")|not))|not)]|length)>0 then "invalid weights mount path"
+    elif ([.weights[]? | select(((.dir//"")|test("^([A-Za-z0-9_-][A-Za-z0-9_.-]*)?$"))|not)]|length)>0 then "invalid weights directory"
+    elif ([.weights[]? | select(((.files//"")|test("^([A-Za-z0-9_-][A-Za-z0-9_.-]*)?$"))|not)]|length)>0 then "invalid weights file name"
+    elif (.asset!=null and (((.asset.name // "")|test("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$")|not) or ((.asset.mountPath // "")|test("^/[A-Za-z0-9_./-]+$")|not) or ((.asset.mountPath // "")|contains("..")) or ((.asset.text|type)!="string"))) then "invalid asset"
+    elif (.scratch!=null and ((.scratch|test("^/[A-Za-z0-9_./-]+$")|not) or (.scratch|contains("..")))) then "invalid scratch path"
+    elif ([.launch.environment|keys[]? | select(test("^[A-Z_][A-Z0-9_]*$")|not)]|length)>0 then "invalid environment variable"
+    elif ([.launch.arguments[]? | select(type!="string")]|length)>0 then "invalid launch argument"
+    elif ([.launch.arguments[]? | select(test("enforce.eager|disable.?cuda.?graph";"i"))]|length)>0 then "disallowed launch argument"
+    elif ([.launch | .. | strings | select(test("\\$\\{"))]|length)>0 then "needs an unsupported placeholder"
+    elif ((.launch.entrypoint//"")|test("^[A-Za-z0-9_./-]*$")|not) then "invalid entrypoint"
+    elif ((.launch.shm//"")|test("^([0-9]+[kmg]?)?$")|not) then "invalid shm size"
+    elif ((.cards//1|type)!="number" or (.cards//1)<1 or (.cards//1)>8) then "invalid card count"
+    elif ((.servedName//"")|test("[\"\\\\\\x27]")) then "invalid served model name"
+    else empty end' <<<"$1" 2>/dev/null || printf 'recipe data failed validation\n'
 }
 
-w_load() {
-  guard || { log "error: another operation is running"; exit 1; }
-  trap worker_exit EXIT   # a step that dies unexpectedly still leaves a reason on the card, never a silent idle
-  local r id t0
-  op download "" "checking the GPU and recipe" 0
-  r=$(current_recipe 2>"$STATE/gate.err") || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
-  id=$(jq -r .id <<<"$r")
-  if docker_direct; then # the daemon answers this user: say now what would stop a pull; a missing NVIDIA runtime is set up behind one prompt
-    if ! why=$(docker_ok "$(jq -r .match.backend <<<"$r")"); then
-      [[ $why == *"NVIDIA container toolkit"* ]] || oops "$why"
-      op download "$id" "setting up the NVIDIA container toolkit (your password)" 0
-      elevated toolkit >"$STATE/phase.out" 2>>"$LOGFILE" || oops "$why"
+# ------------------------------------------------------------------ hardware
+# One detector per vendor, each printing a JSON array of {backend,index,product,totalMiB,usedMiB,freeMiB,renderNode}.
+nvidia_gpus() {
+  command -v nvidia-smi >/dev/null 2>&1 || { printf '[]'; return; }
+  local rows; rows=$(deadline 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,memory.free,driver_version --format=csv,noheader,nounits 2>/dev/null || true)
+  [[ -n $rows ]] || { printf '[]'; return; }
+  jq -Rsc 'split("\n")|map(select(length>0)|split(",")|map(gsub("^ +| +$";"")))
+    |map({backend:"nvidia",index:(.[0]|tonumber),product:.[1],totalMiB:(.[2]|tonumber),usedMiB:(.[3]|tonumber),freeMiB:(.[4]|tonumber),renderNode:null,driver:.[5]})' <<<"$rows"
+}
+intel_gpus() { # Battlemage cards by PCI id (8086:e223), one per render node, so an old pci.ids never hides one
+  command -v lspci >/dev/null 2>&1 || { printf '[]'; return; }
+  local dri="${OMARCHY_AI_DRI_PATH:-/dev/dri/by-path}" a idx=0 out='[]'
+  while IFS= read -r a; do
+    [[ -n $a && -e "$dri/pci-$a-render" ]] || continue
+    out=$(jq -c --argjson i "$idx" --arg node "$(canon "$dri/pci-$a-render")" '.+[{backend:"intel-xpu",index:$i,product:"Intel Arc Pro B70",totalMiB:32768,usedMiB:null,freeMiB:null,renderNode:$node,driver:""}]' <<<"$out")
+    idx=$((idx+1))
+  done < <(lspci -Dnn -d 8086:e223 2>/dev/null | awk '{print $1}' | sort -u)
+  printf '%s' "$out"
+}
+amd_gpus() {
+  local smi static metric; smi=${OMARCHY_AI_AMD_SMI:-$(command -v amd-smi 2>/dev/null || true)}
+  [[ -n $smi && -x $smi ]] || { printf '[]'; return; }
+  static=$(deadline 10 "$smi" static --json 2>/dev/null) || { printf '[]'; return; }
+  metric=$(deadline 10 "$smi" metric --mem-usage --json 2>/dev/null) || metric='{}'
+  jq -nc --argjson s "$static" --argjson m "$metric" '
+    ($m.gpu_data // []) as $md
+    | [($s.gpu_data // [])[] | . as $g | ([$md[]? | select(.gpu==$g.gpu)] | .[0] // {}) as $u
+        | select(($g.asic.market_name // "") != "")
+        | {backend:"amd-rocm", index:($g.gpu|tonumber), product:$g.asic.market_name,
+           totalMiB:($g.vram.size.value // $u.mem_usage.total_vram.value // 0), usedMiB:($u.mem_usage.used_vram.value // null), freeMiB:($u.mem_usage.free_vram.value // null),
+           renderNode:(("/dev/dri/by-path/pci-" + ($g.bus.bdf // "") + "-render")), driver:""}]' 2>/dev/null || printf '[]'
+}
+gpus_json() { # every GPU, with the driver version once
+  [[ -n ${OMARCHY_AI_HARDWARE_JSON:-} ]] && { jq -c . <<<"$OMARCHY_AI_HARDWARE_JSON"; return; }
+  jq -nc --argjson n "$(nvidia_gpus)" --argjson i "$(intel_gpus)" --argjson a "$(amd_gpus)" '{gpus:($n+$i+$a), driver:($n[0].driver // "")}'
+}
+# match_hardware -> {hardwareId, driver, reason, gpus:[{key,backend,index,product,vramGb,hardwareId,chosen,renderNode,usedGb}]}
+# Exact match: same backend, the normalised product name is one the registry validated, VRAM within 1 GB.
+match_hardware() {
+  jq -c --argjson hw "$(gpus_json)" --arg pick "${OMARCHY_AI_GPU:-$(cat "$STATE/gpu" 2>/dev/null || true)}" '
+    def norm: ascii_downcase|gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]";"");
+    . as $file
+    | def matches($g;$m): $g.backend==$m.backend and (($m.names|index($g.product|norm))!=null) and (((($m.vramGb*1024)-$g.totalMiB)|fabs)<=1024);
+      [$hw.gpus | to_entries[] as $gi | $gi.value as $g | ($g.backend+":"+($g.index|tostring)) as $key
+        | ([$file.hardware|to_entries[] | select(matches($g;.value.match)) | .key] | .[0] // "") as $id
+        | $g + {hardwareId:$id, key:$key, order:$gi.key, vramGb:(if $g.totalMiB==null then null else (($g.totalMiB/1024)+0.5|floor) end)}] as $gpus
+    | ([$gpus[]|select(.key==$pick)]|.[0]) as $pinned
+    | ([$gpus[]|select(.hardwareId!="")] | sort_by(-.totalMiB, -(.freeMiB // 0), .order) | .[0]) as $auto
+    | ($pinned // $auto) as $use
+    | {hardwareId:($use.hardwareId // ""), driver:($hw.driver // ""),
+       reason:(if $use!=null and $use.hardwareId!="" then "" elif ($gpus|length)==0 then "no supported GPU detected" else ("no validated recipe for "+(($use // $gpus[0]).product)+" yet") end),
+       gpus:[$gpus[] | {key, backend, index, product, vramGb, hardwareId, chosen:(.key==($use.key // "")), renderNode:(.renderNode // null),
+                       usedGb:(if .usedMiB==null then null else ((.usedMiB/1024*10|round)/10) end), freeMiB:(.freeMiB // null), totalMiB:(.totalMiB // 0)}]}' "$RECIPES"
+}
+# claim_gpus <recipe> <match> [key...] -> {keys, indexes, renderNodes, short}: the cards a start takes, the
+# asked-for ones first, then free ones of the recipe's type; short names the refusal when there are not enough
+claim_gpus() {
+  local r=$1 m=$2; shift 2
+  jq -nc --argjson r "$r" --argjson m "$m" --arg want "$*" --argjson busy "$(ledger_read | jq -c '[.slots[].keys[]?]')" '
+    ($r.cards // 1) as $n | ($want | split(" ") | map(select(.!=""))) as $asked
+    | [$m.gpus[] | select(.hardwareId == $r.hardwareId)] as $pool
+    | ([$pool[] | select(.key as $k | $asked | index($k))] + [$pool[] | select((.key as $k | $asked | index($k)) == null) | select((.key as $k | $busy | index($k)) == null)] + [$pool[] | select((.key as $k | $asked | index($k)) == null) | select((.key as $k | $busy | index($k)) != null)]) as $ordered
+    | ($ordered | unique_by(.key) | sort_by(.key as $k | ($ordered | map(.key) | index($k)))) as $ordered
+    | if ($pool|length) < $n then {keys:[],indexes:[],renderNodes:[],short:"recipe needs \($n) cards, \($pool|length) detected"}
+      else ($ordered[:$n]) as $take | {keys:($take|map(.key)), indexes:($take|map(.index)), renderNodes:([$take[].renderNode | select(.!=null and .!="")]), short:""} end'
+}
+driver_ok() { [[ -z $2 ]] && return 0; [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" == "$2" ]]; }
+
+# ------------------------------------------------------------------ weights (always as the user)
+# On disk: dir layout at $MODELS/<owner--name>@<rev12>/[dir/]<files>; hub layout at $MODELS/hf/hub/models--<owner>--<name>/snapshots/<rev>/<files>.
+# A directory is trusted only after every file matched the Hub's tree for the pinned revision; the marker records that.
+weights_base() { # weights_base <weights-item> -> the directory mounted at mountPath
+  local w=$1 repo rev; repo=$(jq -r .repository <<<"$w"); rev=$(jq -r .revision <<<"$w")
+  if [[ $(jq -r .layout <<<"$w") == hub ]]; then printf '%s/hf\n' "$MODELS"; else printf '%s/%s@%s\n' "$MODELS" "${repo//\//--}" "${rev:0:12}"; fi
+}
+weights_files_dir() { # weights_files_dir <weights-item> -> where the files themselves live
+  local w=$1 base repo rev dir; base=$(weights_base "$w"); repo=$(jq -r .repository <<<"$w"); rev=$(jq -r .revision <<<"$w"); dir=$(jq -r '.dir // ""' <<<"$w")
+  if [[ $(jq -r .layout <<<"$w") == hub ]]; then printf '%s/hub/models--%s/snapshots/%s\n' "$base" "${repo//\//--}" "$rev"; else printf '%s%s\n' "$base" "${dir:+/$dir}"; fi
+}
+weights_marker() { printf '%s/.verified@%s\n' "$(weights_files_dir "$1")" "$(jq -r .revision <<<"$1")"; }
+hub_tree() { # hub_tree <repo> <rev> -> "path\tsize\tsha256-or--\tblob-oid" per file; cached per revision
+  local repo=$1 rev=$2 f="$STATE/trees/${repo//\//--}@$rev.tsv" tmp
+  [[ -s $f ]] && { cat "$f"; return 0; }
+  state_dir; mkdir -p "$STATE/trees"; tmp=$(mktemp)
+  curl -fsSL --max-time 30 --max-filesize 4194304 --proto =https ${HF_HEADER_ARGS[@]+"${HF_HEADER_ARGS[@]}"} "https://huggingface.co/api/models/$repo/tree/$rev?recursive=1" 2>/dev/null \
+    | jq -r '.[] | select(.type=="file") | [.path, .size, (.lfs.oid // "-"), (.oid // "-")] | @tsv' >"$tmp" 2>/dev/null
+  [[ -s $tmp ]] || { rm -f "$tmp"; return 1; }
+  mv -f "$tmp" "$f"; cat "$f"
+}
+weights_needed() { # weights_needed <weights-item> -> the tree rows this recipe uses
+  local w=$1 files; files=$(jq -r '.files // ""' <<<"$w")
+  hub_tree "$(jq -r .repository <<<"$w")" "$(jq -r .revision <<<"$w")" | if [[ -n $files ]]; then awk -F'\t' -v f="$files" '{n=$1; sub(/.*\//,"",n)} n==f || n ~ /mmproj/'; else cat; fi
+}
+if stat --version >/dev/null 2>&1; then fsize() { stat -c %s -- "$1"; }; else fsize() { stat -f %z -- "$1"; }; fi   # GNU, else BSD
+sha_file() { { command -v sha256sum >/dev/null 2>&1 && sha256sum -- "$1" || shasum -a 256 -- "$1"; } | cut -c1-64; }
+blob_sha1() { { printf 'blob %s\0' "$(fsize "$1")"; cat -- "$1"; } | { command -v sha1sum >/dev/null 2>&1 && sha1sum || shasum -a 1; } | cut -c1-40; }
+file_ok() { # file_ok <path> <size> <sha256|-> <blob-oid|->
+  [[ -f $1 ]] || return 1
+  [[ $2 == 0 || $(fsize "$1") == "$2" ]] || return 1
+  if [[ $3 != - ]]; then [[ $(sha_file "$1") == "$3" ]]; elif [[ $4 != - ]]; then [[ $(blob_sha1 "$1") == "$4" ]]; fi
+}
+weights_present() { # weights_present <weights-item>: verified before, and the files are still there
+  local w=$1 d path size sha oid; d=$(weights_files_dir "$w")
+  [[ -f $(weights_marker "$w") ]] || return 1
+  while IFS=$'\t' read -r path size sha oid; do [[ -n $path ]] || continue; [[ -f $d/$path && ( $size == 0 || $(fsize "$d/$path") == "$size" ) ]] || return 1; done < <(weights_needed "$w" 2>/dev/null || true)
+  return 0
+}
+dir_bytes() { [[ -d $1 ]] && du -sk -- "$1" 2>/dev/null | awk '{print $1*1024}' || printf 0; }
+weights_partial_bytes() { local w; while IFS= read -r w; do dir_bytes "$(weights_files_dir "$w")"; done < <(jq -c '.weights[]?' <<<"$1") | awk '{s+=$1} END{print s+0}'; }
+weights_fetch() { # weights_fetch <recipe-id> <weights-item>: every missing file, resumed, then verified; the marker says so
+  local id=$1 w=$2 repo rev d needed n path size sha oid i=0 done_bytes=0 total=0 tmp pid rc cache
+  repo=$(jq -r .repository <<<"$w"); rev=$(jq -r .revision <<<"$w"); d=$(weights_files_dir "$w")
+  needed=$(weights_needed "$w") || { fail "cannot list $repo@${rev:0:12} on the Hub: no route, or the revision is gone"; return 1; }
+  n=$(grep -c . <<<"$needed"); (( n > 0 )) || { fail "the Hub lists no files for $repo@${rev:0:12}"; return 1; }
+  total=$(awk -F'\t' '{s+=$2} END{print s+0}' <<<"$needed")
+  local free; free=$(df -Pk "$MODELS" 2>/dev/null | awk 'NR==2{print $4*1024}')
+  (( ${free:-0} == 0 || free > total - $(dir_bytes "$d") )) || { fail "need $(( (total - $(dir_bytes "$d") + 1073741823) / 1073741824 )) GB free under $MODELS"; return 1; }
+  (umask 022; mkdir -p "$d")
+  cache="${OMARCHY_AI_HF_HOME:-$HOME_DIR/.cache/huggingface}/hub/models--${repo//\//--}/snapshots/$rev"   # the user's own Hub cache: adopted when it verifies
+  while IFS=$'\t' read -r path size sha oid; do
+    [[ -n $path ]] || continue; i=$((i+1))
+    if file_ok "$d/$path" "$size" "$sha" "$oid"; then done_bytes=$((done_bytes + size)); continue; fi
+    if [[ -f $cache/$path ]] && file_ok "$cache/$path" "$size" "$sha" "$oid"; then
+      (umask 022; mkdir -p "$(dirname "$d/$path")"; cp --reflink=auto -f -- "$(readlink -f "$cache/$path")" "$d/$path") && { log "adopted $path from the Hub cache (verified)"; done_bytes=$((done_bytes + size)); continue; }
     fi
+    (umask 022; mkdir -p "$(dirname "$d/$path")")
+    tmp="$d/$path.part"
+    spawn_child curl -fsSL --retry 3 --retry-all-errors -C - --proto =https ${HF_HEADER_ARGS[@]+"${HF_HEADER_ARGS[@]}"} -o "$tmp" "https://huggingface.co/$repo/resolve/$rev/$path"; pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+      local have; have=$(fsize "$tmp" 2>/dev/null || printf 0)
+      op download "$id" "$(( (done_bytes + have) / 1073741824 )) / $(( (total + 1073741823) / 1073741824 )) GB · file $i of $n" $(( total > 0 ? (done_bytes + have) * 100 / total : 0 ))
+      [[ -f $STATE/cancel ]] && { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true; return 1; }
+      sleep "$POLL"
+    done
+    rc=0; wait "$pid" || rc=$?
+    (( rc == 0 )) || { fail "download of $path failed (curl $rc); it resumes on the next load"; return 1; }
+    if ! file_ok "$tmp" "$size" "$sha" "$oid"; then rm -f "$tmp"; fail "$path did not match the pinned revision's checksum; deleted"; return 1; fi
+    (umask 022; mv -f "$tmp" "$d/$path"; chmod 644 "$d/$path")
+    done_bytes=$((done_bytes + size))
+  done <<<"$needed"
+  if [[ $(jq -r .layout <<<"$w") == hub ]]; then # what huggingface_hub reads offline: refs/<branch> is not needed when the revision is a commit hash
+    (umask 022; mkdir -p "$(dirname "$d")/../refs"; printf '%s' "$rev" >"$(dirname "$d")/../refs/main")
   fi
-  op download "$id" "checking" 0
-  if weights_marked "$r" && ! weights_files_ok "$r"; then log "weights for $id are marked complete but the files are gone; fetching again"; rm -f "$(marker_path "$id")"; fi
-  local need=0; weights_present "$r" || need=1
-  if (( need )) && weights_find "$r"; then need=0; fi   # a verified copy elsewhere on this machine, adopted: no download
-  weights_plan "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
-  mount_dirs "$r"; write_assets "$r"; ensure_key
-  # the slot this model gets, and the models it replaces (the ones on its cards); the recipe file carries both into the phase
-  r=$(slot_plan "$r" 2>"$STATE/gate.err") || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
+  (umask 022; : >"$(weights_marker "$w")"); log "verified $repo@${rev:0:12}: $n files in $d"
+}
+HF_HEADER_ARGS=()   # a private token never travels in argv: it goes through a 0600 header file
+hf_header() { [[ -n ${HF_TOKEN:-} ]] || return 0; state_dir; printf 'Authorization: Bearer %s\n' "$HF_TOKEN" >"$HF_HEADER.tmp.$$" && mv -f "$HF_HEADER.tmp.$$" "$HF_HEADER"; HF_HEADER_ARGS=(-H "@$HF_HEADER"); }
+
+# ------------------------------------------------------------------ privilege
+docker_direct() { # this process can drive docker without a prompt
+  case ${OMARCHY_AI_DOCKER:-} in direct) return 0 ;; prompt) return 1 ;; esac
+  ((EUID == 0)) && return 0
+  if command -v omarchy-sudo-docker >/dev/null 2>&1; then ! omarchy-sudo-docker; else [[ -w ${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock} ]]; fi
+}
+priv_target() { # the program the prompt names: the packaged one when it is root-owned and unwritable, else this file
+  local c=/usr/bin/omarchy-local-ai probe owner mode
+  if [[ -f $c && ! -L $c && -x $c ]]; then
+    probe=$c
+    while :; do
+      owner=$(stat -Lc %u "$probe" 2>/dev/null) || break; mode=$(stat -Lc %a "$probe" 2>/dev/null) || break
+      [[ $owner == 0 ]] && ! ((8#$mode & 022)) || break
+      [[ $probe == / ]] && { printf '%s\n' "$c"; return 0; }
+      probe=$(dirname -- "$probe")
+    done
+  fi
+  [[ -f $SELF && ! -L $SELF ]] && printf '%s\n' "$SELF"
+}
+priv() { # priv <phase> [args]: in-process when docker is direct, one pkexec otherwise; stdout carries "step …" and "reason …"
+  if docker_direct; then "phase_$1" "${@:2}"; return; fi
+  command -v pkexec >/dev/null 2>&1 || { printf 'reason this needs a password prompt, and pkexec is not installed\n'; return 1; }
+  local target rc=0; target=$(priv_target) || { printf 'reason refusing to run a script root could not trust\n'; return 1; }
+  pkexec "$target" __priv "$@" 8>&- 9>&- || rc=$?
+  (( rc == 126 || rc == 127 || rc >= 128 )) && printf 'reason the password prompt was dismissed; nothing was changed\n'
+  return $rc
+}
+priv_root() { # priv_root <phase> [args]: always through pkexec (installing a package needs root whatever the socket says)
+  ((EUID == 0)) && { "phase_$1" "${@:2}"; return; }
+  command -v pkexec >/dev/null 2>&1 || { printf 'reason this needs a password prompt, and pkexec is not installed\n'; return 1; }
+  local target rc=0; target=$(priv_target) || { printf 'reason refusing to run a script root could not trust\n'; return 1; }
+  pkexec "$target" __priv "$@" 8>&- 9>&- || rc=$?
+  (( rc == 126 || rc == 127 || rc >= 128 )) && printf 'reason the password prompt was dismissed; nothing was changed\n'
+  return $rc
+}
+resolve_caller() { # root: who authorised this, from pkexec and the account database; never from the environment
+  local entry canonical
+  [[ ${PKEXEC_UID:-} =~ ^[0-9]{1,10}$ ]] && (( 10#$PKEXEC_UID > 0 )) || { printf 'reason this must run through pkexec\n'; return 1; }
+  CALLER_UID=$((10#$PKEXEC_UID))
+  entry=$(getent passwd "$CALLER_UID") || { printf 'reason no account exists for uid %s\n' "$CALLER_UID"; return 1; }
+  IFS=: read -r _ _ _ CALLER_GID _ CALLER_HOME _ <<<"$entry"
+  [[ $CALLER_GID =~ ^[0-9]+$ && $CALLER_HOME == /* && -d $CALLER_HOME ]] || { printf 'reason invalid home directory for uid %s\n' "$CALLER_UID"; return 1; }
+  canonical=$(realpath -e -- "$CALLER_HOME" 2>/dev/null) || return 1
+  [[ $canonical == "$CALLER_HOME" ]] || { printf 'reason refusing a home directory reached through a symlink\n'; return 1; }
+  [[ $(stat -Lc %u "$CALLER_HOME") == "$CALLER_UID" ]] || { printf 'reason caller does not own %s\n' "$CALLER_HOME"; return 1; }
+  unset OMARCHY_AI_STATE OMARCHY_AI_MODEL_ROOT XDG_STATE_HOME   # root derives every path from the account
+  set_paths "$CALLER_HOME"; RUN_AS="$CALLER_UID:$CALLER_GID"
+}
+validate_inputs() { # validate_inputs <recipe-id> [gpu-key...]: the only two things a caller may say
+  [[ ${1:-} =~ ^[a-z0-9][a-z0-9.-]{0,63}$ ]] || { printf 'reason invalid recipe id\n'; return 1; }
+  local k; for k in "${@:2}"; do [[ $k =~ ^(nvidia|intel-xpu|amd-rocm):[0-9]{1,2}$ ]] || { printf 'reason invalid gpu key %s\n' "$k"; return 1; }; done
+}
+
+# ------------------------------------------------------------------ containers (the phases; root behind a prompt, or the user with sudoless docker)
+owned() { [[ $(docker inspect -f "{{index .Config.Labels \"$LABEL\"}}" "$1" 2>/dev/null) == 1 ]]; }
+exists() { docker inspect "$1" >/dev/null 2>&1; }
+running() { [[ $(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null) == true ]]; }
+owned_names() { docker ps -a --filter "label=$LABEL=1" --format '{{.Names}}' 2>/dev/null; }
+engine_name() { printf '%s-%s-engine' "$CTR" "$1"; }
+gateway_name() { printf '%s-%s-gateway' "$CTR" "$1"; }
+net_name() { printf '%s-%s' "${OMARCHY_AI_NETWORK:-omarchy-local-ai}" "$1"; }
+docker_reason() { # docker_reason <output-file> <what> -> one sentence a person can act on
+  local last; last=$(grep -v '^\s*$' "$1" 2>/dev/null | tail -1 | cut -c1-200); log "$2: ${last:-no output from docker}"
+  case $last in
+    *permission\ denied*docker.sock*|*permission\ denied*Docker\ daemon*) printf 'Docker refuses this user' ;;
+    *could\ not\ select\ device\ driver*|*nvidia-container*|*unknown\ or\ invalid\ runtime*) printf 'the NVIDIA container toolkit is not set up: run Install › AI › Local AI' ;;
+    *Cannot\ connect\ to\ the\ Docker\ daemon*|*Is\ the\ docker\ daemon\ running*) printf 'Docker is not running: sudo systemctl enable --now docker' ;;
+    *no\ space\ left*|*No\ space\ left*) printf 'out of disk space for %s' "$2" ;;
+    *TLS\ handshake*|*no\ such\ host*|*i/o\ timeout*|*dial\ tcp*|*connection\ refused*|*network\ is\ unreachable*) printf 'no route to the image registry: check the network and try again' ;;
+    *manifest\ unknown*|*not\ found*) printf 'the pinned image is missing from the registry: report this' ;;
+    "") printf '%s failed (see %s)' "$2" "$LOGFILE" ;;
+    *) printf '%s failed: %s' "$2" "$(cut -c1-90 <<<"$last")" ;;
+  esac
+}
+docker_ok() { # docker_ok <backend>: the daemon answers, and the GPU runtime the recipe needs is there
+  local info err; err=$(mktemp); info=$(docker info 2>"$err") || { docker_reason "$err" docker; rm -f "$err"; return 1; }; rm -f "$err"
+  case $1 in
+    nvidia) grep -qi nvidia <<<"$info" || { printf 'the NVIDIA container toolkit is not set up'; return 1; } ;;
+    amd-rocm) [[ -e /dev/kfd ]] || { printf 'no /dev/kfd: the AMD kernel driver is not loaded'; return 1; } ;;
+  esac
+}
+toolkit_install() { echo "step setting up the NVIDIA container toolkit"; omarchy-pkg-add nvidia-container-toolkit >&2 && nvidia-ctk runtime configure --runtime=docker >&2 && systemctl restart docker >&2; }
+ensure_image() { # pull once; the digest guarantees what we get
+  docker image inspect "$1" >/dev/null 2>&1 && return 0
+  echo "step pulling image"; local out; out=$(mktemp)
+  if ! run_child docker pull "$1" >"$out" 2>&1; then printf 'reason %s\n' "$(docker_reason "$out" "image pull")"; rm -f "$out"; return 1; fi; rm -f "$out"
+}
+ensure_network() { local l; if l=$(docker network inspect -f "{{index .Labels \"$LABEL\"}}" "$1" 2>/dev/null); then [[ $l == 1 ]] || { fail "docker network $1 exists but is not ours"; return 1; }; else docker network create --label "$LABEL=1" "$1" >/dev/null; fi; }
+free_port() { # the lowest port from $PORT up that no container of ours publishes and nothing listens on
+  local used p; used=$(docker ps -a --filter "label=$LABEL=1" --format '{{.Label "io.omarchy.local-ai.port"}}' 2>/dev/null)
+  for ((p = PORT; p < PORT + 16; p++)); do
+    grep -qx "$p" <<<"$used" && continue
+    ss -Hltn "sport = :$p" 2>/dev/null | grep -q . && continue
+    printf '%s' "$p"; return 0
+  done; fail "no free port between $PORT and $((PORT + 15))"; return 1
+}
+# engine_argv <recipe> <backend> <indexes-csv> <render-nodes-nl> -> NUL-separated docker argv. Every host path here is derived.
+engine_argv() {
+  local r=$1 backend=$2 ids=$3 nodes=$4 id w real node v
   id=$(jq -r .id <<<"$r")
-  mkdir -p "$STATE/slots"; printf '%s\n' "$r" >"$STATE/recipe.json"
-  local victims; victims=$(jq -r '[.victims[]? | select(.id != $id) | .name] | join(", ")' --arg id "$id" <<<"$r")
-  [[ -z $victims ]] || log "start $id replaces $victims (same cards)"
-  if (( need )) && host_recipe "$r"; then
-    host_flm >/dev/null || oops "install FastFlowLM (flm) to run this recipe"
-    download_flm "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"; weights_mark "$r"; need=0
-  elif (( need )) && host_hf >/dev/null; then # the host's own hf, as this user, no docker and no prompt
-    download_host "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"; weights_mark "$r"; need=0
-  fi
-  if host_recipe "$r"; then
-    op starting "$id" "starting the npu engine" 0
-    start_host_engine "$r" 2>"$STATE/gate.err" || oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"
-  fi
-  t0=$SECONDS
-  local was why
+  local -a a=(docker run --detach --name "$(engine_name "$id")" --restart unless-stopped --network "$(net_name "$id")" --network-alias engine
+    --label "$LABEL=1" --label "$LABEL.recipe=$id" --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=engine" --label "$LABEL.keys=$KEYS_CSV" --label "$LABEL.port=$SLOT_PORT")
+  case $backend in
+    nvidia) if [[ $ids == *,* ]]; then a+=(--gpus "\"device=$ids\""); else a+=(--gpus "device=$ids"); fi
+            [[ -e /dev/nvidia-uvm ]] && a+=(--device /dev/nvidia-uvm) ;;
+    amd-rocm) a+=(--device /dev/kfd:/dev/kfd --group-add video --group-add render)
+            while IFS= read -r node; do [[ -n $node ]] || continue; real=$(canon "$node"); [[ $real =~ ^/dev/dri/renderD[0-9]+$ ]] || { fail "no render node for a selected AMD GPU"; return 1; }; a+=(--device "$real:$real"); done <<<"$nodes" ;;
+    intel-xpu) local n=0; while IFS= read -r node; do [[ -n $node ]] || continue; real=$(canon "$node"); [[ -e $real ]] || { fail "no render node for a selected Intel GPU"; return 1; }; a+=(--device "$real:$real"); n=$((n+1)); done <<<"$nodes"
+            (( n )) || { fail "no render nodes for selected Intel GPUs"; return 1; }; a+=(--volume /dev/dri/by-path:/dev/dri/by-path:ro) ;;
+    *) fail "unknown backend $backend"; return 1 ;;
+  esac
+  v=$(jq -r '.launch.shm//empty' <<<"$r"); [[ -n $v ]] && a+=(--shm-size "$v")
+  while IFS= read -r w; do [[ -n $w ]] || continue; a+=(--volume "$(canon "$(weights_base "$w")"):$(jq -r .mountPath <<<"$w"):ro"); done < <(jq -c '.weights[]?' <<<"$r")
+  if [[ $(jq -r '.asset // empty' <<<"$r") != "" ]]; then a+=(--volume "$STATE/assets/$(jq -r .asset.name <<<"$r"):$(jq -r .asset.mountPath <<<"$r"):ro"); fi
+  v=$(jq -r '.scratch // empty' <<<"$r"); [[ -n $v ]] && a+=(--volume "$(canon "$MODELS/../scratch/$id"):$v")
+  jq -e 'any(.weights[]?; .layout=="hub")' >/dev/null <<<"$r" && a+=(--env HF_HUB_OFFLINE=1)   # the engine never fetches for itself
+  while IFS= read -r v; do a+=(--env "$v"); done < <(jq -r '.launch.environment|to_entries[]?|"\(.key)=\(.value)"' <<<"$r")
+  v=$(jq -r '.launch.entrypoint//empty' <<<"$r"); [[ -n $v ]] && a+=(--entrypoint "$v")
+  a+=("$(jq -r .image <<<"$r")")
+  while IFS= read -r v; do a+=("$v"); done < <(jq -r '.launch.arguments[]?' <<<"$r")
+  printf '%s\0' "${a[@]}"
+}
+gateway_argv() { # the attested gateway, as the caller's uid, on loopback only, key enforced
+  local r=$1 id; id=$(jq -r .id <<<"$r")
+  printf '%s\0' docker run --detach --name "$(gateway_name "$id")" --restart unless-stopped --network "$(net_name "$id")" --user "$RUN_AS" \
+    --publish "127.0.0.1:$SLOT_PORT:12434" --label "$LABEL=1" --label "$LABEL.recipe=$id" --label "$LABEL.registry=$(registry_commit)" --label "$LABEL.role=gateway" --label "$LABEL.keys=$KEYS_CSV" --label "$LABEL.port=$SLOT_PORT" \
+    --env "UPSTREAM=http://engine:$(jq -r .launch.port <<<"$r")" --env "MODEL=$(jq -r '.servedName // ""' <<<"$r")" \
+    --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY_FILE:/run/gateway.key:ro" "$(gateway_image)"
+}
+read_argv() { local f; f=$(mktemp) || return 1; if ! "$@" >"$f"; then rm -f "$f"; return 1; fi; ARGV=(); local v; while IFS= read -r -d '' v; do ARGV+=("$v"); done <"$f"; rm -f "$f"; ((${#ARGV[@]})); }
+api() { curl -fsS --max-time "${2:-30}" --max-filesize 1048576 -H "@$AUTH_FILE" "http://127.0.0.1:$SLOT_PORT/v1/$1"; }
+post() { curl -fsS --max-time 600 --max-filesize 4194304 -H 'Content-Type: application/json' -H "@$AUTH_FILE" -d "$2" "http://127.0.0.1:$SLOT_PORT/v1/$1"; }
+engine_alive() { # up and not crash-looping; a container that restarts forever stays "running" to docker
+  local st; st=$(docker inspect -f '{{.State.Running}}|{{.State.Restarting}}|{{.RestartCount}}' "$1" 2>/dev/null) || { fail "engine exited during startup (docker logs $1)"; return 1; }
+  [[ ${st%%|*} == true ]] || { fail "engine exited during startup (docker logs $1)"; return 1; }
+  local rest=${st#*|}; [[ ${rest%%|*} == true || ${rest#*|} -ge 2 ]] && { fail "engine keeps crashing: $(docker logs --tail 40 "$1" 2>&1 | grep -v '^\s*$' | tail -1 | cut -c1-140) (docker logs $1)"; return 1; }; return 0
+}
+# accept <recipe>: the model is what the recipe says, the key is enforced, one real completion comes back at a
+# speed that is not a CPU fallback, and the dialects agents use answer. Prints "accepted <json>" on success.
+accept() {
+  local r=$1 id want served models reply t0 t1 toks tps best=0 floor apis='["chat"]' context expected i end=$((SECONDS + TIMEOUT))
+  id=$(jq -r .id <<<"$r"); want=$(jq -r '.servedName // ""' <<<"$r")
   while :; do
-    # every docker call of this Start in one phase: images, weights when still needed, set aside, engine, gateway
-    PHASE_EXPECT_BYTES=$WEXP PHASE_WEIGHTS_DIR=$WBASE phase_run start download "$id" "$STATE/recipe.json" "$need" || oops "$PHASE_REASON"
-    (( need )) && weights_mark "$r"; need=0
-    # listed from now on, unverified until accepted; an earlier run's record and file stay aside for a rollback
-    was=$(slot_of "$id"); [[ -f $STATE/slots/$id.json ]] && command cp -f "$STATE/slots/$id.json" "$STATE/slots/$id.json.prev"
-    slot_record "$r"; printf '%s\n' "$r" >"$STATE/slots/$id.json"; slots_file
-    accept "$r" 2>"$STATE/accept.err" && break
-    why=$(sed -n '$s/^local-ai: //p' "$STATE/accept.err" 2>/dev/null); [[ -n $why ]] || why="engine failed to start (see $LOGFILE)"
-    log "rollback: $why"; op starting "$id" "rolling back" 0
-    # the failed engine's own last lines, before rollback removes it: the reason lives there
-    if docker_direct; then
-      if host_recipe "$r"; then { echo "--- engine log before rollback ($id)"; tail -n 80 "$(engine_log_file "$id")" 2>/dev/null | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true
-        stop_host_engine "$id"
-      elif [[ -f $(engine_pid_file "$id") ]]; then { echo "--- engine log before rollback ($id)"; tail -n 80 "$(engine_log_file "$id")" 2>/dev/null | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true
-      else { echo "--- engine log before rollback ($id)"; docker logs --tail 400 "$(jq -r .slot.engine <<<"$r")" 2>&1 | cut -c1-300; echo "--- end engine log"; } >>"$LOGFILE" 2>&1 || true; fi
-    fi
-    privileged restore "$STATE/recipe.json" >"$STATE/phase.out" 2>>"$LOGFILE" || why+="; the previous model could not be restored (see $LOGFILE)"
-    # the new slot is gone; a replaced earlier run of this recipe is back under the same name, with its own record
-    if [[ -n $was ]]; then lwrite '.slots[$id]=$o' --arg id "$id" --argjson o "$was"; [[ -f $STATE/slots/$id.json.prev ]] && mv -f "$STATE/slots/$id.json.prev" "$STATE/slots/$id.json"
-    else slot_forget "$id"; rm -f "$STATE/slots/$id.json"; fi
-    slots_file
-    oops "$why"
+    models=$(api models 5 2>/dev/null || true)
+    served=$(jq -r --arg w "$want" '(.data // []) as $d | ($d[]? | .id | select(.==$w)) // ($d[]? | .id | select(($w|contains("/")) and endswith($w|split("/")[-1]))) // ($d[0].id // empty)' <<<"$models" 2>/dev/null || true)
+    [[ -n $served ]] && break
+    (( SECONDS < end )) || { fail "engine did not answer within ${TIMEOUT}s"; return 1; }
+    engine_alive "$(engine_name "$id")" || return 1
+    echo "step loading the model"; sleep "$POLL"
   done
-  # the replaced models are gone for good; their records go with them
-  local v; while IFS= read -r v; do [[ -n $v && $v != "$id" ]] && { slot_forget "$v"; rm -f "$STATE/slots/$v.json"; }; done < <(jq -r '.victims[]?.id' <<<"$r")
-  # behind a prompt the set-aside pairs stay, stopped, until the next Start or Stop drops them: no second prompt on success
-  if docker_direct; then drop_previous; fi; rm -f "$STATE/slots/$id.json.prev"; slots_file
-  # how long Start took from the first container step to accepted: the next Start's progress bar
-  lwrite '.lastStartSeconds=($s|tonumber)' --arg s "$((SECONDS - t0))"
-  op_done; log "ready $id"
+  [[ -z $want || $served == "$want" || ( $want == */* && $served == *"${want##*/}"* ) ]] || { fail "served model $served is not $want"; return 1; }
+  context=$(jq -r '.data[0] | .max_model_len // .meta.n_ctx // 0' <<<"$models"); expected=$(jq -r '.serving.ctxTokens // 0' <<<"$r")
+  (( context == 0 || context >= expected )) || { fail "runtime context $context is below the recipe's $expected tokens"; return 1; }
+  if curl -fsS --max-time 10 --max-filesize 1048576 "http://127.0.0.1:$SLOT_PORT/v1/models" >/dev/null 2>&1; then fail "gateway answers without the key"; return 1; fi
+  echo "step chat acceptance"
+  reply=$(post chat/completions "$(jq -nc --arg m "$served" '{model:$m,stream:false,messages:[{role:"user",content:"Reply with exactly: LOCAL_AI_READY"}]}')") || { fail "chat completion failed"; return 1; }
+  jq -e '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|contains("LOCAL_AI_READY")' >/dev/null <<<"$reply" || { fail "chat acceptance failed"; return 1; }
+  echo "step speed check"
+  for i in 1 2; do
+    t0=$(date +%s%N)
+    reply=$(post chat/completions "$(jq -nc --arg m "$served" '{model:$m,stream:false,max_tokens:160,messages:[{role:"user",content:"Count from 1 to 80 separated by single spaces. Write nothing else."}]}')") || { fail "speed check request failed"; return 1; }
+    t1=$(date +%s%N)
+    toks=$(jq -r '.usage.completion_tokens // 0' <<<"$reply")
+    (( toks > 0 )) || toks=$(jq -r '[(.choices[0].message.content//""),(.choices[0].message.reasoning_content//"")]|join(" ")|[splits("\\s+")|select(length>0)]|length|.*1.3|floor' <<<"$reply")
+    tps=$(( toks * 1000000000 / (t1 - t0 + 1) )); (( tps > best )) && best=$tps
+  done; tps=$best
+  jq -e '(.choices[0].message.content//"")|test("</think>|<\\|end_of_thought\\|>")' >/dev/null <<<"$reply" && { fail "reasoning leaks into the answer: the engine's reasoning parser is off for this model"; return 1; }
+  (( toks < 16 || tps >= 3 )) || { fail "decode ${tps} tok/s: the GPU is not being used (driver too old for this image?)"; return 1; }
+  echo "step messages acceptance"
+  reply=$(post messages "$(jq -nc --arg m "$served" '{model:$m,max_tokens:2048,system:"You are a terse assistant.",messages:[{role:"user",content:"hi"},{role:"assistant",content:"hello"},{role:"user",content:"Reply with exactly: LOCAL_AI_READY"}]}')" 2>/dev/null) \
+    && jq -e '[.content[]?|select(.type=="text")|.text]|join(" ")|contains("LOCAL_AI_READY")' >/dev/null <<<"$reply" && apis=$(jq -c '.+["messages"]' <<<"$apis")
+  echo "step responses acceptance"
+  reply=$(post responses "$(jq -nc --arg m "$served" '{model:$m,instructions:"You are a terse assistant.",input:[{type:"message",role:"user",content:"Reply with exactly: LOCAL_AI_READY"}]}')" 2>/dev/null) \
+    && jq -e '[.output[]?|select(.type=="message")|.content[]?|.text]|join(" ")|contains("LOCAL_AI_READY")' >/dev/null <<<"$reply" && apis=$(jq -c '.+["responses"]' <<<"$apis")
+  if [[ $(jq -r '.capabilities.tools//false' <<<"$r") == true ]]; then
+    echo "step tool-call acceptance"
+    local tools='[{"type":"function","function":{"name":"shell","description":"Run a shell command","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}}]'
+    reply=$(post chat/completions "$(jq -nc --arg m "$served" --argjson t "$tools" '{model:$m,stream:false,tools:$t,tool_choice:"auto",messages:[{role:"user",content:"Use the shell tool to run: echo LOCAL_AI_TOOL_OK"}]}')") || { fail "tool-call request failed"; return 1; }
+    jq -e '[(.choices[0].message.tool_calls//[])[]|select(.function.name=="shell" and ((.function.arguments//"")|contains("LOCAL_AI_TOOL_OK")))]|length>0' >/dev/null <<<"$reply" || { fail "tool-call acceptance failed"; return 1; }
+  fi
+  printf 'accepted %s\n' "$(jq -nc --arg s "$served" --argjson a "$apis" --arg t "$tps" --arg c "$context" --arg when "$(now)" '{servedModel:$s,apis:$a,tps:($t|tonumber),contextTokens:($c|tonumber),at:$when}')"
+}
+victims_of() { # victims_of <recipe-id> <keys-csv> -> the recipe ids of our running pairs on any of these cards, this recipe's own included
+  docker ps -a --filter "label=$LABEL=1" --filter "label=$LABEL.role=engine" --format '{{.Label "io.omarchy.local-ai.recipe"}}	{{.Label "io.omarchy.local-ai.keys"}}' 2>/dev/null \
+    | awk -F'\t' -v id="$1" -v keys="$2" 'BEGIN{n=split(keys,k,",")} {m=($1==id); split($2,h,","); for(i in h) for(j=1;j<=n;j++) if(h[i]!="" && h[i]==k[j]) m=1; if(m) print $1}' | sort -u
+}
+set_aside() { # set_aside <recipe-id>: its pair becomes -previous (an older -previous goes)
+  local c; for c in "$(engine_name "$1")" "$(gateway_name "$1")"; do
+    exists "$c" || continue; owned "$c" || { fail "$c exists but is not ours"; return 1; }
+    exists "$c-previous" && docker rm -f "$c-previous" >/dev/null 2>&1
+    running "$c" && docker stop "$c" >/dev/null 2>&1
+    docker rename "$c" "$c-previous" >/dev/null || { fail "could not set aside $c"; return 1; }
+  done
+}
+restore_previous() { local c; for c in "$(engine_name "$1")" "$(gateway_name "$1")"; do exists "$c-previous" && owned "$c-previous" && { docker rename "$c-previous" "$c" >/dev/null 2>&1 && docker start "$c" >/dev/null 2>&1; }; done; return 0; }
+remove_pair() { local c; for c in "$(engine_name "$1")" "$(gateway_name "$1")"; do exists "$c" && owned "$c" && docker rm -f "$c" >/dev/null 2>&1; done; return 0; }
+drop_previous() { local c; while IFS= read -r c; do [[ $c == *-previous ]] && docker rm -f "$c" >/dev/null 2>&1; done < <(owned_names); return 0; }
+
+phase_start() { # phase_start <recipe-id> <gpu-key...>: everything docker of one Start, one prompt, rollback inside
+  validate_inputs "$@" || return 1
+  local id=$1 r m claim backend ids nodes v gw eng
+  r=$(recipe_by_id "$id") || { printf 'reason recipe %s is not in recipes.json\n' "$id"; return 1; }
+  v=$(policy_check "$r"); [[ -z $v ]] || { printf 'reason recipe refused: %s\n' "$v"; return 1; }
+  m=$(match_hardware); claim=$(claim_gpus "$r" "$m" "${@:2}")
+  [[ $(jq -r .short <<<"$claim") == "" ]] || { printf 'reason %s\n' "$(jq -r .short <<<"$claim")"; return 1; }
+  jq -e --argjson c "$claim" '($c.keys|length) > 0 and all($c.keys[]; . as $k | any($ARGS.positional[]; . == $k) or ($ARGS.positional|length) == 0)' --args "${@:2}" >/dev/null <<<"$claim" || { printf 'reason the requested cards are not this recipe'"'"'s type\n'; return 1; }
+  backend=$(jq -r '.gpus[] | select(.hardwareId == $h) | .backend' --arg h "$(jq -r .hardwareId <<<"$r")" <<<"$m" | head -1)
+  driver_ok "$(jq -r .driver <<<"$m")" "$(jq -r '.minDriver // ""' <<<"$r")" || { printf 'reason needs NVIDIA driver %s or newer\n' "$(jq -r .minDriver <<<"$r")"; return 1; }
+  ids=$(jq -r '.indexes | map(tostring) | join(",")' <<<"$claim"); nodes=$(jq -r '.renderNodes[]' <<<"$claim"); KEYS_CSV=$(jq -r '.keys | join(",")' <<<"$claim")
+  echo "step checking docker"
+  if ! v=$(docker_ok "$backend"); then
+    if [[ $v == *"NVIDIA container toolkit"* ]]; then toolkit_install || { printf 'reason %s\n' "$v"; return 1; }; v=$(docker_ok "$backend") || { printf 'reason %s\n' "$v"; return 1; }
+    else printf 'reason %s\n' "$v"; return 1; fi
+  fi
+  ensure_image "$(jq -r .image <<<"$r")" || return 1; ensure_image "$(gateway_image)" || return 1
+  [[ -f $KEY_FILE && -f $AUTH_FILE ]] || { printf 'reason the gateway key is missing\n'; return 1; }
+  local w; while IFS= read -r w; do [[ -n $w ]] || continue; [[ -d $(weights_files_dir "$w") ]] || { printf 'reason the weights are not on disk\n'; return 1; }; done < <(jq -c '.weights[]?' <<<"$r")
+  [[ $(jq -r '.scratch // empty' <<<"$r") == "" || -d $MODELS/../scratch/$id ]] || { printf 'reason the scratch directory is missing\n'; return 1; }
+  # the port: the same as before when this recipe already runs (agents keep their address), else the first free one
+  SLOT_PORT=$(docker ps -a --filter "label=$LABEL.recipe=$id" --filter "label=$LABEL.role=gateway" --format '{{.Label "io.omarchy.local-ai.port"}}' 2>/dev/null | head -1)
+  [[ $SLOT_PORT =~ ^[0-9]+$ ]] || SLOT_PORT=$(free_port) || { printf 'reason no free port\n'; return 1; }
+  echo "step setting aside the previous model"; drop_previous
+  local victim victims; victims=$(victims_of "$id" "$KEYS_CSV")
+  while IFS= read -r victim; do [[ -n $victim ]] && { set_aside "$victim" || { printf 'reason could not set aside the running containers\n'; return 1; }; }; done <<<"$victims"
+  echo "step starting"; eng=$(engine_name "$id"); gw=$(gateway_name "$id")
+  ensure_network "$(net_name "$id")" || { printf 'reason could not create the network\n'; return 1; }
+  read_argv engine_argv "$r" "$backend" "$ids" "$nodes" || { printf 'reason could not build the engine command\n'; return 1; }
+  log "engine: ${ARGV[*]}"; run_child "${ARGV[@]}" >&2 2>&1 || { rollback "$id" "$KEYS_CSV"; printf 'reason engine failed to start (see %s)\n' "$LOGFILE"; return 1; }
+  read_argv gateway_argv "$r" || { rollback "$id" "$KEYS_CSV"; printf 'reason could not build the gateway command\n'; return 1; }
+  log "gateway: ${ARGV[*]}"; run_child "${ARGV[@]}" >&2 2>&1 || { rollback "$id" "$KEYS_CSV"; printf 'reason gateway failed to start (see %s)\n' "$LOGFILE"; return 1; }
+  local err why; err=$(mktemp)
+  if accept "$r" 2>"$err"; then   # its step lines and the accepted record stream to the worker as they happen
+    rm -f "$err"; printf 'port %s\n' "$SLOT_PORT"; printf 'keys %s\n' "$KEYS_CSV"
+    while IFS= read -r victim; do [[ -n $victim && $victim != "$id" ]] && printf 'replaced %s\n' "$victim"; done <<<"$victims"
+    drop_previous; return 0
+  fi
+  why=$(sed -n 's/^local-ai: //p' "$err" | tail -1); rm -f "$err"; [[ -n $why ]] || why="engine failed to start (see $LOGFILE)"
+  { echo "--- engine log before rollback ($id)"; docker logs --tail 200 "$eng" 2>&1 | cut -c1-300; echo "--- end engine log"; } >&2 || true
+  echo "step rolling back"; rollback "$id" "$KEYS_CSV"; printf 'reason %s\n' "$why"; return 1
+}
+rollback() { # rollback <recipe-id> <keys-csv>: the new pair goes, every set-aside pair comes back
+  remove_pair "$1"; docker network rm "$(net_name "$1")" >/dev/null 2>&1 || true
+  local c; while IFS= read -r c; do [[ $c == *-previous ]] && { c=${c%-previous}; c=${c#"$CTR"-}; c=${c%-engine}; c=${c%-gateway}; restore_previous "$c"; }; done < <(owned_names)
+}
+phase_stop() { # phase_stop [recipe-id] [--purge]: one pair, or every container of ours; --purge takes images and networks too
+  local id="" purge=0; for v in "$@"; do case $v in --purge) purge=1 ;; *) id=$v ;; esac; done
+  if [[ -n $id ]]; then validate_inputs "$id" || return 1; remove_pair "$id"
+    local c; for c in "$(engine_name "$id")-previous" "$(gateway_name "$id")-previous"; do exists "$c" && owned "$c" && docker rm -f "$c" >/dev/null 2>&1; done
+    docker network rm "$(net_name "$id")" >/dev/null 2>&1 || true
+  else
+    local c; while IFS= read -r c; do [[ -n $c ]] && docker rm -f "$c" >/dev/null 2>&1; done < <(owned_names)
+    while IFS= read -r c; do [[ -n $c ]] && { printf 'reason %s could not be removed\n' "$c"; return 1; }; done < <(owned_names)
+    docker network ls --filter "label=$LABEL=1" -q 2>/dev/null | xargs -r docker network rm >/dev/null 2>&1 || true
+  fi
+  if (( purge )); then docker images --filter "label=$LABEL=1" -q 2>/dev/null | xargs -r docker rmi >/dev/null 2>&1 || true
+    docker image ls --format '{{.Repository}}@{{.Digest}}' 2>/dev/null | grep -Fx -f <(jq -r '.gateway.image, (.hardware[].recipes[].image)' "$RECIPES") | xargs -r docker rmi >/dev/null 2>&1 || true; fi
+  return 0
+}
+phase_toolkit() { toolkit_install || { printf 'reason the NVIDIA container toolkit could not be set up (see %s)\n' "$LOGFILE"; return 1; }; }
+
+# The user's side of a phase: run it, keep the card current, collect the outcome into PHASE_OUT / PHASE_REASON.
+phase_run() { # phase_run <phase> <op-name> <recipe-id> [args] -> 0 or 1
+  local name=$1 opname=$2 id=$3; shift 3
+  local out="$STATE/phase.out" pid step last=""
+  : >"$out"; spawn_child priv "$name" "$@" >"$out" 2>>"$LOGFILE"; pid=$!
+  docker_direct || op "$opname" "$id" "waiting for your password" 0
+  while kill -0 "$pid" 2>/dev/null; do
+    step=$(grep '^step ' "$out" 2>/dev/null | tail -1 | cut -c6-)
+    [[ -n $step && $step != "$last" ]] && { case $step in "loading the model"|starting|"setting aside the previous model"|"rolling back"|*acceptance|"speed check") op starting "$id" "$step" 0 ;; *) op "$opname" "$id" "$step" 0 ;; esac; last=$step; }
+    sleep "$POLL"
+  done
+  PHASE_OUT=$(cat "$out")
+  if ! wait "$pid"; then PHASE_REASON=$(grep '^reason ' "$out" 2>/dev/null | tail -1 | cut -c8-); [[ -n $PHASE_REASON ]] || PHASE_REASON="$opname failed (see $LOGFILE)"; return 1; fi
 }
 
-w_unload() { # w_unload [recipe-id]: one model, or every model when no id is given
+# ------------------------------------------------------------------ workers (user, detached)
+ensure_key() { # the gateway's bearer secret and the curl header file that carries it; 0600, never in argv
+  state_dir
+  [[ -s $KEY_FILE ]] || { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$KEY_FILE.tmp.$$" && mv -f "$KEY_FILE.tmp.$$" "$KEY_FILE"; }
+  local want; want="Authorization: Bearer $(cat "$KEY_FILE")"
+  [[ -f $AUTH_FILE && $(cat "$AUTH_FILE") == "$want" ]] || { printf '%s\n' "$want" >"$AUTH_FILE.tmp.$$" && mv -f "$AUTH_FILE.tmp.$$" "$AUTH_FILE"; }
+}
+write_asset() { local r=$1; [[ $(jq -r '.asset // empty' <<<"$r") != "" ]] || return 0; mkdir -p "$STATE/assets"; (umask 022; jq -r .asset.text <<<"$r" >"$STATE/assets/$(jq -r .asset.name <<<"$r")"); }
+w_load() { # w_load <recipe-id> [gpu-key...]
   guard || { log "error: another operation is running"; exit 1; }
   trap worker_exit EXIT
-  local id=${1:-} r
-  if [[ -n $id ]]; then
-    r=$(slot_recipe "$id") || oops "no model $id is running"
-    op unload "$id" "stopping $(jq -r '.model.name // .id' <<<"$r")" 0
-    printf '%s\n' "$r" >"$STATE/recipe.json"
-    docker_direct || op unload "$id" "waiting for your password" 0
-    privileged stop "$STATE/recipe.json" >"$STATE/phase.out" 2>>"$LOGFILE" || { why=$(grep '^reason ' "$STATE/phase.out" | tail -1 | cut -c8-); oops "${why:-Stop failed (see $LOGFILE)}"; }
-    slot_forget "$id"; rm -f "$STATE/slots/$id.json"; slots_file
-    [[ $(lread | jq '.slots | length') -gt 0 ]] || share_forget
-    op_done; log "unloaded $id"; return
+  local id=$1 r m claim v w t0; shift
+  op download "$id" "checking the GPU and recipe" 0
+  r=$(recipe_by_id "$id") || oops "recipe $id is not in recipes.json"
+  v=$(policy_check "$r"); [[ -z $v ]] || oops "recipe refused: $v"
+  m=$(match_hardware); claim=$(claim_gpus "$r" "$m" "$@"); [[ $(jq -r .short <<<"$claim") == "" ]] || oops "$(jq -r .short <<<"$claim")"
+  driver_ok "$(jq -r .driver <<<"$m")" "$(jq -r '.minDriver // ""' <<<"$r")" || oops "needs NVIDIA driver $(jq -r .minDriver <<<"$r") or newer"
+  hf_header; rm -f "$STATE/cancel"
+  while IFS= read -r w; do
+    [[ -n $w ]] || continue
+    weights_present "$w" && continue
+    op download "$id" "listing $(jq -r .repository <<<"$w")" 0
+    weights_fetch "$id" "$w" 2>"$STATE/gate.err" || { [[ -f $STATE/cancel ]] && exit 0; oops "$(sed -n '$s/^local-ai: //p' "$STATE/gate.err")"; }
+  done < <(jq -c '.weights[]?' <<<"$r")
+  ensure_key; write_asset "$r"
+  [[ $(jq -r '.scratch // empty' <<<"$r") == "" ]] || (umask 022; mkdir -p "$MODELS/../scratch/$id")
+  if [[ $(jq -r '.gpus[] | select(.hardwareId == $h) | .backend' --arg h "$(jq -r .hardwareId <<<"$r")" <<<"$m" | head -1) == nvidia ]] && docker_direct && ! docker info 2>/dev/null | grep -qi nvidia; then
+    op download "$id" "setting up the NVIDIA container toolkit (your password)" 0
+    priv_root toolkit >"$STATE/phase.out" 2>>"$LOGFILE" || oops "$(grep '^reason ' "$STATE/phase.out" | tail -1 | cut -c8-)"
   fi
-  op unload "" "stopping" 0
-  docker_direct || op unload "" "waiting for your password" 0
-  privileged stop >"$STATE/phase.out" 2>>"$LOGFILE" || { why=$(grep '^reason ' "$STATE/phase.out" | tail -1 | cut -c8-); oops "${why:-Stop failed (see $LOGFILE)}"; }
-  share_forget   # only once the published gateways are really gone
-  lwrite '.slots={}'; rm -rf "$STATE/slots"; slots_file
-  op_done; log "unloaded"
+  t0=$SECONDS
+  phase_run start starting "$id" "$id" $(jq -r '.keys[]' <<<"$claim") || oops "$PHASE_REASON"
+  local rec port keys; rec=$(grep '^accepted ' <<<"$PHASE_OUT" | tail -1 | cut -c10-); port=$(grep '^port ' <<<"$PHASE_OUT" | tail -1 | cut -c6-); keys=$(grep '^keys ' <<<"$PHASE_OUT" | tail -1 | cut -c6-)
+  [[ -n $rec && $port =~ ^[0-9]+$ ]] || oops "the start reported no result (see $LOGFILE)"
+  while IFS= read -r v; do [[ -n $v ]] && ledger_write 'del(.slots[$id])' --arg id "$v"; done < <(grep '^replaced ' <<<"$PHASE_OUT" | cut -c10-)
+  ledger_write '.slots[$id]={recipeId:$id, baseRecipeId:$id, port:($p|tonumber), keys:($k|split(",")|map(select(.!=""))), name:$n, engine:$e, gateway:$g, net:$net, accepted:$a, startedAt:$t} | .lastStartSeconds=($s|tonumber)' \
+    --arg id "$id" --arg p "$port" --arg k "$keys" --arg n "$(jq -r .name <<<"$r")" --arg e "$(engine_name "$id")" --arg g "$(gateway_name "$id")" --arg net "$(net_name "$id")" --argjson a "$rec" --arg t "$(now)" --arg s "$((SECONDS - t0))"
+  op_done; log "ready $id on port $port"
+}
+w_unload() { # w_unload [recipe-id]
+  guard || { log "error: another operation is running"; exit 1; }
+  trap worker_exit EXIT
+  local id=${1:-}
+  op unload "$id" "stopping${id:+ $id}" 0
+  phase_run stop unload "$id" ${id:+"$id"} || oops "$PHASE_REASON"
+  if [[ -n $id ]]; then ledger_write 'del(.slots[$id])' --arg id "$id"; else ledger_write '.slots={}'; fi
+  op_done; log "unloaded ${id:-everything}"
 }
 
+# ------------------------------------------------------------------ agents
+agent_bin() { [[ -x $HOME_DIR/.local/bin/$1 ]] && printf '%s\n' "$HOME_DIR/.local/bin/$1" || command -v "$1"; }
+agent_dialect() { case $1 in claude) printf messages ;; codex) printf responses ;; *) printf chat ;; esac; }
+agents_json() { # agents_json <apis-json> -> {default, directory, installed, launchable}
+  local apis=${1:-[]} found="" a def=""
+  for a in "${AGENTS[@]}"; do agent_bin "$a" >/dev/null 2>&1 && found+="$a "; done
+  command -v omarchy-default-agent >/dev/null 2>&1 && def=$(omarchy-default-agent 2>/dev/null || true)
+  jq -nc --arg found "$found" --arg d "${def:-}" --arg dir "$(agent_dir)" --argjson apis "$apis" '
+    ($found|split(" ")|map(select(.!=""))) as $i
+    | {default:$d, directory:$dir, installed:$i, launchable:[$i[]|. as $a|select($apis|index((if $a=="claude" then "messages" elif $a=="codex" then "responses" else "chat" end))!=null)]}'
+}
+agent_dir() { local d; d=${OMARCHY_AI_AGENT_DIR:-$(cat "$STATE/agent-dir" 2>/dev/null || true)}; printf '%s\n' "${d:-$HOME_DIR}"; }
+with_key() { printf '%s\0' bash -c 'k=$(cat "$1") || exit 1; shift; while [[ $1 != -- ]]; do export "$1=$k"; shift; done; shift; exec "$@"' omarchy-local-ai-agent "$KEY_FILE" "$@" --; }
+# agent_argv <name> <model> <endpoint> <context> <vision> -> NUL-separated argv. The key reaches the agent through its
+# environment (with_key) or a plugin-owned 0600 file, never argv; no file the user owns is read or written.
+agent_argv() {
+  local name=$1 model=$2 ep=$3 ctx=$4 vision=$5 bin dir cfg key
+  bin=$(agent_bin "$name") || { fail "$name is not installed"; return 1; }
+  case $name in
+    claude) with_key ANTHROPIC_AUTH_TOKEN; printf '%s\0' env "ANTHROPIC_BASE_URL=$ep" "ANTHROPIC_MODEL=$model" "ANTHROPIC_DEFAULT_SONNET_MODEL=$model" "ANTHROPIC_DEFAULT_OPUS_MODEL=$model" "ANTHROPIC_DEFAULT_HAIKU_MODEL=$model" "$bin" --model "$model" ;;
+    codex) with_key LOCAL_AI_KEY; printf '%s\0' "$bin" -c "model_providers.local.name=Omarchy Local" -c "model_providers.local.base_url=$ep/v1" -c "model_providers.local.wire_api=responses" -c "model_providers.local.env_key=LOCAL_AI_KEY" -c "model_provider=local" -c "model=$model" -c "model_context_window=$ctx" ;;
+    opencode)
+      cfg=$(jq -nc --arg u "$ep/v1" --arg m "$model" --argjson ctx "$ctx" --argjson vision "$vision" '{"$schema":"https://opencode.ai/config.json",model:("omarchy-local/"+$m),small_model:("omarchy-local/"+$m),provider:{"omarchy-local":{npm:"@ai-sdk/openai-compatible",name:"Omarchy Local",options:{baseURL:$u,apiKey:"{env:OMARCHY_LOCAL_AI_KEY}"},models:{($m):{name:$m,limit:{context:$ctx,output:8192},modalities:{input:(if $vision then ["text","image"] else ["text"] end),output:["text"]}}}}}}')
+      with_key OMARCHY_LOCAL_AI_KEY; printf '%s\0' env "OPENCODE_CONFIG_CONTENT=$cfg" "$bin" --model "omarchy-local/$model" ;;
+    pi|omp)
+      dir="$STATE/agents/$name"; mkdir -p "$dir"; key=$(cat "$KEY_FILE")
+      jq -nc --arg u "$ep/v1" --arg m "$model" --arg k "$key" --argjson ctx "$ctx" --argjson vision "$vision" '{providers:{"omarchy-local":{baseUrl:$u,apiKey:$k,api:"openai-completions",models:[{id:$m,name:($m+" · local"),contextWindow:$ctx,input:(if $vision then ["text","image"] else ["text"] end),cost:{input:0,output:0}}]}}}' >"$dir/models.json"
+      [[ $name == omp ]] && { cp -f "$dir/models.json" "$dir/models.yml"; printf 'modelRoles:\n  default: omarchy-local/%s\nsetupVersion: 2\n' "$model" >"$dir/config.yml"; }
+      printf '%s\0' env "PI_CODING_AGENT_DIR=$dir" "OMP_CODING_AGENT_DIR=$dir"; [[ $name == omp ]] && printf '%s\0' OMP_NO_WEBP=1
+      printf '%s\0' "$bin" --provider omarchy-local --model "$model" --thinking xhigh ;;
+    crush)
+      dir="$STATE/agents/crush/crush"; mkdir -p "$dir"; key=$(cat "$KEY_FILE")
+      if { [[ $bin == */mise/shims/* ]] || grep -Iq 'mise.*crush' "$bin"; } && command -v mise >/dev/null 2>&1; then bin=$(mise which crush 2>/dev/null || printf '%s' "$bin"); fi
+      jq -nc --arg u "$ep/v1" --arg m "$model" --arg k "$key" --argjson ctx "$ctx" --argjson vision "$vision" '{providers:{"omarchy-local":{type:"openai",name:"Omarchy Local",base_url:$u,api_key:$k,models:[{id:$m,name:$m,context_window:$ctx,default_max_tokens:8192,supports_attachments:$vision}]}},models:{large:{provider:"omarchy-local",model:$m},small:{provider:"omarchy-local",model:$m}}}' >"$dir/crush.json"
+      with_key OPENAI_API_KEY; printf '%s\0' env "XDG_CONFIG_HOME=$STATE/agents/crush" "XDG_DATA_HOME=$STATE/agents/crush" "$bin" ;;
+    copilot) with_key COPILOT_PROVIDER_API_KEY; printf '%s\0' env "COPILOT_PROVIDER_BASE_URL=$ep/v1" "$bin" --model "$model" ;;
+    grok)
+      dir="$STATE/agents/grok"; mkdir -p "$dir"
+      printf '[models]\ndefault = "omarchy-local"\n[features]\nremote_fetch = false\nmanaged_config = false\ntelemetry = false\n[model.omarchy-local]\nmodel = %s\nname = "Omarchy Local"\nbase_url = %s\ncontext_window = %s\n' "$(jq -Rn --arg v "$model" '$v')" "$(jq -Rn --arg v "$ep/v1" '$v')" "$ctx" >"$dir/config.toml"
+      with_key XAI_API_KEY; printf '%s\0' env "GROK_HOME=$dir" "$bin" --model omarchy-local ;;
+    *) with_key OPENAI_API_KEY; printf '%s\0' env "OPENAI_BASE_URL=$ep/v1" "OPENAI_API_BASE=$ep/v1" "OPENAI_MODEL=$model" "$bin" ;;
+  esac
+}
+agent_launch() { # agent_launch [name] [recipe-id]: the default agent when omitted, the focused model when no recipe is named
+  local name=${1:-} which=${2:-} snap m model v dir; snap=$(cat "$SNAPSHOT" 2>/dev/null || printf '{}')
+  if [[ -n $which ]]; then m=$(jq -c --arg id "$which" '[.models[]? | select(.recipeId == $id)] | .[0] // null' <<<"$snap"); else m=$(jq -c '(.running.recipeId // "") as $id | [.models[]? | select(.recipeId == $id)] | .[0] // null' <<<"$snap"); fi
+  [[ $m != null && $(jq -r .state <<<"$m") == ready ]] || { fail "load a model first"; return 1; }
+  [[ -n $name ]] || { name=$(jq -r '.agents.default // ""' <<<"$snap"); name=${name:-pi}; }
+  printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$name" || { fail "unknown agent $name"; return 1; }
+  jq -e --arg a "$name" '.launchable|index($a)!=null' <<<"$m" >/dev/null || { fail "$name cannot use this model: its API dialect did not pass acceptance"; return 1; }
+  model=$(jq -r .servedModel <<<"$m")
+  local -a argv=(); while IFS= read -r -d '' v; do argv+=("$v"); done < <(agent_argv "$name" "$model" "http://127.0.0.1:$(jq -r .port <<<"$m")" "$(jq -r '.ctxTokens // 131072' <<<"$m")" "$(jq -r '.caps.vision // false' <<<"$m")") || return 1
+  ((${#argv[@]})) || { fail "$name is not installed"; return 1; }
+  dir=$(agent_dir); [[ -d $dir ]] || { fail "agent folder is unavailable: $dir"; return 1; }
+  [[ $name == omp && $dir -ef $HOME_DIR ]] && argv+=(--allow-home)
+  argv=(bash -c 'cd -- "$1" || exit 1; shift; exec "$@"' omarchy-local-ai-workdir "$dir" "${argv[@]}")
+  log "agent $name"
+  if [[ ${OMARCHY_AI_FOREGROUND:-0} == 1 ]]; then printf '%q ' "${argv[@]}"; echo; return 0; fi
+  command -v omarchy-launch-tui >/dev/null 2>&1 || { fail "omarchy-launch-tui is not available"; return 1; }
+  setsid omarchy-launch-tui --app-id=org.omarchy.local-ai "${argv[@]}" >/dev/null 2>>"$LOGFILE" </dev/null & disown
+  ledger_write '.error=""'; snapshot_write
+}
+
+# ------------------------------------------------------------------ snapshot (a pure read; never docker when docker would prompt)
+port_listener() { # port_listener <port> -> none | ours | other
+  local pid; pid=$(ss -Hltnp "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+  [[ -n $pid ]] || { ss -Hltn "sport = :$1" 2>/dev/null | grep -q . && printf other || printf none; return; }
+  [[ $(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null) == *docker* ]] && printf ours || printf other
+}
+models_json() { # one record per slot, its state observed
+  local ledger=$1 id s port served answering engine_up mstate note busy_id out='[]'
+  busy_id=$(jq -r 'if .op.pid > 0 then .op.recipeId else "" end' <<<"$ledger")
+  while IFS= read -r id; do
+    [[ -n $id ]] || continue; s=$(jq -c --arg id "$id" '.slots[$id]' <<<"$ledger"); port=$(jq -r .port <<<"$s"); served=""; answering=false; engine_up=false; note=""
+    if docker_direct; then running "$(jq -r .engine <<<"$s")" && engine_up=true
+      if $engine_up && running "$(jq -r .gateway <<<"$s")"; then served=$(SLOT_PORT=$port api models 2 2>/dev/null | jq -r '.data[0].id // empty' || true); [[ -n $served ]] && answering=true; fi
+      $engine_up || exists "$(jq -r .engine <<<"$s")" || exists "$(jq -r .engine <<<"$s")-previous" || { log "model $id is gone (its containers were removed); forgotten"; ledger_write 'del(.slots[$id])' --arg id "$id"; continue; }
+    else served=$(SLOT_PORT=$port api models 2 2>/dev/null | jq -r '.data[0].id // empty' || true); [[ -n $served ]] && { answering=true; engine_up=true; }; fi
+    if [[ $busy_id == "$id" ]]; then mstate=$(jq -r .op.name <<<"$ledger")
+    elif $answering && [[ $(jq -r '.accepted // ""' <<<"$s") != "" ]]; then mstate=ready
+    elif $answering; then mstate=error; note="never verified; load it again"
+    elif $engine_up; then mstate=error; note="the gateway is not answering; load or stop"
+    elif [[ -n $busy_id ]]; then mstate=stopped
+    else mstate=stopped; note="stopped outside the plugin; load or stop"; fi
+    out=$(jq -c --argjson s "$s" --arg id "$id" --arg st "$mstate" --arg note "$note" --arg served "$served" --argjson agents "$(agents_json "$(jq -c '.accepted.apis // []' <<<"$s")")" --argjson rec "$(recipe_by_id "$id" || printf '{}')" \
+      '. + [{recipeId:$id, baseRecipeId:($s.baseRecipeId // $id), name:($s.name // $id), port:$s.port, endpoint:("http://127.0.0.1:"+($s.port|tostring)+"/v1"), keys:($s.keys // []), cards:(($s.keys // []) | length),
+             state:$st, note:$note, servedModel:(if $served != "" then $served else ($s.accepted.servedModel // "") end), apis:($s.accepted.apis // []),
+             caps:(($rec.capabilities // {}) | {chat, vision, video, tools, reasoning}), ctxTokens:($rec.serving.ctxTokens // 0), kvTokens:(if ($rec.serving.kvTokens // 0) > 0 then $rec.serving.kvTokens else ($rec.serving.ctxTokens // 0) end),
+             acceptedAt:($s.accepted.at // ""), startedAt:($s.startedAt // ""), launchable:$agents.launchable, engine:$s.engine, gateway:$s.gateway}]' <<<"$out")
+  done < <(jq -r '.slots | keys[]' <<<"$ledger")
+  printf '%s' "$out"
+}
+snapshot_write() {
+  state_dir
+  local ledger match hw_id reason state="" note="" busy=false pid statusText="" helpText=""
+  ledger=$(ledger_read); pid=$(busy_pid); [[ -n $pid ]] && busy=true
+  if ! $busy && [[ $(jq -r .op.pid <<<"$ledger") -gt 0 ]]; then
+    log "error: worker $(jq -r .op.pid <<<"$ledger") vanished during $(jq -r .op.name <<<"$ledger")"
+    ledger_write '.error=$e | .op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0}' --arg e "stopped unexpectedly while $(jq -r .op.detail <<<"$ledger"); load again (see $LOGFILE)"; ledger=$(ledger_read)
+  fi
+  match=$(match_hardware); hw_id=$(jq -r .hardwareId <<<"$match"); reason=$(jq -r .reason <<<"$match")
+  local models; models=$(models_json "$ledger"); ledger=$(ledger_read)
+  local focus; focus=$(jq -c '(map(select(.state != "stopped"))) as $up | $up[0] // null' <<<"$models")
+  if $busy; then state=$(jq -r .op.name <<<"$ledger")
+  elif jq -e 'any(.[]; .state == "ready")' >/dev/null <<<"$models"; then state=ready
+  elif [[ $(jq -r .error <<<"$ledger") != "" ]]; then state=error
+  elif jq -e 'any(.[]; .state == "error")' >/dev/null <<<"$models"; then state=error; note=$(jq -r '[.[] | select(.state == "error")][0].note' <<<"$models")
+  else state=idle; fi
+  # every recipe of every detected card type, with its disk state
+  local recs='[]' h r od pb driver_have; driver_have=$(jq -r .driver <<<"$match")
+  while IFS= read -r h; do
+    [[ -n $h ]] || continue
+    while IFS= read -r r; do
+      [[ -n $r ]] || continue; r=$(jq -c --arg h "$h" '. + {hardwareId:$h}' <<<"$r")
+      od=true; local w; while IFS= read -r w; do [[ -n $w ]] || continue; weights_present "$w" || od=false; done < <(jq -c '.weights[]?' <<<"$r")
+      pb=0; [[ $od == false ]] && pb=$(weights_partial_bytes "$r")
+      local gate; gate=$(policy_check "$r"); [[ -n $gate ]] || driver_ok "$driver_have" "$(jq -r '.minDriver // ""' <<<"$r")" || gate="needs NVIDIA driver $(jq -r .minDriver <<<"$r") or newer (have ${driver_have:-none})"
+      recs=$(jq -c --argjson r "$r" --arg h "$h" --argjson od "$od" --argjson pb "${pb:-0}" --arg gate "$gate" '. + [{id:$r.id, name:$r.name, engine:$r.engine, sizeGb:($r.sizeGb//0), ctxTokens:($r.serving.ctxTokens//0), kvTokens:(if ($r.serving.kvTokens // 0) > 0 then $r.serving.kvTokens else ($r.serving.ctxTokens // 0) end),
+        caps:(($r.capabilities // {}) | {chat, vision, video, tools, reasoning}), onDisk:$od, partialBytes:$pb, hardwareId:$h, cards:($r.cards//1), claims:{($h):($r.cards//1)}, gate:$gate}]' <<<"$recs")
+    done < <(recipes_for "$h")
+  done < <(jq -r '[.gpus[].hardwareId|select(.!="")]|unique[]' <<<"$match")
+  recs=$(jq -c --argjson models "$models" 'reduce .[] as $r ([]; if any(.[]; .hardwareId==$r.hardwareId) then . + [$r + {recommended:false}] else . + [$r + {recommended:true}] end)
+    | map(.id as $rid | . + {running: (([$models[] | select((.baseRecipeId // .recipeId) == $rid and .state != "stopped")] | length) > 0)})' <<<"$recs")
+  local fport listener=none pbusy=false; fport=$(jq -r '.port // 0' <<<"$focus"); (( fport > 0 )) || fport=$PORT
+  [[ $(jq -r 'if . == null then "none" else .state end' <<<"$focus") == none ]] && listener=$(port_listener "$fport"); [[ $listener == other ]] && pbusy=true
+  [[ $hw_id == "" ]] && { statusText="Unsupported GPU"; helpText=$reason; }
+  $pbusy && { statusText="Port in use"; helpText="another program is using port $fport"; }
+  command -v docker >/dev/null 2>&1 || { statusText="Setup required"; helpText="Docker is not installed"; }
+  jq -nc --argjson l "$ledger" --argjson match "$match" --arg state "$state" --arg reason "$reason" --arg hw "$hw_id" --argjson focus "$focus" --argjson models "$models" \
+    --argjson agents "$(agents_json "$(jq -c '.apis // []' <<<"$focus")")" --arg t "$(now)" --arg note "$note" --argjson recs "$recs" --argjson pbusy "$pbusy" --arg listener "$listener" --argjson port "$fport" \
+    --arg reg "$(registry_commit)" --arg rgen "$(jq -r '.generatedAt // ""' "$RECIPES")" --arg statusText "$statusText" --arg helpText "$helpText" '
+    def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
+    ([$models[] | select(.state != "stopped") | .keys[]]) as $busyKeys
+    | ($match.gpus | group_by([.backend, .product, .vramGb]) | map((.[0]) as $g | length as $n | ([.[] | select(.key as $k | $busyKeys | index($k))] | length) as $used
+        | {hardwareId:$g.hardwareId, backend:$g.backend, product:$g.product, name:($g.product|short), vramGb:$g.vramGb, count:$n, totalGb:(($g.vramGb//0)*$n), keys:map(.key), chosen:(map(.chosen)|any),
+           recipe:($recs|map(select(.hardwareId==$g.hardwareId))|.[0] // null), claimed:$used, idle:($n-$used)}) | sort_by(-(.totalGb//0), .name)) as $cards
+    | {schemaVersion:"omarchy-local-ai/snapshot/11", updatedAt:$t, state:$state, error:(if $l.error!="" then $l.error else $note end),
+       statusText:$statusText, helpText:$helpText,
+       operation:{name:$l.op.name, recipeId:$l.op.recipeId, detail:$l.op.detail, percent:$l.op.percent, startedAt:$l.op.startedAt, expectedSeconds:(if $l.op.name=="starting" then ($l.lastStartSeconds//0) else 0 end)},
+       hardwareId:$hw, gpus:$match.gpus, registry:{commit:$reg, generatedAt:$rgen}, reason:(if $hw=="" then $reason elif $pbusy then ("port \($port) is in use by something else") else "" end),
+       running:(if $focus == null then null else {recipeId:$focus.recipeId, name:$focus.name, cards:$focus.cards, port:$focus.port, state:$focus.state} end),
+       models:$models, apis:($focus.apis // []), agents:$agents, cards:$cards, recipes:$recs,
+       port:{number:$port, busy:$pbusy, listener:$listener}}' | head -c 262144 >"$SNAPSHOT.tmp.$$" && mv -f "$SNAPSHOT.tmp.$$" "$SNAPSHOT" || { rm -f "$SNAPSHOT.tmp.$$"; return 1; }
+}
+
+# ------------------------------------------------------------------ dispatch
 usage() {
-  echo 'Usage: omarchy-local-ai <command>
-  snapshot                    refresh and print the state the panel renders
-  load                        download if needed, then start the selected recipe (models on other cards keep running)
-  run <recipe> [gpu]          pick the recipe (and the card) and start it, in one go, as the run row on the card does
-  unload [recipe]             stop one model, or every model; or stop a running download (partial weights stay)
-  open-agent [name] [recipe]  open an installed coding agent on a running model
-  share [--key <value>|-]     toggle sharing of every running model on your tailnet, or replace the key
-  agent-dir <path>            directory agents open in (default: where the shell started)
-  agent-args <name> [-- flags]  extra flags for one agent when opened from the panel (none to clear)
-  gpu [auto|<backend:index>]  which detected card to start on (snapshot lists them); auto = largest card with a recipe
-  recipe [auto|<id>]          which of the validated recipes of the chosen card to run (snapshot lists them); auto = the recommended one
-  recipes [update]            which recipe file is in use (vendored or fetched from the registry); update fetches a newer one now
-  update [--check]            apply a newer registry copy and update the plugin; --check only fetches and stages'
+  cat <<'EOF'
+Usage: omarchy-local-ai <command>
+  snapshot                 refresh and print the state the card renders
+  load <recipe> [gpu...]   download if needed, then start the recipe (on these GPU keys, else the free ones of its type)
+  unload [recipe]          stop one model, or every model; stops a running download too
+  agent <name> [recipe]    open a coding agent on a running model
+  install                  set up what a first run needs (the NVIDIA container toolkit on NVIDIA hosts)
+  remove                   stop everything and delete the containers, images, weights and state
+  agent-dir <path>         the folder agents open in
+  gpu [auto|<key>]         which card the card looks at first
+EOF
 }
-
 cmd=${1:-help}; shift || true
 case $cmd in
-  snapshot) upstream_autocheck; snapshot_write; cat "$SNAPSHOT" ;;
-  load) [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1; lock_wait; spawn download "$(recipe_pick)" _worker-load ;;
-  run) # run <recipe> [gpu]: the card's one click; the picks are written without a snapshot each, the Start makes the one that matters
-       [[ -z $(busy_pid) ]] || fail "another operation is running" || exit 1
-       [[ ${1:-} =~ ^[a-z0-9][a-z0-9-]*$ ]] && jq -e --arg p "$1" '[.hardware[]|(.recipe.id), (.recipes[]?.id)]|index($p)!=null' "$RECIPES" >/dev/null 2>&1 || { fail "run <recipe> [gpu], as listed in the snapshot"; exit 1; }
-       state_dir
-       if [[ -n ${2:-} ]]; then [[ $2 =~ ^[a-z-]+:[0-9]+$ ]] || { fail "run <recipe> [backend:index]"; exit 1; }; printf '%s' "$2" >"$STATE/gpu"; fi
-       printf '%s' "$1" >"$STATE/recipe-pick"; log "run $1${2:+ on $2}"
-       lock_wait; spawn download "$1" _worker-load ;;
-  unload) p=$(busy_pid)
-          if [[ -n $p ]]; then [[ $(lread | jq -r .op.name) == download ]] || { fail "another operation is running"; exit 1; }; cancel_download "$p"
-          else
-            if [[ -n ${1:-} ]]; then [[ $1 =~ ^[a-z0-9][a-z0-9-]*$ ]] && lread | jq -e --arg id "$1" '.slots[$id] != null' >/dev/null || { refuse "no model $1 is running"; exit 1; }; fi
-            lock_wait; spawn unload "${1:-}" _worker-unload "${1:-}"
-          fi ;;
-  open-agent) snapshot_write; open_agent "${1:-}" "${2:-}" 2>"$STATE/agent.err" || { m=$(sed -n '$s/^local-ai: //p' "$STATE/agent.err"); refuse "${m:-agent launch failed (see $LOGFILE)}"; exit 1; } ;;
-  share) guard || exit 1; share_toggle "$@" ;;
-  agent-args) [[ -n ${1:-} ]] && printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$1" || { fail "agent-args <agent> [-- flags...], one of: ${AGENTS[*]}"; exit 1; }; n=$1; shift; [[ ${1:-} == -- ]] && shift; mkdir -p "$STATE/agents/args"; if (( $# )); then printf '%s\0' "$@" >"$STATE/agents/args/$n"; else rm -f "$STATE/agents/args/$n"; fi; log "agent-args $n: $*" ;;
-  gpu) case ${1:-} in
-         ""|auto) rm -f "$STATE/gpu"; log "gpu auto" ;;
-         *) [[ $1 =~ ^[a-z-]+:[0-9]+$ ]] || { fail "gpu <backend:index>, as listed in the snapshot"; exit 1; }
-            state_dir; printf '%s' "$1" >"$STATE/gpu"; log "gpu $1" ;;
-       esac; snapshot_write; jq -c '.gpus' "$SNAPSHOT" ;;
-  recipes) case ${1:-} in
-         update) recipes_refresh; rc=$?; snapshot_write; exit $rc ;;
-         "") jq -c --arg s "$(recipes_source)" --arg f "$RECIPES" '{source:$s, file:$f, registryCommit, generatedAt, hardware:(.hardware|length), recipes:([.hardware[]|.recipe,(.recipes[]?)]|length)}' "$RECIPES" ;;
-         *) fail "recipes [update]"; exit 1 ;;
-       esac ;;
-  update) # apply what the background check staged; --check only fetches and stages
-       case ${1:-} in
-         --check) upstream_check ;;
-         "") upstream_apply ;;
-         *) fail "update [--check]"; exit 1 ;;
-       esac; snapshot_write ;;
-  recipe) case ${1:-} in
-         ""|auto) rm -f "$STATE/recipe-pick"; log "recipe auto" ;;
-         *) [[ $1 =~ ^[a-z0-9][a-z0-9-]*$ ]] && jq -e --arg p "$1" '[.hardware[]|(.recipe.id), (.recipes[]?.id)]|index($p)!=null' "$RECIPES" >/dev/null 2>&1 || { fail "recipe <id>, as listed in the snapshot"; exit 1; }
-            state_dir; printf '%s' "$1" >"$STATE/recipe-pick"; log "recipe $1" ;;
-       esac; snapshot_write; jq -c '.recipes' "$SNAPSHOT" ;;
-  agent-dir) [[ -d ${1:-} ]] && { (cd "$1" && pwd) >"$STATE/agent-dir"; log "agent-dir $1"; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;
-  _root) # a phase run as root by pkexec (see lib/priv.sh); never spawned by anything but this script's own privileged().
-         # Its environment comes from the user's 0600 file, OMARCHY_AI_* assignments only, then this script re-executes itself.
-         [[ $(id -u) == 0 || -n ${OMARCHY_AI_TEST_ROOT:-} ]] || { fail "_root is for pkexec"; exit 1; }
-         [[ -f ${1:-} && -n ${2:-} && -n ${3:-} ]] || { fail "_root <env-file> <sha> <phase>"; exit 1; }
-         if [[ -z ${OMARCHY_AI_ROOT_PHASE:-} ]]; then
-           envf=$1; want=$2; shift 2; envs=$(cat "$envf")   # read once; hash what was read, not the file again
-           [[ $(sha_of "$envs") == "$want" ]] || { printf 'reason the settings changed while the password prompt was open; nothing was run\n'; exit 1; }
-           real=1; [[ $(id -u) == 0 && -z ${OMARCHY_AI_TEST_ROOT:-} ]] || real=0
-           re='^(OMARCHY_AI_[A-Z_]+|HF_TOKEN|https?_proxy|HTTPS?_PROXY|no_proxy|NO_PROXY)=[^$`]*$'
-           while IFS= read -r line; do
-             [[ $line =~ $re ]] || continue
-             if (( real )); then case ${line%%=*} in OMARCHY_AI_USER_HOME|OMARCHY_AI_STATE|OMARCHY_AI_MODEL_ROOT|OMARCHY_AI_CACHE_ROOT|OMARCHY_AI_HF_HOME|OMARCHY_AI_RECIPES|OMARCHY_AI_RUN_AS) continue ;; esac; fi   # root decides these itself
-             export "$line"
-           done <<<"$envs"
-           # who asked: pkexec says, and that user's home is where everything root touches must live
-           [[ ${PKEXEC_UID:-} =~ ^[0-9]+$ && ${PKEXEC_UID:-0} -gt 0 ]] || { printf 'reason this must run through pkexec\n'; exit 1; }
-           export OMARCHY_AI_RUN_AS="$PKEXEC_UID:$(id -g "$PKEXEC_UID" 2>/dev/null || printf '%s' "$PKEXEC_UID")"
-           if (( real )); then home=$(getent passwd "$PKEXEC_UID" | cut -d: -f6); [[ -d $home ]] || { printf 'reason no home directory for uid %s\n' "$PKEXEC_UID"; exit 1; }
-             export OMARCHY_AI_USER_HOME=$home; unset OMARCHY_AI_STATE OMARCHY_AI_MODEL_ROOT OMARCHY_AI_CACHE_ROOT OMARCHY_AI_HF_HOME OMARCHY_AI_RECIPES; fi
-           export OMARCHY_AI_ROOT_PHASE=1; exec "$SELF" _root "$envf" "$want" "$@"
-         fi
-         shift 2; p=$1; shift; "phase_$p" "$@" ;;
-  _worker-load) w_load ;;
-  _worker-unload) w_unload "${1:-}" ;;
-  help|-h|--help) usage ;;
-  *) usage >&2; exit 2 ;;
+  __priv) # root, only via priv(): one phase behind one prompt. pkexec scrubbed the environment; identity comes from it alone.
+    ((EUID == 0)) || [[ -n ${OMARCHY_AI_TEST_ROOT:-} ]] || { fail "__priv is for pkexec"; exit 1; }
+    ROOT_PHASE=1; export OMARCHY_AI_ROOT_PHASE=1
+    if ((EUID == 0)) && [[ -z ${OMARCHY_AI_TEST_ROOT:-} ]]; then resolve_caller || exit 1
+    else unset OMARCHY_AI_STATE OMARCHY_AI_MODEL_ROOT XDG_STATE_HOME; set_paths "${OMARCHY_AI_TEST_HOME:-$HOME}"; RUN_AS="$(id -u):$(id -g)"; fi   # the suite's pkexec: a scrubbed environment and one home
+    phase=${1:-}; shift || true
+    case $phase in start|stop|toolkit) "phase_$phase" "$@" ;; *) printf 'reason unknown phase\n'; exit 1 ;; esac ;;
+  *)
+    missing=""; for t in jq curl; do command -v "$t" >/dev/null 2>&1 || missing+=" $t"; done
+    if [[ -n $missing ]]; then broken="missing tool:$missing"; elif ! recipes_ok; then broken="recipes.json is missing or broken: reinstall the plugin"; fi
+    if [[ -n ${broken:-} ]]; then fail "$broken" || :; [[ $cmd == snapshot ]] && printf '{"schemaVersion":"omarchy-local-ai/snapshot/11","state":"error","error":"%s","statusText":"Setup required","helpText":"%s","operation":{},"models":[],"cards":[],"recipes":[],"gpus":[],"agents":{},"reason":""}\n' "$broken" "$broken"; exit 1; fi
+    RUN_AS="$(id -u):$(id -g)"
+    case $cmd in
+      snapshot) snapshot_write; cat "$SNAPSHOT" ;;
+      load) [[ ${1:-} =~ ^[a-z0-9][a-z0-9.-]{0,63}$ ]] || { fail "load <recipe-id> [gpu-key...]"; exit 1; }
+            for k in "${@:2}"; do [[ $k =~ ^(nvidia|intel-xpu|amd-rocm):[0-9]{1,2}$ ]] || { fail "gpu keys look like nvidia:0"; exit 1; }; done
+            [[ -z $(busy_pid) ]] || { fail "another operation is running"; exit 1; }
+            spawn download "$1" __worker load "$@" ;;
+      unload) p=$(busy_pid)
+            if [[ -n $p && $(ledger_read | jq -r .op.name) == download ]]; then state_dir; : >"$STATE/cancel"; log "cancel: stopping download worker $p"; kill -TERM -- "-$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null || true
+              for ((i=0; i<100; i++)); do kill -0 "$p" 2>/dev/null || break; sleep 0.1; done; ledger_write '.op={name:"",recipeId:"",pid:0,startedAt:"",detail:"",percent:0} | .error=""'; rm -f "$STATE/cancel"; log "download stopped; partial weights kept"; snapshot_write; exit 0; fi
+            [[ -z $p ]] || { fail "another operation is running"; exit 1; }
+            [[ -z ${1:-} || $1 =~ ^[a-z0-9][a-z0-9.-]{0,63}$ ]] || { fail "unload [recipe-id]"; exit 1; }
+            spawn unload "${1:-}" __worker unload "${1:-}" ;;
+      agent) snapshot_write; agent_launch "${1:-}" "${2:-}" 2>"$STATE/agent.err" || { m=$(sed -n '$s/^local-ai: //p' "$STATE/agent.err"); log "error: ${m:-agent launch failed}"; ledger_write '.error=$e' --arg e "${m:-agent launch failed (see $LOGFILE)}"; snapshot_write; exit 1; } ;;
+      agent-dir) [[ -d ${1:-} ]] && { state_dir; (cd -- "$1" && pwd) >"$STATE/agent-dir"; log "agent-dir $1"; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;
+      gpu) case ${1:-} in ""|auto) rm -f "$STATE/gpu" ;; *) [[ $1 =~ ^[a-z-]+:[0-9]+$ ]] || { fail "gpu <backend:index>"; exit 1; }; state_dir; printf '%s' "$1" >"$STATE/gpu" ;; esac; snapshot_write; jq -c .gpus "$SNAPSHOT" ;;
+      install) state_dir; m=$(match_hardware)
+            if [[ $(jq -r '.gpus[] | select(.chosen) | .backend' <<<"$m") == nvidia ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
+              priv_root toolkit >"$STATE/phase.out" 2>>"$LOGFILE" || { fail "$(grep '^reason ' "$STATE/phase.out" | tail -1 | cut -c8-)"; exit 1; }; fi
+            snapshot_write; echo "Local AI is ready: $(jq -r '.cards | length' "$SNAPSHOT") GPU type(s) detected" ;;
+      remove) [[ -z $(busy_pid) ]] || { fail "another operation is running"; exit 1; }
+            priv stop --purge >"$STATE/phase.out" 2>>"$LOGFILE" || { fail "$(grep '^reason ' "$STATE/phase.out" | tail -1 | cut -c8-)"; exit 1; }
+            rm -rf "$MODELS" "$(dirname "$MODELS")/scratch" "$STATE"; echo "Local AI removed: containers, images, weights and state are gone" ;;
+      __worker) case ${1:-} in load) w_load "${@:2}" ;; unload) w_unload "${2:-}" ;; *) exit 2 ;; esac ;;
+      help|-h|--help) usage ;;
+      *) usage >&2; exit 2 ;;
+    esac ;;
 esac
