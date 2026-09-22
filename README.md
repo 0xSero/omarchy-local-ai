@@ -23,19 +23,29 @@ you turned on sudoless Docker (Setup › Security), there is no prompt.
 
 ## What runs
 
-- **Recipes** come from [the registry](https://github.com/0xSero/local-ai-registry), where each one was
-  validated on the exact card it names. The plugin vendors that export in `recipes.json`; a recipe can only
-  say what the launcher will run: an image pinned by digest, weights pinned by revision, the engine's
-  arguments, environment, port and shm. Mounts, devices, capabilities and network mode are not in the file.
+- **One recipe per card.** `recipes.json` names, for every GPU the registry has validated, the one recipe to
+  run on it: Qwen3.8-27B wherever it is validated, otherwise the best the card can hold. Every recipe was
+  validated on that exact card. A recipe can only say what the launcher will run: an image pinned by digest,
+  weights pinned by revision, the engine's arguments, environment, port and shm. Mounts, devices,
+  capabilities and network mode are not in the file.
 - **Weights** are downloaded as you, over https, from the pinned revision, and every file is checked against
   the Hub's tree before it is mounted. A verified copy already on the machine is adopted instead.
 - **Containers**: the engine on its own bridge network with no published port, and the attested gateway on
-  `127.0.0.1:12434`, running as your user, requiring a bearer key that lives in one 0600 file.
+  `127.0.0.1:12434`, running as your user, requiring a bearer key that lives in one 0600 file. The gateway
+  appends one line per answered request to a usage log in your state directory; that is where the card's
+  tokens and speed come from.
 - **Acceptance**: the model must be the one the recipe names, answer one real request at a speed that is not
   a CPU fallback, and answer the dialects agents use. A start that fails is rolled back to the previous run.
 - **Agents**: claude, codex, pi, omp, opencode, crush, grok, copilot, hermes, ori, agy, muse and cursor open
   in a terminal with the endpoint and the key in their environment, or in a config directory the plugin
   owns. No file of yours is read or written.
+
+## The card
+
+One page: the state, decode speed and tokens today with the week as bars, one row per GPU with its
+temperature and memory, one row per model with run or stop, one row for the agent. "stats" opens tokens by
+day and by model and decode speed over the day. The agent row opens the agent in the project folder; the
+open page picks another agent or folder. Keys: j/k, Enter, Escape, s for stats.
 
 ## Using it from a shell
 
@@ -43,8 +53,9 @@ you turned on sudoless Docker (Setup › Security), there is no prompt.
 omarchy-local-ai snapshot                 # the state the card renders, as JSON
 omarchy-local-ai load <recipe-id> [gpu…]  # download if needed, then start; e.g. load qwen3827b-exl3-4bpw-rtx4090-tabbyapi-tp1
 omarchy-local-ai unload [recipe-id]       # stop one model, or every model
-omarchy-local-ai agent claude             # open an agent on the running model
+omarchy-local-ai agent [claude]           # open the agent on the running model
 omarchy-local-ai agent-dir ~/code/thing   # the folder agents open in
+omarchy-local-ai agent-default codex      # the agent the card opens
 ```
 
 The endpoint is OpenAI-compatible at `http://127.0.0.1:12434/v1` (Messages and Responses too, when the
