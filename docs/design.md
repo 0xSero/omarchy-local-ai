@@ -25,8 +25,8 @@ The card's visible design does not change. Everything behind it does.
 ```
 omarchy-local-ai/                    the plugin directory as installed (marketplace) or packaged (omacom)
 ├── manifest.json                    schemaVersion 1, kinds ["bar-widget"], entryPoints.barWidget "Panel.qml"
-├── Panel.qml                        the card, unchanged design                          ~450 lines
-├── Model.js                         every pure function behind the card                 ~250 lines
+├── Panel.qml                        the card, unchanged design                          ~270 lines
+├── Model.js                         every pure function behind the card                 ~180 lines
 ├── recipes.json                     the registry's export, verbatim, one entry per line  (data)
 ├── bin/
 │   ├── omarchy-local-ai             the backend, one file                               ~850 lines
@@ -54,8 +54,11 @@ omarchy-local-ai/                    the plugin directory as installed (marketpl
 Gone from the tree: `lib/` (13 files), `ui/` (two presentations), `native/`, `scripts/`, `integrations/`,
 `wiki/`, `media/`, `dist/`, `lib/*.py`. The repository is the plugin and nothing else.
 
-Line budget of what ships: about 1,600 lines of code (850 bash, 450 QML, 250 JS, 60 installers) and
-one data file, against 3,884 today. The count is a consequence of the drop list in section 8, not a
+Line budget of what ships: about 1,360 lines of code (850 bash, 270 QML, 180 JS, 60 installers) and
+one data file, against 3,884 today. The card's floor comes from using Omarchy's own kit for everything
+it provides (`Panel`, `BarIconButton`, `KeyboardPanel`, `PanelKeyCatcher`, `CursorSurface`, `Button`,
+`PanelSectionHeader`, `PanelSeparator`, `TextField`, `Style`, `Color`) and hand-rolling only what it does
+not: the scroll viewport, the progress bar and the toast. The count is a consequence of the drop list in section 8, not a
 target that was cut to.
 
 ## 3. `bin/omarchy-local-ai`
