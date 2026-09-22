@@ -95,6 +95,8 @@ Panel {
     if (y < flick.contentY) scrollBy(y - flick.contentY)
     else if (y + it.height > flick.contentY + flick.height) scrollBy(y + it.height - flick.height - flick.contentY)
   }
+  function revealRow(i) { var it = i < ui.rows.length ? rowsRep.itemAt(i) : footRep.itemAt(i - ui.rows.length); if (it) revealItem(it) }
+  onCursorAtChanged: if (cursorAt >= 0) Qt.callLater(function() { root.revealRow(root.cursorAt) })
   function navigateCrumb(a) { activate(a); editingFolder = false; Qt.callLater(function() { scrollBy(-1e9); focusContent() }) }
   function activate(a) {
     if (!a) return
@@ -279,23 +281,21 @@ Panel {
             r: ({ type: "row", compact: true, label: "Project folder", value: (root.snap.agents || {}).directory || Quickshell.env("HOME"), action: "choose-folder" })
           }
           Item { // Rows share the page viewport with headers, editors and bottom actions.
-            id: body
+            id: rowsBody
             width: parent.width
             readonly property real inset: Style.space(12)
             height: list.implicitHeight + inset * 2
             Column {
               id: list
-              anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: body.inset; spacing: Style.space(10)
+              anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: rowsBody.inset; spacing: Style.space(10)
               Repeater { id: rowsRep; model: root.ui.rows
                 CardRow { required property var modelData; required property int index; objectName: "content-row-" + index; r: modelData; p: root; width: list.width; cursor: index === root.cursorAt } }
             }
-            function reveal(i) { var it = i < root.ui.rows.length ? rowsRep.itemAt(i) : footRep.itemAt(i - root.ui.rows.length); if (it) root.revealItem(it) }
-            Connections { target: root; function onCursorAtChanged() { if (root.cursorAt >= 0) Qt.callLater(function() { body.reveal(root.cursorAt) }) } }
           }
           Column { // Bottom actions remain reachable through the same scroll viewport.
             visible: root.ui.foot.length > 0; width: parent.width; spacing: 0
             Rectangle { width: parent.width; height: 1; color: root.hairline }
-            Column { anchors.left: parent.left; anchors.right: parent.right; anchors.margins: body.inset; spacing: Style.space(10); topPadding: Style.space(12); bottomPadding: Style.space(12)
+            Column { anchors.left: parent.left; anchors.right: parent.right; anchors.margins: rowsBody.inset; spacing: Style.space(10); topPadding: Style.space(12); bottomPadding: Style.space(12)
               Repeater { id: footRep; model: root.ui.foot
                 CardRow { required property var modelData; required property int index; objectName: "footer-row-" + index; r: modelData; p: root; width: parent.width; cursor: root.ui.rows.length + index === root.cursorAt } } }
           }
