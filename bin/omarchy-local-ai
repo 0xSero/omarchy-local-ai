@@ -719,7 +719,7 @@ stats_json() { # tokens by day and by model over 7 days, decode speed now and pe
   [[ -s $f ]] || { printf '{"today":0,"days":[0,0,0,0,0,0,0],"byModel":[],"decode":null,"hours":[]}'; return; }
   [[ $(fsize "$f") -gt 4194304 ]] && { tail -n 20000 "$f" >"$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"; }
   now=$(date +%s); h=$(date +%H); m=$(date +%M); sec=$(date +%S); day0=$(( now - 10#$h*3600 - 10#$m*60 - 10#$sec ))
-  tail -n 50000 "$f" | jq -sc --argjson now "$now" --argjson day0 "$day0" '
+  tail -n 50000 "$f" | grep '^{' | jq -sc --argjson now "$now" --argjson day0 "$day0" '
     def tps: select(.completion > 0 and .ms > .ttft_ms) | .completion / ((.ms - .ttft_ms) / 1000);
     def avg: if length > 0 then (add / length) else null end;
     [.[] | select(type == "object" and .t >= $day0 - 6*86400)] as $r
@@ -727,7 +727,7 @@ stats_json() { # tokens by day and by model over 7 days, decode speed now and pe
        days: [range(6; -1; -1) as $i | ([$r[] | select(.t >= $day0 - $i*86400 and .t < $day0 - ($i-1)*86400) | .completion + .prompt] | add // 0)],
        byModel: ($r | group_by(.model) | map({model: .[0].model, tokens: (map(.completion + .prompt) | add)}) | sort_by(-.tokens)),
        decode: ([$r[] | select(.t >= $now - 600) | tps] | avg | if . == null then null else (. * 10 | round / 10) end),
-       hours: [range(23; -1; -1) as $i | ([$r[] | select(.t >= $now - ($i+1)*3600 and .t < $now - $i*3600) | tps] | avg | if . == null then null else round end)]}' 2>/dev/null \
+       hours: [range(23; -1; -1) as $i | ([$r[] | select(.t >= $now - ($i+1)*3600 and .t <= $now - $i*3600) | tps] | avg | if . == null then null else round end)]}' 2>/dev/null \
     || printf '{"today":0,"days":[0,0,0,0,0,0,0],"byModel":[],"decode":null,"hours":[]}'
 }
 snapshot_write() {
