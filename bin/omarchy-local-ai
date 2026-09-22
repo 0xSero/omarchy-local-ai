@@ -247,7 +247,7 @@ weights_fetch() { # weights_fetch <recipe-id> <weights-item>: every missing file
   needed=$(weights_needed "$w") || { fail "cannot list $repo@${rev:0:12} on the Hub: no route, or the revision is gone"; return 1; }
   n=$(grep -c . <<<"$needed"); (( n > 0 )) || { fail "the Hub lists no files for $repo@${rev:0:12}"; return 1; }
   total=$(awk -F'\t' '{s+=$2} END{print s+0}' <<<"$needed")
-  local free; free=$(df -Pk "$MODELS" 2>/dev/null | awk 'NR==2{print $4*1024}')
+  local free; free=$(df -Pk "$MODELS" 2>/dev/null | awk 'NR==2{printf "%.0f", $4*1024}')
   (( ${free:-0} == 0 || free > total - $(dir_bytes "$d") )) || { fail "need $(( (total - $(dir_bytes "$d") + 1073741823) / 1073741824 )) GB free under $MODELS"; return 1; }
   (umask 022; mkdir -p "$d")
   cache="${OMARCHY_AI_HF_HOME:-$HOME_DIR/.cache/huggingface}/hub/models--${repo//\//--}/snapshots/$rev"   # the user's own Hub cache: adopted when it verifies
@@ -567,6 +567,7 @@ w_load() { # w_load <recipe-id> [gpu-key...]
   guard || { log "error: another operation is running"; exit 1; }
   trap worker_exit EXIT
   local id=$1 r m claim v w t0; shift
+  ledger_write '.last=$id' --arg id "$id"   # what "run again" means on the card
   op download "$id" "checking the GPU and recipe" 0
   r=$(recipe_by_id "$id") || oops "recipe $id is not in recipes.json"
   v=$(policy_check "$r"); [[ -z $v ]] || oops "recipe refused: $v"
@@ -734,7 +735,7 @@ snapshot_write() {
   command -v docker >/dev/null 2>&1 || { statusText="Setup required"; helpText="Docker is not installed"; }
   jq -nc --argjson l "$ledger" --argjson match "$match" --arg state "$state" --arg reason "$reason" --arg hw "$hw_id" --argjson focus "$focus" --argjson models "$models" \
     --argjson agents "$(agents_json "$(jq -c '.apis // []' <<<"$focus")")" --arg t "$(now)" --arg note "$note" --argjson recs "$recs" --argjson pbusy "$pbusy" --arg listener "$listener" --argjson port "$fport" \
-    --arg reg "$(registry_commit)" --arg rgen "$(jq -r '.generatedAt // ""' "$RECIPES")" --arg statusText "$statusText" --arg helpText "$helpText" '
+    --arg reg "$(registry_commit)" --arg rgen "$(jq -r '.generatedAt // ""' "$RECIPES")" --arg statusText "$statusText" --arg helpText "$helpText" --arg last "$(jq -r '.last // ""' <<<"$ledger")" '
     def short: gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )";"");
     ([$models[] | select(.state != "stopped") | .keys[]]) as $busyKeys
     | ($match.gpus | group_by([.backend, .product, .vramGb]) | map((.[0]) as $g | length as $n | ([.[] | select(.key as $k | $busyKeys | index($k))] | length) as $used
@@ -746,6 +747,7 @@ snapshot_write() {
        hardwareId:$hw, gpus:$match.gpus, registry:{commit:$reg, generatedAt:$rgen}, reason:(if $hw=="" then $reason elif $pbusy then ("port \($port) is in use by something else") else "" end),
        running:(if $focus == null then null else {recipeId:$focus.recipeId, name:$focus.name, cards:$focus.cards, port:$focus.port, state:$focus.state} end),
        models:$models, apis:($focus.apis // []), agents:$agents, cards:$cards, recipes:$recs,
+       selected:(($recs | map(select(.id==$last)) | .[0]) as $s | if $s==null then null else {recipeId:$s.id, name:$s.name, hardwareId:$s.hardwareId, cards:$s.cards, onDisk:$s.onDisk, partialBytes:$s.partialBytes, sizeGb:$s.sizeGb, running:$s.running, keys:[]} end),
        port:{number:$port, busy:$pbusy, listener:$listener}}' | head -c 262144 >"$SNAPSHOT.tmp.$$" && mv -f "$SNAPSHOT.tmp.$$" "$SNAPSHOT" || { rm -f "$SNAPSHOT.tmp.$$"; return 1; }
 }
 

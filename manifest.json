@@ -2,20 +2,19 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "5.4.0",
+  "version": "6.0.0",
   "author": "0xSero",
   "license": "MIT",
-  "description": "Local models and coding agents on your own GPUs, from the Omarchy bar or the optional Local AI tab inside Agents. 82 validated recipes across 37 cards: NVIDIA RTX 30/40/50, RTX Ada, RTX Pro Blackwell, Intel Arc Pro B70 and AMD ROCm. Run several models at once, each on its own GPU group, up to 256K context. Open claude, codex, pi, omp, opencode, crush, grok, copilot or hermes on a running model, nothing written to your config. Share the same keyed endpoint on your tailnet in one click, with live speed, GPU telemetry and today's runtime statistics on the card.",
+  "description": "The model validated for your GPU, one click, and every coding agent on it. 81 validated recipes across 36 cards: NVIDIA RTX 30/40/50, RTX Ada, RTX Pro Blackwell, Intel Arc Pro B70 and AMD ROCm. Weights verified against the pinned revision, the engine on a private network behind a keyed gateway on loopback, one polkit prompt per start. Open claude, codex, pi, omp, opencode, crush, grok, copilot, hermes, ori, agy, muse or cursor on a running model without touching your own config.",
   "kinds": [
     "bar-widget"
   ],
-  "activation": "on-demand",
   "entryPoints": {
-    "barWidget": "ui/Panel.qml"
+    "barWidget": "Panel.qml"
   },
   "barWidget": {
     "displayName": "Local AI",
-    "description": "Local models, coding agents, GPU status and keyed Tailscale sharing, with optional native Agents integration.",
+    "description": "The model validated for your GPU, one click, and every coding agent on it.",
     "category": "AI",
     "aliases": [
       "local-ai",
