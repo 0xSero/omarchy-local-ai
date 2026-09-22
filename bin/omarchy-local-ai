@@ -250,13 +250,23 @@ weights_fetch() { # weights_fetch <recipe-id> <weights-item>: every missing file
   local free; free=$(df -Pk "$MODELS" 2>/dev/null | awk 'NR==2{printf "%.0f", $4*1024}')
   (( ${free:-0} == 0 || free > total - $(dir_bytes "$d") )) || { fail "need $(( (total - $(dir_bytes "$d") + 1073741823) / 1073741824 )) GB free under $MODELS"; return 1; }
   (umask 022; mkdir -p "$d")
-  cache="${OMARCHY_AI_HF_HOME:-$HOME_DIR/.cache/huggingface}/hub/models--${repo//\//--}/snapshots/$rev"   # the user's own Hub cache: adopted when it verifies
+  # Copies already on this machine (the Hub cache, an older layout of this plugin, ~/models) are adopted
+  # file by file when they verify; a same-named file of another quant fails the size or the hash.
+  local -a cands=(); local big c
+  cands+=("${OMARCHY_AI_HF_HOME:-$HOME_DIR/.cache/huggingface}/hub/models--${repo//\//--}/snapshots/$rev")
+  big=$(sort -t$'\t' -k2,2nr <<<"$needed" | head -1 | cut -f1); big=${big##*/}
+  for c in "$MODELS" "$HOME_DIR/models" "$HOME_DIR/.cache/llama.cpp"; do
+    [[ -d $c ]] || continue
+    while IFS= read -r c; do [[ -n $c && $(canon "$(dirname "$c")") != "$(canon "$d")" ]] && cands+=("$(dirname "$c")"); done < <(find -L "$c" -maxdepth 5 -type f -name "$big" -size +0 2>/dev/null | head -10)
+  done
   while IFS=$'\t' read -r path size sha oid; do
     [[ -n $path ]] || continue; i=$((i+1))
     if file_ok "$d/$path" "$size" "$sha" "$oid"; then done_bytes=$((done_bytes + size)); continue; fi
-    if [[ -f $cache/$path ]] && file_ok "$cache/$path" "$size" "$sha" "$oid"; then
-      (umask 022; mkdir -p "$(dirname "$d/$path")"; cp --reflink=auto -f -- "$(readlink -f "$cache/$path")" "$d/$path") && { log "adopted $path from the Hub cache (verified)"; done_bytes=$((done_bytes + size)); continue; }
-    fi
+    local found=0; for c in "${cands[@]}"; do
+      [[ -f $c/$path ]] && file_ok "$c/$path" "$size" "$sha" "$oid" || continue
+      (umask 022; mkdir -p "$(dirname "$d/$path")"; ln -f -- "$(readlink -f "$c/$path")" "$d/$path" 2>/dev/null || cp --reflink=auto -f -- "$(readlink -f "$c/$path")" "$d/$path") && { log "adopted $path from $c (verified)"; done_bytes=$((done_bytes + size)); found=1; break; }
+    done
+    (( found )) && continue
     (umask 022; mkdir -p "$(dirname "$d/$path")")
     tmp="$d/$path.part"
     spawn_child curl -fsSL --retry 3 --retry-all-errors -C - --proto =https ${HF_HEADER_ARGS[@]+"${HF_HEADER_ARGS[@]}"} -o "$tmp" "https://huggingface.co/$repo/resolve/$rev/$path"; pid=$!

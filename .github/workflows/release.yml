@@ -24,6 +24,8 @@ jobs:
           path: registry
       - name: tests and the recipes.json checks
         run: make check REGISTRY="$GITHUB_WORKSPACE/registry"
+      - name: the release archive is what an install contains
+        run: make bundle && tar -tzf dist/*.tar.gz
       - name: notes from the changelog
         run: |
           v=${GITHUB_REF_NAME#v}

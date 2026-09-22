@@ -53,9 +53,16 @@ head -c 4096 /dev/zero >"$HOME/.cache/huggingface/hub/models--test--model/snapsh
 "$CLI" load test-dir
 [[ $(snap .state) == ready ]] || fail "adopt" "$(snap .error)"
 grep -q '/resolve/' "$SHIM/curl.log" && fail "adopt downloaded" "$(grep resolve "$SHIM/curl.log")"
-grep -q 'adopted model.safetensors from the Hub cache' "$STATE/log" || fail "adopt log" "$(tail -5 "$STATE/log")"
+grep -q 'adopted model.safetensors from' "$STATE/log" || fail "adopt log" "$(tail -5 "$STATE/log")"
 pass "a verified copy in the user's Hub cache is adopted instead of downloaded"
-"$CLI" unload >/dev/null
+"$CLI" unload >/dev/null; rm -rf "$MODELS" "$HOME/.cache/huggingface"; mkdir -p "$MODELS/old-layout-5x/Sub-Model"
+head -c 4096 /dev/zero >"$MODELS/old-layout-5x/Sub-Model/model.safetensors"; : >"$SHIM/curl.log"
+"$CLI" load test-dir
+[[ $(snap .state) == ready ]] || fail "adopt legacy" "$(snap .error)"
+grep -q '/resolve/' "$SHIM/curl.log" && fail "legacy downloaded" "$(grep resolve "$SHIM/curl.log")"
+[[ -f $MODELS/test--model@0123456789ab/model.safetensors ]] || fail "legacy placed" "$(find "$MODELS")"
+pass "a verified copy from an older layout of this plugin is adopted, so an upgrade downloads nothing"
+"$CLI" unload >/dev/null; mkdir -p "$HOME/.cache/huggingface/hub/models--test--model/snapshots/0123456789abcdef0123456789abcdef01234567"
 head -c 4096 /dev/urandom >"$HOME/.cache/huggingface/hub/models--test--model/snapshots/0123456789abcdef0123456789abcdef01234567/model.safetensors"
 rm -rf "$MODELS"; : >"$SHIM/curl.log"
 "$CLI" load test-dir
@@ -75,8 +82,8 @@ pass "HF_TOKEN reaches curl only through a 0600 header file"
 # stopping a download keeps the partial file and the next load resumes
 "$CLI" unload >/dev/null; rm -rf "$MODELS"
 export OMARCHY_AI_FOREGROUND=0
-SHIM_DOWNLOAD_SLOW=3 "$CLI" load test-dir >/dev/null
-sleep 1
+SHIM_DOWNLOAD_SLOW=4 "$CLI" load test-dir >/dev/null
+for i in 1 2 3 4 5 6 7 8 9 10; do [[ $(snap .state) == download && -f $MODELS/test--model@0123456789ab/model.safetensors.part ]] && break; sleep 0.5; done
 [[ $(snap .state) == download ]] || fail "background download" "$(cat "$STATE/snapshot.json")"
 "$CLI" unload >/dev/null
 [[ $(snap .state) == idle && -f $MODELS/test--model@0123456789ab/model.safetensors.part ]] || fail "cancel" "$(snap .state) $(find "$MODELS")"

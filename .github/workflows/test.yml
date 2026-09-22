@@ -10,7 +10,7 @@ jobs:
         with:
           path: plugin
       # The registry authors recipes.json. Checking it out lets `make check` fail when the copy vendored
-      # here has fallen behind the published export instead of only checking that it parses.
+      # here has fallen behind the published schema-2 export instead of only checking that it parses.
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: 0xSero/local-ai-registry

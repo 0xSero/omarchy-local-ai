@@ -1,7 +1,7 @@
 name: registry
-# The registry is the source of truth for recipes; this repo only vendors its export. The plugin's
-# runtime already stages that export on every install (lib/update.sh), so this job only keeps the copy
-# committed here from falling behind the published one for a fresh install.
+# The registry is the source of truth for recipes; this repo only vendors its schema-2 export. Nothing is
+# fetched at runtime, so this daily job is the one way a new recipe reaches the plugin: a commit here,
+# delivered by the next plugin update.
 on:
   schedule:
     - cron: '17 4 * * *'
@@ -27,5 +27,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add recipes.json
-          git commit -m "recipes: take the registry's export ($(jq -r '.registryCommit[:12]' recipes.json), $(jq -r '.hardware | length' recipes.json) hardware)"
+          git commit -m "recipes: take the registry's export ($(jq -r '.registryCommit[:12]' recipes.json), $(jq -r '.hardware | length' recipes.json) hardware, $(jq -r '[.hardware[].recipes[]] | length' recipes.json) recipes)"
           git push

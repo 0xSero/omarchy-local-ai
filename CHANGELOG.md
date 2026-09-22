@@ -2,9 +2,24 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
-## [Unreleased]
+## [6.0.0] - 2026-09-22
+
+Version 6 is a rebuild from first principles: one bash backend, one card, one vendored data file, shaped the way Omarchy's own features are. The card's design is the same. See `docs/design.md`.
+
+### Changed
+- The backend is one file, `bin/omarchy-local-ai`, modelled on Omarchy's `omarchy-windows-vm`: every docker call of a Start, including acceptance and rollback, runs in one phase behind one polkit prompt (or directly when sudoless Docker is on). Root takes the caller from pkexec and every path from the caller's account; only a recipe id and GPU keys cross the boundary.
+- `recipes.json` is the registry's schema-2 export: a recipe names its weights (repository, revision, layout, mount path), at most one asset and one scratch path, and the launch's entrypoint, arguments, environment, port and shm. Mounts, devices, IPC, capabilities, security options and network mode cannot be expressed, so nothing needs refusing at run time. One hardware entry per line.
+- Weights are downloaded as the user with curl over https at the pinned revision and verified file by file against the Hub's tree (sha256 for LFS files). Partial files resume; a verified copy in the user's own Hub cache is adopted; hub-layout engines get a Hub cache tree and run with `HF_HUB_OFFLINE=1`.
+- The card is `Panel.qml`, `CardRow.qml` and `Model.js` at the root of the plugin. `Model.js` holds every view's logic and is tested under node. The snapshot carries `statusText` and `helpText` so setup states are words from the backend, not logic in QML.
+- The state file is `state.json` (a 5.x `ledger.json` is adopted by rename). Verbs: `snapshot`, `load <recipe> [gpu...]`, `unload [recipe]`, `agent <name> [recipe]`, `install`, `remove`, `agent-dir`, `gpu`.
+- Tests are `test/shell.d/*-test.sh` in Omarchy's own form, run by `test/all`, with shims for docker, curl, the GPU tools and pkexec; the pkexec shim runs the target from a scrubbed environment, so the boundary is really crossed.
+
+### Added
+- `bin/omarchy-install-ai-local` (the NVIDIA container toolkit when a card needs it) and `bin/omarchy-remove-ai-local` (every container, image, weight and state file goes), for Install › AI and Remove › AI.
 
 ### Removed
+- Runtime recipe fetching and plugin self-update: a file fetched into the home could never be the input to a root phase. Recipes reach an install through a plugin update; the daily registry job commits the export when it moves.
+- Tailscale sharing, the Intel and runtime telemetry adapters, "load another instance" and swap previews, the `rocm-smi` and sysfs AMD paths, the native Omarchy generator and its shim, the embedded presentation, and the host `flm` recipes.
 - The `integrations/` directory (Moonlight bindings, the macOS shortcut button and guide, the Agents-panel patch and its installer). They were one person's desktop setup, not part of the plugin; they live outside this repository now.
 
 ## [5.4.0] - 2026-09-22
