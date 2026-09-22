@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local AI from first principles</title>
+<style>
+  :root { --ink: #222; --dim: #666; --line: #d0d0d0; --bg: #fff; --soft: #f6f6f6; }
+  html { background: var(--bg); color: var(--ink); }
+  body { font: 15px/1.5 Georgia, "Times New Roman", serif; max-width: 960px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  h2 { font-size: 19px; margin: 36px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 3px; }
+  p { margin: 8px 0; }
+  .meta { color: var(--dim); font-size: 13px; margin-bottom: 18px; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; background: var(--soft); padding: 1px 4px; }
+  .fig { border: 1px solid var(--line); background: #fff; padding: 12px; margin: 12px 0; overflow-x: auto; }
+  .fig .cap { font-size: 13px; color: var(--dim); margin-top: 6px; }
+  pre.mermaid { margin: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 600; }
+  .rule { background: var(--soft); border-left: 4px solid var(--ink); padding: 8px 12px; margin: 10px 0; }
+</style>
+</head>
+<body>
+
+<h1>Local AI from first principles</h1>
+<p class="meta">Written 2026-09-22. Five nouns, two small machines, one contract. Every diagram here has fewer than nine boxes; if a real path needs more, the design is wrong, not the diagram.</p>
+
+<h2>1. The five nouns</h2>
+<p>Everything in the system is one of these, and each points at the next.</p>
+<div class="fig"><pre class="mermaid">
+flowchart LR
+  G["GPU<br/>what is in the machine"] --> H["hardware id<br/>the registry's name for it"]
+  H --> R["recipe<br/>the one validated way to run a model on it"]
+  R --> S["run<br/>weights on disk + two containers + one check"]
+  S --> A["agent<br/>a coding tool pointed at the run"]
+</pre><div class="cap">The registry owns the first three. The plugin owns the last two. Nothing else exists.</div></div>
+
+<h2>2. The registry, reduced to its job</h2>
+<p>The registry has 813 models, 2,749 recipe records, 3,087 speed sweeps, prices and benchmarks. None of that is the plugin's business. The registry's job, seen from the plugin, is to answer one question:</p>
+<div class="rule">Given a GPU name, what is the one validated recipe, and what exactly must run?</div>
+<p>So the registry exports one file, and that file is the entire contract between the two repositories. Today it carries fields the launcher never reads, and fields the launcher must <i>refuse</i> (host IPC, extra capabilities, security options). From first principles the export should contain only what a launch consumes, so that what cannot be expressed cannot be refused.</p>
+
+<table>
+<tr><th>Per hardware id</th><th>Meaning</th><th>Consumed by</th></tr>
+<tr><td><code>match</code> = backend, names, vramGb</td><td>how to recognise the GPU</td><td>detection</td></tr>
+<tr><td><code>recipes[]</code>, first is the recommended one</td><td>what can run on it</td><td>the card's rows</td></tr>
+</table>
+<table>
+<tr><th>Per recipe</th><th>Meaning</th><th>Consumed by</th></tr>
+<tr><td><code>id</code>, <code>name</code>, <code>sizeGb</code></td><td>display</td><td>card</td></tr>
+<tr><td><code>image</code> = a digest under ghcr.io/0xsero</td><td>what runs</td><td>root phase</td></tr>
+<tr><td><code>weights</code> = repository, revision, files pattern</td><td>what to download and verify</td><td>user worker</td></tr>
+<tr><td><code>launch</code> = arguments, environment, port, shm, gpus</td><td>how to run it</td><td>root phase</td></tr>
+<tr><td><code>serving</code> = ctxTokens</td><td>what the agents are told</td><td>agent launch, card</td></tr>
+<tr><td><code>capabilities</code> = chat, vision, tools, reasoning</td><td>which agents fit</td><td>agent launch, card</td></tr>
+<tr><td><code>minDriver</code></td><td>when to refuse</td><td>detection</td></tr>
+<tr><td><code>asset</code> (optional) = one config file's text</td><td>an engine config mounted read-only</td><td>root phase</td></tr>
+</table>
+<p>Gone from the export: <code>ipc</code>, <code>capAdd</code>, <code>securityOpt</code>, <code>networkMode</code>, <code>entrypoint</code>, <code>devices</code> paths, free-form <code>mounts</code>, <code>provenance</code> text, <code>validated</code>, <code>speed</code>, <code>concurrency</code>, <code>precision</code>, <code>tag</code>. Mounts are not data at all: the launcher always mounts exactly the recipe's weights directory read-only, and the render nodes the user chose. The evidence (attestation, acceptance record, speed) stays in the registry where a human reads it. The export goes from about forty fields to about twenty, and the root-side policy check shrinks with it, because half of what it refused can no longer be written.</p>
+
+<div class="fig"><pre class="mermaid">
+flowchart LR
+  A["registry records<br/>validated on rented cards"] --> B["export<br/>one file, ~20 fields per recipe"]
+  B --> C["plugin repo<br/>recipes.json, committed"]
+  C --> D["a machine<br/>plugin update or package update"]
+</pre><div class="cap">Four hops, all of them a commit or a package. Nothing is fetched at runtime.</div></div>
+
+<h2>3. What a run is</h2>
+<p>A run is three facts that are either true or not: the weights are on disk and verified; the two containers exist; the gateway answered one real request. The plugin's job is to make them true in that order and to tell the truth about which are.</p>
+<div class="fig"><pre class="mermaid">
+flowchart LR
+  W["weights verified<br/>(user, curl + sha256)"] --> C["containers up<br/>(root, one prompt)"] --> K["accepted<br/>(one real completion)"]
+  K -- "no" --> U["undo: remove the new pair,<br/>put the previous one back"]
+</pre><div class="cap">One line, one undo. There is no other path.</div></div>
+
+<h2>4. The two machines</h2>
+<p>The card's state word is not a machine. It is a projection of these two.</p>
+
+<div class="fig"><pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> none
+  none --> download: load
+  download --> start: verified
+  download --> none: failed or cancelled
+  start --> none: accepted, or failed with the previous run restored
+  none --> stop: unload
+  stop --> none: removed
+</pre><div class="cap">Machine 1, the operation. At most one at a time, held by a lock. A failure is a sentence left behind, not a state.</div></div>
+
+<div class="fig"><pre class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> absent
+  absent --> ready: a start was accepted
+  ready --> absent: stop
+  ready --> aside: a new start on the same cards
+  aside --> absent: the new one was accepted
+  aside --> ready: the new one failed
+</pre><div class="cap">Machine 2, a slot: one per GPU group. "Aside" is the previous run waiting to see whether it is still needed.</div></div>
+
+<div class="rule">What the card shows = the operation if one is running; otherwise ready if any slot is ready; otherwise idle. Plus the last failure sentence, if any.</div>
+
+<h2>5. The one privileged step</h2>
+<div class="fig"><pre class="mermaid">
+flowchart LR
+  A["need docker"] --> B{"can this user reach the socket?"}
+  B -- "yes" --> C["run it as the user"]
+  B -- "no" --> D["one polkit prompt:<br/>the packaged program, the recipe id, the gpu"]
+  D --> E["root checks: who asked, is the recipe allowed,<br/>then runs the containers as that user"]
+</pre><div class="cap">Two strings cross the line. Identity comes from pkexec, paths from the account, the recipe from the packaged file.</div></div>
+
+<h2>6. An agent</h2>
+<div class="fig"><pre class="mermaid">
+flowchart LR
+  R["a ready run"] --> E["endpoint + key + model name"]
+  E --> T["terminal with the agent,<br/>facts passed in its environment"]
+</pre><div class="cap">Thirteen agents differ only in the variable names. No user file is edited.</div></div>
+
+<h2>7. What this removes from the design</h2>
+<table>
+<tr><th>Before</th><th>From first principles</th></tr>
+<tr><td>a card state machine with six states and twenty arrows</td><td>two machines with four and three states, and one sentence of projection</td></tr>
+<tr><td>a policy check that refuses eleven kinds of dangerous recipe field</td><td>an export that cannot express them; the check keeps only image source, digest and the two allowed mount roots</td></tr>
+<tr><td>mounts and devices as recipe data</td><td>derived: the weights directory and the chosen render nodes, always</td></tr>
+<tr><td>a snapshot with fourteen top-level fields</td><td>operation, slots, cards, recipes, agents, one status sentence</td></tr>
+<tr><td>three routes for the data file</td><td>one: a commit in the plugin, delivered by an update</td></tr>
+</table>
+
+<h2>8. What has to change in the registry</h2>
+<p>One script, <code>scripts/export_plugin_recipes.py</code>, emits the smaller schema (<code>omarchy-local-ai/recipes/2</code>): drop the fields above, fold <code>launch.mounts</code> and <code>launch.devices</code> away, keep one optional <code>asset</code> per recipe. Its CI gate checks that every exported recipe is expressible, which it now is by construction. The plugin's <code>make sync</code> takes the result unchanged. Nothing about validation, evidence or the website changes.</p>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose", flowchart: { useMaxWidth: true, htmlLabels: true } });
+</script>
+</body>
+</html>
