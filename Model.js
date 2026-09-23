@@ -1,131 +1,172 @@
-// The card's content, as data. build(c) turns a snapshot and the panel's state into a hero and rows;
-// Panel.qml draws what comes back and turns row actions into backend verbs. No Qt here, so node tests it.
-//
-// c: { snap, view:"home"|"stats"|"open", pending, lastVerb, elapsed, localError }
-// hero: { eyebrow, title, sub, right, rightAction, tone:"idle"|"work"|"ready"|"error" }
-// row types: num2 {a:{v,k}, b:{v,k}}; bars {values, hi}; prog {left, right, pct}; text {text, lead};
-//            gpu {idx, name, temp, pct, used, total, busy}; row {label, small, verb, action, dim, disabled};
-//            h {label, right}; hbar {label, pct, right}; spark {values}; axis {labels}; opt {label, small, on, action}; field {value}
+// What the Local AI widget shows, as data: the backend's snapshot and the widget's ui state in, a view out.
+// Panel.qml draws the view and turns its actions ("verb|arg|arg") into backend verbs. No Qt, no side effects.
 
-function gb(n) { return (n >= 100 ? Math.round(n) : Math.round(n * 10) / 10) + " GB" }
-function k(n) { return n >= 1e6 ? (Math.round(n / 1e5) / 10) + "M" : n >= 1e3 ? (Math.round(n / 100) / 10) + "K" : String(n || 0) }
-function mmss(s) { return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60) }
-function row(label, small, verb, action, o) { o = o || {}; o.type = "row"; o.label = label; o.small = small || ""; o.verb = verb || ""; o.action = action || ""; return o }
-function models(snap) { return (snap.models || []).filter(function(m) { return m.state !== "stopped" }) }
-function find(list, key, v) { list = list || []; for (var i = 0; i < list.length; i++) if (list[i][key] === v) return list[i]; return null }
-function cardOf(snap, key) { var cs = snap.cards || []; for (var i = 0; i < cs.length; i++) if (cs[i].keys.indexOf(key) >= 0) return cs[i]; return null }
-function holder(snap, key) { var ms = models(snap); for (var i = 0; i < ms.length; i++) if (ms[i].keys.indexOf(key) >= 0) return ms[i]; return null }
-function where(snap, m) { var c = cardOf(snap, m.keys[0] || ""); return (m.keys.length > 1 ? m.keys.length + "× " : "") + (c ? c.name : "GPU") + (c && c.count > 1 ? " #" + m.keys.map(function(x) { return x.split(":")[1] }).join(" #") : "") }
-function freeKeys(snap, card) { return card.keys.filter(function(x) { return !holder(snap, x) }) }
-function freest(snap, keys) { return keys.slice().sort(function(a, b) { var ga = find(snap.gpus, "key", a) || {}, gb2 = find(snap.gpus, "key", b) || {}; return ((gb2.vramGb || 0) - (gb2.usedGb || 0)) - ((ga.vramGb || 0) - (ga.usedGb || 0)) })[0] }
-var WORD = { download: "downloading", starting: "starting", unload: "stopping" }
-function isWorking(c) { return WORD[c.snap.state] !== undefined || (c.pending && ["load", "unload"].indexOf(c.lastVerb) >= 0) }
-function shortError(e) {
-  var t = [[/out of memory|OOM|VRAM/i, "out of VRAM"], [/tok\/s|too slow/, "too slow"], [/stopped unexpectedly|crash/, "stopped"], [/acceptance failed/, "acceptance failed"], [/did not answer|not answering|no answer/, "no answer"],
-    [/refused|dismissed/, "refused"], [/docker/i, "docker"], [/space|GB free/, "disk full"], [/checksum|Hub|download/, "download failed"], [/driver/, "driver"], [/port /, "port busy"], [/no supported GPU/, "no GPU"], [/no validated recipe/, "no recipe"]]
-  for (var i = 0; i < t.length; i++) if (t[i][0].test(e)) return t[i][1]
-  return "failed"
+function k(n) {
+  n = n || 0
+  return n >= 1e6 ? Math.round(n / 1e5) / 10 + "M" : n >= 1e3 ? Math.round(n / 100) / 10 + "K" : String(n)
 }
+function gb(n) { return (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10) + " GB" }
+function ctx(n) { return n >= 1024 ? Math.round(n / 1024) + "K" : String(n || 0) }
+function dur(s) {
+  s = Math.max(0, Math.round(s))
+  return s < 3600 ? Math.floor(s / 60) + "m" : Math.floor(s / 3600) + ":" + ("0" + Math.floor(s % 3600 / 60)).slice(-2) + "h"
+}
+function home(dir) { return (dir || "").replace(/^\/home\/[^\/]+/, "~") }
+function find(list, key, v) { return (list || []).filter(function(x) { return x[key] === v })[0] || null }
+function working(d) { return d.state === "download" || d.state === "starting" || d.state === "stopping" }
 
-function gpuRows(snap, out) {
-  (snap.gpus || []).forEach(function(g) {
-    var c = cardOf(snap, g.key), m = holder(snap, g.key)
-    out.push({ type: "gpu", idx: "#" + g.index, name: c ? c.name : g.product, temp: g.tempC == null ? "" : g.tempC + "°",
-      pct: g.vramGb > 0 && g.usedGb != null ? Math.min(100, Math.round(g.usedGb / g.vramGb * 100)) : 0,
-      used: g.usedGb == null ? "" : String(Math.round(g.usedGb)), total: g.vramGb == null ? "" : String(g.vramGb), busy: !!m, action: "" })
-  })
+function caps(c, n) {
+  c = c || {}
+  return [c.vision && "vision", c.tools && "tools", c.reasoning && "reasoning", n && ctx(n) + " context"].filter(Boolean)
 }
-function agentRow(snap) {
-  var a = snap.agents || {}, m = models(snap).filter(function(x) { return x.state === "ready" })
-  var name = a.default && a.installed && a.installed.indexOf(a.default) >= 0 ? a.default : (a.installed || [])[0] || ""
-  if (!m.length || !name) return null
-  var dir = (a.directory || "").replace(/^\/home\/[^\/]+/, "~")
-  return row(name, dir, "open", "open-agent", { changeAction: "open" })
-}
-function modelRows(c, out) {
-  var snap = c.snap, ms = models(snap), busy = isWorking(c), op = snap.operation || {}
-  ms.forEach(function(m) {
-    var working = busy && op.recipeId === m.recipeId
-    out.push(row(m.name, where(snap, m) + (m.state === "error" ? " · " + shortError(m.note || "") : working ? " · " + (WORD[snap.state] || "working") : ""), working ? "" : m.state === "error" ? "run again" : "stop",
-      working ? "" : m.state === "error" ? "run:" + m.recipeId : "stop:" + m.recipeId))
-  })
-  if (busy && !find(ms, "recipeId", op.recipeId)) { var r = find(snap.recipes, "id", op.recipeId); out.push(row(r ? r.name : "Local AI", WORD[snap.state] || "working", "stop", snap.state === "download" ? "stop-download" : "")) }
-  ;(snap.cards || []).forEach(function(card) {
-    var r = card.recipe; if (!r || !freeKeys(snap, card).length || busy) return
-    if (r.gate) return out.push(row(r.name, card.name + " · " + r.gate, "", "", { dim: true, disabled: true }))
-    var again = snap.state === "error" && snap.selected && snap.selected.recipeId === r.id
-    out.push(row(r.name, card.name + (r.onDisk ? "" : " · " + gb(r.sizeGb)), again ? "run again" : r.partialBytes > 0 && !r.onDisk ? "resume" : "run", "run:" + r.id))
-  })
+function parse(text) { try { return JSON.parse(text) } catch (e) { return null } }
+
+// the bar mark: failed, busy, ready or idle
+function mark(s) {
+  var d = (s && s.deployments) || []
+  if (d.some(function(x) { return x.state === "error" })) return "failed"
+  if (d.some(working)) return "busy"
+  return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-function home(c, o) {
-  var snap = c.snap, ms = models(snap), ready = ms.filter(function(m) { return m.state === "ready" }), st = snap.stats || {}, op = snap.operation || {}
-  var gpus = (snap.gpus || []).length, working = isWorking(c), failed = !working && (c.localError || snap.state === "error" || (snap.reason && !gpus))
-  o.hero.right = "stats"; o.hero.rightAction = "stats"
-  if (working) {
-    var w = WORD[snap.state] || (c.lastVerb === "unload" ? "stopping" : "starting"), r = find(snap.recipes, "id", op.recipeId) || { name: (snap.selected || {}).name || "Local AI", sizeGb: 0 }
-    o.hero.tone = "work"; o.hero.eyebrow = w.toUpperCase(); o.hero.title = r.name; o.hero.sub = r.hardwareId ? ((find(snap.cards, "hardwareId", r.hardwareId) || {}).name || "") : ""
-    var pct = op.percent > 0 ? op.percent : (op.expectedSeconds > 0 && c.elapsed > 0 ? Math.min(95, Math.round(c.elapsed * 100 / op.expectedSeconds)) : 0)
-    var left = w === "downloading" && op.percent > 0 && r.sizeGb ? gb(op.percent / 100 * r.sizeGb) + " of " + gb(r.sizeGb) : (op.detail || w)
-    o.rows.push({ type: "prog", left: left, right: c.elapsed > 0 ? mmss(c.elapsed) : "", pct: pct })
-  } else if (failed) {
-    var e = c.localError ? "the plugin did not answer" : snap.error || snap.reason || ""
-    o.hero.tone = "error"; o.hero.eyebrow = "FAILED"; o.hero.title = snap.selected ? snap.selected.name : "Local AI"; o.hero.sub = shortError(e)
-    o.rows.push({ type: "text", lead: snap.helpText && snap.helpText !== e ? snap.helpText : "", text: e })
-  } else if (ready.length) {
-    o.hero.tone = "ready"; o.hero.eyebrow = "READY"; o.hero.title = ready.length === 1 ? ready[0].name : ready.length + " models"; o.hero.sub = ready.map(function(m) { return where(snap, m) }).join(" · ")
-    o.rows.push({ type: "num2", a: { v: st.decode != null ? String(st.decode) : "–", k: "DECODE tok/s" }, b: { v: k(st.today || 0), k: "TOKENS TODAY" } })
-    o.rows.push({ type: "bars", values: st.days || [0, 0, 0, 0, 0, 0, 0], hi: 6 })
-  } else {
-    o.hero.tone = "idle"; o.hero.eyebrow = "IDLE"; o.hero.title = "Local AI"; o.hero.sub = gpus ? gpus + (gpus === 1 ? " GPU" : " GPUs") : "no supported GPU"
-    if (snap.statusText) o.rows.push({ type: "text", lead: snap.statusText, text: snap.helpText || "" })
-    else if ((st.days || []).some(function(n) { return n > 0 })) { o.rows.push({ type: "num2", a: { v: k((st.days || []).reduce(function(a, b) { return a + b }, 0)), k: "TOKENS · 7 DAYS" }, b: { v: "", k: "" } }); o.rows.push({ type: "bars", values: st.days, hi: 6 }) }
+// home: one panel per running model, one dashed line per free card kind, a bordered warning for busy ones
+function homeView(s, ui) {
+  if (!s.gpus) return { title: "LOCAL AI", right: "", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
+  var rows = [], shown = {}
+  if (ui.problem) rows.push({ type: "error", label: ui.problem })
+  function panel(d) {
+    shown[d.id] = 1
+    var all = (d.session || {}).all || {}
+    var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
+    var used = cards.reduce(function(a, g) { return a + (g.usedMiB != null ? g.usedMiB / 1024 : (g.estGb || 0)) }, 0)
+    var total = cards.reduce(function(a, g) { return a + (g.vramGb || 0) }, 0)
+    var r = { type: "run", name: d.name, family: d.family, line: all.line || [], more: "more|" + d.id,
+      gpu: (cards.length > 1 ? cards.length + " × " : "") + (cards[0] ? cards[0].name : "GPU")
+        + (total && !working(d) ? " · " + Math.round(used) + " / " + total + " GB" : "")
+        + (d.caps && d.caps.vision ? " · vision" : "") }
+    if (d.state === "ready") {
+      r.sub = [all.decode ? all.decode + " tok/s avg" : "no requests yet", k(all.tokens) + " tokens all time"]
+      r.primary = { label: "Open " + d.agent, action: "open|" + d.id }
+    } else if (working(d)) {
+      r.progress = d.percent > 0 && d.state !== "stopping" ? d.percent : -1
+      r.sub = [(d.detail || d.state) + (r.progress >= 0 && d.state !== "download" ? " · " + d.percent + "%" : "")]
+      r.primary = { label: "Stop", action: "stop|" + d.id, quiet: true }
+    } else {
+      r.sub = [d.error || "stopped"]
+      r.error = true
+      r.primary = { label: "Run again", action: "again|" + d.id + "|" + d.keys.join(",") }
+    }
+    rows.push(r)
   }
-  gpuRows(snap, o.rows)
-  var acts = []
-  var ag = agentRow(snap); if (ag && !working) acts.push(ag)
-  modelRows(c, acts)
-  if (failed) acts.push(row("log", "", "open", "log", { dim: true }))
-  if (acts.length) { o.rows.push({ type: "gap" }); o.rows = o.rows.concat(acts) }
-}
-function stats(c, o) {
-  var snap = c.snap, st = snap.stats || {}, days = st.days || [0, 0, 0, 0, 0, 0, 0], total = days.reduce(function(a, b) { return a + b }, 0)
-  var ready = models(snap).filter(function(m) { return m.state === "ready" })
-  o.hero.tone = ready.length ? "ready" : "idle"; o.hero.eyebrow = "STATS"; o.hero.title = ready.length === 1 ? ready[0].name : "Local AI"; o.hero.sub = "7 days"; o.hero.right = "back"; o.hero.rightAction = "back"
-  var names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], d = new Date().getDay(), labels = []
-  for (var i = 6; i >= 0; i--) labels.push(i === 0 ? "today" : names[((d - i) % 7 + 6) % 7])
-  o.rows.push({ type: "h", label: "TOKENS BY DAY", right: k(total) })
-  o.rows.push({ type: "bars", values: days, hi: 6, big: true }); o.rows.push({ type: "axis", labels: labels })
-  var bm = st.byModel || [], peak = bm.length ? bm[0].tokens : 1
-  if (bm.length) { o.rows.push({ type: "h", label: "BY MODEL", right: "" }); bm.slice(0, 4).forEach(function(x) { o.rows.push({ type: "hbar", label: x.model, pct: Math.round(x.tokens / peak * 100), right: k(x.tokens) }) }) }
-  var hours = st.hours || []
-  if (hours.some(function(v) { return v != null })) {
-    o.rows.push({ type: "h", label: "DECODE · 24 H", right: st.decode != null ? st.decode + " tok/s now" : "" })
-    o.rows.push({ type: "spark", values: hours }); o.rows.push({ type: "axis", labels: ["yesterday", "", "", "now"] })
-  }
-  if (!total && !hours.length) o.rows.push({ type: "text", lead: "", text: "nothing served yet · tokens and speed appear here once an agent has used a model" })
-}
-function open(c, o) {
-  var snap = c.snap, a = snap.agents || {}, ready = models(snap).filter(function(m) { return m.state === "ready" }), m = ready[0]
-  var pick = a.default && (a.installed || []).indexOf(a.default) >= 0 ? a.default : (a.installed || [])[0] || ""
-  o.hero.tone = "ready"; o.hero.eyebrow = "OPEN"; o.hero.title = m ? m.name : "Local AI"; o.hero.sub = m ? where(snap, m) : ""; o.hero.right = "back"; o.hero.rightAction = "back"
-  o.rows.push({ type: "h", label: "AGENT", right: "" })
-  ;(a.installed || []).forEach(function(x) { var ok = !m || (m.launchable || []).indexOf(x) >= 0; o.rows.push({ type: "opt", label: x, small: ok ? "" : "cannot use this model", on: x === pick, action: ok ? "agent:" + x : "", disabled: !ok }) })
-  if (!(a.installed || []).length) o.rows.push({ type: "text", lead: "", text: "no coding agent is installed · install claude, codex, pi, opencode or another one first" })
-  o.rows.push({ type: "h", label: "PROJECT", right: "" })
-  o.rows.push({ type: "field", value: a.directory || "" })
-  if (m && pick) { o.rows.push({ type: "gap" }); o.rows.push(row("open " + pick, (a.directory || "").replace(/^\/home\/[^\/]+/, "~"), "open", "open-agent")) }
-}
-function build(c) {
-  var o = { hero: { eyebrow: "", title: "", sub: "", right: "", rightAction: "", tone: "idle" }, rows: [] }
-  var v = c.view === "open" && !models(c.snap).some(function(m) { return m.state === "ready" }) ? "home" : c.view
-  if (v === "stats") stats(c, o); else if (v === "open") open(c, o); else home(c, o)
-  return o
-}
-function loadKeys(snap, id) { // the GPU a load takes: the freest free card of the recipe's type
-  var r = find(snap.recipes, "id", id); if (!r) return []
-  var card = find(snap.cards, "hardwareId", r.hardwareId); if (!card) return []
-  var free = freeKeys(snap, card); return free.length ? [freest(snap, free)] : []
+  ;(s.kinds || []).forEach(function(kd) {
+    ;(s.deployments || []).filter(function(d) {
+      return d.keys.some(function(x) { return kd.keys.indexOf(x) >= 0 })
+    }).forEach(panel)
+    var r = kd.recipe
+    if (kd.free.length) rows.push({ type: "free", label: kd.free.length + " × " + kd.name + " · free", model: r.name,
+      family: r.family, more: "kind|" + kd.hw, action: "run|" + r.id + "|" + kd.free[0] })
+    if (kd.taken.length) rows.push({ type: "busy", label: kd.taken.length + " × " + kd.name, note: "busy · another program is using it" })
+  })
+  ;(s.deployments || []).filter(function(d) { return !shown[d.id] }).forEach(panel)
+  if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
+  ;(s.unsupported || []).forEach(function(u) { rows.push({ type: "busy", label: u.n + " × " + u.name, note: "no validated model yet" }) })
+  return { title: "LOCAL AI", version: s.version, right: k(s.week) + " this week", rows: rows }
 }
 
-if (typeof module !== "undefined") module.exports = { gb: gb, k: k, mmss: mmss, models: models, where: where, isWorking: isWorking, shortError: shortError, build: build, loadKeys: loadKeys }
+// nothing to run on: one line on what this machine has, and where the list of supported cards lives
+function soonView(s) {
+  var found = (s.gpus || []).map(function(g) { return g.name }).filter(function(n, i, a) { return a.indexOf(n) === i })
+  return { title: "LOCAL AI", version: s.version, right: "", rows: [{ type: "soon",
+    head: found.length ? "No tested model for " + found.join(", ") + " yet" : "No supported GPU on this machine",
+    action: "url|https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md" }] }
+}
+
+// a running model's page: its token line, six figures, its cards, what Open uses, where it answers
+function runView(s, id, ui) {
+  var d = find(s.deployments, "id", id)
+  if (!d) return null
+  var u = d.session || {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
+  var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
+  var v = { back: true, title: "MORE", rows: [], hero: { name: d.name, family: d.family, line: line,
+    top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: "now",
+    sub: [d.format, d.keys.length + " × " + (cards[0] ? cards[0].name : "GPU")].filter(Boolean).join(" · "),
+    caps: caps(d.caps, d.ctx) } }
+  v.rows.push({ type: "grid", cells: [
+    { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "DECODE AVG" },
+    { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "PREFILL AVG" },
+    { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "FIRST TOKEN" },
+    { v: k(u.tokens), u: "", k: "SESSION" },
+    { v: k(s.week), u: "", k: "WEEK" },
+    { v: dur((Date.now() - Date.parse(d.startedAt)) / 1000), u: "", k: "UP" }] })
+  v.rows.push({ type: "sec", label: "GPUS" })
+  cards.forEach(function(g) { v.rows.push(gpuRow(g)) })
+  v.rows.push({ type: "sec", label: "OPENS WITH" })
+  pickers(s, v.rows, ui, d.agent, d.folder, id)
+  weights(v.rows, d.weights)
+  v.rows.push({ type: "sec", label: "REACH" })
+  v.rows.push({ type: "field", label: "this machine", value: "127.0.0.1:" + d.port, plain: true })
+  if (s.tailnet) v.rows.push(d.shared
+    ? { type: "field", label: "tailnet", value: d.shared, secret: true, action: "copy|" + d.shared }
+    : { type: "field", label: "tailnet", value: "share", action: "share|" + id })
+  if (d.error) v.rows.push({ type: "error", label: d.error })
+  v.rows.push({ type: "acts", items: [{ label: "Log", action: "log" }, { label: "Stop", action: "stop|" + id, danger: true }] })
+  return v
+}
+
+// a free card kind's page: the same look, with its cards in the lit panel where a running model has its line;
+// each card kind has one validated model, which runs on one card
+function kindView(s, hw, ui) {
+  var kd = find(s.kinds, "hw", hw), pick = kd && kd.recipe
+  if (!pick) return null
+  var chosen = kd.free.indexOf(ui.key) >= 0 ? ui.key : kd.free[0]
+  var gpus = kd.keys.map(function(key) {
+    var g = find(s.gpus, "key", key), free = kd.free.indexOf(key) >= 0
+    return Object.assign(gpuRow(g), { check: kd.keys.length > 1 ? key === chosen : undefined, disabled: !free,
+      action: free ? "tick|" + key : "", status: kd.taken.indexOf(key) >= 0 ? "busy, another program" : g.busy ? "running a model" : "" })
+  })
+  var v = { back: true, title: kd.keys.length + " × " + kd.name.toUpperCase(), rows: [], hero: { name: pick.name,
+    family: pick.family, gpus: gpus, caps: caps(pick.caps, 0),
+    sub: [pick.format, ctx(pick.ctx) + " context", gb(pick.sizeGb)].filter(Boolean).join(" · ") } }
+  v.rows.push({ type: "sec", label: "OPENS WITH" })
+  pickers(s, v.rows, ui, s.defaults.agent, s.defaults.folder, "")
+  weights(v.rows, pick.weights)
+  v.rows.push({ type: "acts", items: [{ label: "Run ›", action: chosen ? "run|" + pick.id + "|" + chosen : "", primary: true }] })
+  return v
+}
+
+function gpuRow(g) {
+  var used = g.usedMiB != null ? g.usedMiB / 1024 : g.estGb
+  return { type: "gpu", name: g.name, pct: g.vramGb ? Math.min(100, Math.round((used || 0) / g.vramGb * 100)) : 0,
+    estimate: g.usedMiB == null, mem: (used ? Math.round(used * 10) / 10 + " / " : "") + g.vramGb + " GB",
+    temp: g.tempC != null ? g.tempC + "°" : "" }
+}
+
+function weights(rows, list) {
+  if (!(list || []).length) return
+  rows.push({ type: "sec", label: "WEIGHTS" })
+  list.forEach(function(w) {
+    rows.push({ type: "field", label: "hugging face", value: w.repository,
+      action: "url|https://huggingface.co/" + w.repository + "/tree/" + w.revision })
+  })
+}
+
+// the agent and folder rows, and their choices when open; a choice on a running model also becomes the default
+function pickers(s, rows, ui, agent, folder, id) {
+  rows.push({ type: "field", label: "agent", value: agent, action: "pick|agent" })
+  if (ui.open === "agent") (s.agents || []).forEach(function(a) {
+    rows.push({ type: "opt", label: a, on: a === agent, action: "set|agent|" + a + "|" + id })
+  })
+  rows.push({ type: "field", label: "folder", value: home(folder), action: "pick|folder" })
+  if (ui.open === "folder") {
+    ;[folder].concat(s.folders || []).filter(function(f, i, a) { return f && a.indexOf(f) === i }).forEach(function(f) {
+      rows.push({ type: "opt", label: home(f), on: f === folder, action: "set|folder|" + f + "|" + id })
+    })
+    rows.push({ type: "path", id: id })
+  }
+}
+
+function build(s, ui) {
+  s = s || {}
+  var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : null) || homeView(s, ui)
+  return Object.assign(v, { mark: mark(s) })
+}

@@ -2,28 +2,21 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
-## [6.0.0] - 2026-09-22
+## [6.0.0] - 2026-09-23
 
-Version 6 is a rebuild from first principles: one bash backend, one card, one vendored data file, shaped the way Omarchy's own features are. The card's design is the same. See `docs/design.md`.
+Version 6 is a rebuild: the same files proposed for Omarchy itself in omacom/omarchy#13036, one bash backend, one view model, one panel and one data file. Upgrading from 5.x: stop your model in 5.x first; 6.0 does not read the 5.x state, and its containers would keep the card busy.
 
 ### Changed
-- The backend is one file, `bin/omarchy-local-ai`, modelled on Omarchy's `omarchy-windows-vm`: every docker call of a Start, including acceptance and rollback, runs in one phase behind one polkit prompt (or directly when sudoless Docker is on). Root takes the caller from pkexec and every path from the caller's account; only a recipe id and GPU keys cross the boundary.
-- `recipes.json` is the registry's schema-2 export: a recipe names its weights (repository, revision, layout, mount path), at most one asset and one scratch path, and the launch's entrypoint, arguments, environment, port and shm. Mounts, devices, IPC, capabilities, security options and network mode cannot be expressed, so nothing needs refusing at run time. One hardware entry per line.
-- Weights are downloaded as the user with curl over https at the pinned revision and verified file by file against the Hub's tree (sha256 for LFS files). Partial files resume; a verified copy in the user's own Hub cache is adopted; hub-layout engines get a Hub cache tree and run with `HF_HUB_OFFLINE=1`.
-- The card is `Panel.qml`, `CardRow.qml` and `Model.js` at the root of the plugin. `Model.js` holds every view's logic and is tested under node. The snapshot carries `statusText` and `helpText` so setup states are words from the backend, not logic in QML.
-- The card is one page: hero, decode and tokens today with the week as bars, one row per GPU with temperature and memory, one row per model, one row for the agent. A stats page (tokens by day, by model, decode over the day) and an open page (agent, project folder) sit behind it.
-- `recipes.json` is one validated recipe per card, Qwen3.8-27B wherever it is validated, 36 cards in 44 lines.
-- The gateway logs one JSON line per answered request into the user's state directory; the snapshot derives tokens and decode speed from it. Every GPU reports temperature and utilisation. `agent-default` remembers the agent the card opens.
-- The state file is `state.json` (a 5.x `ledger.json` is adopted by rename). Verbs: `snapshot`, `load <recipe> [gpu...]`, `unload [recipe]`, `agent <name> [recipe]`, `install`, `remove`, `agent-dir`, `gpu`.
-- Tests are `test/shell.d/*-test.sh` in Omarchy's own form, run by `test/all`, with shims for docker, curl, the GPU tools and pkexec; the pkexec shim runs the target from a scrubbed environment, so the boundary is really crossed.
-
-### Added
-- `bin/omarchy-install-ai-local` (the NVIDIA container toolkit when a card needs it) and `bin/omarchy-remove-ai-local` (every container, image, weight and state file goes), for Install › AI and Remove › AI.
+- One validated model per card. `recipes.json` is the first recipe of each card kind in the registry's export (EXL3 on SGLang or vLLM first), 36 card kinds, one per line. On an RTX 3090 that is Qwen3.8-27B on SGLang at 200K context with CUDA graphs on.
+- The backend is `bin/omarchy-local-ai` alone. `run <recipe> <gpu>` claims a card and a port, then a detached worker downloads and checks the weights, starts the engine and the gateway, and sends one request to confirm the model answers at GPU speed. Each step is a line on the card and a notification says when it starts, is ready, or failed and why; loading shows a percentage paced by the last load.
+- Without the docker group, a start, stop or share is one `pkexec` of this file; as root it takes the caller from `PKEXEC_UID`, re-reads and checks the recipe, and mounts only plain paths the caller owns. Engines run with `no-new-privileges`.
+- The panel: one row per running model with its all-time token line, speed and tokens, and Open and More; a dashed row per free card kind that runs its model in one click; a bordered warning for a card another program holds or one with no validated model; Coming soon with the list of supported cards when nothing here can run. More shows the chart, six figures (decode, prefill, first token, session, week, up), the cards, the agent and folder, links to the weights and where the model answers.
+- Agents: pi (the default), Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes. The last agent and folder picked become the default; the last six folders are offered again.
+- Share on the tailnet with `tailscale serve`, tailnet only and still keyed.
+- Speeds are averages over every run of the model, from the gateway's usage log.
 
 ### Removed
-- Runtime recipe fetching and plugin self-update: a file fetched into the home could never be the input to a root phase. Recipes reach an install through a plugin update; the daily registry job commits the export when it moves.
-- Tailscale sharing, the Intel and runtime telemetry adapters, "load another instance" and swap previews, the `rocm-smi` and sysfs AMD paths, the native Omarchy generator and its shim, the embedded presentation, and the host `flm` recipes.
-- The `integrations/` directory (Moonlight bindings, the macOS shortcut button and guide, the Agents-panel patch and its installer). They were one person's desktop setup, not part of the plugin; they live outside this repository now.
+- `CardRow.qml`, the stats and open pages, keyboard navigation, the `load`/`unload`/`agent` verbs and the Model.js node test. The ori, agy, muse and cursor agents are not offered.
 
 ## [5.4.0] - 2026-09-22
 

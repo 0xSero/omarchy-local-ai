@@ -1,22 +1,18 @@
 #!/bin/bash
 
-# omarchy:summary=Set up Local AI: the NVIDIA container toolkit when a card needs it, and the first snapshot
+# omarchy:summary=Set up Local AI: the NVIDIA container runtime when an NVIDIA card needs it
 # omarchy:requires-sudo=true
 
 # The card and the backend are already here (this plugin). What a first run can still lack is the
-# NVIDIA container runtime, which Omarchy does not ship: one polkit prompt installs and configures it.
-# Docker itself is part of Omarchy. Everything else happens on the card's first click.
+# NVIDIA container runtime, which Omarchy does not ship. Docker itself is part of Omarchy.
 
 set -e
 
-HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+if omarchy-hw-nvidia && ! docker info 2>/dev/null | grep -qi nvidia; then
+  echo "Setting up the NVIDIA container runtime..."
+  omarchy-pkg-add nvidia-container-toolkit
+  sudo nvidia-ctk runtime configure --runtime=docker
+  sudo systemctl restart docker
+fi
 
-for tool in docker jq curl; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "Local AI needs $tool; on Omarchy it is part of the base install." >&2
-    exit 1
-  fi
-done
-
-echo "Setting up Local AI..."
-"$HERE/omarchy-local-ai" install
+echo "Local AI is ready. Click its mark in the bar to run the model for your GPU."

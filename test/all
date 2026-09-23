@@ -1,14 +1,9 @@
 #!/bin/bash
-# Run every shell test and report the total, the way Omarchy's test/shell runner does.
+# Every test file under test/, in Omarchy's "ok - …" form. Linux only: the backend uses GNU stat and date.
 set -uo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-total=0; failed=0
-for t in "$ROOT"/test/shell.d/*-test.sh; do
-  [[ $(basename "$t") == base-test.sh ]] && continue
-  out=$(bash "$t" 2>&1); rc=$?
-  n=$(grep -c '^ok' <<<"$out"); total=$((total + n))
-  printf '%s\n' "$out" | grep '^ok'
-  if (( rc != 0 )); then failed=$((failed + 1)); printf '%s\n' "$out" | grep -v '^ok' | tail -8 >&2; printf 'not ok - %s (exit %s)\n' "$(basename "$t")" "$rc" >&2; fi
+failed=0
+for t in "$ROOT"/test/*-test.sh; do
+  bash "$t" || failed=$((failed + 1))
 done
-echo "1..$total"
-(( failed == 0 )) || { echo "$failed test file(s) failed" >&2; exit 1; }
+((failed == 0)) || { echo "$failed test file(s) failed" >&2; exit 1; }

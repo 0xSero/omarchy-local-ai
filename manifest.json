@@ -5,7 +5,7 @@
   "version": "6.0.0",
   "author": "0xSero",
   "license": "MIT",
-  "description": "The model validated for your GPU, one click, and every coding agent on it. 81 validated recipes across 36 cards: NVIDIA RTX 30/40/50, RTX Ada, RTX Pro Blackwell, Intel Arc Pro B70 and AMD ROCm. Weights verified against the pinned revision, the engine on a private network behind a keyed gateway on loopback, one polkit prompt per start. Open claude, codex, pi, omp, opencode, crush, grok, copilot, hermes, ori, agy, muse or cursor on a running model without touching your own config.",
+  "description": "Run the model validated for your GPU and open a coding agent on it. One tested model per card for 36 cards (NVIDIA RTX 30/40/50, RTX Ada and Pro, Intel Arc Pro B70, AMD ROCm), weights checked against the Hub, the engine in a container behind a keyed gateway on 127.0.0.1. Opens pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it without touching their config. Shows GPU memory, temperature, speed and tokens.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Local AI",
-    "description": "The model validated for your GPU, one click, and every coding agent on it.",
+    "description": "Run the model validated for your GPU and open a coding agent on it.",
     "category": "AI",
     "aliases": [
       "local-ai",

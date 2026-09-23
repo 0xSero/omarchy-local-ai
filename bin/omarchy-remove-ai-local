@@ -1,15 +1,12 @@
 #!/bin/bash
 
-# omarchy:summary=Remove Local AI: stop every model and delete its containers, images, weights and state
+# omarchy:summary=Remove Local AI's models, containers, engine images, weights and settings
 # omarchy:requires-sudo=true
-
-# The uninstaller: one polkit prompt removes every container, network and image the plugin created,
-# then the weights and the plugin's own state go. Nothing else on the machine was ever touched.
 
 set -e
 
 HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 
-echo "Removing Local AI's models, containers and state..."
+echo "Removing Local AI's models, containers, engine images and weights..."
 "$HERE/omarchy-local-ai" remove
-echo "To remove the plugin itself: omarchy plugin remove sero.local-ai"
+echo "Done. To remove the plugin itself: omarchy plugin remove sero.local-ai"
