@@ -33,7 +33,7 @@ sync:
 sync-check:
 	@test -d "$(REGISTRY)" || { echo "sync-check: set REGISTRY=<registry checkout>" >&2; exit 2; }
 	@T=$$(mktemp); trap 'rm -f "$$T"' EXIT; $(published) > "$$T"; \
-	if diff -q <(jq -S '$(PROVENANCE)' "$$T") <(jq -S '$(PROVENANCE)' recipes.json) >/dev/null; then \
+	if [ "$$(jq -S '$(PROVENANCE)' "$$T")" = "$$(jq -S '$(PROVENANCE)' recipes.json)" ]; then \
 	  echo "recipes.json: current with the registry, $$(jq -r '.hardware|length' recipes.json) hardware ids"; \
 	else \
 	  echo "recipes.json has fallen behind the registry's published export; run make sync" >&2; \

@@ -15,6 +15,10 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - The bar mark is nine dots: faint when idle, lit when a model is ready, red when one failed, a ripple while one starts.
 - No supported GPU is one line, a drawn chip and the link to the supported cards.
 
+### Recipes
+- Intel Arc Pro B70: the same Qwen3.8-27B recipe on the newer exl3xpu engine image (faster batched decode).
+- RTX 4090: Qwen3.8-27B EXL3 on SGLang, the RTX 3090 recipe, in place of TabbyAPI.
+
 ### Added
 - CI builds the panel's views from the backend's own snapshots under node, and scans the tree for secrets with gitleaks.
 
