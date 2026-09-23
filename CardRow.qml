@@ -38,8 +38,7 @@ Item {
       Rectangle { id: fill; readonly property bool sweeping: (r.pct || 0) === 0; property real sweepX: 0; height: parent.height; color: p.fg; width: sweeping ? parent.width * 0.25 : parent.width * (r.pct || 0) / 100; x: sweeping ? sweepX : 0
         NumberAnimation on sweepX { running: r.type === "prog" && fill.sweeping && p.opened; loops: Animation.Infinite; from: 0; to: fill.parent.width * 0.75; duration: 1400; easing.type: Easing.InOutSine } } } }
   // a reason, wrapped
-  Text { id: wrapped; textFormat: Text.PlainText; visible: r.type === "text"; x: pad; width: parent.width - pad * 2; anchors.verticalCenter: parent.verticalCenter
-    text: (r.lead ? r.lead + " " : "") + (r.text || ""); color: p.fg; font.family: p.mono; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAtWordBoundaryOrAnywhere }
+  Text { id: wrapped; textFormat: Text.PlainText; visible: r.type === "text"; x: pad; width: parent.width - pad * 2; anchors.verticalCenter: parent.verticalCenter; text: (r.lead ? r.lead + " " : "") + (r.text || ""); color: p.fg; font.family: p.mono; font.pixelSize: Style.font.bodySmall; wrapMode: Text.WrapAtWordBoundaryOrAnywhere }
   // one GPU: index, name, temperature, load bar, memory
   Item { visible: r.type === "gpu"; x: pad; width: parent.width - pad * 2; height: parent.height
     readonly property color c: r.busy ? p.fg : p.dim
