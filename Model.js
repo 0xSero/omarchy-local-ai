@@ -54,7 +54,7 @@ function modelRows(c, out) {
     var r = card.recipe; if (!r || !freeKeys(snap, card).length || busy) return
     if (r.gate) return out.push(row(r.name, card.name + " · " + r.gate, "", "", { dim: true, disabled: true }))
     var again = snap.state === "error" && snap.selected && snap.selected.recipeId === r.id
-    out.push(row(r.name, card.name + (r.onDisk ? "" : " · " + gb(r.sizeGb)), again ? "run again" : r.onDisk ? "run" : r.partialBytes > 0 ? "resume" : "download & run", "run:" + r.id))
+    out.push(row(r.name, card.name + (r.onDisk ? "" : " · " + gb(r.sizeGb)), again ? "run again" : r.partialBytes > 0 && !r.onDisk ? "resume" : "run", "run:" + r.id))
   })
 }
 

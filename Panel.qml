@@ -149,8 +149,12 @@ Panel {
           spacing: 0
           Item { // the hero: mark, eyebrow, title, and a word at the right that leads somewhere
             width: parent.width; height: Style.space(74)
-            Rectangle { x: Style.space(16); anchors.verticalCenter: parent.verticalCenter; width: Style.space(28); height: width; radius: width / 2
-              color: root.tone === "work" ? root.accent : root.tone === "error" ? root.urgent : root.tone === "ready" ? root.ink : Util.alpha(root.ink, 0.3) }
+            Canvas { // the dotted mark: a disc of dots, the state's colour
+              x: Style.space(16); anchors.verticalCenter: parent.verticalCenter; width: Style.space(30); height: width
+              property color c: root.tone === "work" ? root.accent : root.tone === "error" ? root.urgent : root.tone === "ready" ? root.ink : Util.alpha(root.ink, 0.35)
+              onCChanged: requestPaint()
+              onPaint: { var g = getContext("2d"), r = width / 2, s = 4; g.clearRect(0, 0, width, height); g.fillStyle = c
+                for (var y = s / 2; y < height; y += s) for (var x = s / 2; x < width; x += s) if ((x - r) * (x - r) + (y - r) * (y - r) <= r * r) g.fillRect(x - 0.8, y - 0.8, 1.6, 1.6) } }
             Column { x: Style.space(56); anchors.verticalCenter: parent.verticalCenter; spacing: Style.space(2)
               Text { textFormat: Text.PlainText; text: root.ui.hero.eyebrow; color: root.dim; font.family: root.mono; font.pixelSize: Style.font.caption; font.letterSpacing: 1.5 }
               Text { textFormat: Text.PlainText; text: root.ui.hero.title; color: root.ink; font.family: root.mono; font.pixelSize: Style.font.subtitle; width: panel.contentWidth - Style.space(130); elide: Text.ElideRight }
