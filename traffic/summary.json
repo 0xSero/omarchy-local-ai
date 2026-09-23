@@ -1,45 +1,57 @@
 {
-  "updated": "2026-09-22",
+  "updated": "2026-09-23",
   "repo": {
-    "stars": 30,
-    "forks": 9,
+    "stars": 32,
+    "forks": 10,
     "watchers": 0,
-    "open_issues": 2,
-    "size_kb": 28003
+    "open_issues": 3,
+    "size_kb": 28155
   },
   "clones": {
-    "days": 23,
+    "days": 24,
     "first": "2026-08-29",
-    "last": "2026-09-20",
-    "total": 1310,
+    "last": "2026-09-21",
+    "total": 1464,
     "peak_day": "2026-09-16",
     "peak": 184,
-    "daily_uniques_sum": 621,
-    "uniques_14d": 430
+    "daily_uniques_sum": 681,
+    "uniques_14d": 457
   },
   "views": {
-    "days": 23,
+    "days": 24,
     "first": "2026-08-29",
-    "last": "2026-09-20",
-    "total": 690,
+    "last": "2026-09-21",
+    "total": 727,
     "peak_day": "2026-09-16",
     "peak": 118,
-    "daily_uniques_sum": 391,
-    "uniques_14d": 335
+    "daily_uniques_sum": 420,
+    "uniques_14d": 362
   },
   "stars": {
-    "days": 3,
+    "days": 4,
     "first": "2026-09-20",
-    "last": "2026-09-22",
+    "last": "2026-09-23",
     "first_count": 24,
-    "last_count": 30,
-    "gained": 6
+    "last_count": 32,
+    "gained": 8
   },
   "downloads": {
-    "total": 12,
-    "release_count": 19,
-    "latest": "v5.3.7",
+    "total": 13,
+    "release_count": 20,
+    "latest": "v5.4.0",
     "by_release": [
+      {
+        "tag": "v5.4.0",
+        "name": "v5.4.0",
+        "published": "2026-09-22T11:39:32Z",
+        "downloads": 1,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-5.4.0.tar.gz",
+            "downloads": 1
+          }
+        ]
+      },
       {
         "tag": "v5.3.7",
         "name": "v5.3.7",
@@ -256,9 +268,9 @@
     ]
   },
   "interactions": {
-    "day": "2026-09-22",
-    "stars": 30,
-    "forks": 9,
+    "day": "2026-09-23",
+    "stars": 32,
+    "forks": 10,
     "watchers": 0,
     "issues": {
       "open": 1,
@@ -266,20 +278,25 @@
       "total": 2
     },
     "pull_requests": {
-      "open": 1,
+      "open": 2,
       "merged": 11,
       "closed": 1,
-      "total": 13
+      "total": 14
     },
     "discussions": 0,
     "default_branch": "main",
-    "commits": 152
+    "commits": 160
   },
   "referrers": [
     {
       "referrer": "github.com",
-      "count": 56,
+      "count": 55,
       "uniques": 43
+    },
+    {
+      "referrer": "Google",
+      "count": 22,
+      "uniques": 19
     },
     {
       "referrer": "t.co",
@@ -287,14 +304,9 @@
       "uniques": 8
     },
     {
-      "referrer": "Google",
-      "count": 18,
-      "uniques": 16
-    },
-    {
       "referrer": "DuckDuckGo",
-      "count": 8,
-      "uniques": 6
+      "count": 11,
+      "uniques": 8
     },
     {
       "referrer": "search.brave.com",
@@ -306,8 +318,8 @@
     {
       "path": "/0xSero/omarchy-local-ai",
       "title": "Overview",
-      "count": 440,
-      "uniques": 322
+      "count": 465,
+      "uniques": 340
     },
     {
       "path": "/0xSero/omarchy-local-ai/pulls",
@@ -336,8 +348,8 @@
     {
       "path": "/0xSero/omarchy-local-ai/tree/main",
       "title": "/tree/main",
-      "count": 13,
-      "uniques": 11
+      "count": 14,
+      "uniques": 12
     },
     {
       "path": "/0xSero/omarchy-local-ai/pull/3",
@@ -358,10 +370,10 @@
       "uniques": 7
     },
     {
-      "path": "/0xSero/omarchy-local-ai/issues/7",
-      "title": "/issues/7",
+      "path": "/0xSero/omarchy-local-ai/blob/main/preview.png",
+      "title": "/blob/main/preview.png",
       "count": 6,
-      "uniques": 2
+      "uniques": 5
     }
   ]
 }
