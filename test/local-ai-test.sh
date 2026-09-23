@@ -30,19 +30,18 @@ recipes() {
       launch: {arguments: ["--port", "8000"], environment: {A: "1", NVIDIA_VISIBLE_DEVICES: "all"}, port: 8000, shm: "8g"},
       serving: {ctxTokens: 131072}, capabilities: {tools: true, vision: false}}]}}}' >"$TMP/plugin/recipes.json"
 }
-# wait_for <state>: the detached worker's end state
+# wait_for <state> [id]: the detached worker's end state
 wait_for() {
-  local i
+  local i d=$STATE/deploy/${2:-$ID}
   for ((i = 0; i < 100; i++)); do
-    [[ $(jq -r .state "$STATE/deploy/$ID/status.json" 2>/dev/null) =~ ^(ready|error)$ ]] && break
+    [[ $(jq -r .state "$d/status.json" 2>/dev/null) =~ ^(ready|error)$ ]] && break
     sleep 0.3
   done
-  [[ $(jq -r .state "$STATE/deploy/$ID/status.json") == "$1" ]] ||
-    fail "state $1" "$(cat "$STATE/deploy/$ID/status.json" "$STATE/deploy/$ID/err" 2>/dev/null)"
+  [[ $(jq -r .state "$d/status.json") == "$1" ]] || fail "state $1" "$(cat "$d/status.json" "$d/err" 2>/dev/null)"
 }
 shim() { printf '#!/bin/bash\n%s\n' "$2" >"$TMP/bin/$1"; chmod +x "$TMP/bin/$1"; }
 
-shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n"'
+shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 shim omarchy-sudo-docker '[[ -n ${SHIM_PROMPT:-} ]]'
 shim omarchy-cmd-present 'command -v "$1" >/dev/null'
 shim omarchy-cmd-missing '! command -v "$1" >/dev/null'
@@ -119,6 +118,13 @@ pass "a gateway that answers without the key would be refused"
 "$CLI" run "$ID" nvidia:0 2>"$TMP/err" && fail "second run"
 grep -q "nvidia:0 is in use" "$TMP/err" || fail "second run reason" "$(cat "$TMP/err")"
 pass "a card that is running a model cannot be claimed twice"
+
+"$CLI" run "$ID" nvidia:2
+wait_for ready "$ID--2"
+grep -q -- "--name omarchy-local-ai-$ID--2-engine .*--gpus device=2" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
+  fail "second copy" "$(grep -- "$ID--2-engine" "$SHIM/docker.log")"
+"$CLI" stop "$ID--2"
+pass "the same model runs a second copy on a second card of the same kind, on its own port"
 
 "$CLI" set agent pi "$ID"
 "$CLI" open "$ID"

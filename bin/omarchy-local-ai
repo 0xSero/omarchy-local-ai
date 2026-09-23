@@ -57,8 +57,9 @@ status() {
   [[ $was == "$2 ${3:-}" ]] || say "$1 $2 ${3:-}${5:+ error: $5}"
 }
 
+# recipe <id>: a second copy of a recipe runs as <recipe>--2, and so on
 recipe() {
-  jq -ce --arg id "$1" \
+  jq -ce --arg id "${1%--*}" \
     '[.hardware | to_entries[] | .key as $h | .value.recipes[] | select(.id == $id) | . + {hw: $h}][0] // empty' "$RECIPES"
 }
 
@@ -459,7 +460,7 @@ worker_run() {
 
 cmd_run() {
   valid_id "${1:-}" && valid_key "${2:-}" || die "run <recipe> <gpu>"
-  local id=$1 k=$2 r d g port busy
+  local id=${1%--*} k=$2 r d g port busy n=1
   r=$(recipe "$id") || die "no recipe $id"
   [[ $(policy "$r") == "ok" ]] || die "recipe refused: $(policy "$r")"
 
@@ -470,8 +471,11 @@ cmd_run() {
   grep -qxF -- "$k" <<<"$busy" && die "$k is in use"
   jq -e --arg k "$k" 'any(.[]; .key == $k and (.usedMiB // 0) > 2048)' <<<"$g" >/dev/null &&
     die "$k is in use by another program ($(jq -r --arg k "$k" '.[] | select(.key == $k) | .usedMiB / 1024 | floor' <<<"$g") GB)"
+  while [[ -f $(dir_of "$id")/config.json ]]; do
+    n=$((n + 1))
+    id="${1%--*}--$n"
+  done
   d=$(dir_of "$id")
-  [[ -f $d/config.json ]] && die "$id is already running"
   for ((port = 12434; port < 12450; port++)); do
     grep -qx "$port" <<<"$busy" || ss -Hltn "sport = :$port" | grep -q . || break
   done
