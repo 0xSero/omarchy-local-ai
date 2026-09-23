@@ -60,7 +60,7 @@ info) echo "Runtimes: nvidia runc" ;;
 image) exit 1 ;;
 pull) : ;;
 network) : ;;
-run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "$(id -u)" >"$c/$n" ;;
+run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
 rm) rm -f "$c/${@: -1}" ;;
 ps) ls "$c" ;;
@@ -132,6 +132,18 @@ pass "open starts the chosen agent on the gateway in a terminal, with the key on
 "$CLI" stop "$ID"
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"
 pass "stop removes both containers and the model's folder"
+
+# a 5.x install left a model running: its ledger names it, its containers carry no uid label
+echo '{"slots":{"old-model":{"keys":["nvidia:0"],"port":12434,"engine":"omarchy-local-ai-old-model-engine"}}}' >"$STATE/ledger.json"
+echo "1|" >"$SHIM/containers/omarchy-local-ai-old-model-engine"
+echo "1|" >"$SHIM/containers/omarchy-local-ai-old-model-gateway"
+"$CLI" snapshot >"$TMP/snap.json"
+[[ $(jq -r '.deployments[0] | "\(.id) \(.state) \(.keys[0])"' "$TMP/snap.json") == "old-model ready nvidia:0" && -f $STATE/ledger.json.5x && ! -f $STATE/ledger.json ]] ||
+  fail "adopt" "$(jq -c .deployments "$TMP/snap.json")"
+pass "a model a 5.x install left running shows as running after the upgrade"
+"$CLI" stop old-model
+[[ -z $(ls "$SHIM/containers") && ! -d $STATE/deploy/old-model ]] || fail "stop 5.x" "$(ls "$SHIM/containers")"
+pass "and stop takes its containers down"
 
 recipes "ghcr.io/x/engine:latest"
 "$CLI" run "$ID" nvidia:0 2>"$TMP/err" && fail "unpinned run"

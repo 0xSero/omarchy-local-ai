@@ -249,7 +249,12 @@ owned() {
 
 engine() { printf 'omarchy-local-ai-%s-engine' "$1"; }
 gateway() { printf 'omarchy-local-ai-%s-gateway' "$1"; }
-ours() { [[ $(docker inspect -f "{{index .Config.Labels \"$LABEL.uid\"}}" "$1" 2>/dev/null) == "${PKEXEC_UID:-$(id -u)}" ]]; }
+# ours <container>: labelled with this user's uid, or a 5.x container (they carry no uid), which the upgrade takes over
+ours() {
+  local l
+  l=$(docker inspect -f "{{index .Config.Labels \"$LABEL\"}}|{{index .Config.Labels \"$LABEL.uid\"}}" "$1" 2>/dev/null) || return 1
+  [[ $l == "1|${PKEXEC_UID:-$(id -u)}" || $l == "1|" ]]
+}
 
 # rundir <id>: what the start writes for the engine (the config asset, its GPUs' by-path links); root's is in /run
 rundir() {
@@ -367,8 +372,8 @@ phase_share() {
 # This user's containers and networks, and the engine images the recipes name (Docker keeps any another container uses)
 phase_purge() {
   local c
-  for c in $(docker ps -aq --filter "label=$LABEL.uid=${PKEXEC_UID:-$(id -u)}"); do
-    docker rm -f "$c" >/dev/null
+  for c in $(docker ps -aq --filter "label=$LABEL=1"); do
+    ours "$c" && docker rm -f "$c" >/dev/null
   done
   docker network ls -q --filter "label=$LABEL=1" | xargs -r docker network rm >/dev/null 2>&1 || true
   jq -r '.gateway.image, .hardware[].recipes[].image' "$RECIPES" | sort -u | xargs -r docker rmi >/dev/null 2>&1 || true
@@ -707,9 +712,26 @@ state() {
   echo "$s"
 }
 
+# adopt: the models a 5.x install left running (its ledger.json) become deployments here, once
+adopt() {
+  local id c
+  [[ -f $STATE/ledger.json ]] || return 0
+  while IFS=$'\t' read -r id c; do
+    valid_id "$id" && [[ ! -d $(dir_of "$id") ]] || continue
+    mkdir -p "$(dir_of "$id")"
+    printf '%s\n' "$c" >"$(dir_of "$id")/config.json"
+    jq -nc '{state: "ready", detail: "", percent: 100, error: "", pid: 0}' >"$(dir_of "$id")/status.json"
+    say "$id adopted from 5.x"
+  done < <(jq -r --arg a "$(get agent)" --arg f "$(get folder)" --arg t "$(now)" '.slots // {} | to_entries[]
+    | [.key, ({id: .key, keys: (.value.keys // []), port: .value.port, agent: $a, folder: $f, startedAt: (.value.startedAt // $t)} | tojson)]
+    | @tsv' "$STATE/ledger.json" 2>/dev/null)
+  mv -f "$STATE/ledger.json" "$STATE/ledger.json.5x"
+}
+
 cmd_snapshot() {
   local g deps='[]' d c s r ts=""
   mkdir -p "$STATE/deploy"
+  adopt
   g=$(gpus)
   omarchy-cmd-present tailscale && ts=$(timeout 3 tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "" | rtrimstr(".")' || true)
   for d in "$STATE"/deploy/*/; do

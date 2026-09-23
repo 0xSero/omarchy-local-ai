@@ -51,4 +51,4 @@ Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); t
 | `Panel.qml` | Draws the view and runs the backend's verbs |
 | `recipes.json` | The vendored recipes, one card kind per line (`make sync`) |
 
-The same files are proposed for Omarchy itself in [omacom/omarchy#13036](https://github.com/omacom/omarchy/pull/13036); this plugin differs only in where it finds itself. `docs/design.md` has the design and `test/all` runs the tests.
+The same files are proposed for Omarchy itself in [omacom/omarchy#13036](https://github.com/omacom/omarchy/pull/13036); this plugin differs only in where it finds itself, and in taking over a model a 5.x install left running. `docs/design.md` has the design and `test/all` runs the tests.

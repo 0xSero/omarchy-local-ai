@@ -4,7 +4,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [6.0.0] - 2026-09-23
 
-Version 6 is a rebuild: the same files proposed for Omarchy itself in omacom/omarchy#13036, one bash backend, one view model, one panel and one data file. Upgrading from 5.x: stop your model in 5.x first; 6.0 does not read the 5.x state, and its containers would keep the card busy.
+Version 6 is a rebuild: the same files proposed for Omarchy itself in omacom/omarchy#13036, one bash backend, one view model, one panel and one data file. A model 5.x left running is taken over on the first snapshot: it shows as running and Stop takes it down.
 
 ### Changed
 - One validated model per card. `recipes.json` is the first recipe of each card kind in the registry's export (EXL3 on SGLang or vLLM first), 36 card kinds, one per line. On an RTX 3090 that is Qwen3.8-27B on SGLang at 200K context with CUDA graphs on.
