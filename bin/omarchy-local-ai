@@ -421,9 +421,10 @@ worker_run() {
   NID=$(notify -p "Starting $WNAME" "Loading it on $(gpus | jq -r --arg k "$1" '[.[] | select(.key == $k) | .name][0]'). This takes a few minutes.")
   elevate start "$WID" "$PORTNUM" "$@"
 
-  # the last load of this model sets the pace of the percentage; before one, 6 s per GB
+  # the last load of this recipe, on any card, sets the pace of the percentage; before one, 6 s per GB
   t0=$SECONDS
-  took=$STATE/usage/$WID/load-seconds
+  took=$STATE/usage/${WID%--*}/load-seconds
+  mkdir -p "${took%/*}"
   expect=$(cat "$took" 2>/dev/null || jq -r '(.sizeGb // 10) * 6 | floor' <<<"$r")
   while :; do
     code=$(curl -s -m 5 -o "$WD/models.json" -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$PORTNUM/v1/models" || true)
