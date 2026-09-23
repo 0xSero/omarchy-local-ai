@@ -38,11 +38,13 @@ function homeView(s, ui) {
     shown[d.id] = 1
     var all = (d.session || {}).all || {}
     var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
-    var used = cards.reduce(function(a, g) { return a + (g.usedMiB != null ? g.usedMiB / 1024 : (g.estGb || 0)) }, 0)
+    // a card that does not report its memory in use (Intel) shows only how much it has
+    var known = cards.every(function(g) { return g.usedMiB != null })
+    var used = cards.reduce(function(a, g) { return a + (g.usedMiB || 0) / 1024 }, 0)
     var total = cards.reduce(function(a, g) { return a + (g.vramGb || 0) }, 0)
     var r = { type: "run", name: d.name, family: d.family, line: all.line || [], more: "more|" + d.id,
       gpu: (cards.length > 1 ? cards.length + " × " : "") + (cards[0] ? cards[0].name : "GPU")
-        + (total && !working(d) ? " · " + Math.round(used) + " / " + total + " GB" : "")
+        + (total && !working(d) ? " · " + (known ? Math.round(used) + " / " : "") + total + " GB" : "")
         + (d.caps && d.caps.vision ? " · vision" : "") }
     if (d.state === "ready") {
       r.sub = [all.decode ? all.decode + " tok/s avg" : "no requests yet", k(all.tokens) + " tokens all time"]
@@ -135,9 +137,9 @@ function kindView(s, hw, ui) {
 }
 
 function gpuRow(g) {
-  var used = g.usedMiB != null ? g.usedMiB / 1024 : g.estGb
-  return { type: "gpu", name: g.name, pct: g.vramGb ? Math.min(100, Math.round((used || 0) / g.vramGb * 100)) : 0,
-    estimate: g.usedMiB == null, mem: (used ? Math.round(used * 10) / 10 + " / " : "") + g.vramGb + " GB",
+  var used = g.usedMiB != null ? g.usedMiB / 1024 : null
+  return { type: "gpu", name: g.name, bar: used != null, pct: used != null && g.vramGb ? Math.min(100, Math.round(used / g.vramGb * 100)) : 0,
+    mem: (used != null ? Math.round(used * 10) / 10 + " / " : "") + g.vramGb + " GB",
     temp: g.tempC != null ? g.tempC + "°" : "" }
 }
 

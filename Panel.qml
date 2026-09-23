@@ -545,6 +545,7 @@ Panel {
     }
     Rectangle {
       x: Style.space(parent.inset + (parent.box ? 124 : 104))
+      visible: parent.g.bar
       width: parent.width - x - Style.space(120)
       height: 3
       anchors.verticalCenter: parent.verticalCenter
@@ -553,7 +554,6 @@ Panel {
         width: parent.width * parent.parent.g.pct / 100
         height: parent.height
         color: root.fg
-        opacity: parent.parent.g.estimate ? 0.5 : 1
       }
     }
     Right { margin: parent.inset; text: parent.g.mem + (parent.g.temp ? "  " + parent.g.temp : ""); color: root.dim }

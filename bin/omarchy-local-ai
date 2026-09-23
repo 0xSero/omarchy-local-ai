@@ -752,8 +752,7 @@ cmd_snapshot() {
     ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, week: $week, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
-       gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null),
-         estGb: (.key as $k | if .usedMiB == null then ([$deps[] | select(.keys | index($k)) | .sizeGb / (.keys | length)] | first // 0) else null end)}],
+       gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, name: .[0].name, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
