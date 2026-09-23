@@ -10,10 +10,19 @@ jobs:
         with:
           path: plugin
       # The registry authors recipes.json. Checking it out lets `make check` fail when the copy vendored
-      # here has fallen behind the published schema-2 export instead of only checking that it parses.
+      # here has fallen behind the published export instead of only checking that it parses.
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           repository: 0xSero/local-ai-registry
           path: registry
-      - name: Run the test suite and the recipes.json checks
+      - name: The backend against shims, the view model against its snapshots, and the recipes.json checks
         run: make -C plugin check REGISTRY="$GITHUB_WORKSPACE/registry"
+      - name: Every script parses
+        run: for f in plugin/bin/* plugin/test/*; do bash -n "$f"; done
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      # The published tree must not carry a key, a token or a private address; gitleaks scans what ships
+      - name: gitleaks
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 dir /repo --no-banner --redact

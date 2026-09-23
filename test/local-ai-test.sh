@@ -86,6 +86,7 @@ http://127.0.0.1:*)
     echo "{\"usage\":{\"completion_tokens\":60}}"
   fi ;;
 esac'
+! command -v node >/dev/null || ln -s "$(command -v node)" "$TMP/bin/node"
 export PATH=$TMP/bin:/usr/bin:/bin
 
 recipes "$PIN"
@@ -94,8 +95,29 @@ recipes "$PIN"
   fail "snapshot" "$(jq -c . "$TMP/snap.json")"
 pass "the snapshot matches the card to its kind and its one recipe, and names a card with no recipe"
 
+# The panel's view model reads this exact snapshot: a shape the backend changed and Model.js did not is a
+# view that throws, which the panel can only show as an error
+view() {
+  node -e 'const fs = require("fs"), vm = require("vm"), c = {}; vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), c)
+    const s = JSON.parse(fs.readFileSync(process.argv[2], "utf8")), v = c.build(s, {view: process.argv[3], id: process.argv[4] || "", open: "", key: "", problem: ""})
+    console.log(v.mark + " " + v.rows.map(r => r.type).join(","))' "$ROOT/Model.js" "$TMP/snap.json" "$@"
+}
+if command -v node >/dev/null; then
+  [[ $(view home) == " free,busy" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view kind rtx-4090-24gb) == " sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
+  pass "the view model builds home and the free card's page from the backend's own snapshot"
+else
+  echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
+fi
+
 "$CLI" run "$ID" nvidia:0
 wait_for ready
+"$CLI" snapshot >"$TMP/snap.json"
+if command -v node >/dev/null; then
+  [[ $(view home) == "ready run,free,busy" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
+    fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
+  pass "the view model builds home and the model's page for a running model"
+fi
 pass "run downloads the weights, starts the engine and the gateway, and waits until the model answers"
 [[ -f $HOME/.cache/omarchy/local-ai/models/test--model@000000000000/model.safetensors ]] || fail "weights" "$(find "$HOME/.cache" -type f)"
 pass "the weights land under the model cache, checked against the Hub's size and sha256"

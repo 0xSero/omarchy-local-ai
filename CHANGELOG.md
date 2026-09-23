@@ -2,6 +2,22 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.0.1] - 2026-09-24
+
+### Fixed
+- A model a 5.x install left running showed as another program's, holding its card with nothing able to stop it. It is now taken over on the first snapshot: it shows as running and Stop takes it down.
+- On a machine with two cards of the same kind, the free card's Run failed with "already running". A second copy of the model now runs on it, on its own port.
+- A second copy's load percentage reached 95 in a minute and sat there; loads are now paced by the recipe's last load on any card.
+- A snapshot the panel cannot read is shown as an error instead of as a machine with no GPU.
+- Intel cards show how much memory they have instead of an estimate of what is used; the xe driver does not report it.
+
+### Changed
+- The bar mark is nine dots: faint when idle, lit when a model is ready, red when one failed, a ripple while one starts.
+- No supported GPU is one line, a drawn chip and the link to the supported cards.
+
+### Added
+- CI builds the panel's views from the backend's own snapshots under node, and scans the tree for secrets with gitleaks.
+
 ## [6.0.0] - 2026-09-23
 
 Version 6 is a rebuild: the same files proposed for Omarchy itself in omacom/omarchy#13036, one bash backend, one view model, one panel and one data file. A model 5.x left running is taken over on the first snapshot: it shows as running and Stop takes it down.
