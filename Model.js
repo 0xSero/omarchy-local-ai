@@ -70,9 +70,10 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-// home: one card per working model (ready, then starting or stopping), then one row per GPU: free ones first,
-// then running, crashed, held by another program, and cards with no model. A row has one quick action on the
-// right; clicking it opens a line under it with everything else that can be done with that card.
+// home: running models as cards (ready, then starting or stopping), then the available GPUs as rows: free ones,
+// then crashed ones to run again or dismiss. A GPU already running a model is not listed again; cards another
+// program holds or with no model are one "all GPUs" away. A row has one quick action on the right; clicking it
+// opens a line under it with the rest, including running one model across several free cards of its kind.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
   var rows = [], slots = [], models = []
@@ -130,16 +131,38 @@ function homeView(s, ui) {
       row.rank = 0
       row.run = { family: r.family, label: "run " + r.name + " ›", action: "run|" + r.id + "|" + g.key }
       more.note = [r.format, r.ctx ? ctx(r.ctx) + " context" : "", r.sizeGb ? gb(r.sizeGb) : ""].filter(Boolean).join(" · ")
-      more.items = [{ label: "run ›", action: row.run.action }, { label: "choose agent and folder ›", action: "kind|" + kd.hw + "|" + g.key, quiet: true }]
+      more.items = [{ label: "run ›", action: row.run.action }]
+      // a group: one model across this card and other free ones of its kind, when enough are free
+      var others = kd.free.filter(function(x) { return x !== g.key }), sizes = {}
+      ;(kd.groups || []).forEach(function(gr) {
+        if (sizes[gr.cards] || others.length + 1 < gr.cards) return
+        sizes[gr.cards] = 1
+        more.items.push({ label: (gr.name !== r.name ? "run " + gr.name + " on " : "run on ") + gr.cards + " cards ›",
+          action: "run|" + gr.id + "|" + [g.key].concat(others.slice(0, gr.cards - 1)).join(",") })
+      })
+      more.items.push({ label: "agent & folder ›", action: "kind|" + kd.hw + "|" + g.key, quiet: true })
     }
     row.open = ui.open === "gpu:" + g.key
-    slots.push({ rank: row.rank, at: at, rows: row.open ? [row, more] : [row] })
+    if (row.rank === 0 || row.rank === 2) slots.push({ rank: row.rank, at: at, rows: row.open ? [row, more] : [row] })
   })
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
   models.sort(function(a, b) { return a.rank - b.rank || a.at - b.at }).forEach(function(m) { rows.push(m.row) })
   slots.sort(function(a, b) { return a.rank - b.rank || a.at - b.at })
-  if (slots.length) rows = rows.concat([{ type: "sec", label: "GPUS" }], [].concat.apply([], slots.map(function(x) { return x.rows })))
+  if (slots.length) rows = rows.concat([{ type: "sec", label: "AVAILABLE" }], [].concat.apply([], slots.map(function(x) { return x.rows })))
+  if ((s.gpus || []).length > slots.length) rows.push({ type: "field", label: "all GPUs", value: String((s.gpus || []).length), action: "gpus" })
   return { title: "LOCAL AI", version: s.version, stat: k(s.total), statLabel: "all time", rows: rows }
+}
+
+// every GPU on the machine: memory, temperature and what it is doing; a row opens what runs on it
+function gpusView(s) {
+  var rows = [{ type: "sec", label: "GPUS" }]
+  ;(s.gpus || []).forEach(function(g) {
+    var kd = find(s.kinds || [], "hw", g.hw), d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0]
+    var status = !kd ? "no validated model yet" : d ? (d.state === "error" ? "crashed" : "running " + d.name)
+      : kd.taken.indexOf(g.key) >= 0 ? "in use by another program" : "free"
+    rows.push(Object.assign(gpuRow(g), { status: status, action: d ? "more|" + d.id : kd && status === "free" ? "kind|" + kd.hw + "|" + g.key : "" }))
+  })
+  return { back: true, rows: rows }
 }
 
 // nothing to run on: one line on what this machine has, and where the list of supported cards lives
@@ -236,7 +259,7 @@ function pickers(s, rows, ui, agent, folder, id) {
 
 function build(s, ui) {
   s = s || {}
-  var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : null) || homeView(s, ui)
+  var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s) : null) || homeView(s, ui)
   return Object.assign(v, { mark: mark(s) })
 }
 

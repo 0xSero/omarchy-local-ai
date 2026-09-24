@@ -103,7 +103,7 @@ view() {
     console.log(v.mark + " " + v.rows.map(r => r.type).join(","))' "$ROOT/Model.js" "$TMP/snap.json" "$@"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " sec,slot,slot,slot" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view home) == " sec,slot,slot,field" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
 else
@@ -114,7 +114,7 @@ fi
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready run,sec,slot,slot,slot" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
+  [[ $(view home) == "ready run,sec,slot,field" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi
@@ -122,7 +122,7 @@ pass "run downloads the weights, starts the engine and the gateway, and waits un
 [[ -f $HOME/.cache/omarchy/local-ai/models/test--model@000000000000/model.safetensors ]] || fail "weights" "$(find "$HOME/.cache" -type f)"
 pass "the weights land under the model cache, checked against the Hub's size and sha256"
 engine=$(grep -- '--name omarchy-local-ai-.*-engine' "$SHIM/docker.log")
-[[ $engine == *"--gpus device=0"* && $engine == *"--security-opt no-new-privileges"* && $engine == *":/models:ro"* &&
+[[ $engine == *"--gpus \"device=0\""* && $engine == *"--security-opt no-new-privileges"* && $engine == *":/models:ro"* &&
   $engine == *"--shm-size 8g"* && $engine == *"--env A=1"* && $engine != *NVIDIA_VISIBLE_DEVICES* && $engine != *--publish* &&
   $engine == *"$PIN --port 8000" ]] || fail "engine argv" "$engine"
 pass "the engine gets its card, a read-only weights mount and the recipe's options, never a published port or its own card choice"
@@ -143,10 +143,27 @@ pass "a card that is running a model cannot be claimed twice"
 
 "$CLI" run "$ID" nvidia:2
 wait_for ready "$ID--2"
-grep -q -- "--name omarchy-local-ai-$ID--2-engine .*--gpus device=2" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
+grep -q -- "--name omarchy-local-ai-$ID--2-engine .*--gpus \"device=2\"" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
   fail "second copy" "$(grep -- "$ID--2-engine" "$SHIM/docker.log")"
 "$CLI" stop "$ID--2"
 pass "the same model runs a second copy on a second card of the same kind, on its own port"
+
+# a group: one model across two cards of the kind
+"$CLI" stop "$ID"
+jq -c --arg id "$ID-tp2" '.hardware["rtx-4090-24gb"].recipes += [.hardware["rtx-4090-24gb"].recipes[0] + {id: $id, cards: 2}]' "$TMP/plugin/recipes.json" >"$TMP/r2" && mv "$TMP/r2" "$TMP/plugin/recipes.json"
+"$CLI" run "$ID-tp2" nvidia:0 2>"$TMP/err" && fail "one card for a two-card recipe"
+grep -q "runs on 2 card" "$TMP/err" || fail "card count reason" "$(cat "$TMP/err")"
+"$CLI" run "$ID-tp2" nvidia:0,nvidia:2
+wait_for ready "$ID-tp2"
+grep -q -- '--name omarchy-local-ai-'"$ID"'-tp2-engine .*--gpus "device=0,2"' "$SHIM/docker.log" && [[ $(jq -c .keys "$STATE/deploy/$ID-tp2/config.json") == '["nvidia:0","nvidia:2"]' ]] ||
+  fail "group run" "$(grep -- "$ID-tp2-engine" "$SHIM/docker.log")"
+"$CLI" snapshot >"$TMP/snap.json"
+[[ $(jq -r '.kinds[0].groups[0] | "\(.id) \(.cards)"' "$TMP/snap.json") == "$ID-tp2 2" ]] || fail "groups in snapshot" "$(jq -c .kinds "$TMP/snap.json")"
+"$CLI" stop "$ID-tp2"
+recipes "$PIN"
+"$CLI" run "$ID" nvidia:0
+wait_for ready
+pass "a group runs one model across two cards of a kind, refuses the wrong number of cards, and is in the snapshot"
 
 "$CLI" set agent pi "$ID"
 "$CLI" open "$ID"

@@ -20,8 +20,9 @@ test:
 # "Published" means the file committed at the registry's origin/main, not a checkout's working tree.
 export_ = if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >/dev/null 2>&1; then git -C "$(REGISTRY)" show "$(REGISTRY_REF):plugin/v2/recipes.json"; else cat "$(REGISTRY_EXPORT)"; fi
 commit = $$(git -C "$(REGISTRY)" rev-parse "$(REGISTRY_REF)" 2>/dev/null || git -C "$(REGISTRY)" rev-parse HEAD)
-# one card, one model: the registry lists each kind's recipes best first, so the bundle keeps the first
-published = $(export_) | jq -r --arg c "$(commit)" '.hardware |= map_values(.recipes |= .[:1]) | .registryCommit = $$c \
+# the registry lists each kind's recipes best first: the bundle keeps the first (the card's own model) and the
+# first for each larger number of cards (a group: one model across that many cards of the kind)
+published = $(export_) | jq -r --arg c "$(commit)" '.hardware |= map_values(.recipes |= ([.[0]] + ([.[] | select((.cards // 1) > 1)] | group_by(.cards) | map(.[0])) | unique_by(.id) | sort_by(.cards // 1))) | .registryCommit = $$c \
   | (del(.hardware) | tojson | .[:-1]) + ",\"hardware\":{\n" + ([.hardware | to_entries[] | "\(.key | tojson):\(.value | tojson)"] | join(",\n")) + "\n}}"'
 PROVENANCE = del(.registryCommit, .generatedAt)
 

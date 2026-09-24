@@ -100,6 +100,7 @@ Panel {
     case "set": run(["set", a[1], a[2]].concat(a[3] ? [a[3]] : [])); nav({ open: "" }); break
     case "more": nav({ view: "run", id: a[1] }); break
     case "kind": nav({ view: "kind", id: a[1], key: a[2] || "" }); break
+    case "gpus": nav({ view: "gpus", id: "" }); break
     case "tick": nav({ key: a[1] }); break
     case "pick": nav({ open: ui.open === a[1] ? "" : a[1] }); break
     case "home": home(); break
@@ -396,10 +397,11 @@ Panel {
                   bottomPadding: Style.space(6)
                   spacing: Style.space(4)
                   Label { visible: !!r.note; x: root.gutter + Style.space(12); width: parent.width - 2 * root.gutter - Style.space(12); text: r.note || ""; color: root.labelTone; wrapMode: Text.WordWrap }
-                  Row {
+                  Flow {
                     visible: (r.items || []).length > 0
                     x: root.gutter + Style.space(12)
-                    spacing: Style.space(16)
+                    width: parent.width - 2 * root.gutter - Style.space(12)
+                    spacing: Style.space(12)
                     Repeater {
                       model: r.items || []
                       Label {
@@ -528,7 +530,7 @@ Panel {
                 }
               }
 
-              Component { id: gpuC; GpuRow { g: r; height: root.rowH; inset: root.gutter } }
+              Component { id: gpuC; GpuRow { g: r; height: r.status ? Style.space(36) : root.rowH; inset: root.gutter } }
 
               // A label on the left, a value on the right; a secret value is blurred until clicked
               Component {

@@ -4,10 +4,14 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+### Added
+- Groups: one model across several cards of a kind. The bundle keeps each card kind's own recipe and the registry's first for each larger number of cards (Arc Pro B70: 2; RTX 3090: 2 and 4; RTX Pro 6000: 4). `run <recipe> <gpu>,<gpu>` checks every card and gives the engine exactly those; a free GPU's opened line offers "run on 2 cards" when enough cards of its kind are free.
+- An "all GPUs" page: every card with its memory, temperature and what it is doing.
+
 ### Changed
-- Home lists every GPU on its own row, free ones first, unnumbered. A row shows one quick action on the right (run its model, or run again after a crash) or what the card is doing; clicking the row opens a line under it with the rest: details, choose agent and folder, open, more, stop, the crash reason, log, dismiss (dismiss stops it, freeing the card).
-- The chart borders glow slowly while the panel is open; "now" sits at the chart's right edge.
-- Model cards are tall again with their token line across them, drawn dim so it stays behind the text; they sit a little above the page and show speed and tokens small in the bottom-right corner. Capabilities are icons (eye, wrench, brain) on the model's page.
+- Home is running and available: running models as cards (tall, with their token line drawn dim, speed and tokens small in the bottom-right corner), then the available GPUs as rows, free ones first, then crashed ones. A GPU already running a model is not listed again; cards another program holds or with no model are behind "all GPUs".
+- A GPU row has one quick action on the right (run its model, or run again after a crash); clicking the row opens a line under it with the rest: details, run on several cards, agent & folder, the crash reason, log, dismiss (dismiss stops it, freeing the card).
+- Model cards sit a little above the page, with a slow glow on their border; "now" sits at the chart's right edge. Capabilities are icons (eye, wrench, brain) on the model's page.
 - The header shows all-time tokens and a smaller, dimmer version. Loading reads "loading".
 
 ### Fixed

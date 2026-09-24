@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=snapshot | run <recipe> <gpu> | stop <recipe> | open <recipe> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
+# omarchy:args=snapshot | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -70,7 +70,7 @@ policy() {
     def abs: test("^/[A-Za-z0-9_./-]+$") and (contains("..") | not);
     if (.image | test("^[a-z0-9./_:-]+@sha256:[0-9a-f]{64}$") | not) then "image is not pinned by digest"
     elif ($all[0].gateway.image | test("^[a-z0-9./_:-]+@sha256:[0-9a-f]{64}$") | not) then "gateway is not pinned by digest"
-    elif ((.cards // 1) != 1) then "runs on more than one card"
+    elif ((.cards // 1) | (. < 1 or . > 8)) then "invalid card count"
     elif ([.weights[]? | select(
         (.repository | test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$") | not) or (.revision | test("^[0-9a-f]{40}$") | not)
         or (.layout != "dir" and .layout != "hub") or (.mountPath | abs | not)
@@ -284,10 +284,13 @@ phase_start() {
   r=$(recipe "$id") || die "no recipe $id"
   v=$(policy "$r")
   [[ $v == "ok" ]] || die "recipe refused: $v"
-  (($# == 1)) && valid_key "$1" || die "one card"
+  (($# == $(jq -r '.cards // 1' <<<"$r"))) || die "this recipe runs on $(jq -r '.cards // 1' <<<"$r") card(s)"
   g=$(gpus)
-  jq -e --arg k "$1" --arg h "$(jq -r .hw <<<"$r")" 'any(.[]; .key == $k and .hw == $h)' <<<"$g" >/dev/null ||
-    die "$1 is not a card this recipe runs on"
+  for k in "$@"; do
+    valid_key "$k" && [[ ${k%%:*} == "${1%%:*}" ]] || die "invalid card $k"
+    jq -e --arg k "$k" --arg h "$(jq -r .hw <<<"$r")" 'any(.[]; .key == $k and .hw == $h)' <<<"$g" >/dev/null ||
+      die "$k is not a card this recipe runs on"
+  done
   backend=${1%%:*}
   if [[ $backend == "nvidia" ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
     die "the NVIDIA container toolkit is not set up: run $PANEL/bin/omarchy-install-ai-local"
@@ -305,16 +308,20 @@ phase_start() {
   a=(docker run -d --name "$(engine "$id")" --restart unless-stopped --security-opt no-new-privileges
     --network "omarchy-local-ai-$id" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=${PKEXEC_UID:-$(id -u)}")
   if [[ $backend == "nvidia" ]]; then
-    a+=(--gpus "device=${1#*:}")
+    v=$(printf '%s,' "${@#*:}")
+    a+=(--gpus "\"device=${v%,}\"")
   else
     [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd --group-add video --group-add render)
-    # oneCCL opens every by-path link it finds, so the engine sees only its own card's
-    v=$(readlink -f "$(jq -r --arg k "$1" '.[] | select(.key == $k) | .node' <<<"$g")")
-    [[ $v =~ ^/dev/dri/renderD[0-9]+$ ]] || die "no render node for $1"
-    for w in /dev/dri/by-path/*-render; do
-      [[ $(readlink -f "$w") == "$v" ]] && ln -s "../${v##*/}" "$run/by-path/${w##*/}"
+    # oneCCL opens every by-path link it finds, so the engine sees only its own cards'
+    for k in "$@"; do
+      v=$(readlink -f "$(jq -r --arg k "$k" '.[] | select(.key == $k) | .node' <<<"$g")")
+      [[ $v =~ ^/dev/dri/renderD[0-9]+$ ]] || die "no render node for $k"
+      for w in /dev/dri/by-path/*-render; do
+        [[ $(readlink -f "$w") == "$v" ]] && ln -s "../${v##*/}" "$run/by-path/${w##*/}"
+      done
+      a+=(--device "$v")
     done
-    a+=(--device "$v" --volume "$run/by-path:/dev/dri/by-path:ro")
+    a+=(--volume "$run/by-path:/dev/dri/by-path:ro")
   fi
   while IFS='|' read -r _ _ _ _ v w _; do
     owned "$w"
@@ -419,7 +426,7 @@ worker_run() {
   else
     status "$WID" starting "starting the engine (the first start downloads it, a few GB)" 0
   fi
-  NID=$(notify -p "Starting $WNAME" "Loading it on $(gpus | jq -r --arg k "$1" '[.[] | select(.key == $k) | .name][0]'). This takes a few minutes.")
+  NID=$(notify -p "Starting $WNAME" "Loading it on $(gpus | jq -r --arg k "$1" --argjson n $# '[.[] | select(.key == $k) | .name][0] | if $n > 1 then "\($n) × \(.)" else . end'). This takes a few minutes.")
   elevate start "$WID" "$PORTNUM" "$@"
 
   # the last load of this recipe, on any card, sets the pace of the percentage; before one, 6 s per GB
@@ -461,18 +468,24 @@ worker_run() {
 }
 
 cmd_run() {
-  valid_id "${1:-}" && valid_key "${2:-}" || die "run <recipe> <gpu>"
-  local id=${1%--*} k=$2 r d g port busy n=1
+  valid_id "${1:-}" && [[ -n ${2:-} ]] || die "run <recipe> <gpu>[,<gpu>...]"
+  local id=${1%--*} keys=() k r d g port busy n=1
+  IFS=, read -ra keys <<<"$2"
   r=$(recipe "$id") || die "no recipe $id"
   [[ $(policy "$r") == "ok" ]] || die "recipe refused: $(policy "$r")"
+  ((${#keys[@]} == $(jq -r '.cards // 1' <<<"$r"))) || die "$(jq -r .name <<<"$r") here runs on $(jq -r '.cards // 1' <<<"$r") card(s)"
+  [[ $(printf '%s\n' "${keys[@]}" | sort -u | wc -l) == "${#keys[@]}" ]] || die "a card is named twice"
 
   exec 9>"$STATE/claim.lock"
   flock 9
   busy=$(cat "$STATE"/deploy/*/config.json 2>/dev/null | jq -r '.keys[], .port')
   g=$(gpus)
-  grep -qxF -- "$k" <<<"$busy" && die "$k is in use"
-  jq -e --arg k "$k" 'any(.[]; .key == $k and (.usedMiB // 0) > 2048)' <<<"$g" >/dev/null &&
-    die "$k is in use by another program ($(jq -r --arg k "$k" '.[] | select(.key == $k) | .usedMiB / 1024 | floor' <<<"$g") GB)"
+  for k in "${keys[@]}"; do
+    valid_key "$k" || die "run <recipe> <gpu>[,<gpu>...]"
+    grep -qxF -- "$k" <<<"$busy" && die "$k is in use"
+    jq -e --arg k "$k" 'any(.[]; .key == $k and (.usedMiB // 0) > 2048)' <<<"$g" >/dev/null &&
+      die "$k is in use by another program ($(jq -r --arg k "$k" '.[] | select(.key == $k) | .usedMiB / 1024 | floor' <<<"$g") GB)"
+  done
   while [[ -f $(dir_of "$id")/config.json ]]; do
     n=$((n + 1))
     id="${1%--*}--$n"
@@ -485,11 +498,11 @@ cmd_run() {
   mkdir -p "$d"
   rm -f "$d/err" "$d/cancel"
   jq -nc --arg id "$id" --argjson p "$port" --arg a "$(get agent)" --arg f "$(get folder)" --arg t "$(now)" \
-    '{id: $id, keys: $ARGS.positional, port: $p, agent: $a, folder: $f, startedAt: $t}' --args "$k" >"$d/config.json.tmp"
+    '{id: $id, keys: $ARGS.positional, port: $p, agent: $a, folder: $f, startedAt: $t}' --args "${keys[@]}" >"$d/config.json.tmp"
   mv -f "$d/config.json.tmp" "$d/config.json"
   flock -u 9
 
-  setsid "$0" __worker "$id" "$k" </dev/null >/dev/null 2>&1 &
+  setsid "$0" __worker "$id" "${keys[@]}" </dev/null >/dev/null 2>&1 &
   jq -nc --argjson p "$!" --arg t "$(now)" '{state: "download", detail: "starting", percent: 0, error: "", pid: $p, at: $t}' >"$d/status.json"
   disown
 }
@@ -763,8 +776,10 @@ cmd_snapshot() {
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, name: .[0].name, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
-         recipe: ($rec[0].hardware[.[0].hw].recipes[0] | {id, name, family, format, sizeGb,
-           ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]})}],
+         recipe: ([$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1)][0] // $rec[0].hardware[.[0].hw].recipes[0]
+           | {id, name, family, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}),
+         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1)
+           | {id, name, family, cards, format, sizeGb, ctx: .serving.ctxTokens}]}],
        unsupported: [$g[] | select(.hw == "") | .name] | group_by(.) | map({name: .[0], n: length}), deployments: $deps}'
 }
 

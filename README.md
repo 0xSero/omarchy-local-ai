@@ -16,7 +16,7 @@ Omarchy keeps you out of the docker group, so every start and stop asks for your
 
 ## What it does
 
-- **One model per card.** `recipes.json` holds, for each of 36 card kinds, the one recipe that was accepted on that exact card in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
+- **One model per card, or one across several.** `recipes.json` holds, for each of 36 card kinds, the recipe that was accepted on that exact card, and where the registry has one, a recipe accepted across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
 - **Weights** are downloaded as you, from the pinned revision, and every file's size and sha256 is checked against the Hub before it is used. A matching copy in your Hugging Face cache is reused.
 - **Containers.** The engine runs on a private network with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the card's tokens, speeds and chart come from that log.
 - **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. The last agent and folder you picked become the default.
@@ -28,7 +28,7 @@ Supported: NVIDIA RTX 30, 40 and 50 series, RTX A6000, RTX Ada and RTX Pro Black
 
 ```bash
 bin/omarchy-local-ai snapshot                 # what the card draws, as JSON
-bin/omarchy-local-ai run <recipe> <gpu>       # e.g. run qwen38-27b-exl3-3bpw-rtx3090-sglang-tp1 nvidia:0
+bin/omarchy-local-ai run <recipe> <gpu>[,<gpu>] # e.g. run qwen38-27b-exl3-3bpw-rtx3090-sglang-tp1 nvidia:0
 bin/omarchy-local-ai stop <recipe>
 bin/omarchy-local-ai open <recipe>            # the chosen agent on it, in a terminal
 bin/omarchy-local-ai set agent|folder <value> [recipe]

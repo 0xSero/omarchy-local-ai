@@ -7,13 +7,13 @@ A bar widget that runs the one model validated for each GPU in the machine and o
 | `bin/omarchy-local-ai` | The backend: detect GPUs, download and check weights, start and stop containers, open agents, print a snapshot |
 | `Model.js` | Pure functions: snapshot and ui state in, a view (rows and actions) out |
 | `Panel.qml` | Draws the view; turns an action (`verb\|arg\|arg`) into a backend verb |
-| `recipes.json` | The vendored recipes, one card kind per line: the first recipe of each kind in [local-ai-registry](https://github.com/0xSero/local-ai-registry)'s `plugin/v2/recipes.json` |
+| `recipes.json` | The vendored recipes, one card kind per line: from [local-ai-registry](https://github.com/0xSero/local-ai-registry)'s `plugin/v2/recipes.json`, each kind's first recipe (its own model) and its first for each larger number of cards (a group: one model across that many cards of the kind) |
 
 ## Flow
 
 The widget polls `bin/omarchy-local-ai snapshot` (every 1.5 s while something starts, 5 s while open, 30 s closed). The snapshot joins the GPUs (`nvidia-smi`, the Arc Pro B70's PCI id and hwmon, `amd-smi`), the recipes and one folder per running model, `~/.local/state/omarchy/local-ai/deploy/<recipe>/` with `config.json` (cards, port, agent, folder) and `status.json` (step, detail, percent, error). `Model.build()` turns that into the page; nothing in the view model has side effects.
 
-`run <recipe> <gpu...>` claims the cards and a port under a lock, writes `config.json`, and starts a detached worker. The worker downloads the weights as the user and checks every file's size and sha256 against the Hub listing at the pinned revision, starts the engine and a keyed gateway, waits for the model, and sends one request to check it answers at GPU speed. Each step writes `status.json` and a desktop notification says when it starts, is ready, or failed and why.
+`run <recipe> <gpu>[,<gpu>...]` claims the cards and a port under a lock, writes `config.json`, and starts a detached worker. The worker downloads the weights as the user and checks every file's size and sha256 against the Hub listing at the pinned revision, starts the engine and a keyed gateway, waits for the model, and sends one request to check it answers at GPU speed. Each step writes `status.json` and a desktop notification says when it starts, is ready, or failed and why.
 
 The gateway (`ghcr.io/0xsero/gateway`, pinned by digest) listens on `127.0.0.1` only, requires a per-install bearer key, translates the Anthropic and Responses APIs to chat completions for Claude Code and Codex, and writes one usage line per answer. The widget's tokens, speeds and chart come from those lines.
 
