@@ -341,7 +341,8 @@ Panel {
               }
 
               // One GPU: its name, and on the right one quick action (the model to run on it, or run again) or what
-              // it is doing. Clicking the row opens a line under it with the rest; a crashed one is framed in dashes.
+              // it is doing; a crashed one also offers dismiss beside it, and is framed in dashes. Clicking the row
+              // opens a line under it with the rest.
               Component {
                 id: slotC
                 Item {
@@ -378,6 +379,16 @@ Panel {
                     Label { text: r.run ? r.run.label : ""; color: root.ink }
                   }
                   Click { anchors.fill: slotRun; action: r.run ? r.run.action : "" }
+                  Label {
+                    id: slotDismiss
+                    visible: !!r.dismiss
+                    anchors.right: slotRun.left
+                    anchors.rightMargin: Style.space(16)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "dismiss"
+                    color: root.labelTone
+                  }
+                  Click { anchors.fill: slotDismiss; action: r.dismiss || "" }
                   Right {
                     visible: !r.run
                     margin: root.gutter

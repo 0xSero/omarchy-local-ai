@@ -87,6 +87,7 @@ function slot(s, ui, g, at) {
     row.crashed = true
     row.hint = "crashed"
     row.run = { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }
+    row.dismiss = "stop|" + d.id
     note = d.error || "stopped"
     items = [{ label: "Run again ›", action: row.run.action, primary: true }, { label: "Log", action: "log" }, config,
       { label: "Dismiss", action: "stop|" + d.id, danger: true }]
