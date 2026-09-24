@@ -271,7 +271,8 @@ Panel {
                   height: body.implicitHeight + 2 * root.pad
                   color: r.error ? Util.alpha(root.urgent, 0.07) : root.surface
                   clip: true
-                  Line { anchors.fill: parent; values: r.line; stroke: false }
+                  Line { anchors.fill: parent; values: r.line; stroke: false; visible: !r.error }
+                  Hatch { anchors.fill: parent; visible: !!r.error }
                   Column {
                     id: body
                     x: root.pad
@@ -592,6 +593,25 @@ Panel {
 
   // Tokens over time, cumulative, rising to the right. Where text sits on it (a card on home) it is only a faint
   // area, which leaves the text's contrast as it is; on a model's page it also gets its line, in the rule tone.
+  // A failed model: hatched where its token line would be, so a crash reads before any word does
+  component Hatch: Canvas {
+    onWidthChanged: requestPaint()
+    onHeightChanged: requestPaint()
+    onVisibleChanged: requestPaint()
+    onPaint: {
+      var g = getContext("2d"), step = Style.space(10)
+      g.clearRect(0, 0, width, height)
+      g.strokeStyle = Qt.rgba(root.alertRule.r, root.alertRule.g, root.alertRule.b, 0.5)
+      g.lineWidth = 1
+      g.beginPath()
+      for (var x = -height; x < width; x += step) {
+        g.moveTo(x, height)
+        g.lineTo(x + height, 0)
+      }
+      g.stroke()
+    }
+  }
+
   component Line: Canvas {
     property var values: []
     property bool stroke: true
@@ -679,7 +699,8 @@ Panel {
       Item {
         anchors.fill: parent
         visible: !h.gpus
-        Line { anchors.fill: parent; values: h.line || [] }
+        Line { anchors.fill: parent; values: h.line || []; visible: !h.failed }
+        Hatch { anchors.fill: parent; visible: !!h.failed }
         Label { x: root.pad; y: Style.space(8); text: h.top || ""; color: root.labelTone }
         Label { x: root.pad; y: parent.height / 2 - height / 2; text: h.mid || ""; color: root.labelTone }
         Label { x: root.pad; y: parent.height - Style.space(8) - height; text: h.since || ""; color: root.labelTone }

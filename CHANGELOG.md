@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [Unreleased]
+
+### Changed
+- A failed model's card, and its chart on the model's page, are hatched instead of showing its token line, so a crash reads at a glance.
+
 ## [6.0.3] - 2026-09-24
 
 ### Changed

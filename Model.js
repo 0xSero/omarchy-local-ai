@@ -130,8 +130,10 @@ function runView(s, id, ui) {
   if (!d) return null
   var u = d.session || {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
   var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
-  var v = { back: true, rows: [], hero: { name: d.name, family: d.family, line: line,
-    top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: "now",
+  // a failed model's chart is hatched, without a scale
+  var failed = d.state === "error"
+  var v = { back: true, rows: [], hero: { name: d.name, family: d.family, line: line, failed: failed,
+    top: failed ? "" : k(top) + " tokens", mid: failed ? "" : k(Math.round(top / 2)), since: failed ? "" : all.since || "", now: failed ? "" : "now",
     sub: [d.format, d.keys.length + " × " + (cards[0] ? cards[0].name : "GPU")].filter(Boolean).join(" · "),
     caps: caps(d.caps, d.ctx).join(" · ") } }
   v.rows.push({ type: "grid", cells: [
