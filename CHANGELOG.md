@@ -2,6 +2,16 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.1.4] - 2026-09-25
+
+### Changed
+- A faster snapshot: 7 jq runs instead of 29, about 130 ms instead of 220 ms on a machine with four GPUs and a running model. Each running model is read once and joined to its recipe in the last step, the GPU listings are parsed where they are matched, and a usage log that has not changed since its summary is not read again.
+- The panel draws fewer frames: the border glow steps ten times a second and the Coming soon wave twenty, instead of sixty frames each, which is a quarter of the rendering while the panel is open on home. The glow runs only while a chart is on screen and the activity grid keeps its squares across refreshes.
+- The log keeps its last 5,000 lines once it passes 1 MB.
+
+### Fixed
+- A model without a shipped logo (Gemma) no longer logs a missing-file warning each time its page is drawn.
+
 ## [6.1.3] - 2026-09-24
 
 ### Changed

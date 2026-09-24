@@ -43,13 +43,18 @@ Panel {
   readonly property int edge: Style.space(8)
   readonly property int pad: gutter - edge
   readonly property int rowH: Style.space(22)
-  // the chart borders breathe between 12% and 26% of the ink, slowly, while the panel is open
+  // the chart borders breathe between 12% and 26% of the ink every 3.6 s while one is on screen: ten steps a second,
+  // too small to see apart, so the panel draws ten frames a second for it rather than sixty
   property real glow: 0.12
-  SequentialAnimation on glow {
-    running: root.opened
-    loops: Animation.Infinite
-    NumberAnimation { to: 0.26; duration: 1800; easing.type: Easing.InOutSine }
-    NumberAnimation { to: 0.12; duration: 1800; easing.type: Easing.InOutSine }
+  Timer {
+    property real t: 0
+    interval: 100
+    repeat: true
+    running: root.opened && (!!root.view.hero && !!root.view.hero.line || (root.view.rows || []).some(function(r) { return r.type === "run" }))
+    onTriggered: {
+      t = (t + interval) % 3600
+      root.glow = 0.19 - 0.07 * Math.cos(t / 3600 * 2 * Math.PI)
+    }
   }
   readonly property int headH: Style.space(16)
   readonly property int groupGap: Style.space(20)
@@ -302,19 +307,20 @@ Panel {
                     flow: Grid.TopToBottom
                     spacing: Style.space(3)
                     Repeater {
-                      model: r.cells || []
+                      // keyed by position, so a refresh recolours the squares instead of rebuilding them
+                      model: (r.cells || []).length
                       Rectangle {
-                        required property var modelData
                         required property int index
+                        readonly property int level: (r.cells || [])[index]
                         width: life.cell
                         height: life.cell
                         radius: 2
-                        color: modelData < 0 ? "transparent" : Util.alpha(root.theme, [0.07, 0.25, 0.45, 0.7, 0.95][modelData])
+                        color: level < 0 ? "transparent" : Util.alpha(root.theme, [0.07, 0.25, 0.45, 0.7, 0.95][level])
                         border.width: life.hover === index ? 1 : 0
                         border.color: root.ink
                         MouseArea {
                           anchors.fill: parent
-                          enabled: modelData >= 0
+                          enabled: level >= 0
                           hoverEnabled: true
                           onEntered: life.hover = index
                           onExited: if (life.hover === index) life.hover = -1
@@ -503,27 +509,46 @@ Panel {
                   topPadding: Style.space(28)
                   bottomPadding: Style.space(20)
                   spacing: Style.space(18)
-                  // a square wave drifting left, thin and quiet, fading out at both ends
-                  Canvas {
-                    id: wave
-                    property real phase: 0
+                  // a square wave drifting left, thin and quiet, fading out at both ends: four thin rectangles a period,
+                  // a period more than it shows, slid along, so no frame draws anything
+                  Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: Style.space(140)
                     height: Style.space(18)
-                    NumberAnimation on phase { from: 0; to: 1; duration: 2400; loops: Animation.Infinite; running: root.opened }
-                    onPhaseChanged: requestPaint()
-                    onPaint: {
-                      var g = getContext("2d"), p = Style.space(28), lo = height - 2, hi = 2
-                      g.clearRect(0, 0, width, height)
-                      g.beginPath()
-                      for (var x = -phase * p - p; x < width + p; x += p) {
-                        g.moveTo(x, lo); g.lineTo(x, hi); g.lineTo(x + p / 2, hi); g.lineTo(x + p / 2, lo); g.lineTo(x + p, lo)
+                    clip: true
+                    // a period every 2.4 s, twenty steps a second: half a pixel a step, as smooth as sixty frames
+                    Timer {
+                      interval: 50
+                      repeat: true
+                      running: root.opened
+                      onTriggered: wave.x = (wave.x - wave.period * interval / 2400) % wave.period
+                    }
+                    Row {
+                      id: wave
+                      readonly property real period: Style.space(28)
+                      readonly property real stroke: 1.5
+                      Repeater {
+                        model: Math.ceil(Style.space(140) / wave.period) + 1
+                        Item {
+                          width: wave.period
+                          height: Style.space(18)
+                          Rectangle { x: -wave.stroke / 2; y: 2 - wave.stroke / 2; width: wave.stroke; height: parent.height - 4 + wave.stroke; color: root.labelTone }
+                          Rectangle { y: 2 - wave.stroke / 2; width: wave.period / 2; height: wave.stroke; color: root.labelTone }
+                          Rectangle { x: wave.period / 2 - wave.stroke / 2; y: 2 - wave.stroke / 2; width: wave.stroke; height: parent.height - 4 + wave.stroke; color: root.labelTone }
+                          Rectangle { x: wave.period / 2; y: parent.height - 2 - wave.stroke / 2; width: wave.period / 2; height: wave.stroke; color: root.labelTone }
+                        }
                       }
-                      var f = g.createLinearGradient(0, 0, width, 0)
-                      f.addColorStop(0, "transparent"); f.addColorStop(0.25, root.labelTone); f.addColorStop(0.75, root.labelTone); f.addColorStop(1, "transparent")
-                      g.strokeStyle = f
-                      g.lineWidth = 1.5
-                      g.stroke()
+                    }
+                    Rectangle {
+                      width: parent.width / 4
+                      height: parent.height
+                      gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: root.bg } GradientStop { position: 1; color: "transparent" } }
+                    }
+                    Rectangle {
+                      x: parent.width * 3 / 4
+                      width: parent.width / 4
+                      height: parent.height
+                      gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: "transparent" } GradientStop { position: 1; color: root.bg } }
                     }
                   }
                   Label {
@@ -744,9 +769,10 @@ Panel {
     property int size
     width: Style.space(size)
     height: width
-    // a family without a logo file takes no space
-    visible: !!family && status === Image.Ready
-    source: family ? Qt.resolvedUrl(family + ".svg") : ""
+    // only the logos shipped beside this file; any other family shows none and takes no space
+    readonly property bool shipped: ["qwen", "lfm", "hf"].indexOf(family) >= 0
+    visible: shipped && status === Image.Ready
+    source: shipped ? Qt.resolvedUrl(family + ".svg") : ""
     sourceSize: Qt.size(Style.space(32), Style.space(32))
     fillMode: Image.PreserveAspectFit
   }

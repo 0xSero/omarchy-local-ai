@@ -84,29 +84,28 @@ policy() {
     else "ok" end' <<<"$1"
 }
 
+# nvidia: index, name, memory and temperature per card, as nvidia-smi prints them
 nvidia() {
-  { timeout 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>/dev/null || true; } |
-    jq -Rsc 'split("\n") | map(select(length > 0) | split(", ")) | map({backend: "nvidia", index: (.[0] | tonumber),
-      product: .[1], totalMiB: (.[2] | tonumber), usedMiB: (.[3] | tonumber? // null), tempC: (.[4] | tonumber? // null)})'
+  timeout 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>/dev/null || true
 }
 
 # Arc Pro B70 by PCI id. The xe driver gives users its temperature but not its memory use.
 intel() {
-  local a i=0 t f out='[]'
+  local a t f rows=()
   for a in $(lspci -Dn -d 8086:e223 2>/dev/null | cut -d' ' -f1 | sort -u); do
     [[ -e /dev/dri/by-path/pci-$a-render ]] || continue
     t=null
     f=$(grep -lx pkg /sys/bus/pci/devices/$a/hwmon/hwmon*/temp*_label 2>/dev/null | head -1 || true)
     [[ -n $f ]] && t=$(($(<"${f%_label}_input") / 1000))
-    out=$(jq -c --argjson i "$i" --argjson t "$t" --arg n "$(readlink -f "/dev/dri/by-path/pci-$a-render")" \
-      '. + [{backend: "intel-xpu", index: $i, product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: $t, node: $n}]' <<<"$out")
-    i=$((i + 1))
+    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")")
   done
-  echo "$out"
+  # temperature and render node, one card a line
+  ((${#rows[@]} == 0)) || printf '%s\t%s\n' "${rows[@]}"
 }
 
 # amd-smi comes with ROCm; without it AMD cards are not listed and the widget says Coming soon.
 amd() {
+  omarchy-cmd-present amd-smi || { echo '[]'; return; }
   jq -nc --argjson s "$(timeout 10 amd-smi static --json 2>/dev/null || echo '{}')" \
     --argjson m "$(timeout 10 amd-smi metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
     [($s.gpu_data // [])[] | . as $g | ([($m.gpu_data // [])[] | select(.gpu == $g.gpu)][0] // {}) as $u
@@ -116,16 +115,24 @@ amd() {
         node: ("/dev/dri/by-path/pci-" + ($g.bus.bdf // "") + "-render")}]' 2>/dev/null || echo '[]'
 }
 
-# Every GPU, with the card kind the recipes know it as ("" when none) and a key like nvidia:0.
+# gpus($nvidia; $intel; $amd): the three listings as one; match($recipes): each GPU with the card kind the recipes know
+# it as ("" when none) and a key like nvidia:0
+MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | split(", ") | {backend: "nvidia", index: (.[0] | tonumber),
+      product: .[1], totalMiB: (.[2] | tonumber), usedMiB: (.[3] | tonumber? // null), tempC: (.[4] | tonumber? // null)}))
+    + ($xe | split("\n") | map(select(length > 0) | split("\t")) | to_entries | map({backend: "intel-xpu", index: .key,
+      product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1]}))
+    + $am;
+  def norm: ascii_downcase | gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]"; "");
+  def match($r): [.[] | . as $x
+    | ([$r.hardware | to_entries[] | select(.value.match.backend == $x.backend
+        and (.value.match.names | index($x.product | norm)) != null
+        and (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024) | .key][0] // "") as $hw
+    | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw, vramGb: (($x.totalMiB / 1024) | round),
+        name: ($x.product | gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )"; ""))}];'
+
+# Every GPU, matched
 gpus() {
-  jq -c --argjson g "$(jq -nc --argjson a "$(nvidia)" --argjson b "$(intel)" --argjson c "$(amd)" '$a + $b + $c')" '
-    def norm: ascii_downcase | gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]"; "");
-    . as $r | [$g[] | . as $x
-      | ([$r.hardware | to_entries[] | select(.value.match.backend == $x.backend
-          and (.value.match.names | index($x.product | norm)) != null
-          and (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024) | .key][0] // "") as $hw
-      | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw, vramGb: (($x.totalMiB / 1024) | round),
-          name: ($x.product | gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )"; ""))}]' "$RECIPES"
+  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile rec "$RECIPES" "$MATCH"'gpus($nv; $xe; $am) | match($rec[0])'
 }
 
 # wpaths <weights-item>: repository|revision|files|layout|mountPath|the folder the engine mounts|where the files are in it
@@ -476,6 +483,10 @@ cmd_run() {
   ((${#keys[@]} == $(jq -r '.cards // 1' <<<"$r"))) || die "$(jq -r .name <<<"$r") here runs on $(jq -r '.cards // 1' <<<"$r") card(s)"
   [[ $(printf '%s\n' "${keys[@]}" | sort -u | wc -l) == "${#keys[@]}" ]] || die "a card is named twice"
 
+  # the log keeps its last 5,000 lines once it passes 1 MB
+  if [[ -f $LOG ]] && (($(wc -c <"$LOG") > 1048576)); then
+    tail -n 5000 "$LOG" >"$LOG.tmp" && mv -f "$LOG.tmp" "$LOG"
+  fi
   exec 9>"$STATE/claim.lock"
   flock 9
   busy=$(cat "$STATE"/deploy/*/config.json 2>/dev/null | jq -r '.keys[], .port')
@@ -536,10 +547,11 @@ cmd_stop() {
   say "$1 stopped"
 }
 
-# get agent|folder: the saved default, or pi (else the first agent installed) and ~/Work (else ~)
+# get agent|folder [saved]: the saved default (read here unless passed), or pi (else the first agent installed) and
+# ~/Work (else ~)
 get() {
-  local v a
-  v=$(jq -r --arg k "$1" '.[$k] // empty' "$STATE/settings.json" 2>/dev/null || true)
+  local v=${2-} a
+  (($# > 1)) || v=$(jq -r --arg k "$1" '.[$k] // empty' "$STATE/settings.json" 2>/dev/null || true)
   if [[ $1 == "agent" ]]; then
     for a in "$v" "${AGENTS[@]}" pi; do
       [[ -n $a ]] && bin "$a" >/dev/null && break
@@ -699,10 +711,21 @@ cmd_share() {
 # history. One reader brings it up to date while another uses what is there; a log that shrank (cleared or rotated)
 # is summed again from its start.
 summary() {
-  local f=$1/usage.jsonl s=$1/summary.json n seen take
+  local f=$1/usage.jsonl s=$1/summary.json n seen take head
   [[ -f $f ]] || { echo '{}'; return; }
+  # the summary carries the log's time from just before its lines were counted: a log that is not newer has
+  # nothing new, and a line written while the summary was made makes it newer again
+  if [[ -f $s && ! $f -nt $s ]]; then
+    echo "$(<"$s")"
+    return
+  fi
+  touch -r "$f" "$s.mark"
   n=$(wc -l <"$f")
-  seen=$(jq -r '.lines // 0' "$s" 2>/dev/null || echo 0)
+  # the count of lines read leads the summary, so it is read without jq
+  seen=0
+  if [[ -f $s ]] && IFS= read -r -n 32 head <"$s" && [[ $head =~ ^\{\"lines\":([0-9]+) ]]; then
+    seen=${BASH_REMATCH[1]}
+  fi
   if ((n < seen)); then seen=0; rm -f "$s"; fi
   if ((n > seen)) || [[ ! -f $s ]]; then
     (
@@ -717,7 +740,7 @@ summary() {
             | [$rs[] | select(.completion > 8 and .ms > 0) | rate] as $dec
             | [$rs[] | select(.prompt > 64 and .ttft_ms > 0 and .ttft_ms < .ms) | .prompt / (.ttft_ms / 1000)] as $pre
             | [$rs[] | select(.ttft_ms < .ms)] as $tt
-            | $o + {lines: $n, requests: (($o.requests // 0) + ($rs | length)), total: (($o.total // 0) + ([$rs[].v] | add // 0)),
+            | {lines: $n} + ($o | del(.lines)) + {requests: (($o.requests // 0) + ($rs | length)), total: (($o.total // 0) + ([$rs[].v] | add // 0)),
                 hours: (($o.hours // {}) | bump($rs | group_by(.t / 3600 | floor); .t / 3600 | floor; map(.v) | add)),
                 first: ([$o.first, ($rs | map(.t) | min)] | map(select(. != null)) | min),
                 last: ([$o.last, ($rs | map(.t) | max)] | map(select(. != null)) | max),
@@ -728,18 +751,21 @@ summary() {
           >"$s.$$" 2>/dev/null && mv -f "$s.$$" "$s" || { rm -f "$s.$$"; break; }
         seen=$((seen + take))
       done
+      touch -r "$s.mark" "$s"
     ) 9>"$s.lock"
+  else
+    touch -r "$s.mark" "$s"
   fi
-  cat "$s" 2>/dev/null || echo '{}'
+  if [[ -f $s ]]; then echo "$(<"$s")"; else echo '{}'; fi
 }
 
 # tokens: this week's and all-time tokens, and your lifetime: requests, the first and last answer, and the tokens of
 # each day of the last 20 weeks, from a Monday (the activity grid on home: a column a week, a row a weekday)
 tokens() {
   local w0 d
-  w0=$(date -d "$(date +%F) -$(($(date +%u) - 1 + 133)) days 00:00" +%s)
+  w0=$(date -d "$(printf '%(%F)T' -1) -$(($(printf '%(%u)T' -1) - 1 + 133)) days 00:00" +%s)
   for d in "$STATE"/usage/*/; do [[ -d $d ]] && summary "${d%/}"; done |
-    jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" --argjson now "$(date +%s)" --argjson w0 "$w0" '
+    jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" --argjson now "$EPOCHSECONDS" --argjson w0 "$w0" '
       [.[] | select(.requests > 0)] as $all
       | [$all[] | .hours | to_entries[] | {t: (.key | tonumber * 3600), v: .value}] as $h
       | {week: ([$h[] | select(.t >= $d0) | .v] | add // 0), total: ([$all[].total] | add // 0),
@@ -753,7 +779,7 @@ tokens() {
 # session <id> <since>: tokens since this start (to the hour), and over every run of this model: averages, the median
 # first token, and a 24-point line from the first answer to the last, so the latest growth sits at the right edge
 session() {
-  summary "$STATE/usage/$1" | jq -c --argjson s "$2" --argjson now "$(date +%s)" '
+  summary "$STATE/usage/$1" | jq -c --argjson s "$2" --argjson now "$EPOCHSECONDS" '
     def avg(x): if (x.n // 0) > 0 then x.sum / x.n | round else null end;
     [(.hours // {}) | to_entries[] | {t: (.key | tonumber * 3600), v: .value}] as $h
     | (.first // $s) as $from | (.last // $now) as $last | (($last - $from) / 24 + 1) as $step
@@ -767,24 +793,6 @@ session() {
     echo '{"tokens":0,"all":{"tokens":0,"line":[]}}'
 }
 
-# state <config> <status>: the status, unless its process or engine is gone
-state() {
-  local s=$2 code rc=0
-  case $(jq -r .state <<<"$s") in
-  download | starting | stopping)
-    kill -0 "$(jq -r '.pid // 0' <<<"$s")" 2>/dev/null ||
-      s=$(jq -c '.state = "error" | .error = "stopped unexpectedly; run again"' <<<"$s")
-    ;;
-  ready)
-    # refused or an empty reply means the engine is gone; a slow answer only means it is busy
-    code=$(curl -s -m 2 -o /dev/null -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$(jq -r .port <<<"$1")/v1/models") || rc=$?
-    if ((rc == 7 || rc == 52)) || [[ $code == "502" ]]; then
-      s=$(jq -c '.state = "error" | .error = "the engine stopped; see the log, then run again"' <<<"$s")
-    fi
-    ;;
-  esac
-  echo "$s"
-}
 
 # adopt: the models a 5.x install left running (its ledger.json) become deployments here, once
 adopt() {
@@ -807,26 +815,47 @@ SUMMARY='def summary: {id, name, family, cards: (.cards // 1), format, sizeGb, c
   weights: [.weights[]? | {repository, revision}]};'
 
 cmd_snapshot() {
-  local g deps='[]' d c s r ts=""
+  local deps=() d id port at st pid obj why rc code ts="" sa="" sf="" sfs="" v="" a
   mkdir -p "$STATE/deploy"
   adopt
-  g=$(gpus)
   omarchy-cmd-present tailscale && ts=$(timeout 3 tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "" | rtrimstr(".")' || true)
+  # each running model: its config and status in one read, then whether its worker or engine is gone; the final
+  # step joins its recipe
   for d in "$STATE"/deploy/*/; do
-    c=$(jq -ce . "$d/config.json" 2>/dev/null) || continue
-    s=$(state "$c" "$(jq -c . "$d/status.json" 2>/dev/null || echo '{"state":"error","error":"no status"}')")
-    r=$(recipe "$(jq -r .id <<<"$c")" || echo '{}')
-    deps=$(jq -c --argjson c "$c" --argjson s "$s" --argjson r "$r" --arg ts "$ts" \
-      --argjson u "$(session "$(jq -r .id <<<"$c")" "$(date -d "$(jq -r .startedAt <<<"$c")" +%s)")" "$SUMMARY"'
-      . + [{name: $c.id} + ($r | summary | del(.id) | with_entries(select(.value != null))) + $c
-        + {state: $s.state, detail: $s.detail, percent: $s.percent, error: $s.error, session: $u,
-           shared: (if $ts != "" and ($c.shared // false) then "https://\($ts):\($c.port)" else "" end)}]' <<<"$deps")
+    [[ -f $d/status.json ]] && sf=$d/status.json || sf=/dev/null
+    { IFS=$'\t' read -r id port at st pid && IFS= read -r obj; } < <(jq -r --slurpfile s "$sf" --arg ts "$ts" '
+      ($s[0] // {state: "error", error: "no status"}) as $st
+      | ([.id, .port, .startedAt, $st.state // "error", $st.pid // 0] | @tsv),
+        (. + ($st | {state, detail, percent, error})
+          + {shared: (if $ts != "" and (.shared // false) then "https://\($ts):\(.port)" else "" end)} | tojson)' "$d/config.json" 2>/dev/null) ||
+      continue
+    why=""
+    case $st in
+    download | starting | stopping) kill -0 "$pid" 2>/dev/null || why="stopped unexpectedly; run again" ;;
+    ready)
+      # refused or an empty reply means the engine is gone; a slow answer only means it is busy
+      rc=0
+      code=$(curl -s -m 2 -o /dev/null -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$port/v1/models") || rc=$?
+      if ((rc == 7 || rc == 52)) || [[ $code == "502" ]]; then why="the engine stopped; see the log, then run again"; fi
+      ;;
+    esac
+    deps+=("{\"d\":$obj,\"u\":$(session "$id" "$(date -d "$at" +%s)"),\"why\":\"$why\"}")
   done
-  jq -nc --argjson g "$g" --argjson deps "$deps" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" --arg ts "$ts" \
-    --arg agent "$(get agent)" --arg folder "$(get folder)" --arg version "$(jq -r .version "$PANEL/manifest.json")" \
-    --argjson folders "$(jq -c '.folders // []' "$STATE/settings.json" 2>/dev/null || echo '[]')" \
-    --argjson agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done | jq -Rsc 'split("\n") | map(select(length > 0))')" "$SUMMARY"'
-    ([$deps[].keys[]]) as $busy
+  { IFS= read -r -d '' sa && IFS= read -r -d '' sf && IFS= read -r -d '' sfs; } < <(jq -j '.agent // "", "\u0000",
+    .folder // "", "\u0000", (.folders // [] | tojson), "\u0000"' "$STATE/settings.json" 2>/dev/null) || true
+  [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
+  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
+    --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
+    --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
+    --argjson folders "${sfs:-[]}" \
+    --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" "$SUMMARY$MATCH"'
+    (gpus($nv; $xe; $am) | match($rec[0])) as $g | ($agents | split("\n") | map(select(length > 0))) as $agents
+    # a running model with its session, in error when its worker or engine is gone; a second copy of a recipe runs
+    # as <recipe>--2: its recipe is the one before the last "--"
+    | ([$deps[] | .d + {session: .u} + (if .why != "" then {state: "error", error: .why} else {} end)
+      | (.id | if test("--") then .[:rindex("--")] else . end) as $rid
+      | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary | del(.id) | with_entries(select(.value != null))) + .]) as $deps
+    | ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
