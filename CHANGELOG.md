@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.1.1] - 2026-09-24
+
+### Changed
+- The store description and README say what 6.1 does: validated models per card, the recommended one first, and groups across cards.
+
 ## [6.1.0] - 2026-09-24
 
 ### Added
