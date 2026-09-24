@@ -24,8 +24,8 @@ function caps(c, n) {
   c = c || {}
   return [c.vision && "vision", c.tools && "tools", c.reasoning && "reasoning", n && ctx(n) + " context"].filter(Boolean)
 }
-// what a model can do, as the names of the More page's icons
-function icons(c) { c = c || {}; return ["vision", "tools", "reasoning"].filter(function(x) { return c[x] }) }
+// what a model can do, as the names of the More page's icons: only vision, the one that changes what it takes
+function icons(c) { return c && c.vision ? ["vision"] : [] }
 function parse(text) { try { return JSON.parse(text) } catch (e) { return null } }
 
 // APCA-W3 0.1.9 lightness contrast (Lc) of text on a background. Colors are {r, g, b} in 0..1, as Qt gives them.

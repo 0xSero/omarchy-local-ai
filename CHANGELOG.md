@@ -11,7 +11,8 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 ### Changed
 - Home is running and available: running models as cards (tall, with their token line drawn dim, speed and tokens small in the bottom-right corner), then the available GPUs as rows, free ones first, then crashed ones. A GPU already running a model is not listed again; cards another program holds or with no model are behind "all GPUs".
 - A GPU row has one quick action on the right (run its model, or run again after a crash); clicking the row opens it: its details or crash reason, then buttons like a model card's: Run (or Run again), Run on N cards, Agent & folder, Log, Dismiss (dismiss stops it, freeing the card).
-- Model cards sit a little above the page, with a slow glow on their border; "now" sits at the chart's right edge. Capabilities are icons (eye, wrench, brain) on the model's page.
+- Model cards sit a little above the page, with a slow glow on their border; "now" sits at the chart's right edge. A vision model shows an eye on its page.
+- The tailnet address stays hidden, small and dim, with "copy" always beside it; one click copies it.
 - The header shows all-time tokens and a smaller, dimmer version. Loading reads "loading".
 - A model's page is the same for a running model and a free card: its token line and figures appear when it runs, its cards are the GPUS section (ticked to choose which a free one runs on), then Run or Log and Stop.
 - The token line runs from the first answer to the last, so the latest growth sits at the right edge; its right label says how long ago that was.

@@ -54,7 +54,7 @@ Panel {
 
   property var snap: ({})
   property var ui: ({ view: "home", id: "", open: "", key: "", problem: "" })
-  property bool revealed: false
+  property bool copied: false
   property var queue: []
   // A snapshot the view cannot read says so, rather than looking like a machine with no GPU
   readonly property var view: {
@@ -67,7 +67,6 @@ Panel {
 
   function nav(patch) {
     ui = Object.assign({ view: ui.view, id: ui.id, open: "", key: ui.key, problem: "" }, patch)
-    revealed = false
     flick.contentY = 0
   }
   function home() { nav({ view: "home", id: "", key: "" }) }
@@ -106,11 +105,7 @@ Panel {
     case "home": home(); break
     case "log": logOpen.running = true; root.close(); break
     case "url": Quickshell.execDetached(["omarchy-launch-browser", a[1]]); root.close(); break
-    case "copy":
-      if (revealed) copy.command = ["wl-copy", a[1]]
-      copy.running = revealed
-      revealed = true
-      break
+    case "copy": copy.command = ["wl-copy", a[1]]; copy.running = true; copied = true; copiedTimer.restart(); break
     }
   }
 
@@ -134,6 +129,7 @@ Panel {
     }
   }
   Process { id: copy }
+  Timer { id: copiedTimer; interval: 1500; onTriggered: root.copied = false }
   Process { id: logOpen; command: [root.cli, "log"] }
   Timer {
     interval: root.view.mark === "busy" ? 1500 : root.opened ? 5000 : 30000
@@ -534,15 +530,25 @@ Panel {
 
               Component { id: gpuC; GpuRow { g: r; height: r.status ? Style.space(36) : root.rowH; inset: root.gutter } }
 
-              // A label on the left, a value on the right; a secret value is blurred until clicked
+              // A label on the left, a value on the right; a secret value stays hidden, small, beside an always-on copy
               Component {
                 id: fieldC
                 Item {
                   height: root.rowH
                   Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label; color: root.labelTone }
                   Right {
+                    id: fieldValue
                     margin: root.gutter
-                    text: r.secret && !root.revealed ? r.value.replace(/[^.:\/]/g, "•") : r.value + (r.secret ? "  copy" : r.action ? " ›" : "")
+                    text: r.secret ? (root.copied ? "copied" : "copy") : r.value + (r.action ? " ›" : "")
+                  }
+                  Label {
+                    visible: !!r.secret
+                    anchors.right: fieldValue.left
+                    anchors.rightMargin: Style.space(10)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: r.secret ? r.value.replace(/[^.:\/]+/g, "•••") : ""
+                    color: Util.alpha(root.labelTone, 0.55)
+                    font.pixelSize: Style.font.caption - 2
                   }
                   Click { action: r.action || "" }
                 }
@@ -615,11 +621,10 @@ Panel {
   // A hairline frame
   component Box: Rectangle { color: "transparent"; border.width: 1; border.color: root.ruleTone }
 
-  // A model's capability as a small glyph from the shell's Nerd Font: an eye for vision, a wrench for tools,
-  // a brain for reasoning
+  // A model's capability as a small glyph from the shell's Nerd Font: an eye for vision
   component CapIcon: Label {
     property string cap
-    text: ({ vision: "\udb81\uded0", tools: "\udb81\uddb7", reasoning: "\udb82\uddd1" })[cap] || ""
+    text: cap === "vision" ? "\udb81\uded0" : ""
     color: root.labelTone
     font.pixelSize: Style.font.body
   }
