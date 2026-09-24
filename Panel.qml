@@ -76,7 +76,8 @@ Panel {
     var rows = view.rows || [], t = rows[i].type
     if (i === 0 && !view.hero && t !== "sec") return topGap
     if (t === "sec" || t === "acts" || t === "error") return groupGap
-    if (t === "run" || t === "grid" || t === "down") return i === 0 && !view.hero ? topGap : blockGap
+    if (t === "run" || t === "grid") return i === 0 && !view.hero ? topGap : blockGap
+    if (t === "group") return blockGap
     return i === 0 ? topGap : 0
   }
 
@@ -91,7 +92,7 @@ Panel {
     case "share": run(["share", a[1]]); break
     case "set": run(["set", a[1], a[2]].concat(a[3] ? [a[3]] : [])); nav({ open: "" }); break
     case "more": nav({ view: "run", id: a[1] }); break
-    case "kind": nav({ view: "kind", id: a[1], key: "" }); break
+    case "kind": nav({ view: "kind", id: a[1], key: a[2] || "" }); break
     case "tick": nav({ key: a[1] }); break
     case "pick": nav({ open: ui.open === a[1] ? "" : a[1] }); break
     case "home": home(); break
@@ -216,7 +217,8 @@ Panel {
               anchors.leftMargin: Style.space(8)
               anchors.baseline: head.baseline
               text: root.view.version || ""
-              color: root.labelTone
+              color: Util.alpha(root.labelTone, 0.55)
+              font.pixelSize: Style.font.caption - 2
             }
             Click { anchors.fill: head; action: root.view.back ? "home" : "" }
             Row {
@@ -244,11 +246,11 @@ Panel {
           }
 
           Repeater {
-            model: root.view.rows
+            // keyed by position, so a refresh updates rows in place instead of rebuilding them (no flicker)
+            model: (root.view.rows || []).length
             Item {
-              required property var modelData
               required property int index
-              readonly property var r: modelData
+              readonly property var r: (root.view.rows || [])[index] || ({ type: "" })
               readonly property int gap: root.gapBefore(index)
               width: content.width
               height: gap + row.height
@@ -256,11 +258,11 @@ Panel {
               // A Loader sizes its item, so a surface's inset lives on the Loader; other rows keep their own gutter
               Loader {
                 id: row
-                readonly property real inset: ["run", "grid", "down"].indexOf(r.type) >= 0 ? root.edge : 0
+                readonly property real inset: ["run", "grid"].indexOf(r.type) >= 0 ? root.edge : 0
                 x: inset
                 y: parent.gap
                 width: parent.width - 2 * inset
-                sourceComponent: ({ run: runC, down: downC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
+                sourceComponent: ({ run: runC, slot: slotC, group: groupC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
                   field: fieldC, opt: optC, path: pathC, acts: actsC })[r.type] || textC
               }
 
@@ -270,7 +272,10 @@ Panel {
                 id: runC
                 Rectangle {
                   height: Style.space(156)
-                  color: root.surface
+                  // a little above the page: a lighter surface and a light border
+                  color: Util.alpha(root.theme, 0.08)
+                  border.width: 1
+                  border.color: Util.alpha(root.theme, 0.14)
                   clip: true
                   Line { anchors.fill: parent; values: r.line }
                   Column {
@@ -283,11 +288,19 @@ Panel {
                       Logo { family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
                       Label { text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
                     }
-                    Label { width: parent.width; text: r.gpu; color: root.labelTone; elide: Text.ElideRight }
+                    Row {
+                      spacing: Style.space(8)
+                      Label { text: r.gpu; color: root.labelTone; anchors.verticalCenter: parent.verticalCenter }
+                      Repeater {
+                        model: r.caps || []
+                        CapIcon { required property var modelData; cap: modelData; anchors.verticalCenter: parent.verticalCenter }
+                      }
+                    }
                     Item { width: 1; height: Style.space(4) }
                     Label {
+                      visible: (r.sub || []).length > 0
                       width: parent.width
-                      text: r.sub.join("  ·  ")
+                      text: (r.sub || []).join("  ·  ")
                       color: root.valueTone
                       wrapMode: Text.WordWrap
                       maximumLineCount: 2
@@ -300,6 +313,16 @@ Panel {
                       color: root.ruleTone
                       Rectangle { width: parent.width * (r.progress || 0) / 100; height: parent.height; color: root.ink }
                     }
+                  }
+                  // speed and tokens, small, in the top-right corner
+                  Label {
+                    visible: !!r.stats
+                    anchors.right: parent.right
+                    anchors.rightMargin: root.pad
+                    y: Style.space(18)
+                    text: r.stats || ""
+                    color: root.labelTone
+                    font.pixelSize: Style.font.caption - 1
                   }
                   Row {
                     x: root.pad
@@ -317,14 +340,26 @@ Panel {
                 }
               }
 
-              // A crashed model: one dashed line, the way a free card used to read; its name opens its page,
-              // its right side runs it again or dismisses it (stop: its containers and its state go)
+              // Several cards of one kind: their count, over their rows
               Component {
-                id: downC
+                id: groupC
                 Item {
-                  height: Style.space(40)
+                  height: root.rowH
+                  Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label; color: root.labelTone }
+                }
+              }
+
+              // One GPU: its name opens what it runs, or its page when free; its note says what it is doing; its
+              // actions sit on the right. A crashed one is framed in dashes, the way a free card used to read.
+              Component {
+                id: slotC
+                Item {
+                  height: r.crashed ? Style.space(36) : root.rowH
                   Canvas {
-                    anchors.fill: parent
+                    visible: !!r.crashed
+                    x: root.edge
+                    width: parent.width - 2 * root.edge
+                    height: parent.height
                     onPaint: {
                       var g = getContext("2d")
                       g.clearRect(0, 0, width, height)
@@ -333,24 +368,29 @@ Panel {
                       g.strokeRect(0.5, 0.5, width - 1, height - 1)
                     }
                   }
-                  Label {
-                    id: downLabel
-                    x: root.pad
-                    width: parent.width - root.pad - downActs.width - Style.space(24)
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: r.label
-                    color: root.alertTone
-                    elide: Text.ElideRight
-                  }
-                  Click { anchors.fill: downLabel; action: r.more }
                   Row {
-                    id: downActs
+                    id: slotName
+                    x: root.gutter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(10)
+                    Label { text: r.label; color: root.valueTone }
+                    Label { text: r.note || ""; color: r.crashed || r.warn ? root.alertTone : root.labelTone }
+                  }
+                  Click { anchors.fill: slotName; action: r.open || "" }
+                  Row {
                     anchors.right: parent.right
-                    anchors.rightMargin: root.pad
+                    anchors.rightMargin: root.gutter
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(14)
-                    Label { text: "run again ›"; color: root.ink; Click { action: r.again } }
-                    Label { text: "dismiss"; color: root.labelTone; Click { action: r.dismiss } }
+                    Repeater {
+                      model: r.acts || []
+                      Label {
+                        required property var modelData
+                        text: modelData.label
+                        color: modelData.quiet ? root.labelTone : root.ink
+                        Click { action: modelData.action }
+                      }
+                    }
                   }
                 }
               }
@@ -552,6 +592,15 @@ Panel {
 
   // A hairline frame
   component Box: Rectangle { color: "transparent"; border.width: 1; border.color: root.ruleTone }
+
+  // A model's capability as a small glyph from the shell's Nerd Font: an eye for vision, a wrench for tools,
+  // a brain for reasoning
+  component CapIcon: Label {
+    property string cap
+    text: ({ vision: "\udb81\uded0", tools: "\udb81\uddb7", reasoning: "\udb82\uddd1" })[cap] || ""
+    color: root.labelTone
+    font.pixelSize: Style.font.body
+  }
 
   // A label against its row's right edge
   component Right: Label {

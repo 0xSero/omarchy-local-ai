@@ -437,7 +437,7 @@ worker_run() {
       docker logs --tail 60 "$(engine "$WID")" >>"$WD/err" 2>&1
       fail "the engine keeps crashing: $(docker logs --tail 30 "$(engine "$WID")" 2>&1 | grep -i -m1 -e error -e 'out of' | cut -c1-160)"
     fi
-    status "$WID" starting "loading the model" $(((SECONDS - t0) * 100 / (expect + 1) > 95 ? 95 : (SECONDS - t0) * 100 / (expect + 1) + 1))
+    status "$WID" starting "loading" $(((SECONDS - t0) * 100 / (expect + 1) > 95 ? 95 : (SECONDS - t0) * 100 / (expect + 1) + 1))
     sleep 3
   done
   rm -f "$WD/models.json"
@@ -678,10 +678,11 @@ cmd_share() {
   mv -f "$f.tmp" "$f"
 }
 
-# tokens this week (today and the six days before it), over every model's usage log
-week() {
+# tokens this week (today and the six days before it) and all time, over every model's usage log
+tokens() {
   { cat "$STATE"/usage/*/usage.jsonl 2>/dev/null | grep '^{' || true; } |
-    jq -s --argjson d0 "$(date -d '6 days ago 00:00' +%s)" '[.[] | select(.t >= $d0) | .prompt + .completion] | add // 0' 2>/dev/null || echo 0
+    jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" '{week: ([.[] | select(.t >= $d0) | .prompt + .completion] | add // 0),
+      total: ([.[] | .prompt + .completion] | add // 0)}' 2>/dev/null || echo '{"week":0,"total":0}'
 }
 
 # session <id> <since>: tokens since this start, and over every run of this model: averages and a 24-point line
@@ -751,13 +752,13 @@ cmd_snapshot() {
         ctx: ($r.serving.ctxTokens // 0), caps: ($r.capabilities // {}), weights: [$r.weights[]? | {repository, revision}],
         shared: (if $ts != "" and ($c.shared // false) then "https://\($ts):\($c.port)" else "" end)}]' <<<"$deps")
   done
-  jq -nc --argjson g "$g" --argjson deps "$deps" --argjson week "$(week)" --slurpfile rec "$RECIPES" --arg ts "$ts" \
+  jq -nc --argjson g "$g" --argjson deps "$deps" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" --arg ts "$ts" \
     --arg agent "$(get agent)" --arg folder "$(get folder)" --arg version "$(jq -r .version "$PANEL/manifest.json")" \
     --argjson folders "$(jq -c '.folders // []' "$STATE/settings.json" 2>/dev/null || echo '[]')" \
     --argjson agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done | jq -Rsc 'split("\n") | map(select(length > 0))')" '
     ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, week: $week, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
+    | {version: $version, week: $tokens.week, total: $tokens.total, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, name: .[0].name, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],

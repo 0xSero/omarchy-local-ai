@@ -5,8 +5,12 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 ## [Unreleased]
 
 ### Changed
-- A running model's card is tall again with its token line across the whole card, drawn dimmer (ink at 25%) so it stays behind the text.
-- A crashed model is one dashed row at the bottom, below the working models and the other cards: "1 × RTX 3090 · crashed", then "run again ›" and "dismiss". Dismiss stops it, so its containers and state go and the card is free again. Working models are ordered ready, then starting or stopping.
+- Home lists every GPU on its own row. Cards of one kind sit under a header with their count; a single card is just its name. A free GPU can be set up (its page, with that card ticked) or run on directly; a GPU running a model says so; a crashed one is a dashed row to run again or dismiss (dismiss stops it, freeing the card).
+- Model cards are tall again with their token line across them, drawn dim so it stays behind the text; they sit a little above the page, show speed and tokens small in the top-right corner and their capabilities as icons (eye, wrench, brain).
+- The header shows all-time tokens and a smaller, dimmer version. Loading reads "loading".
+
+### Fixed
+- The panel flickered on every refresh: its rows were rebuilt each time. They now update in place.
 
 ## [6.0.3] - 2026-09-24
 

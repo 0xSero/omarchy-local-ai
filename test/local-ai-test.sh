@@ -103,7 +103,7 @@ view() {
     console.log(v.mark + " " + v.rows.map(r => r.type).join(","))' "$ROOT/Model.js" "$TMP/snap.json" "$@"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " sec,free,busy" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view home) == " sec,group,slot,slot,slot" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
 else
@@ -114,7 +114,7 @@ fi
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready run,sec,free,busy" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
+  [[ $(view home) == "ready run,sec,group,slot,slot,slot" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi

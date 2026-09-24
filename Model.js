@@ -68,54 +68,69 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-// home: one panel per working model (ready, then starting or stopping), then one list of the other cards (free
-// ones to run on, busy or unsupported ones and why), then one dashed row per crashed model to run again or dismiss
+// home: one card per working model (ready, then starting or stopping), then one row per GPU. Cards of one kind
+// sit together under a header with their count; a single card is just its name. A GPU's row says what it is
+// doing and what can be done with it: set it up or run on it when free, run again or dismiss when it crashed.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
-  var rows = [], cards = [], models = [], down = [], shown = {}
+  var rows = [], slots = [], models = []
   if (ui.problem) rows.push({ type: "error", label: ui.problem })
   function panel(d) {
-    shown[d.id] = 1
     var all = (d.session || {}).all || {}
     var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
     // a card that does not report its memory in use (Intel) shows only how much it has
     var known = cards.every(function(g) { return g.usedMiB != null })
     var used = cards.reduce(function(a, g) { return a + (g.usedMiB || 0) / 1024 }, 0)
     var total = cards.reduce(function(a, g) { return a + (g.vramGb || 0) }, 0)
+    var c = d.caps || {}
     var r = { type: "run", name: d.name, family: d.family, line: all.line || [], more: "more|" + d.id,
       gpu: (cards.length > 1 ? cards.length + " × " : "") + (cards[0] ? cards[0].name : "GPU")
-        + (total && !working(d) ? " · " + (known ? Math.round(used) + " / " : "") + total + " GB" : "")
-        + (d.caps && d.caps.vision ? " · vision" : "") }
+        + (total && !working(d) ? " · " + (known ? Math.round(used) + " / " : "") + total + " GB" : ""),
+      caps: ["vision", "tools", "reasoning"].filter(function(x) { return c[x] }) }
     if (d.state === "ready") {
-      r.sub = [all.decode ? all.decode + " tok/s avg" : "no requests yet", k(all.tokens) + " tokens all time"]
+      r.stats = (all.decode ? all.decode + " tok/s · " : "") + k(all.tokens) + " tokens"
+      r.sub = []
       r.primary = { label: "Open " + d.agent, action: "open|" + d.id }
-    } else if (working(d)) {
+    } else {
       r.progress = d.percent > 0 && d.state !== "stopping" ? d.percent : -1
       r.sub = [(d.detail || d.state) + (r.progress >= 0 && d.state !== "download" ? " · " + d.percent + "%" : "")]
       r.primary = { label: "Stop", action: "stop|" + d.id, quiet: true }
-    } else {
-      down.push({ type: "down", label: cards.length + " × " + (cards[0] ? cards[0].name : "GPU") + " · crashed", family: d.family,
-        more: "more|" + d.id, again: "again|" + d.id + "|" + d.keys.join(","), dismiss: "stop|" + d.id })
-      return
     }
     models.push({ rank: d.state === "ready" ? 0 : 1, at: models.length, row: r })
   }
+  ;(s.deployments || []).filter(function(d) { return d.state !== "error" }).forEach(panel)
   ;(s.kinds || []).forEach(function(kd) {
-    ;(s.deployments || []).filter(function(d) {
-      return d.keys.some(function(x) { return kd.keys.indexOf(x) >= 0 })
-    }).forEach(panel)
-    var r = kd.recipe
-    if (kd.free.length) cards.push({ type: "free", label: kd.free.length + " × " + kd.name, model: r.name,
-      family: r.family, more: "kind|" + kd.hw, action: "run|" + r.id + "|" + kd.free[0] })
-    if (kd.taken.length) cards.push({ type: "busy", label: kd.taken.length + " × " + kd.name, note: "in use by another program", warn: true })
+    var many = kd.keys.length > 1
+    if (many) slots.push({ type: "group", label: kd.keys.length + " × " + kd.name })
+    kd.keys.forEach(function(key, i) {
+      var d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(key) >= 0 })[0]
+      var row = { type: "slot", label: kd.name + (many ? " #" + (i + 1) : ""), acts: [] }
+      if (d && d.state === "error") {
+        row.note = "crashed"
+        row.crashed = true
+        row.open = "more|" + d.id
+        row.acts = [{ label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }, { label: "dismiss", action: "stop|" + d.id, quiet: true }]
+      } else if (d) {
+        row.note = (d.state === "ready" ? "running " : d.state === "stopping" ? "stopping " : "starting ") + d.name
+        row.open = "more|" + d.id
+      } else if (kd.taken.indexOf(key) >= 0) {
+        row.note = "in use by another program"
+        row.warn = true
+      } else {
+        row.note = "free"
+        row.open = "kind|" + kd.hw + "|" + key
+        row.acts = [{ label: "set up ›", action: row.open, quiet: true }, { label: "run ›", action: "run|" + kd.recipe.id + "|" + key }]
+      }
+      slots.push(row)
+    })
   })
-  ;(s.deployments || []).filter(function(d) { return !shown[d.id] }).forEach(panel)
+  ;(s.gpus || []).filter(function(g) { return !g.hw }).forEach(function(g) {
+    slots.push({ type: "slot", label: g.name, note: "no validated model yet", acts: [] })
+  })
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
   models.sort(function(a, b) { return a.rank - b.rank || a.at - b.at }).forEach(function(m) { rows.push(m.row) })
-  ;(s.unsupported || []).forEach(function(u) { cards.push({ type: "busy", label: u.n + " × " + u.name, note: "no validated model yet" }) })
-  if (cards.length) rows = rows.concat([{ type: "sec", label: "GPUS" }], cards)
-  rows = rows.concat(down)
-  return { title: "LOCAL AI", version: s.version, stat: k(s.week), statLabel: "this week", rows: rows }
+  if (slots.length) rows = rows.concat([{ type: "sec", label: "GPUS" }], slots)
+  return { title: "LOCAL AI", version: s.version, stat: k(s.total), statLabel: "all time", rows: rows }
 }
 
 // nothing to run on: one line on what this machine has, and where the list of supported cards lives
