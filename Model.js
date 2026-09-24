@@ -19,6 +19,8 @@ function caps(c, n) {
   c = c || {}
   return [c.vision && "vision", c.tools && "tools", c.reasoning && "reasoning", n && ctx(n) + " context"].filter(Boolean)
 }
+// what a model can do, as the names of the More page's icons
+function icons(c) { c = c || {}; return ["vision", "tools", "reasoning"].filter(function(x) { return c[x] }) }
 function parse(text) { try { return JSON.parse(text) } catch (e) { return null } }
 
 // APCA-W3 0.1.9 lightness contrast (Lc) of text on a background. Colors are {r, g, b} in 0..1, as Qt gives them.
@@ -68,9 +70,9 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-// home: one card per working model (ready, then starting or stopping), then one row per GPU. Cards of one kind
-// sit together under a header with their count; a single card is just its name. A GPU's row says what it is
-// doing and what can be done with it: set it up or run on it when free, run again or dismiss when it crashed.
+// home: one card per working model (ready, then starting or stopping), then one row per GPU, numbered only when
+// a machine has several of its kind. A free GPU can be set up (its page) or run on; a busy one says what holds it;
+// a crashed one runs again or is dismissed.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
   var rows = [], slots = [], models = []
@@ -82,11 +84,10 @@ function homeView(s, ui) {
     var known = cards.every(function(g) { return g.usedMiB != null })
     var used = cards.reduce(function(a, g) { return a + (g.usedMiB || 0) / 1024 }, 0)
     var total = cards.reduce(function(a, g) { return a + (g.vramGb || 0) }, 0)
-    var c = d.caps || {}
     var r = { type: "run", name: d.name, family: d.family, line: all.line || [], more: "more|" + d.id,
       gpu: (cards.length > 1 ? cards.length + " × " : "") + (cards[0] ? cards[0].name : "GPU")
         + (total && !working(d) ? " · " + (known ? Math.round(used) + " / " : "") + total + " GB" : ""),
-      caps: ["vision", "tools", "reasoning"].filter(function(x) { return c[x] }) }
+    }
     if (d.state === "ready") {
       r.stats = (all.decode ? all.decode + " tok/s · " : "") + k(all.tokens) + " tokens"
       r.sub = []
@@ -101,12 +102,11 @@ function homeView(s, ui) {
   ;(s.deployments || []).filter(function(d) { return d.state !== "error" }).forEach(panel)
   ;(s.kinds || []).forEach(function(kd) {
     var many = kd.keys.length > 1
-    if (many) slots.push({ type: "group", label: kd.keys.length + " × " + kd.name })
     kd.keys.forEach(function(key, i) {
       var d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(key) >= 0 })[0]
       var row = { type: "slot", label: kd.name + (many ? " #" + (i + 1) : ""), acts: [] }
       if (d && d.state === "error") {
-        row.note = "crashed"
+        row.hint = "crashed"
         row.crashed = true
         row.open = "more|" + d.id
         row.acts = [{ label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }, { label: "dismiss", action: "stop|" + d.id, quiet: true }]
@@ -117,9 +117,9 @@ function homeView(s, ui) {
         row.note = "in use by another program"
         row.warn = true
       } else {
-        row.note = "free"
         row.open = "kind|" + kd.hw + "|" + key
-        row.acts = [{ label: "set up ›", action: row.open, quiet: true }, { label: "run ›", action: "run|" + kd.recipe.id + "|" + key }]
+        row.hint = "set up ›"
+        row.run = { family: kd.recipe.family, label: "run " + kd.recipe.name + " ›", action: "run|" + kd.recipe.id + "|" + key }
       }
       slots.push(row)
     })
@@ -150,7 +150,7 @@ function runView(s, id, ui) {
   var v = { back: true, rows: [], hero: { name: d.name, family: d.family, line: line,
     top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: "now",
     sub: [d.format, d.keys.length + " × " + (cards[0] ? cards[0].name : "GPU")].filter(Boolean).join(" · "),
-    caps: caps(d.caps, d.ctx).join(" · ") } }
+    icons: icons(d.caps), caps: d.ctx ? ctx(d.ctx) + " context" : "" } }
   v.rows.push({ type: "grid", cells: [
     { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
     { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
@@ -185,7 +185,7 @@ function kindView(s, hw, ui) {
       action: free ? "tick|" + key : "", status: kd.taken.indexOf(key) >= 0 ? "in use by another program" : g.busy ? "running a model" : "" })
   })
   var v = { back: true, rows: [], hero: { name: pick.name,
-    family: pick.family, gpus: gpus, caps: caps(pick.caps, 0).join(" · "),
+    family: pick.family, gpus: gpus, icons: icons(pick.caps), caps: "",
     sub: [pick.format, ctx(pick.ctx) + " context", gb(pick.sizeGb)].filter(Boolean).join(" · ") } }
   v.rows.push({ type: "sec", label: "OPENS WITH" })
   pickers(s, v.rows, ui, s.defaults.agent, s.defaults.folder, "")

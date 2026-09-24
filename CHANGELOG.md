@@ -5,8 +5,8 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 ## [Unreleased]
 
 ### Changed
-- Home lists every GPU on its own row. Cards of one kind sit under a header with their count; a single card is just its name. A free GPU can be set up (its page, with that card ticked) or run on directly; a GPU running a model says so; a crashed one is a dashed row to run again or dismiss (dismiss stops it, freeing the card).
-- Model cards are tall again with their token line across them, drawn dim so it stays behind the text; they sit a little above the page, show speed and tokens small in the top-right corner and their capabilities as icons (eye, wrench, brain).
+- Home lists every GPU on its own row, numbered only when there are several of a kind. A free GPU shows "set up ›" beside its name (its page, with that card ticked) and the model to run on the right; a GPU running a model says so; a crashed one is a dashed row to run again or dismiss (dismiss stops it, freeing the card).
+- Model cards are tall again with their token line across them, drawn dim so it stays behind the text; they sit a little above the page and show speed and tokens small in the bottom-right corner. Capabilities are icons (eye, wrench, brain) on the model's page.
 - The header shows all-time tokens and a smaller, dimmer version. Loading reads "loading".
 
 ### Fixed

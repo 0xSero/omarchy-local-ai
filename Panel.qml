@@ -77,7 +77,6 @@ Panel {
     if (i === 0 && !view.hero && t !== "sec") return topGap
     if (t === "sec" || t === "acts" || t === "error") return groupGap
     if (t === "run" || t === "grid") return i === 0 && !view.hero ? topGap : blockGap
-    if (t === "group") return blockGap
     return i === 0 ? topGap : 0
   }
 
@@ -262,7 +261,7 @@ Panel {
                 x: inset
                 y: parent.gap
                 width: parent.width - 2 * inset
-                sourceComponent: ({ run: runC, slot: slotC, group: groupC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
+                sourceComponent: ({ run: runC, slot: slotC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
                   field: fieldC, opt: optC, path: pathC, acts: actsC })[r.type] || textC
               }
 
@@ -288,14 +287,7 @@ Panel {
                       Logo { family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
                       Label { text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
                     }
-                    Row {
-                      spacing: Style.space(8)
-                      Label { text: r.gpu; color: root.labelTone; anchors.verticalCenter: parent.verticalCenter }
-                      Repeater {
-                        model: r.caps || []
-                        CapIcon { required property var modelData; cap: modelData; anchors.verticalCenter: parent.verticalCenter }
-                      }
-                    }
+                    Label { width: parent.width; text: r.gpu; color: root.labelTone; elide: Text.ElideRight }
                     Item { width: 1; height: Style.space(4) }
                     Label {
                       visible: (r.sub || []).length > 0
@@ -314,12 +306,13 @@ Panel {
                       Rectangle { width: parent.width * (r.progress || 0) / 100; height: parent.height; color: root.ink }
                     }
                   }
-                  // speed and tokens, small, in the top-right corner
+                  // speed and tokens, small, in the bottom-right corner, level with the buttons
                   Label {
                     visible: !!r.stats
                     anchors.right: parent.right
                     anchors.rightMargin: root.pad
-                    y: Style.space(18)
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: Style.space(20)
                     text: r.stats || ""
                     color: root.labelTone
                     font.pixelSize: Style.font.caption - 1
@@ -340,17 +333,9 @@ Panel {
                 }
               }
 
-              // Several cards of one kind: their count, over their rows
-              Component {
-                id: groupC
-                Item {
-                  height: root.rowH
-                  Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label; color: root.labelTone }
-                }
-              }
-
-              // One GPU: its name opens what it runs, or its page when free; its note says what it is doing; its
-              // actions sit on the right. A crashed one is framed in dashes, the way a free card used to read.
+              // One GPU, in the look of the earlier card rows: its name on the left (with "set up ›" when free, which
+              // opens its page), and on the right what it runs, or the model to run on it, or what holds it. A crashed
+              // one is framed in dashes and runs again or is dismissed.
               Component {
                 id: slotC
                 Item {
@@ -373,11 +358,30 @@ Panel {
                     x: root.gutter
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(10)
-                    Label { text: r.label; color: root.valueTone }
-                    Label { text: r.note || ""; color: r.crashed || r.warn ? root.alertTone : root.labelTone }
+                    Label { text: r.label }
+                    Label { visible: !!r.hint; text: r.hint || ""; color: r.crashed ? root.alertTone : root.labelTone }
                   }
                   Click { anchors.fill: slotName; action: r.open || "" }
                   Row {
+                    id: slotRun
+                    visible: !!r.run
+                    anchors.right: parent.right
+                    anchors.rightMargin: root.gutter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(6)
+                    Logo { family: r.run ? r.run.family : ""; size: 12; anchors.verticalCenter: parent.verticalCenter }
+                    Label { text: r.run ? r.run.label : ""; color: root.ink }
+                  }
+                  Click { anchors.fill: slotRun; action: r.run ? r.run.action : "" }
+                  Right {
+                    visible: !r.run && !(r.acts || []).length
+                    margin: root.gutter
+                    text: r.note || ""
+                    color: r.warn ? root.alertTone : root.labelTone
+                    Click { action: r.open || "" }
+                  }
+                  Row {
+                    visible: (r.acts || []).length > 0
                     anchors.right: parent.right
                     anchors.rightMargin: root.gutter
                     anchors.verticalCenter: parent.verticalCenter
@@ -752,7 +756,15 @@ Panel {
         Label { text: h.name; color: root.ink; font.pixelSize: Style.font.body }
       }
       Label { width: parent.width; text: h.sub; elide: Text.ElideRight }
-      Label { width: parent.width; visible: !!text; text: h.caps || ""; elide: Text.ElideRight }
+      Row {
+        visible: (h.icons || []).length > 0 || !!h.caps
+        spacing: Style.space(10)
+        Repeater {
+          model: h.icons || []
+          CapIcon { required property var modelData; cap: modelData; anchors.verticalCenter: parent.verticalCenter }
+        }
+        Label { visible: !!text; text: h.caps || ""; anchors.verticalCenter: parent.verticalCenter }
+      }
     }
     Item { width: 1; height: root.topGap }
     Rectangle {
