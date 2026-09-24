@@ -9,6 +9,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - An "all GPUs" page: every card as home's rows, so any of them, busy ones too, opens to its buttons and Config.
 
 ### Changed
+- With no card to run on, the panel shows a thin square wave drifting left instead of a chip.
 - Home is running and available: running models as cards (tall, with their token line drawn dim, speed and tokens small in the bottom-right corner), then the available GPUs as rows, free ones first, then crashed ones. A GPU already running a model is not listed again; cards another program holds or with no model are behind "all GPUs".
 - A GPU row has one quick action on the right (run its model, or run again after a crash, with dismiss beside it); clicking the row opens it: its details or crash reason, then buttons like a model card's: Run (or Run again), Run on N cards, Config, Log, Dismiss (dismiss stops it, freeing the card).
 - Model cards sit a little above the page, with a slow glow on their border; "now" sits at the chart's right edge. A vision model shows an eye on its page.

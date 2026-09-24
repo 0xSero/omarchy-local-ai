@@ -426,33 +426,34 @@ Panel {
                 }
               }
 
-              // No card to run on: a chip, one line, and where the list of supported cards lives
+              // No card to run on: a square wave, one line, and where the list of supported cards lives
               Component {
                 id: soonC
                 Column {
                   topPadding: Style.space(28)
                   bottomPadding: Style.space(20)
                   spacing: Style.space(18)
+                  // a square wave drifting left, thin and quiet, fading out at both ends
                   Canvas {
+                    id: wave
+                    property real phase: 0
                     anchors.horizontalCenter: parent.horizontalCenter
-                    width: Style.space(64)
-                    height: width
+                    width: Style.space(140)
+                    height: Style.space(18)
+                    NumberAnimation on phase { from: 0; to: 1; duration: 2400; loops: Animation.Infinite; running: root.opened }
+                    onPhaseChanged: requestPaint()
                     onPaint: {
-                      var g = getContext("2d"), a = width * 0.22, b = width * 0.78, p = width * 0.12
+                      var g = getContext("2d"), p = Style.space(28), lo = height - 2, hi = 2
                       g.clearRect(0, 0, width, height)
-                      g.strokeStyle = root.labelTone
-                      g.lineWidth = 1.5
-                      g.strokeRect(a, a, b - a, b - a)
-                      g.strokeRect(width * 0.38, width * 0.38, width * 0.24, width * 0.24)
-                      for (var i = 0; i < 4; i++) {
-                        var t = a + (b - a) * (i + 0.5) / 4
-                        g.beginPath()
-                        g.moveTo(t, a); g.lineTo(t, p)
-                        g.moveTo(t, b); g.lineTo(t, width - p)
-                        g.moveTo(a, t); g.lineTo(p, t)
-                        g.moveTo(b, t); g.lineTo(width - p, t)
-                        g.stroke()
+                      g.beginPath()
+                      for (var x = -phase * p - p; x < width + p; x += p) {
+                        g.moveTo(x, lo); g.lineTo(x, hi); g.lineTo(x + p / 2, hi); g.lineTo(x + p / 2, lo); g.lineTo(x + p, lo)
                       }
+                      var f = g.createLinearGradient(0, 0, width, 0)
+                      f.addColorStop(0, "transparent"); f.addColorStop(0.25, root.labelTone); f.addColorStop(0.75, root.labelTone); f.addColorStop(1, "transparent")
+                      g.strokeStyle = f
+                      g.lineWidth = 1.5
+                      g.stroke()
                     }
                   }
                   Label {
