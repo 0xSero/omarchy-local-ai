@@ -278,7 +278,7 @@ function weights(rows, list) {
   if (!(list || []).length) return
   rows.push({ type: "sec", label: "WEIGHTS" })
   list.forEach(function(w) {
-    rows.push({ type: "field", icon: "weights", label: "hugging face", value: w.repository,
+    rows.push({ type: "field", logo: "hf", label: "hugging face", value: w.repository,
       action: "url|https://huggingface.co/" + w.repository + "/tree/" + w.revision })
   })
 }
