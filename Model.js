@@ -113,7 +113,7 @@ function slot(s, ui, g, at) {
     row.note = "in use by another program"
     items = [config]
   } else {
-    var r = kd.recipe
+    var r = kd.models[0]
     row.rank = 0
     row.run = { family: r.family, label: "run " + r.name + " ›", action: "run|" + r.id + "|" + g.key }
     chips = spec(r)
@@ -148,10 +148,9 @@ function slots(s, ui, keep) {
 }
 function flat(list) { return [].concat.apply([], list.map(function(x) { return x.rows })) }
 
-// home: your lifetime line (every answer from every model, once there is one), running models as cards (ready, then
-// starting or stopping), then the available GPUs as rows: free ones, then groups of free cards, then crashed ones to
-// run again or dismiss. A GPU already running a model is not listed again; the rest are one
-// "all GPUs" away.
+// home: your lifetime (once there is one), running models as cards (ready, then starting or stopping), then the
+// available GPUs as rows: free ones, then groups of free cards, then crashed ones to run again or dismiss. A GPU
+// already running a model is not listed again; the rest are one "all GPUs" away.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
@@ -225,15 +224,15 @@ function soonView(s) {
     action: SUPPORTED }] }
 }
 
-// A model's page, the same for a running model and a free card kind: its name and what it is, its token line and
-// figures when it runs, its cards, what Open uses, its weights, where it
-// answers when it runs, and Run or Log and Stop.
+// A model's page, the same for a running model, a free card and a group: m is the running model (d) or the chosen
+// recipe, with its cards, the models to choose from and what Run does. Its name and what it is, its token line and
+// figures when it runs, its cards, what Open uses, its weights, where it answers when it runs, and Run or Log and Stop.
 function page(s, ui, m) {
   var run = m.d, u = run ? run.session || {} : {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
-  var v = { back: true, rows: [], hero: { name: m.name, family: m.family, chips: [{ text: fmt(m.format) },
-    { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") },
-    m.ctx ? { icon: "context", text: ctx(m.ctx) } : null, (m.caps || {}).vision ? { icon: "vision", text: "" } : null,
-    m.sizeGb && !run ? { icon: "weights", text: gb(m.sizeGb) } : null].filter(Boolean) } }
+  var facts = spec(run ? Object.assign({}, m, { sizeGb: 0 }) : m)
+  facts.splice(1, 0, { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") })
+  if ((m.caps || {}).vision) facts.push({ icon: "vision", text: "" })
+  var v = { back: true, rows: [], hero: { name: m.name, family: m.family, chips: facts } }
   if (run) {
     Object.assign(v.hero, { line: line, top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: all.last ? ago(all.last) : "now" })
     v.rows.push({ type: "grid", cells: [
@@ -274,19 +273,17 @@ function page(s, ui, m) {
 function runView(s, id, ui) {
   var d = find(s.deployments, "id", id)
   if (!d) return null
-  return page(s, ui, { d: d, name: d.name, family: d.family, format: d.format, caps: d.caps, ctx: d.ctx, weights: d.weights,
-    cards: (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 }).map(gpuRow) })
+  return page(s, ui, Object.assign({ d: d }, d, { cards: (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 }).map(gpuRow) }))
 }
 
 // a card kind's page, for the card its row was opened from (else the first free one): the models validated for it,
 // the recommended one chosen until another is, and Run when that card is free; a card another program holds says why
 function kindView(s, hw, ui) {
-  var kd = find(s.kinds, "hw", hw), models = kd && (kd.models || [kd.recipe]), pick = kd && (find(models, "id", ui.model) || kd.recipe)
+  var kd = find(s.kinds, "hw", hw), models = kd ? kd.models : [], pick = find(models, "id", ui.model) || models[0]
   if (!pick) return null
   var key = kd.keys.indexOf(ui.key) >= 0 ? ui.key : kd.free[0], free = kd.free.indexOf(key) >= 0, g = key && find(s.gpus, "key", key)
-  return page(s, ui, { id: pick.id, models: models, name: pick.name, family: pick.family, format: pick.format, caps: pick.caps,
-    ctx: pick.ctx, sizeGb: pick.sizeGb, weights: pick.weights, action: free ? "run|" + pick.id + "|" + key : "",
-    cards: g ? [Object.assign(gpuRow(g), { status: kd.taken.indexOf(key) >= 0 ? "in use by another program" : g.busy ? "running a model" : "" })] : [] })
+  return page(s, ui, Object.assign({}, pick, { models: models, action: free ? "run|" + pick.id + "|" + key : "",
+    cards: g ? [Object.assign(gpuRow(g), { status: kd.taken.indexOf(key) >= 0 ? "in use by another program" : g.busy ? "running a model" : "" })] : [] }))
 }
 
 // a group of free cards of a kind: the models validated for that many cards, on the cards it would run on
@@ -295,8 +292,8 @@ function groupView(s, hw, n, ui) {
   var gr = find(models, "id", ui.model) || models[0]
   if (!gr || kd.free.length < n) return null
   var keys = kd.free.slice(0, n)
-  return page(s, ui, { id: gr.id, models: models, name: gr.name, family: gr.family, format: gr.format, caps: gr.caps, ctx: gr.ctx, sizeGb: gr.sizeGb, weights: gr.weights,
-    action: "run|" + gr.id + "|" + keys.join(","), cards: keys.map(function(key) { return gpuRow(find(s.gpus, "key", key)) }) })
+  return page(s, ui, Object.assign({}, gr, { models: models, action: "run|" + gr.id + "|" + keys.join(","),
+    cards: keys.map(function(key) { return gpuRow(find(s.gpus, "key", key)) }) }))
 }
 
 function gpuRow(g) {

@@ -91,7 +91,7 @@ export PATH=$TMP/bin:/usr/bin:/bin
 
 recipes "$PIN"
 "$CLI" snapshot >"$TMP/snap.json"
-[[ $(jq -r '.kinds[0].hw, .kinds[0].free[0], .kinds[0].recipe.id, (.gpus[] | select(.hw == "") | .name)' "$TMP/snap.json" | paste -sd' ') == "rtx-4090-24gb nvidia:0 $ID GT 710" ]] ||
+[[ $(jq -r '.kinds[0].hw, .kinds[0].free[0], .kinds[0].models[0].id, (.gpus[] | select(.hw == "") | .name)' "$TMP/snap.json" | paste -sd' ') == "rtx-4090-24gb nvidia:0 $ID GT 710" ]] ||
   fail "snapshot" "$(jq -c . "$TMP/snap.json")"
 pass "the snapshot matches the card to its kind and its one recipe, and lists a card with no recipe"
 

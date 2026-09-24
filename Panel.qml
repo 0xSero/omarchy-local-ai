@@ -66,7 +66,7 @@ Panel {
     try {
       return Model.build(snap, ui)
     } catch (e) {
-      return { title: "LOCAL AI", right: "", mark: "failed", rows: [{ type: "error", label: "could not read the backend's answer: " + e.message }] }
+      return { title: "LOCAL AI", mark: "failed", rows: [{ type: "error", label: "could not read the backend's answer: " + e.message }] }
     }
   }
 
@@ -581,7 +581,35 @@ Panel {
                 }
               }
 
-              Component { id: gpuC; GpuRow { g: r; height: r.status ? Style.space(36) : root.rowH } }
+              // One card: its name (and what holds it), memory in use, temperature
+              Component {
+                id: gpuC
+                Item {
+                  height: r.status ? Style.space(36) : root.rowH
+                  Column {
+                    x: root.gutter
+                    width: Style.space(100)
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(2)
+                    Label { width: parent.width; text: r.name; elide: Text.ElideRight }
+                    Label { visible: !!text; text: r.status || ""; color: root.labelTone }
+                  }
+                  Rectangle {
+                    x: root.gutter + Style.space(104)
+                    visible: r.bar
+                    width: Math.max(0, gpuMem.x - x - Style.space(12))
+                    height: 3
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: root.ruleTone
+                    Rectangle {
+                      width: parent.width * r.pct / 100
+                      height: parent.height
+                      color: root.valueTone
+                    }
+                  }
+                  Right { id: gpuMem; margin: root.gutter; text: r.mem + (r.temp ? "  " + r.temp : "") }
+                }
+              }
 
               // A label on the left, a value on the right; a secret value stays hidden, small, until clicked, beside an always-on copy
               Component {
@@ -723,35 +751,6 @@ Panel {
     fillMode: Image.PreserveAspectFit
   }
 
-  // One card: its name (and what holds it), memory in use, temperature
-  component GpuRow: Item {
-    id: gpu
-    property var g
-    width: parent.width
-    height: Style.space(36)
-    Column {
-      x: root.gutter
-      width: Style.space(100)
-      anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(2)
-      Label { width: parent.width; text: gpu.g.name; elide: Text.ElideRight }
-      Label { visible: !!text; text: gpu.g.status || ""; color: root.labelTone }
-    }
-    Rectangle {
-      x: root.gutter + Style.space(104)
-      visible: gpu.g.bar
-      width: Math.max(0, mem.x - x - Style.space(12))
-      height: 3
-      anchors.verticalCenter: parent.verticalCenter
-      color: root.ruleTone
-      Rectangle {
-        width: parent.width * gpu.g.pct / 100
-        height: parent.height
-        color: root.valueTone
-      }
-    }
-    Right { id: mem; margin: root.gutter; text: gpu.g.mem + (gpu.g.temp ? "  " + gpu.g.temp : "") }
-  }
 
   // Tokens over time, cumulative, rising to the right: a dim line over a faint area, so text over it keeps its contrast
   component Line: Canvas {

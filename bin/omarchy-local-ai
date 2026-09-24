@@ -693,7 +693,6 @@ cmd_share() {
   mv -f "$f.tmp" "$f"
 }
 
-# tokens this week (today and the six days before it) and all time, over every model's usage log
 # summary <usage dir>: one model's usage so far, kept in summary.json beside its log and brought up to date by reading
 # only the lines added since (complete ones: a line still being written waits for the next time), 100,000 at a time.
 # Tokens are kept per hour, with the counts and sums the averages need, so a snapshot costs what is new, not the whole
@@ -803,6 +802,10 @@ adopt() {
   mv -f "$STATE/ledger.json" "$STATE/ledger.json.5x"
 }
 
+# what the widget needs of a recipe
+SUMMARY='def summary: {id, name, family, cards: (.cards // 1), format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
+  weights: [.weights[]? | {repository, revision}]};'
+
 cmd_snapshot() {
   local g deps='[]' d c s r ts=""
   mkdir -p "$STATE/deploy"
@@ -814,16 +817,15 @@ cmd_snapshot() {
     s=$(state "$c" "$(jq -c . "$d/status.json" 2>/dev/null || echo '{"state":"error","error":"no status"}')")
     r=$(recipe "$(jq -r .id <<<"$c")" || echo '{}')
     deps=$(jq -c --argjson c "$c" --argjson s "$s" --argjson r "$r" --arg ts "$ts" \
-      --argjson u "$(session "$(jq -r .id <<<"$c")" "$(date -d "$(jq -r .startedAt <<<"$c")" +%s)")" '
-      . + [$c + {state: $s.state, detail: $s.detail, percent: $s.percent, error: $s.error, session: $u,
-        name: ($r.name // $c.id), family: ($r.family // ""), format: ($r.format // ""), sizeGb: ($r.sizeGb // 0),
-        ctx: ($r.serving.ctxTokens // 0), caps: ($r.capabilities // {}), weights: [$r.weights[]? | {repository, revision}],
-        shared: (if $ts != "" and ($c.shared // false) then "https://\($ts):\($c.port)" else "" end)}]' <<<"$deps")
+      --argjson u "$(session "$(jq -r .id <<<"$c")" "$(date -d "$(jq -r .startedAt <<<"$c")" +%s)")" "$SUMMARY"'
+      . + [{name: $c.id} + ($r | summary | del(.id) | with_entries(select(.value != null))) + $c
+        + {state: $s.state, detail: $s.detail, percent: $s.percent, error: $s.error, session: $u,
+           shared: (if $ts != "" and ($c.shared // false) then "https://\($ts):\($c.port)" else "" end)}]' <<<"$deps")
   done
   jq -nc --argjson g "$g" --argjson deps "$deps" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" --arg ts "$ts" \
     --arg agent "$(get agent)" --arg folder "$(get folder)" --arg version "$(jq -r .version "$PANEL/manifest.json")" \
     --argjson folders "$(jq -c '.folders // []' "$STATE/settings.json" 2>/dev/null || echo '[]')" \
-    --argjson agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done | jq -Rsc 'split("\n") | map(select(length > 0))')" '
+    --argjson agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done | jq -Rsc 'split("\n") | map(select(length > 0))')" "$SUMMARY"'
     ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
@@ -831,12 +833,9 @@ cmd_snapshot() {
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
-         recipe: ([$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1)][0] // $rec[0].hardware[.[0].hw].recipes[0]
-           | {id, name, family, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}),
-         models: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1)
-           | {id, name, family, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}],
-         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1)
-           | {id, name, family, cards, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}]}],
+         # the registry lists the recipes of a kind best first: the first on one card is its recommended model
+         models: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1) | summary],
+         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1) | summary]}],
        deployments: $deps}'
 }
 
