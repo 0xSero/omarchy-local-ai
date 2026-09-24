@@ -76,7 +76,7 @@ Panel {
     var rows = view.rows || [], t = rows[i].type
     if (i === 0 && !view.hero && t !== "sec") return topGap
     if (t === "sec" || t === "acts" || t === "error") return groupGap
-    if (t === "run" || t === "grid") return i === 0 && !view.hero ? topGap : blockGap
+    if (t === "run" || t === "grid" || t === "down") return i === 0 && !view.hero ? topGap : blockGap
     return i === 0 ? topGap : 0
   }
 
@@ -256,69 +256,101 @@ Panel {
               // A Loader sizes its item, so a surface's inset lives on the Loader; other rows keep their own gutter
               Loader {
                 id: row
-                readonly property real inset: ["run", "grid"].indexOf(r.type) >= 0 ? root.edge : 0
+                readonly property real inset: ["run", "grid", "down"].indexOf(r.type) >= 0 ? root.edge : 0
                 x: inset
                 y: parent.gap
                 width: parent.width - 2 * inset
-                sourceComponent: ({ run: runC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
+                sourceComponent: ({ run: runC, down: downC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
                   field: fieldC, opt: optC, path: pathC, acts: actsC })[r.type] || textC
               }
 
-              // A running model: its all-time token line behind its name, card, speed and tokens; Open and More
+              // A running model: its all-time token line across the whole card, behind its name, card, speed and
+              // tokens; Open and More
               Component {
                 id: runC
                 Rectangle {
-                  height: body.implicitHeight + 2 * root.pad
-                  // a failed model is hollow: no lit surface, an alert outline, its hatching, a dimmed name
-                  color: r.error ? "transparent" : root.surface
-                  border.width: r.error ? 1 : 0
-                  border.color: Qt.rgba(root.alertTone.r, root.alertTone.g, root.alertTone.b, 0.4)
+                  height: Style.space(156)
+                  color: root.surface
                   clip: true
-                  Line { anchors.fill: parent; values: r.line; visible: !r.error }
-                  Hatch { anchors.fill: parent; visible: !!r.error }
+                  Line { anchors.fill: parent; values: r.line }
                   Column {
-                    id: body
                     x: root.pad
-                    y: root.pad
+                    y: Style.space(16)
                     width: parent.width - 2 * root.pad
-                    spacing: Style.space(4)
+                    spacing: Style.space(6)
                     Row {
-                      spacing: Style.space(8)
-                      Logo { family: r.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
-                      Label { text: r.name; color: r.error ? root.labelTone : root.ink; font.pixelSize: Style.font.body }
+                      spacing: Style.space(10)
+                      Logo { family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
+                      Label { text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
                     }
-                    Label { width: parent.width; text: r.gpu; elide: Text.ElideRight }
+                    Label { width: parent.width; text: r.gpu; color: root.labelTone; elide: Text.ElideRight }
+                    Item { width: 1; height: Style.space(4) }
                     Label {
                       width: parent.width
-                      text: r.sub.join(" · ")
-                      color: r.error ? root.alertTone : root.valueTone
+                      text: r.sub.join("  ·  ")
+                      color: root.valueTone
                       wrapMode: Text.WordWrap
                       maximumLineCount: 2
                       elide: Text.ElideRight
                     }
-                    Item {
+                    Rectangle {
                       visible: r.progress >= 0
                       width: parent.width
-                      height: Style.space(6)
-                      Rectangle {
-                        anchors.bottom: parent.bottom
-                        width: parent.width
-                        height: 2
-                        color: root.ruleTone
-                        Rectangle { width: parent.width * (r.progress || 0) / 100; height: parent.height; color: root.ink }
-                      }
+                      height: 2
+                      color: root.ruleTone
+                      Rectangle { width: parent.width * (r.progress || 0) / 100; height: parent.height; color: root.ink }
                     }
-                    Item { width: 1; height: Style.space(8) }
-                    Row {
-                      spacing: Style.space(8)
-                      Btn {
-                        label: r.primary.label + (r.primary.quiet ? "" : " ›")
-                        action: r.primary.action
-                        primary: !r.primary.quiet && !r.error
-                        danger: !!r.primary.quiet
-                      }
-                      Btn { label: "More"; action: r.more }
+                  }
+                  Row {
+                    x: root.pad
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: Style.space(14)
+                    spacing: Style.space(8)
+                    Btn {
+                      label: r.primary.label + (r.primary.quiet ? "" : " ›")
+                      action: r.primary.action
+                      primary: !r.primary.quiet
+                      danger: !!r.primary.quiet
                     }
+                    Btn { label: "More"; action: r.more }
+                  }
+                }
+              }
+
+              // A crashed model: one dashed line, the way a free card used to read; its name opens its page,
+              // its right side runs it again or dismisses it (stop: its containers and its state go)
+              Component {
+                id: downC
+                Item {
+                  height: Style.space(40)
+                  Canvas {
+                    anchors.fill: parent
+                    onPaint: {
+                      var g = getContext("2d")
+                      g.clearRect(0, 0, width, height)
+                      g.setLineDash([3, 3])
+                      g.strokeStyle = root.alertRule
+                      g.strokeRect(0.5, 0.5, width - 1, height - 1)
+                    }
+                  }
+                  Label {
+                    id: downLabel
+                    x: root.pad
+                    width: parent.width - root.pad - downActs.width - Style.space(24)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: r.label
+                    color: root.alertTone
+                    elide: Text.ElideRight
+                  }
+                  Click { anchors.fill: downLabel; action: r.more }
+                  Row {
+                    id: downActs
+                    anchors.right: parent.right
+                    anchors.rightMargin: root.pad
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(14)
+                    Label { text: "run again ›"; color: root.ink; Click { action: r.again } }
+                    Label { text: "dismiss"; color: root.labelTone; Click { action: r.dismiss } }
                   }
                 }
               }
@@ -596,25 +628,6 @@ Panel {
 
   // Tokens over time, cumulative, rising to the right. Where text sits on it (a card on home) it is only a faint
   // area, which leaves the text's contrast as it is; on a model's page it also gets its line, in the rule tone.
-  // A failed model: hatched where its token line would be, so a crash reads before any word does
-  component Hatch: Canvas {
-    onWidthChanged: requestPaint()
-    onHeightChanged: requestPaint()
-    onVisibleChanged: requestPaint()
-    onPaint: {
-      var g = getContext("2d"), step = Style.space(10)
-      g.clearRect(0, 0, width, height)
-      g.strokeStyle = Qt.rgba(root.alertTone.r, root.alertTone.g, root.alertTone.b, 0.4)
-      g.lineWidth = 1
-      g.beginPath()
-      for (var x = -height; x < width; x += step) {
-        g.moveTo(x, height)
-        g.lineTo(x + height, 0)
-      }
-      g.stroke()
-    }
-  }
-
   component Line: Canvas {
     property var values: []
     property bool stroke: true
@@ -631,7 +644,7 @@ Panel {
         else g.moveTo(x, y)
       }
       if (stroke) {
-        g.strokeStyle = Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
+        g.strokeStyle = Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
         g.lineWidth = 1.2
         g.stroke()
       }
@@ -702,8 +715,7 @@ Panel {
       Item {
         anchors.fill: parent
         visible: !h.gpus
-        Line { anchors.fill: parent; values: h.line || []; visible: !h.failed }
-        Hatch { anchors.fill: parent; visible: !!h.failed }
+        Line { anchors.fill: parent; values: h.line || [] }
         Label { x: root.pad; y: Style.space(8); text: h.top || ""; color: root.labelTone }
         Label { x: root.pad; y: parent.height / 2 - height / 2; text: h.mid || ""; color: root.labelTone }
         Label { x: root.pad; y: parent.height - Style.space(8) - height; text: h.since || ""; color: root.labelTone }

@@ -5,8 +5,8 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 ## [Unreleased]
 
 ### Changed
-- A failed model's card, and its chart on the model's page, are hatched instead of showing its token line, so a crash reads at a glance.
-- Home lists working models first (ready, then starting or stopping) and failed ones below them. A failed card is hollow: an alert outline over its hatching, a dimmed name, outlined buttons. A running card's token line is visible again.
+- A running model's card is tall again with its token line across the whole card, drawn dimmer (ink at 25%) so it stays behind the text.
+- A crashed model is one dashed row at the bottom, below the working models and the other cards: "1 × RTX 3090 · crashed", then "run again ›" and "dismiss". Dismiss stops it, so its containers and state go and the card is free again. Working models are ordered ready, then starting or stopping.
 
 ## [6.0.3] - 2026-09-24
 

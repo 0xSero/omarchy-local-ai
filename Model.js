@@ -68,11 +68,11 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-// home: one panel per model, working ones (ready, then starting or stopping) above failed ones, then one list
-// of the other cards: free ones to run on, busy or unsupported ones and why
+// home: one panel per working model (ready, then starting or stopping), then one list of the other cards (free
+// ones to run on, busy or unsupported ones and why), then one dashed row per crashed model to run again or dismiss
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
-  var rows = [], cards = [], models = [], shown = {}
+  var rows = [], cards = [], models = [], down = [], shown = {}
   if (ui.problem) rows.push({ type: "error", label: ui.problem })
   function panel(d) {
     shown[d.id] = 1
@@ -94,11 +94,11 @@ function homeView(s, ui) {
       r.sub = [(d.detail || d.state) + (r.progress >= 0 && d.state !== "download" ? " · " + d.percent + "%" : "")]
       r.primary = { label: "Stop", action: "stop|" + d.id, quiet: true }
     } else {
-      r.sub = [d.error || "stopped"]
-      r.error = true
-      r.primary = { label: "Run again", action: "again|" + d.id + "|" + d.keys.join(",") }
+      down.push({ type: "down", label: cards.length + " × " + (cards[0] ? cards[0].name : "GPU") + " · crashed", family: d.family,
+        more: "more|" + d.id, again: "again|" + d.id + "|" + d.keys.join(","), dismiss: "stop|" + d.id })
+      return
     }
-    models.push({ rank: d.state === "ready" ? 0 : r.error ? 2 : 1, at: models.length, row: r })
+    models.push({ rank: d.state === "ready" ? 0 : 1, at: models.length, row: r })
   }
   ;(s.kinds || []).forEach(function(kd) {
     ;(s.deployments || []).filter(function(d) {
@@ -114,6 +114,7 @@ function homeView(s, ui) {
   models.sort(function(a, b) { return a.rank - b.rank || a.at - b.at }).forEach(function(m) { rows.push(m.row) })
   ;(s.unsupported || []).forEach(function(u) { cards.push({ type: "busy", label: u.n + " × " + u.name, note: "no validated model yet" }) })
   if (cards.length) rows = rows.concat([{ type: "sec", label: "GPUS" }], cards)
+  rows = rows.concat(down)
   return { title: "LOCAL AI", version: s.version, stat: k(s.week), statLabel: "this week", rows: rows }
 }
 
@@ -131,10 +132,8 @@ function runView(s, id, ui) {
   if (!d) return null
   var u = d.session || {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
   var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
-  // a failed model's chart is hatched, without a scale
-  var failed = d.state === "error"
-  var v = { back: true, rows: [], hero: { name: d.name, family: d.family, line: line, failed: failed,
-    top: failed ? "" : k(top) + " tokens", mid: failed ? "" : k(Math.round(top / 2)), since: failed ? "" : all.since || "", now: failed ? "" : "now",
+  var v = { back: true, rows: [], hero: { name: d.name, family: d.family, line: line,
+    top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: "now",
     sub: [d.format, d.keys.length + " × " + (cards[0] ? cards[0].name : "GPU")].filter(Boolean).join(" · "),
     caps: caps(d.caps, d.ctx).join(" · ") } }
   v.rows.push({ type: "grid", cells: [
