@@ -168,6 +168,7 @@ function homeView(s, ui) {
 
 // Your lifetime as an activity grid: a column a week, a row a weekday, each day shaded in four steps by its tokens
 // against your busiest day (days still to come are blank), the months under their first week, the totals above
+var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 function activity(s) {
   var life = s.life, days = life.days || [], top = Math.max.apply(null, days.concat([1])), months = [], last = -1
@@ -180,7 +181,13 @@ function activity(s) {
   if (months.length > 1 && months[1].col < 3) months.shift()
   return { type: "life", tokens: k(s.total) + " tokens", requests: k(life.requests) + (life.requests === 1 ? " request" : " requests"),
     since: "since " + life.since, months: months,
-    cells: days.map(function(v, i) { return i > life.today ? -1 : v > 0 ? Math.ceil(v / top * 4) : 0 }) }
+    cells: days.map(function(v, i) { return i > life.today ? -1 : v > 0 ? Math.ceil(v / top * 4) : 0 }),
+    // what a hovered day says: its date and its tokens
+    labels: days.map(function(v, i) {
+      var d = new Date(life.start * 1000)
+      d.setDate(d.getDate() + i)
+      return DAYS[d.getDay()] + " " + MONTHS[d.getMonth()] + " " + d.getDate() + "  " + (v > 0 ? k(v) + " tokens" : "no tokens")
+    }) }
 }
 
 // A running model's card: its all-time token line, its name and cards, and Open (or Stop while it starts) and More

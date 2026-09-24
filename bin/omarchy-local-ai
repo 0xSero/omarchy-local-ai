@@ -694,34 +694,77 @@ cmd_share() {
 }
 
 # tokens this week (today and the six days before it) and all time, over every model's usage log
+# summary <usage dir>: one model's usage so far, kept in summary.json beside its log and brought up to date by reading
+# only the lines added since (complete ones: a line still being written waits for the next time), 100,000 at a time.
+# Tokens are kept per hour, with the counts and sums the averages need, so a snapshot costs what is new, not the whole
+# history. One reader brings it up to date while another uses what is there; a log that shrank (cleared or rotated)
+# is summed again from its start.
+summary() {
+  local f=$1/usage.jsonl s=$1/summary.json n seen take
+  [[ -f $f ]] || { echo '{}'; return; }
+  n=$(wc -l <"$f")
+  seen=$(jq -r '.lines // 0' "$s" 2>/dev/null || echo 0)
+  if ((n < seen)); then seen=0; rm -f "$s"; fi
+  if ((n > seen)) || [[ ! -f $s ]]; then
+    (
+      flock -n 9 || exit 0
+      while ((seen < n)) || [[ ! -f $s ]]; do
+        take=$((n - seen < 100000 ? n - seen : 100000))
+        tail -n +"$((seen + 1))" "$f" | head -n "$take" | { grep '^{' || true; } |
+          jq -sc --argjson n "$((seen + take))" --slurpfile old <(cat "$s" 2>/dev/null || echo '{}') '
+            def rate: .completion / ((if .ms > .ttft_ms then .ms - .ttft_ms else .ms end) / 1000);
+            def bump(groups; key; val): reduce groups[] as $g (.; .[$g[0] | key | tostring] += ($g | val));
+            $old[0] as $o | map(. + {v: ((.prompt // 0) + (.completion // 0))}) as $rs
+            | [$rs[] | select(.completion > 8 and .ms > 0) | rate] as $dec
+            | [$rs[] | select(.prompt > 64 and .ttft_ms > 0 and .ttft_ms < .ms) | .prompt / (.ttft_ms / 1000)] as $pre
+            | [$rs[] | select(.ttft_ms < .ms)] as $tt
+            | $o + {lines: $n, requests: (($o.requests // 0) + ($rs | length)), total: (($o.total // 0) + ([$rs[].v] | add // 0)),
+                hours: (($o.hours // {}) | bump($rs | group_by(.t / 3600 | floor); .t / 3600 | floor; map(.v) | add)),
+                first: ([$o.first, ($rs | map(.t) | min)] | map(select(. != null)) | min),
+                last: ([$o.last, ($rs | map(.t) | max)] | map(select(. != null)) | max),
+                decode: {n: (($o.decode.n // 0) + ($dec | length)), sum: (($o.decode.sum // 0) + ($dec | add // 0))},
+                prefill: {n: (($o.prefill.n // 0) + ($pre | length)), sum: (($o.prefill.sum // 0) + ($pre | add // 0))},
+                ttftn: (($o.ttftn // 0) + ($tt | length)),
+                ttft: (($o.ttft // {}) | bump($tt | group_by(.ttft_ms / 50 | floor); .ttft_ms / 50 | floor; length))}' \
+          >"$s.$$" 2>/dev/null && mv -f "$s.$$" "$s" || { rm -f "$s.$$"; break; }
+        seen=$((seen + take))
+      done
+    ) 9>"$s.lock"
+  fi
+  cat "$s" 2>/dev/null || echo '{}'
+}
+
 # tokens: this week's and all-time tokens, and your lifetime: requests, the first and last answer, and the tokens of
 # each day of the last 20 weeks, from a Monday (the activity grid on home: a column a week, a row a weekday)
 tokens() {
-  local w0
+  local w0 d
   w0=$(date -d "$(date +%F) -$(($(date +%u) - 1 + 133)) days 00:00" +%s)
-  { cat "$STATE"/usage/*/usage.jsonl 2>/dev/null | grep '^{' || true; } |
+  for d in "$STATE"/usage/*/; do [[ -d $d ]] && summary "${d%/}"; done |
     jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" --argjson now "$(date +%s)" --argjson w0 "$w0" '
-      ([.[] | {d: ((.t - $w0) / 86400 | floor), v: (.prompt + .completion)} | select(.d >= 0 and .d < 140)]
-        | reduce .[] as $x ([range(140) | 0]; .[$x.d] += $x.v)) as $days
-      | {week: ([.[] | select(.t >= $d0) | .prompt + .completion] | add // 0), total: ([.[] | .prompt + .completion] | add // 0),
-         life: {requests: length, since: ([.[].t] | min // $now | strftime("%b %-d")), last: ([.[].t] | max // $now),
-           start: $w0, today: (($now - $w0) / 86400 | floor), days: $days}}' \
+      [.[] | select(.requests > 0)] as $all
+      | [$all[] | .hours | to_entries[] | {t: (.key | tonumber * 3600), v: .value}] as $h
+      | {week: ([$h[] | select(.t >= $d0) | .v] | add // 0), total: ([$all[].total] | add // 0),
+         life: {requests: ([$all[].requests] | add // 0), since: ([$all[].first] | min // $now | strflocaltime("%b %-d")),
+           last: ([$all[].last] | max // $now), start: $w0, today: (($now - $w0) / 86400 | floor),
+           days: ([$h[] | {d: ((.t - $w0) / 86400 | floor), v} | select(.d >= 0 and .d < 140)]
+             | reduce .[] as $x ([range(140) | 0]; .[$x.d] += $x.v))}}' \
     2>/dev/null || echo '{"week":0,"total":0,"life":{"requests":0,"days":[]}}'
 }
 
-# session <id> <since>: tokens since this start, and over every run of this model: averages and a 24-point line
+# session <id> <since>: tokens since this start (to the hour), and over every run of this model: averages, the median
+# first token, and a 24-point line from the first answer to the last, so the latest growth sits at the right edge
 session() {
-  { grep '^{' "$STATE/usage/$1/usage.jsonl" 2>/dev/null || true; } | jq -sc --argjson s "$2" --argjson now "$(date +%s)" '
-    def avg: if length > 0 then add / length | round else null end;
-    # the line runs from the first answer to the last one, so the latest growth sits at the right edge
-    ([.[].t] | min // $s) as $from | ([.[].t] | max // $now) as $last | (($last - $from) / 24 + 1) as $step
-    | {tokens: ([.[] | select(.t >= $s) | .prompt + .completion] | add // 0),
-       all: {since: ($from | strftime("%b %-d")), last: $last, tokens: ([.[] | .prompt + .completion] | add // 0),
-         decode: ([.[] | select(.completion > 8 and .ms > 0)
-           | .completion / ((if .ms > .ttft_ms then .ms - .ttft_ms else .ms end) / 1000)] | avg),
-         prefill: ([.[] | select(.prompt > 64 and .ttft_ms > 0 and .ttft_ms < .ms) | .prompt / (.ttft_ms / 1000)] | avg),
-         ttft: ([.[] | select(.ttft_ms < .ms) | .ttft_ms] | if length > 0 then sort | .[length / 2 | floor] else null end),
-         line: [range(1; 25) as $i | [.[] | select(.t < $from + $i * $step) | .prompt + .completion] | add // 0]}}' 2>/dev/null ||
+  summary "$STATE/usage/$1" | jq -c --argjson s "$2" --argjson now "$(date +%s)" '
+    def avg(x): if (x.n // 0) > 0 then x.sum / x.n | round else null end;
+    [(.hours // {}) | to_entries[] | {t: (.key | tonumber * 3600), v: .value}] as $h
+    | (.first // $s) as $from | (.last // $now) as $last | (($last - $from) / 24 + 1) as $step
+    | (.ttftn // 0) as $tn
+    | {tokens: ([$h[] | select(.t + 3600 > $s) | .v] | add // 0),
+       all: {since: ($from | strflocaltime("%b %-d")), last: $last, tokens: (.total // 0), decode: avg(.decode), prefill: avg(.prefill),
+         ttft: (if $tn > 0 then [.ttft | to_entries[] | {b: (.key | tonumber), c: .value}] | sort_by(.b)
+           | reduce .[] as $x ({s: 0, m: null}; (if .m == null and .s + $x.c > $tn / 2 then .m = $x.b * 50 + 25 else . end) | .s += $x.c) | .m
+           else null end),
+         line: [range(1; 25) as $i | [$h[] | select(.t < $from + $i * $step) | .v] | add // 0]}}' 2>/dev/null ||
     echo '{"tokens":0,"all":{"tokens":0,"line":[]}}'
 }
 

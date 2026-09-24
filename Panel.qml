@@ -275,8 +275,11 @@ Panel {
                 id: lifeC
                 Column {
                   id: life
+                  objectName: "local-ai-life"
                   readonly property int cols: Math.ceil((r.cells || []).length / 7)
                   readonly property real cell: Math.min(Style.space(12), (width - 2 * root.gutter - (cols - 1) * Style.space(3)) / cols)
+                  // the hovered day, whose date and tokens replace "since" at the top right
+                  property int hover: -1
                   spacing: Style.space(10)
                   Item {
                     width: parent.width
@@ -287,7 +290,11 @@ Panel {
                       Label { id: lifeTokens; text: r.tokens; color: root.ink }
                       Label { anchors.baseline: lifeTokens.baseline; text: r.requests; color: root.labelTone }
                     }
-                    Right { margin: root.gutter; text: r.since; color: root.labelTone }
+                    Right {
+                      margin: root.gutter
+                      text: life.hover >= 0 ? (r.labels || [])[life.hover] || "" : r.since
+                      color: life.hover >= 0 ? root.ink : root.labelTone
+                    }
                   }
                   Grid {
                     x: root.gutter
@@ -298,10 +305,20 @@ Panel {
                       model: r.cells || []
                       Rectangle {
                         required property var modelData
+                        required property int index
                         width: life.cell
                         height: life.cell
                         radius: 2
                         color: modelData < 0 ? "transparent" : Util.alpha(root.theme, [0.07, 0.25, 0.45, 0.7, 0.95][modelData])
+                        border.width: life.hover === index ? 1 : 0
+                        border.color: root.ink
+                        MouseArea {
+                          anchors.fill: parent
+                          enabled: modelData >= 0
+                          hoverEnabled: true
+                          onEntered: life.hover = index
+                          onExited: if (life.hover === index) life.hover = -1
+                        }
                       }
                     }
                   }

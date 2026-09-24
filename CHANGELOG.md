@@ -5,7 +5,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 ## [Unreleased]
 
 ### Added
-- Home leads with your lifetime: all-time tokens and requests over an activity grid of the last 20 weeks (a column a week, a row a weekday, each day shaded by its tokens), whether or not a model runs. A first run, with no answers yet, has none.
+- Home leads with your lifetime: all-time tokens and requests over an activity grid of the last 20 weeks (a column a week, a row a weekday, each day shaded by its tokens), whether or not a model runs; hovering a day shows its date and tokens. A first run, with no answers yet, has none.
 - A card's Config lists every model validated for it (the bundle now carries every recipe of the registry, 97 instead of 40), the recommended one checked; choosing another changes the page and what Run starts. A group's page does the same for models validated on that many cards.
 - Groups: one model across several cards of a kind. The bundle keeps each card kind's own recipe and the registry's first for each larger number of cards (Arc Pro B70: 2; RTX 3090: 2 and 4; RTX Pro 6000: 4). `run <recipe> <gpu>,<gpu>` checks every card and gives the engine exactly those; a free GPU's opened line offers "run on 2 cards" when enough cards of its kind are free.
 - An "all GPUs" page: every card as home's rows, so any of them, busy ones too, opens to its buttons and Config.
@@ -28,6 +28,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - Unused snapshot fields (`unsupported`, a kind's name, most of a group's fields) and the panel's dead row types.
 
 ### Fixed
+- A snapshot no longer re-reads every usage log: each model keeps a summary beside its log (tokens per hour, counts and sums for the averages) that only reads the lines added since. With a million requests logged, a snapshot takes about 0.1 s instead of 5 s; the first read of an existing large log builds the summary once, 100,000 lines at a time.
 - `run` refuses a recipe on a card of another kind.
 - The panel flickered on every refresh: its rows were rebuilt each time. They now update in place.
 
