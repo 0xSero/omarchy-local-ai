@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.1.3] - 2026-09-24
+
+### Changed
+- The listing's preview shows the 6.1 panel: home with your activity and the running models, a running model's page, and a card's Config with its models.
+
 ## [6.1.2] - 2026-09-24
 
 ### Changed
