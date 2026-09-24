@@ -779,7 +779,8 @@ cmd_snapshot() {
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
          recipe: ([$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1)][0] // $rec[0].hardware[.[0].hw].recipes[0]
            | {id, name, family, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}),
-         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1) | {id, name, cards}]}],
+         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1)
+           | {id, name, family, cards, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}]}],
        deployments: $deps}'
 }
 

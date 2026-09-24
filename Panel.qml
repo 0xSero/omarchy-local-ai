@@ -21,6 +21,10 @@ Panel {
   readonly property color surface: Util.alpha(theme, 0.06)
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property string mono: bar ? bar.fontFamily : Style.font.family
+  // Nerd Font glyphs for the icon names Model.js uses
+  readonly property var glyphs: ({ gpu: 0xf08ae, memory: 0xf035b, temp: 0xf050f, context: 0xf09aa, weights: 0xf01a7, vision: 0xf06d0,
+    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf167a, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140 })
+  function glyph(name) { return glyphs[name] ? String.fromCodePoint(glyphs[name]) : "" }
 
   // Four tones, each picked by the APCA contrast it must reach on a card (Model.tones): ink for what matters
   // now (a model's name, the primary action, a choice made), value for what a label names, one tone for every
@@ -101,6 +105,7 @@ Panel {
     case "set": run(["set", a[1], a[2]].concat(a[3] ? [a[3]] : [])); nav({ open: "" }); break
     case "more": nav({ view: "run", id: a[1] }); break
     case "kind": nav({ view: "kind", id: a[1], key: a[2] || "" }); break
+    case "group": nav({ view: "group", id: a[1], key: a[2] }); break
     case "gpus": nav({ view: "gpus", id: "" }); break
     case "tick": nav({ key: a[1] }); break
     case "pick": nav({ open: ui.open === a[1] ? "" : a[1] }); break
@@ -294,7 +299,11 @@ Panel {
                       Logo { family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
                       Label { text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
                     }
-                    Label { width: parent.width; text: r.gpu; color: root.labelTone; elide: Text.ElideRight }
+                    Row {
+                      spacing: Style.space(10)
+                      Label { text: r.gpu; color: root.labelTone }
+                      Label { visible: !!r.mem; text: r.mem || ""; color: Util.alpha(root.labelTone, 0.6) }
+                    }
                     Item { width: 1; height: Style.space(4) }
                     Label {
                       visible: !!r.sub
@@ -314,15 +323,13 @@ Panel {
                     }
                   }
                   // speed and tokens, small, in the bottom-right corner, level with the buttons
-                  Label {
-                    visible: !!r.stats
+                  Chips {
+                    items: r.chips || []
                     anchors.right: parent.right
                     anchors.rightMargin: root.pad
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: Style.space(20)
-                    text: r.stats || ""
-                    color: root.labelTone
-                    font.pixelSize: Style.font.caption - 1
+                    size: Style.font.caption - 1
                   }
                   Row {
                     x: root.pad
@@ -405,6 +412,7 @@ Panel {
                   topPadding: Style.space(2)
                   bottomPadding: Style.space(10)
                   spacing: Style.space(8)
+                  Chips { visible: (r.chips || []).length > 0; x: root.gutter; items: r.chips || [] }
                   Label { visible: !!r.note; x: root.gutter; width: parent.width - 2 * root.gutter; text: r.note || ""; color: root.labelTone; wrapMode: Text.WordWrap }
                   // the same buttons as a model card's: filled for the main action, outlined for the rest
                   Flow {
@@ -518,11 +526,22 @@ Panel {
                 id: fieldC
                 Item {
                   height: root.rowH
-                  Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label; color: root.labelTone }
+                  Row {
+                    id: fieldLabel
+                    x: root.gutter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(8)
+                    Label { visible: !!r.icon; width: Style.space(12); text: root.glyph(r.icon || ""); color: root.labelTone }
+                    Label { text: r.label; color: root.labelTone }
+                  }
+                  // a long value (a weights repository) gives way in its middle rather than run over the label
                   Right {
                     id: fieldValue
                     margin: root.gutter
-                    text: r.secret ? (root.copied ? "copied" : "copy") : r.value + (r.action ? " ›" : "")
+                    width: Math.min(implicitWidth, parent.width - fieldLabel.x - fieldLabel.width - root.gutter - Style.space(16))
+                    elide: Text.ElideMiddle
+                    text: r.secret ? (root.copied ? "copied" : "copy") : r.value + (r.drop ? "  " + root.glyph("down") : r.action ? " ›" : "")
+                    color: r.open ? root.ink : root.valueTone
                   }
                   Label {
                     id: secretValue
@@ -544,7 +563,13 @@ Panel {
                 id: optC
                 Item {
                   height: root.rowH
-                  Label { x: root.gutter + Style.space(12); anchors.verticalCenter: parent.verticalCenter; text: (r.on ? "● " : "○ ") + r.label; color: r.on ? root.ink : root.valueTone }
+                  Row {
+                    x: root.gutter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(8)
+                    Label { width: Style.space(12); text: r.on ? root.glyph("check") : ""; color: root.ink }
+                    Label { text: r.label; color: r.on ? root.ink : root.valueTone }
+                  }
                   Click { action: r.action }
                 }
               }
@@ -585,6 +610,24 @@ Panel {
     color: root.valueTone
     font.family: root.mono
     font.pixelSize: Style.font.caption
+  }
+
+  // Facts as small icon-and-text pairs, spaced instead of joined with dots
+  component Chips: Flow {
+    id: chips
+    property var items: []
+    property color tone: root.labelTone
+    property int size: Style.font.caption
+    spacing: Style.space(12)
+    Repeater {
+      model: chips.items
+      Row {
+        required property var modelData
+        spacing: Style.space(4)
+        Label { visible: !!modelData.icon; text: root.glyph(modelData.icon || ""); color: root.labelTone; font.pixelSize: chips.size }
+        Label { visible: !!modelData.text; text: modelData.text || ""; color: chips.tone; font.pixelSize: chips.size }
+      }
+    }
   }
 
   // A label against its row's right edge
@@ -731,14 +774,7 @@ Panel {
         Logo { family: h.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
         Label { text: h.name; color: root.ink; font.pixelSize: Style.font.body }
       }
-      Label { width: parent.width; text: h.sub; elide: Text.ElideRight }
-      Row {
-        visible: h.vision || !!h.caps
-        spacing: Style.space(10)
-        // a vision model's eye, a glyph from the shell's Nerd Font
-        Label { visible: !!h.vision; text: "\udb81\uded0"; color: root.labelTone; anchors.verticalCenter: parent.verticalCenter }
-        Label { visible: !!text; text: h.caps || ""; anchors.verticalCenter: parent.verticalCenter }
-      }
+      Chips { width: parent.width; items: h.chips || []; tone: root.valueTone }
     }
     Item { width: 1; height: root.topGap }
     // a running model's token line, edge to edge, with its numbers over it (a free card has none)

@@ -9,6 +9,8 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - An "all GPUs" page: every card as home's rows, so any of them, busy ones too, opens to its buttons and Config.
 
 ### Changed
+- A group (one model across several free cards of a kind) is its own row under AVAILABLE, e.g. "2 × RTX 3090", with Run and a Config page for the group; a single GPU's row no longer offers groups.
+- Icons instead of dotted lists: a model's page shows its format, cards, context, vision and size as icon chips; agent, folder, weights, this machine and tailnet rows lead with an icon; agent and folder open with a chevron and mark the chosen one with a check. A running card reads "Arc Pro B70  32 GB", with speed and tokens as icons in its corner.
 - With no card to run on, the panel shows a thin square wave drifting left instead of a chip.
 - Home is running and available: running models as cards (tall, with their token line drawn dim, speed and tokens small in the bottom-right corner), then the available GPUs as rows, free ones first, then crashed ones. A GPU already running a model is not listed again; cards another program holds or with no model are behind "all GPUs".
 - A GPU row has one quick action on the right (run its model, or run again after a crash, with dismiss beside it); clicking the row opens it: its details or crash reason, then buttons like a model card's: Run (or Run again), Run on N cards, Config, Log, Dismiss (dismiss stops it, freeing the card).

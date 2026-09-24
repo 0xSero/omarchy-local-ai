@@ -69,14 +69,25 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
+// a recipe's facts as chips (an icon name and a short text): its format, context and download size
+function fmt(f) { return (f || "").replace(/ · /g, " ") }
+function spec(r) {
+  return [{ text: fmt(r.format) }, r.ctx ? { icon: "context", text: ctx(r.ctx) } : null, r.sizeGb ? { icon: "weights", text: gb(r.sizeGb) } : null].filter(Boolean)
+}
+// a card's memory and temperature as chips
+function health(g) {
+  var m = gpuRow(g)
+  return [{ icon: "memory", text: m.mem }, m.temp ? { icon: "temp", text: m.temp } : null].filter(Boolean)
+}
+
 var SUPPORTED = "url|https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md"
 
 // One GPU as a row: on the right its quick action (run its model, run again) or what it is doing; opened, a line
 // under it with its memory, what there is to know, and buttons for the rest, Config included for every card with
-// a model, so a busy one can be set up too. Rank orders the rows: free, running, crashed, held, no model.
+// a model, so a busy one can be set up too. Rank orders the rows: free, groups, running, crashed, held, no model.
 function slot(s, ui, g, at) {
   var kd = find(s.kinds || [], "hw", g.hw), d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0]
-  var row = { type: "slot", label: g.name, toggle: "pick|gpu:" + g.key, open: ui.open === "gpu:" + g.key }, note = "", items = []
+  var row = { type: "slot", label: g.name, toggle: "pick|gpu:" + g.key, open: ui.open === "gpu:" + g.key }, note = "", chips = [], items = []
   var config = { label: "Config", action: d ? "more|" + d.id : kd ? "kind|" + kd.hw + "|" + g.key : "" }
   if (!kd) {
     row.rank = 4
@@ -105,30 +116,40 @@ function slot(s, ui, g, at) {
     var r = kd.recipe
     row.rank = 0
     row.run = { family: r.family, label: "run " + r.name + " ›", action: "run|" + r.id + "|" + g.key }
-    note = [r.format, r.ctx ? ctx(r.ctx) + " context" : "", r.sizeGb ? gb(r.sizeGb) : ""].filter(Boolean).join(" · ")
-    items = [{ label: "Run ›", action: row.run.action, primary: true }]
-    // a group: one model across this card and other free ones of its kind, when enough are free
-    var others = kd.free.filter(function(x) { return x !== g.key }), sizes = {}
-    ;(kd.groups || []).forEach(function(gr) {
-      if (sizes[gr.cards] || others.length + 1 < gr.cards) return
-      sizes[gr.cards] = 1
-      items.push({ label: (gr.name !== r.name ? "Run " + gr.name + " on " : "Run on ") + gr.cards + " cards",
-        action: "run|" + gr.id + "|" + [g.key].concat(others.slice(0, gr.cards - 1)).join(",") })
-    })
-    items.push(config)
+    chips = spec(r)
+    items = [{ label: "Run ›", action: row.run.action, primary: true }, config]
   }
-  var mem = gpuRow(g)
-  note = [mem.mem + (mem.temp ? " · " + mem.temp : ""), note].filter(Boolean).join("\n")
-  return { rank: row.rank, at: at, rows: row.open ? [row, { type: "links", note: note, items: items }] : [row] }
+  chips = health(g).concat(chips)
+  return { rank: row.rank, at: at, rows: row.open ? [row, { type: "links", chips: chips, note: note, items: items }] : [row] }
+}
+
+// A group, its own row: one model across several free cards of a kind, offered when enough of them are free
+// (the first recipe for each number of cards). Its Config is the group's page.
+function groups(s, ui) {
+  var out = []
+  ;(s.kinds || []).forEach(function(kd, at) {
+    var first = find(s.gpus || [], "key", kd.keys[0]), seen = {}
+    ;(kd.groups || []).forEach(function(gr) {
+      if (seen[gr.cards] || kd.free.length < gr.cards) return
+      seen[gr.cards] = 1
+      var id = "group:" + kd.hw + ":" + gr.cards
+      var row = { type: "slot", label: gr.cards + " × " + (first ? first.name : kd.hw), toggle: "pick|" + id, open: ui.open === id,
+        run: { family: gr.family, label: "run " + gr.name + " ›", action: "run|" + gr.id + "|" + kd.free.slice(0, gr.cards).join(",") } }
+      var links = { type: "links", chips: spec(gr), items: [{ label: "Run ›", action: row.run.action, primary: true },
+        { label: "Config", action: "group|" + kd.hw + "|" + gr.cards }] }
+      out.push({ rank: 0.5, at: at * 100 + gr.cards, group: true, rows: row.open ? [row, links] : [row] })
+    })
+  })
+  return out
 }
 function slots(s, ui, keep) {
-  return (s.gpus || []).map(function(g, at) { return slot(s, ui, g, at) }).filter(function(x) { return keep(x.rank) })
+  return (s.gpus || []).map(function(g, at) { return slot(s, ui, g, at) }).concat(groups(s, ui)).filter(function(x) { return keep(x.rank) })
     .sort(function(a, b) { return a.rank - b.rank || a.at - b.at })
 }
 function flat(list) { return [].concat.apply([], list.map(function(x) { return x.rows })) }
 
 // home: running models as cards (ready, then starting or stopping), then the available GPUs as rows: free ones,
-// then crashed ones to run again or dismiss. A GPU already running a model is not listed again; the rest are one
+// then groups of free cards, then crashed ones to run again or dismiss. A GPU already running a model is not listed again; the rest are one
 // "all GPUs" away.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
@@ -136,9 +157,10 @@ function homeView(s, ui) {
   var rows = ui.problem ? [{ type: "error", label: ui.problem }] : []
   ;(s.deployments || []).filter(function(d) { return d.state === "ready" })
     .concat((s.deployments || []).filter(function(d) { return working(d) })).forEach(function(d) { rows.push(card(s, d)) })
-  var free = slots(s, ui, function(r) { return r === 0 || r === 2 })
+  var free = slots(s, ui, function(r) { return r < 1 || r === 2 })
   if (free.length) rows = rows.concat([{ type: "sec", label: "AVAILABLE" }], flat(free))
-  if (s.gpus.length > free.length) rows.push({ type: "field", label: "all GPUs", value: String(s.gpus.length), action: "gpus" })
+  if (s.gpus.length > free.filter(function(x) { return !x.group }).length)
+    rows.push({ type: "field", icon: "gpu", label: "all GPUs", value: String(s.gpus.length), action: "gpus" })
   return { title: "LOCAL AI", version: s.version, stat: k(s.total), statLabel: "all time", rows: rows }
 }
 
@@ -151,10 +173,10 @@ function card(s, d) {
   var used = cards.reduce(function(a, g) { return a + (g.usedMiB || 0) / 1024 }, 0)
   var total = cards.reduce(function(a, g) { return a + (g.vramGb || 0) }, 0)
   var r = { type: "run", name: d.name, family: d.family, line: all.line || [], more: "more|" + d.id,
-    gpu: (cards.length > 1 ? cards.length + " × " : "") + (cards[0] ? cards[0].name : "GPU")
-      + (total && !working(d) ? " · " + (known ? Math.round(used) + " / " : "") + total + " GB" : "") }
+    gpu: (cards.length > 1 ? cards.length + " × " : "") + (cards[0] ? cards[0].name : "GPU"),
+    mem: total && !working(d) ? (known ? Math.round(used) + " / " : "") + total + " GB" : "" }
   if (d.state === "ready") {
-    r.stats = (all.decode ? all.decode + " tok/s · " : "") + k(all.tokens) + " tokens"
+    r.chips = [all.decode ? { icon: "speed", text: all.decode + " tok/s" } : null, { icon: "tokens", text: k(all.tokens) }].filter(Boolean)
     r.primary = { label: "Open " + d.agent, action: "open|" + d.id }
   } else {
     r.progress = d.percent > 0 && d.state !== "stopping" ? d.percent : -1
@@ -182,9 +204,10 @@ function soonView(s) {
 // answers when it runs, and Run or Log and Stop.
 function page(s, ui, m) {
   var run = m.d, u = run ? run.session || {} : {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
-  var v = { back: true, rows: [], hero: { name: m.name, family: m.family, vision: !!(m.caps || {}).vision,
-    sub: [m.format, m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU"), m.sizeGb && !run ? gb(m.sizeGb) : ""].filter(Boolean).join(" · "),
-    caps: m.ctx ? ctx(m.ctx) + " context" : "" } }
+  var v = { back: true, rows: [], hero: { name: m.name, family: m.family, chips: [{ text: fmt(m.format) },
+    { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") },
+    m.ctx ? { icon: "context", text: ctx(m.ctx) } : null, (m.caps || {}).vision ? { icon: "vision", text: "" } : null,
+    m.sizeGb && !run ? { icon: "weights", text: gb(m.sizeGb) } : null].filter(Boolean) } }
   if (run) {
     Object.assign(v.hero, { line: line, top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: all.last ? ago(all.last) : "now" })
     v.rows.push({ type: "grid", cells: [
@@ -198,14 +221,14 @@ function page(s, ui, m) {
   v.rows.push({ type: "sec", label: "GPUS" })
   m.cards.forEach(function(g) { v.rows.push(g) })
   v.rows.push({ type: "sec", label: "OPENS WITH" })
-  pickers(s, v.rows, ui, run ? run.agent : s.defaults.agent, run ? run.folder : s.defaults.folder, run ? run.id : "")
+  pickers(s, v.rows, ui, run ? run.agent : (s.defaults || {}).agent, run ? run.folder : (s.defaults || {}).folder, run ? run.id : "")
   weights(v.rows, m.weights)
   if (run) {
     v.rows.push({ type: "sec", label: "REACH" })
-    v.rows.push({ type: "field", label: "this machine", value: "127.0.0.1:" + run.port })
+    v.rows.push({ type: "field", icon: "machine", label: "this machine", value: "127.0.0.1:" + run.port })
     if (s.tailnet) v.rows.push(run.shared
-      ? { type: "field", label: "tailnet", value: run.shared, secret: true, action: "copy|" + run.shared }
-      : { type: "field", label: "tailnet", value: "share", action: "share|" + run.id })
+      ? { type: "field", icon: "tailnet", label: "tailnet", value: run.shared, secret: true, action: "copy|" + run.shared }
+      : { type: "field", icon: "tailnet", label: "tailnet", value: "share", action: "share|" + run.id })
     if (run.error) v.rows.push({ type: "error", label: run.error })
     v.rows.push({ type: "acts", items: [{ label: "Log", action: "log" }, { label: "Stop", action: "stop|" + run.id, danger: true }] })
   } else {
@@ -235,6 +258,15 @@ function kindView(s, hw, ui) {
     }) })
 }
 
+// a group of free cards of a kind: its model's page, on the cards it would run on
+function groupView(s, hw, n, ui) {
+  var kd = find(s.kinds, "hw", hw), gr = kd && (kd.groups || []).filter(function(x) { return x.cards === n })[0]
+  if (!gr || kd.free.length < n) return null
+  var keys = kd.free.slice(0, n)
+  return page(s, ui, { name: gr.name, family: gr.family, format: gr.format, caps: gr.caps, ctx: gr.ctx, sizeGb: gr.sizeGb, weights: gr.weights,
+    action: "run|" + gr.id + "|" + keys.join(","), cards: keys.map(function(key) { return gpuRow(find(s.gpus, "key", key)) }) })
+}
+
 function gpuRow(g) {
   var used = g.usedMiB != null ? g.usedMiB / 1024 : null
   return { type: "gpu", name: g.name, bar: used != null, pct: used != null && g.vramGb ? Math.min(100, Math.round(used / g.vramGb * 100)) : 0,
@@ -246,18 +278,18 @@ function weights(rows, list) {
   if (!(list || []).length) return
   rows.push({ type: "sec", label: "WEIGHTS" })
   list.forEach(function(w) {
-    rows.push({ type: "field", label: "hugging face", value: w.repository,
+    rows.push({ type: "field", icon: "weights", label: "hugging face", value: w.repository,
       action: "url|https://huggingface.co/" + w.repository + "/tree/" + w.revision })
   })
 }
 
 // the agent and folder rows, and their choices when open; a choice on a running model also becomes the default
 function pickers(s, rows, ui, agent, folder, id) {
-  rows.push({ type: "field", label: "agent", value: agent, action: "pick|agent" })
+  rows.push({ type: "field", icon: "agent", label: "agent", value: agent, action: "pick|agent", drop: true, open: ui.open === "agent" })
   if (ui.open === "agent") (s.agents || []).forEach(function(a) {
     rows.push({ type: "opt", label: a, on: a === agent, action: "set|agent|" + a + "|" + id })
   })
-  rows.push({ type: "field", label: "folder", value: home(folder), action: "pick|folder" })
+  rows.push({ type: "field", icon: "folder", label: "folder", value: home(folder), action: "pick|folder", drop: true, open: ui.open === "folder" })
   if (ui.open === "folder") {
     ;[folder].concat(s.folders || []).filter(function(f, i, a) { return f && a.indexOf(f) === i }).forEach(function(f) {
       rows.push({ type: "opt", label: home(f), on: f === folder, action: "set|folder|" + f + "|" + id })
@@ -268,7 +300,7 @@ function pickers(s, rows, ui, agent, folder, id) {
 
 function build(s, ui) {
   s = s || {}
-  var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : null) || homeView(s, ui)
+  var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
   return Object.assign(v, { mark: mark(s) })
 }
 
