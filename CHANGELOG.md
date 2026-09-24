@@ -6,6 +6,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ### Changed
 - A failed model's card, and its chart on the model's page, are hatched instead of showing its token line, so a crash reads at a glance.
+- Home lists working models first (ready, then starting or stopping) and failed ones below them. A failed card is hollow: an alert outline over its hatching, a dimmed name, outlined buttons. A running card's token line is visible again.
 
 ## [6.0.3] - 2026-09-24
 

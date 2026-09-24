@@ -269,9 +269,12 @@ Panel {
                 id: runC
                 Rectangle {
                   height: body.implicitHeight + 2 * root.pad
-                  color: r.error ? Util.alpha(root.urgent, 0.07) : root.surface
+                  // a failed model is hollow: no lit surface, an alert outline, its hatching, a dimmed name
+                  color: r.error ? "transparent" : root.surface
+                  border.width: r.error ? 1 : 0
+                  border.color: Qt.rgba(root.alertTone.r, root.alertTone.g, root.alertTone.b, 0.4)
                   clip: true
-                  Line { anchors.fill: parent; values: r.line; stroke: false; visible: !r.error }
+                  Line { anchors.fill: parent; values: r.line; visible: !r.error }
                   Hatch { anchors.fill: parent; visible: !!r.error }
                   Column {
                     id: body
@@ -282,7 +285,7 @@ Panel {
                     Row {
                       spacing: Style.space(8)
                       Logo { family: r.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
-                      Label { text: r.name; color: root.ink; font.pixelSize: Style.font.body }
+                      Label { text: r.name; color: r.error ? root.labelTone : root.ink; font.pixelSize: Style.font.body }
                     }
                     Label { width: parent.width; text: r.gpu; elide: Text.ElideRight }
                     Label {
@@ -311,7 +314,7 @@ Panel {
                       Btn {
                         label: r.primary.label + (r.primary.quiet ? "" : " ›")
                         action: r.primary.action
-                        primary: !r.primary.quiet
+                        primary: !r.primary.quiet && !r.error
                         danger: !!r.primary.quiet
                       }
                       Btn { label: "More"; action: r.more }
@@ -601,7 +604,7 @@ Panel {
     onPaint: {
       var g = getContext("2d"), step = Style.space(10)
       g.clearRect(0, 0, width, height)
-      g.strokeStyle = Qt.rgba(root.alertRule.r, root.alertRule.g, root.alertRule.b, 0.5)
+      g.strokeStyle = Qt.rgba(root.alertTone.r, root.alertTone.g, root.alertTone.b, 0.4)
       g.lineWidth = 1
       g.beginPath()
       for (var x = -height; x < width; x += step) {
@@ -628,14 +631,14 @@ Panel {
         else g.moveTo(x, y)
       }
       if (stroke) {
-        g.strokeStyle = root.ruleTone
+        g.strokeStyle = Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
         g.lineWidth = 1.2
         g.stroke()
       }
       g.lineTo(width, height)
       g.lineTo(0, height)
       g.closePath()
-      g.fillStyle = Qt.rgba(root.theme.r, root.theme.g, root.theme.b, stroke ? 0.04 : 0.05)
+      g.fillStyle = Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
       g.fill()
     }
   }

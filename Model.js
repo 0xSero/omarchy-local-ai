@@ -68,11 +68,11 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-// home: one panel per running model, then one list of the other cards: free ones to run on, busy or
-// unsupported ones and why
+// home: one panel per model, working ones (ready, then starting or stopping) above failed ones, then one list
+// of the other cards: free ones to run on, busy or unsupported ones and why
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
-  var rows = [], cards = [], shown = {}
+  var rows = [], cards = [], models = [], shown = {}
   if (ui.problem) rows.push({ type: "error", label: ui.problem })
   function panel(d) {
     shown[d.id] = 1
@@ -98,7 +98,7 @@ function homeView(s, ui) {
       r.error = true
       r.primary = { label: "Run again", action: "again|" + d.id + "|" + d.keys.join(",") }
     }
-    rows.push(r)
+    models.push({ rank: d.state === "ready" ? 0 : r.error ? 2 : 1, at: models.length, row: r })
   }
   ;(s.kinds || []).forEach(function(kd) {
     ;(s.deployments || []).filter(function(d) {
@@ -111,6 +111,7 @@ function homeView(s, ui) {
   })
   ;(s.deployments || []).filter(function(d) { return !shown[d.id] }).forEach(panel)
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
+  models.sort(function(a, b) { return a.rank - b.rank || a.at - b.at }).forEach(function(m) { rows.push(m.row) })
   ;(s.unsupported || []).forEach(function(u) { cards.push({ type: "busy", label: u.n + " × " + u.name, note: "no validated model yet" }) })
   if (cards.length) rows = rows.concat([{ type: "sec", label: "GPUS" }], cards)
   return { title: "LOCAL AI", version: s.version, stat: k(s.week), statLabel: "this week", rows: rows }
