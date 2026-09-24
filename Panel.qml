@@ -55,6 +55,7 @@ Panel {
   property var snap: ({})
   property var ui: ({ view: "home", id: "", open: "", key: "", problem: "" })
   property bool copied: false
+  property bool revealed: false
   property var queue: []
   // A snapshot the view cannot read says so, rather than looking like a machine with no GPU
   readonly property var view: {
@@ -67,6 +68,7 @@ Panel {
 
   function nav(patch) {
     ui = Object.assign({ view: ui.view, id: ui.id, open: "", key: ui.key, problem: "" }, patch)
+    revealed = false
     flick.contentY = 0
   }
   function home() { nav({ view: "home", id: "", key: "" }) }
@@ -530,7 +532,7 @@ Panel {
 
               Component { id: gpuC; GpuRow { g: r; height: r.status ? Style.space(36) : root.rowH; inset: root.gutter } }
 
-              // A label on the left, a value on the right; a secret value stays hidden, small, beside an always-on copy
+              // A label on the left, a value on the right; a secret value stays hidden, small, until clicked, beside an always-on copy
               Component {
                 id: fieldC
                 Item {
@@ -542,15 +544,18 @@ Panel {
                     text: r.secret ? (root.copied ? "copied" : "copy") : r.value + (r.action ? " ›" : "")
                   }
                   Label {
+                    id: secretValue
                     visible: !!r.secret
                     anchors.right: fieldValue.left
                     anchors.rightMargin: Style.space(10)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: r.secret ? r.value.replace(/[^.:\/]+/g, "•••") : ""
-                    color: Util.alpha(root.labelTone, 0.55)
+                    text: !r.secret ? "" : root.revealed ? r.value : r.value.replace(/[^.:\/]+/g, "•••")
+                    color: Util.alpha(root.labelTone, root.revealed ? 1 : 0.55)
                     font.pixelSize: Style.font.caption - 2
                   }
-                  Click { action: r.action || "" }
+                  Click { visible: !r.secret; action: r.action || "" }
+                  Click { visible: !!r.secret; anchors.fill: fieldValue; action: r.action || "" }
+                  MouseArea { visible: !!r.secret; anchors.fill: secretValue; cursorShape: Qt.PointingHandCursor; onClicked: root.revealed = !root.revealed }
                 }
               }
 
