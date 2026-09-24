@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.0.2] - 2026-09-24
+
+### Changed
+- The password prompt says what it is for: "Local AI needs your password to start a model on your GPU", "to stop a model", "to change what your tailnet can reach", "to remove its models, containers and engines", instead of the backend's full path and arguments. `bin/omarchy-install-ai-local` installs `local-ai.policy` (the same polkit actions Omarchy's own Local AI ships) pointed at this plugin's backend; `bin/omarchy-remove-ai-local` removes it.
+- The backend's privileged phases are `__start`, `__stop`, `__share` and `__purge`, one first argument each, so polkit can tell them apart.
+
 ## [6.0.1] - 2026-09-24
 
 ### Fixed

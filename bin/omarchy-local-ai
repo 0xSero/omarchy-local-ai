@@ -227,7 +227,8 @@ elevate() {
 asroot() {
   priv_target || die "refusing to run $TARGET as root: it is not a plain file"
   local rc=0
-  pkexec "$TARGET" __root "$@" || rc=$?
+  # each phase is its own first argument, so the password prompt can say what it is for
+  pkexec "$TARGET" "__$1" "${@:2}" || rc=$?
   ((rc != 126 && rc != 127)) || die "the password prompt was dismissed; nothing changed"
   return $rc
 }
@@ -766,13 +767,10 @@ cmd_snapshot() {
        unsupported: [$g[] | select(.hw == "") | .name] | group_by(.) | map({name: .[0], n: length}), deployments: $deps}'
 }
 
-if [[ ${1:-} == "__root" ]]; then
-  ((EUID == 0)) || die "__root runs through pkexec"
+if [[ ${1:-} =~ ^__(start|stop|share|purge)$ ]]; then
+  ((EUID == 0)) || die "${1} runs through pkexec"
   caller
-  case ${2:-} in
-  start | stop | share | purge) "phase_$2" "${@:3}" ;;
-  *) die "unknown phase" ;;
-  esac
+  "phase_${1#__}" "${@:2}"
   exit
 fi
 

@@ -1,12 +1,22 @@
 #!/bin/bash
 
-# omarchy:summary=Set up Local AI: the NVIDIA container runtime when an NVIDIA card needs it
+# omarchy:summary=Set up Local AI: a plain password prompt, and the NVIDIA container runtime when an NVIDIA card needs it
 # omarchy:requires-sudo=true
 
-# The card and the backend are already here (this plugin). What a first run can still lack is the
-# NVIDIA container runtime, which Omarchy does not ship. Docker itself is part of Omarchy.
+# The card and the backend are already here (this plugin). Two things need root once:
+# - polkit's description of the backend's phases, so the password prompt says what it is for
+#   ("Local AI needs your password to start a model on your GPU") instead of showing a command line;
+# - the NVIDIA container runtime, which Omarchy does not ship. Docker itself is part of Omarchy.
 
 set -e
+
+HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+POLICY=/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy
+
+echo "Describing Local AI's password prompts to polkit..."
+sed -e "s#/usr/bin/omarchy-local-ai#$HERE/omarchy-local-ai#" -e "s#org\.omarchy\.local-ai\.#sero.local-ai.u$(id -u).#" "$HERE/../local-ai.policy" |
+  sudo install -D -m 644 /dev/stdin "$POLICY"
+sudo systemctl reload polkit
 
 if omarchy-hw-nvidia && ! docker info 2>/dev/null | grep -qi nvidia; then
   echo "Setting up the NVIDIA container runtime..."

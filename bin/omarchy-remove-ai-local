@@ -9,4 +9,6 @@ HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 
 echo "Removing Local AI's models, containers, engine images and weights..."
 "$HERE/omarchy-local-ai" remove
+sudo rm -f "/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy"
+sudo systemctl reload polkit
 echo "Done. To remove the plugin itself: omarchy plugin remove sero.local-ai"

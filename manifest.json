@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "6.0.1",
+  "version": "6.0.2",
   "author": "0xSero",
   "license": "MIT",
   "description": "Run the model validated for your GPU and open a coding agent on it. One tested model per card for 36 cards (NVIDIA RTX 30/40/50, RTX Ada and Pro, Intel Arc Pro B70, AMD ROCm), weights checked against the Hub, the engine in a container behind a keyed gateway on 127.0.0.1. Opens pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it without touching their config. Shows GPU memory, temperature, speed and tokens.",
