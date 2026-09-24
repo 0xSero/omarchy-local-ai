@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.0.3] - 2026-09-24
+
+### Changed
+- A design pass on the panel by Gil Rodrigues (0xSero/omarchy#2): every text and line colour is solved for an APCA contrast target from the active theme (the model's name and the primary action 90, values 80, labels 60, lines 15), so any theme stays readable; text starts and ends on one gutter; two type sizes; secondary buttons are outlined in the same ink as the primary fill.
+- Home lists the running models, then the other cards under a GPUS heading: free cards with their run action, cards held by another program, cards with no validated model yet. Figure labels are lower case; a model's capabilities are one line.
+
 ## [6.0.2] - 2026-09-24
 
 ### Changed

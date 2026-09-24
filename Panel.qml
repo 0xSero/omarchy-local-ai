@@ -16,14 +16,33 @@ Panel {
   implicitHeight: button.implicitHeight
 
   readonly property string cli: String(Qt.resolvedUrl("bin/omarchy-local-ai")).replace(/^file:\/\//, "")
-  readonly property color ink: bar ? bar.foreground : Color.foreground
-  readonly property color fg: Qt.darker(ink, 1.3)
-  readonly property color dim: Qt.darker(ink, 1.9)
-  readonly property color faint: Util.alpha(ink, 0.14)
-  readonly property color lit: Util.alpha(ink, 0.06)
+  readonly property color theme: bar ? bar.foreground : Color.foreground
   readonly property color bg: Color.popups.background
+  readonly property color surface: Util.alpha(theme, 0.06)
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property string mono: bar ? bar.fontFamily : Style.font.family
+
+  // Four tones, each picked by the APCA contrast it must reach on a card (Model.tones): ink for what matters
+  // now (a model's name, the primary action, a choice made), value for what a label names, one tone for every
+  // label, and rule for lines that are not text. Problems use alert.
+  readonly property var tones: Model.tones(theme, bg, surface, urgent)
+  readonly property color ink: Qt.rgba(tones.ink.r, tones.ink.g, tones.ink.b, 1)
+  readonly property color valueTone: Qt.rgba(tones.value.r, tones.value.g, tones.value.b, 1)
+  readonly property color labelTone: Qt.rgba(tones.label.r, tones.label.g, tones.label.b, 1)
+  readonly property color ruleTone: Qt.rgba(tones.rule.r, tones.rule.g, tones.rule.b, 1)
+  readonly property color alertTone: Qt.rgba(tones.alert.r, tones.alert.g, tones.alert.b, 1)
+  readonly property color alertRule: Qt.rgba(tones.alertRule.r, tones.alertRule.g, tones.alertRule.b, 1)
+
+  // One grid. Every line of text starts and ends on the gutter; surfaces sit at the edge, so the text inside
+  // them lands on the same gutter. Rows in a group touch; groups are a gap apart; a heading sits on its rows.
+  readonly property int gutter: Style.space(20)
+  readonly property int edge: Style.space(8)
+  readonly property int pad: gutter - edge
+  readonly property int rowH: Style.space(22)
+  readonly property int headH: Style.space(16)
+  readonly property int groupGap: Style.space(20)
+  readonly property int blockGap: Style.space(8)
+  readonly property int topGap: Style.space(12)
 
   property var snap: ({})
   property var ui: ({ view: "home", id: "", open: "", key: "", problem: "" })
@@ -51,6 +70,15 @@ Panel {
     verb.running = true
   }
   function refresh() { if (!poll.running) poll.running = true }
+
+  // The space above row i: a group opens a gap, a surface follows a surface closely, rows in a group touch
+  function gapBefore(i) {
+    var rows = view.rows || [], t = rows[i].type
+    if (i === 0 && !view.hero && t !== "sec") return topGap
+    if (t === "sec" || t === "acts" || t === "error") return groupGap
+    if (t === "run" || t === "grid") return i === 0 && !view.hero ? topGap : blockGap
+    return i === 0 ? topGap : 0
+  }
 
   // An action is "verb|arg|arg", from Model.js
   function activate(action) {
@@ -129,7 +157,7 @@ Panel {
               width: Style.space(3)
               height: width
               radius: width / 2
-              color: root.view.mark === "failed" ? root.urgent : on ? root.ink : Util.alpha(root.ink, 0.3)
+              color: root.view.mark === "failed" ? root.urgent : on ? root.theme : Util.alpha(root.theme, 0.3)
             }
           }
         }
@@ -167,21 +195,20 @@ Panel {
           id: content
           objectName: "local-ai-content"
           width: flick.width
-          topPadding: Style.space(14)
-          bottomPadding: Style.space(14)
-          spacing: Style.space(10)
+          topPadding: Style.space(16)
+          bottomPadding: Style.space(16)
+          spacing: 0
 
-          // The top line: the name and version, or the way back; the week, or the page's name
+          // The top line: the name and version, or the way back; on home, this week's tokens
           Item {
             width: parent.width
-            height: Style.space(16)
+            height: root.headH
             Label {
               id: head
-              x: Style.space(16)
+              x: root.gutter
               anchors.verticalCenter: parent.verticalCenter
               text: root.view.back ? "‹ home" : root.view.title
-              color: root.dim
-              font.letterSpacing: root.view.back ? 0 : 1.5
+              color: root.view.back ? root.valueTone : root.labelTone
             }
             Label {
               visible: !root.view.back
@@ -189,34 +216,49 @@ Panel {
               anchors.leftMargin: Style.space(8)
               anchors.baseline: head.baseline
               text: root.view.version || ""
-              color: root.faint
-              font.pixelSize: Style.font.caption - 2
+              color: root.labelTone
             }
             Click { anchors.fill: head; action: root.view.back ? "home" : "" }
-            Right { margin: 16; text: root.view.back ? root.view.title : root.view.right; color: root.dim; font.letterSpacing: root.view.back ? 1.5 : 0 }
+            Row {
+              visible: !!root.view.stat
+              anchors.right: parent.right
+              anchors.rightMargin: root.gutter
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6)
+              Label { text: root.view.stat || "" }
+              Label { text: root.view.statLabel || ""; color: root.labelTone }
+            }
           }
 
-          Loader {
-            active: !!root.view.hero
-            x: Style.space(12)
-            width: parent.width - Style.space(24)
-            height: active && item ? item.implicitHeight + Style.space(20) : 0
-            sourceComponent: Component { Hero { h: root.view.hero } }
+          Item {
+            width: parent.width
+            height: root.view.hero && hero.item ? root.topGap + hero.item.implicitHeight : 0
+            Loader {
+              id: hero
+              active: !!root.view.hero
+              x: root.edge
+              y: root.topGap
+              width: parent.width - 2 * root.edge
+              sourceComponent: Component { Hero { h: root.view.hero } }
+            }
           }
 
           Repeater {
             model: root.view.rows
             Item {
               required property var modelData
+              required property int index
               readonly property var r: modelData
+              readonly property int gap: root.gapBefore(index)
               width: content.width
-              height: row.height
+              height: gap + row.height
 
-              // A Loader sizes its item, so a row's side inset lives on the Loader
+              // A Loader sizes its item, so a surface's inset lives on the Loader; other rows keep their own gutter
               Loader {
                 id: row
-                readonly property real inset: ["run", "soon", "grid", "busy"].indexOf(r.type) >= 0 ? Style.space(12) : 0
+                readonly property real inset: ["run", "grid"].indexOf(r.type) >= 0 ? root.edge : 0
                 x: inset
+                y: parent.gap
                 width: parent.width - 2 * inset
                 sourceComponent: ({ run: runC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
                   field: fieldC, opt: optC, path: pathC, acts: actsC })[r.type] || textC
@@ -226,88 +268,74 @@ Panel {
               Component {
                 id: runC
                 Rectangle {
-                  height: Style.space(156)
-                  color: r.error ? Util.alpha(root.urgent, 0.07) : root.lit
+                  height: body.implicitHeight + 2 * root.pad
+                  color: r.error ? Util.alpha(root.urgent, 0.07) : root.surface
                   clip: true
-                  Line { anchors.fill: parent; values: r.line }
+                  Line { anchors.fill: parent; values: r.line; stroke: false }
                   Column {
-                    x: Style.space(18)
-                    y: Style.space(18)
-                    width: parent.width - Style.space(36)
-                    spacing: Style.space(6)
+                    id: body
+                    x: root.pad
+                    y: root.pad
+                    width: parent.width - 2 * root.pad
+                    spacing: Style.space(4)
                     Row {
-                      spacing: Style.space(10)
-                      Logo { family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
-                      Label { text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
+                      spacing: Style.space(8)
+                      Logo { family: r.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
+                      Label { text: r.name; color: root.ink; font.pixelSize: Style.font.body }
                     }
-                    Label { text: r.gpu; color: root.dim }
-                    Item { width: 1; height: Style.space(4) }
+                    Label { width: parent.width; text: r.gpu; elide: Text.ElideRight }
                     Label {
                       width: parent.width
-                      text: r.sub.join("  ·  ")
-                      color: r.error ? root.urgent : root.fg
+                      text: r.sub.join(" · ")
+                      color: r.error ? root.alertTone : root.valueTone
                       wrapMode: Text.WordWrap
                       maximumLineCount: 2
                       elide: Text.ElideRight
                     }
-                    Rectangle {
+                    Item {
                       visible: r.progress >= 0
                       width: parent.width
-                      height: 2
-                      color: root.faint
-                      Rectangle { width: parent.width * (r.progress || 0) / 100; height: parent.height; color: root.ink }
+                      height: Style.space(6)
+                      Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: 2
+                        color: root.ruleTone
+                        Rectangle { width: parent.width * (r.progress || 0) / 100; height: parent.height; color: root.ink }
+                      }
                     }
-                  }
-                  Row {
-                    x: Style.space(18)
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: Style.space(16)
-                    spacing: Style.space(8)
-                    Btn {
-                      label: r.primary.label + (r.primary.quiet ? "" : " ›")
-                      action: r.primary.action
-                      primary: !r.primary.quiet
-                      danger: !!r.primary.quiet
+                    Item { width: 1; height: Style.space(8) }
+                    Row {
+                      spacing: Style.space(8)
+                      Btn {
+                        label: r.primary.label + (r.primary.quiet ? "" : " ›")
+                        action: r.primary.action
+                        primary: !r.primary.quiet
+                        danger: !!r.primary.quiet
+                      }
+                      Btn { label: "More"; action: r.more }
                     }
-                    Btn { label: "More"; action: r.more }
                   }
                 }
               }
 
-              // A free card kind: one dashed line; its left opens the kind's page, its right runs the model
+              // A free card kind, one row in the GPUs list: its left opens the kind's page, its right runs the model
               Component {
                 id: freeC
                 Item {
-                  height: Style.space(40)
-                  Canvas {
-                    x: Style.space(12)
-                    width: parent.width - Style.space(24)
-                    height: parent.height
-                    onPaint: {
-                      var g = getContext("2d")
-                      g.setLineDash([3, 3])
-                      g.strokeStyle = root.faint
-                      g.strokeRect(0.5, 0.5, width - 1, height - 1)
-                    }
-                  }
-                  Label { id: kindLabel; x: Style.space(26); anchors.verticalCenter: parent.verticalCenter; text: r.label; color: root.dim }
+                  height: root.rowH
+                  Label { id: kindLabel; x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label }
                   Click { anchors.fill: kindLabel; action: r.more }
                   Row {
+                    id: runLink
                     anchors.right: parent.right
-                    anchors.rightMargin: Style.space(26)
+                    anchors.rightMargin: root.gutter
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(6)
-                    Logo { family: r.family; size: 11; opacity: 0.7; anchors.verticalCenter: parent.verticalCenter }
-                    Label { text: "run " + r.model + " ›" }
+                    Logo { family: r.family; size: 12; anchors.verticalCenter: parent.verticalCenter }
+                    Label { text: "run " + r.model + " ›"; color: root.ink }
                   }
-                  Click {
-                    anchors.fill: undefined
-                    anchors.right: parent.right
-                    anchors.rightMargin: Style.space(12)
-                    width: parent.width * 0.5
-                    height: parent.height
-                    action: r.action || r.more
-                  }
+                  Click { anchors.fill: runLink; action: r.action || r.more }
                 }
               }
 
@@ -325,7 +353,7 @@ Panel {
                     onPaint: {
                       var g = getContext("2d"), a = width * 0.22, b = width * 0.78, p = width * 0.12
                       g.clearRect(0, 0, width, height)
-                      g.strokeStyle = root.dim
+                      g.strokeStyle = root.labelTone
                       g.lineWidth = 1.5
                       g.strokeRect(a, a, b - a, b - a)
                       g.strokeRect(width * 0.38, width * 0.38, width * 0.24, width * 0.24)
@@ -341,25 +369,24 @@ Panel {
                     }
                   }
                   Label {
-                    width: parent.width
+                    x: root.gutter
+                    width: parent.width - 2 * root.gutter
                     horizontalAlignment: Text.AlignHCenter
                     text: r.head
-                    color: root.ink
-                    font.pixelSize: Style.font.body
                     wrapMode: Text.WordWrap
                   }
                   Btn { anchors.horizontalCenter: parent.horizontalCenter; label: "See supported cards ›"; action: r.action }
                 }
               }
 
-              // Cards Local AI cannot use (another program holds them, or no model is validated): a bordered warning
+              // A card Local AI cannot use, one row in the GPUs list with why: another program holds it (a problem),
+              // or no model is validated for it yet (a fact)
               Component {
                 id: busyC
-                Box {
-                  height: Style.space(40)
-                  border.color: Util.alpha(root.urgent, 0.45)
-                  Label { x: Style.space(14); anchors.verticalCenter: parent.verticalCenter; text: r.label }
-                  Right { margin: 14; text: r.note; color: root.urgent }
+                Item {
+                  height: root.rowH
+                  Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label }
+                  Right { margin: root.gutter; text: r.note; color: r.warn ? root.alertTone : root.labelTone }
                 }
               }
 
@@ -368,11 +395,12 @@ Panel {
                 id: textC
                 Label {
                   readonly property bool sec: r.type === "sec"
-                  leftPadding: Style.space(16); rightPadding: Style.space(16); topPadding: sec ? Style.space(6) : 0
+                  leftPadding: root.gutter; rightPadding: root.gutter
                   width: parent.width
+                  height: sec ? root.headH : implicitHeight
+                  verticalAlignment: Text.AlignVCenter
                   text: r.label || ""
-                  color: sec ? root.dim : root.urgent
-                  font.letterSpacing: sec ? 1.5 : 0
+                  color: sec ? root.labelTone : root.alertTone
                   wrapMode: Text.WordWrap
                 }
               }
@@ -389,35 +417,34 @@ Panel {
                       required property var modelData
                       width: (parent.width - 2) / 3
                       height: Style.space(44)
-                      color: root.lit
+                      color: root.surface
                       Column {
-                        x: Style.space(10)
+                        x: root.pad
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: Style.space(2)
+                        spacing: Style.space(4)
                         Row {
-                          spacing: Style.space(3)
-                          Label { id: figure; text: modelData.v; color: root.ink; font.pixelSize: Style.font.body }
-                          Label { anchors.baseline: figure.baseline; text: modelData.u; color: root.dim }
+                          spacing: Style.space(6)
+                          Label { id: figure; text: modelData.v }
+                          Label { anchors.baseline: figure.baseline; text: modelData.u; color: root.labelTone }
                         }
-                        Label { text: modelData.k; color: root.dim }
+                        Label { text: modelData.k; color: root.labelTone }
                       }
                     }
                   }
                 }
               }
 
-              Component { id: gpuC; GpuRow { g: r; height: Style.space(24); inset: 16 } }
+              Component { id: gpuC; GpuRow { g: r; height: root.rowH; inset: root.gutter } }
 
               // A label on the left, a value on the right; a secret value is blurred until clicked
               Component {
                 id: fieldC
                 Item {
-                  height: Style.space(28)
-                  Label { x: Style.space(16); anchors.verticalCenter: parent.verticalCenter; text: r.label; color: root.dim }
+                  height: root.rowH
+                  Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label; color: root.labelTone }
                   Right {
-                    margin: 16
+                    margin: root.gutter
                     text: r.secret && !root.revealed ? r.value.replace(/[^.:\/]/g, "•") : r.value + (r.secret ? "  copy" : r.action ? " ›" : "")
-                    color: r.plain ? root.fg : root.ink
                   }
                   Click { action: r.action || "" }
                 }
@@ -426,8 +453,8 @@ Panel {
               Component {
                 id: optC
                 Item {
-                  height: Style.space(24)
-                  Label { x: Style.space(28); anchors.verticalCenter: parent.verticalCenter; text: (r.on ? "● " : "○ ") + r.label; color: r.on ? root.ink : root.fg }
+                  height: root.rowH
+                  Label { x: root.gutter + Style.space(12); anchors.verticalCenter: parent.verticalCenter; text: (r.on ? "● " : "○ ") + r.label; color: r.on ? root.ink : root.valueTone }
                   Click { action: r.action }
                 }
               }
@@ -438,9 +465,10 @@ Panel {
                 Item {
                   height: Style.space(30)
                   Controls.TextField {
-                    x: Style.space(28)
-                    width: parent.width - Style.space(44)
+                    x: root.gutter + Style.space(12)
+                    width: parent.width - x - root.gutter
                     placeholderText: "or type a path"
+                    placeholderTextColor: root.labelTone
                     color: root.ink
                     font.family: root.mono
                     font.pixelSize: Style.font.caption
@@ -456,8 +484,7 @@ Panel {
               Component {
                 id: actsC
                 Row {
-                  leftPadding: Style.space(16)
-                  topPadding: Style.space(6)
+                  leftPadding: root.gutter
                   spacing: Style.space(8)
                   Repeater {
                     model: r.items
@@ -482,19 +509,19 @@ Panel {
 
   component Label: Text {
     textFormat: Text.PlainText
-    color: root.fg
+    color: root.valueTone
     font.family: root.mono
     font.pixelSize: Style.font.caption
   }
 
   // A hairline frame
-  component Box: Rectangle { color: "transparent"; border.width: 1; border.color: root.faint }
+  component Box: Rectangle { color: "transparent"; border.width: 1; border.color: root.ruleTone }
 
   // A label against its row's right edge
   component Right: Label {
     property int margin
     anchors.right: parent.right
-    anchors.rightMargin: Style.space(margin)
+    anchors.rightMargin: margin
     anchors.verticalCenter: parent.verticalCenter
   }
 
@@ -518,51 +545,56 @@ Panel {
     fillMode: Image.PreserveAspectFit
   }
 
-  // One card: a box to tick when there is a choice, its name (and what holds it), memory in use, temperature
+  // One card: a box to tick when there is a choice, its name (and what holds it), memory in use, temperature.
+  // The ticked card is the one choice made, so it is ink; a card that cannot be picked drops to the label tone.
   component GpuRow: Item {
+    id: gpu
     property var g
     property int inset
     readonly property bool box: g.check !== undefined
+    readonly property color tone: g.disabled ? root.labelTone : g.check ? root.ink : root.valueTone
     width: parent.width
     height: Style.space(36)
-    opacity: g.disabled ? 0.45 : 1
     Rectangle {
-      visible: parent.box
-      x: Style.space(parent.inset)
+      visible: gpu.box
+      x: gpu.inset
       width: Style.space(10)
       height: width
       anchors.verticalCenter: parent.verticalCenter
-      color: parent.g.check ? root.ink : "transparent"
+      color: gpu.g.check ? root.ink : "transparent"
       border.width: 1
-      border.color: root.fg
+      border.color: gpu.g.disabled ? root.ruleTone : root.valueTone
     }
     Column {
-      x: Style.space(parent.inset + (parent.box ? 20 : 0))
+      x: gpu.inset + (gpu.box ? Style.space(20) : 0)
       width: Style.space(100)
       anchors.verticalCenter: parent.verticalCenter
-      Label { width: parent.width; text: parent.parent.g.name; color: root.ink; elide: Text.ElideRight }
-      Label { visible: !!text; text: parent.parent.g.status || ""; color: root.dim; font.pixelSize: Style.font.caption - 2 }
+      spacing: Style.space(2)
+      Label { width: parent.width; text: gpu.g.name; color: gpu.tone; elide: Text.ElideRight }
+      Label { visible: !!text; text: gpu.g.status || ""; color: root.labelTone }
     }
     Rectangle {
-      x: Style.space(parent.inset + (parent.box ? 124 : 104))
-      visible: parent.g.bar
-      width: parent.width - x - Style.space(120)
+      x: gpu.inset + Style.space(gpu.box ? 124 : 104)
+      visible: gpu.g.bar
+      width: Math.max(0, mem.x - x - Style.space(12))
       height: 3
       anchors.verticalCenter: parent.verticalCenter
-      color: root.faint
+      color: root.ruleTone
       Rectangle {
-        width: parent.width * parent.parent.g.pct / 100
+        width: parent.width * gpu.g.pct / 100
         height: parent.height
-        color: root.fg
+        color: gpu.g.disabled ? root.labelTone : root.valueTone
       }
     }
-    Right { margin: parent.inset; text: parent.g.mem + (parent.g.temp ? "  " + parent.g.temp : ""); color: root.dim }
-    Click { action: parent.g.action || "" }
+    Right { id: mem; margin: gpu.inset; text: gpu.g.mem + (gpu.g.temp ? "  " + gpu.g.temp : ""); color: gpu.g.disabled ? root.labelTone : root.valueTone }
+    Click { action: gpu.g.action || "" }
   }
 
-  // Tokens over time, cumulative, rising to the right, a faint fill under it
+  // Tokens over time, cumulative, rising to the right. Where text sits on it (a card on home) it is only a faint
+  // area, which leaves the text's contrast as it is; on a model's page it also gets its line, in the rule tone.
   component Line: Canvas {
     property var values: []
+    property bool stroke: true
     onValuesChanged: requestPaint()
     Component.onCompleted: requestPaint()
     onPaint: {
@@ -575,66 +607,83 @@ Panel {
         if (i) g.lineTo(x, y)
         else g.moveTo(x, y)
       }
-      g.strokeStyle = Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.45)
-      g.lineWidth = 1.2
-      g.stroke()
+      if (stroke) {
+        g.strokeStyle = root.ruleTone
+        g.lineWidth = 1.2
+        g.stroke()
+      }
       g.lineTo(width, height)
       g.lineTo(0, height)
       g.closePath()
-      g.fillStyle = Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.06)
+      g.fillStyle = Qt.rgba(root.theme.r, root.theme.g, root.theme.b, stroke ? 0.04 : 0.05)
       g.fill()
     }
   }
 
-  component Btn: Box {
+  // Primary is filled with ink; secondary is outlined in the same ink, so the pair reads as one family;
+  // danger is outlined in alert. The label is centered optically, not on its advance: first on its ink (a
+  // trailing "›" carries empty space on its right), then nudged right by a sixth of the space and chevron,
+  // since a thin chevron weighs less than the letters and would otherwise leave "Open pi ›" sitting left.
+  component Btn: Rectangle {
     id: btn
     property string label
     property string action
     property bool primary
     property bool danger
+    readonly property bool chevron: /\s›$/.test(label)
+    readonly property rect glyphs: metrics.tightBoundingRect
+    readonly property real weight: chevron ? (glyphs.x + glyphs.width - words.tightBoundingRect.x - words.tightBoundingRect.width) / 6 : 0
     visible: label !== ""
-    implicitWidth: btnText.implicitWidth + Style.space(24)
+    implicitWidth: Math.ceil(glyphs.width) + Style.space(24)
     implicitHeight: btnText.implicitHeight + Style.space(10)
     color: primary ? root.ink : "transparent"
     border.width: primary ? 0 : 1
-    border.color: danger ? Util.alpha(root.urgent, 0.5) : root.faint
-    opacity: action === "" ? (primary ? 0.35 : 0.6) : 1
+    border.color: danger ? root.alertRule : root.ink
+    opacity: action === "" ? 0.5 : 1
+    TextMetrics { id: metrics; font: btnText.font; text: btn.label }
+    TextMetrics { id: words; font: btnText.font; text: btn.label.replace(/\s›$/, "") }
     Label {
       id: btnText
       anchors.centerIn: parent
+      anchors.horizontalCenterOffset: metrics.advanceWidth / 2 - (btn.glyphs.x + btn.glyphs.width / 2) + btn.weight
       text: btn.label
-      color: btn.primary ? root.bg : btn.danger ? root.urgent : root.fg
+      color: btn.primary ? Qt.rgba(root.bg.r, root.bg.g, root.bg.b, 1) : btn.danger ? root.alertTone : root.ink
     }
     Click { action: btn.action }
   }
 
-  // The top of a model's page: its name above a lit panel (its token line with the scale and dates, or a free
-  // kind's cards to tick), and under it on the right what the model is
+  // The top of a model's page: its name, what it is, and a surface under them (its token line with the scale
+  // and dates, or a free kind's cards to tick)
   component Hero: Column {
     property var h
-    spacing: Style.space(10)
-    Row {
-      leftPadding: Style.space(6)
-      topPadding: Style.space(6)
-      spacing: Style.space(10)
-      Logo { family: h.family; size: 20; anchors.verticalCenter: parent.verticalCenter }
-      Label { text: h.name; color: root.ink; font.pixelSize: Style.font.title }
+    spacing: 0
+    Column {
+      x: root.pad
+      width: parent.width - 2 * root.pad
+      spacing: Style.space(4)
+      Row {
+        spacing: Style.space(8)
+        Logo { family: h.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
+        Label { text: h.name; color: root.ink; font.pixelSize: Style.font.body }
+      }
+      Label { width: parent.width; text: h.sub; elide: Text.ElideRight }
+      Label { width: parent.width; visible: !!text; text: h.caps || ""; elide: Text.ElideRight }
     }
+    Item { width: 1; height: root.topGap }
     Rectangle {
       width: parent.width
       height: h.gpus ? h.gpus.length * Style.space(36) + Style.space(12) : Style.space(110)
-      color: root.lit
+      color: root.surface
       clip: true
       // The same token line as on home, edge to edge, with its numbers over it
       Item {
         anchors.fill: parent
         visible: !h.gpus
         Line { anchors.fill: parent; values: h.line || [] }
-        Label { x: Style.space(8); y: Style.space(6); text: h.top || ""; color: root.dim }
-        Label { x: Style.space(8); y: parent.height / 2 - Style.space(10); text: h.mid || ""; color: root.dim }
-        Label { x: Style.space(8); y: parent.height - Style.space(22) - height; text: "0"; color: root.dim }
-        Label { x: Style.space(8); y: parent.height - Style.space(3) - height; text: h.since || ""; color: root.dim }
-        Label { x: parent.width - Style.space(12) - width; y: parent.height - Style.space(3) - height; text: h.now || ""; color: root.dim }
+        Label { x: root.pad; y: Style.space(8); text: h.top || ""; color: root.labelTone }
+        Label { x: root.pad; y: parent.height / 2 - height / 2; text: h.mid || ""; color: root.labelTone }
+        Label { x: root.pad; y: parent.height - Style.space(8) - height; text: h.since || ""; color: root.labelTone }
+        Label { x: parent.width - root.pad - width; y: parent.height - Style.space(8) - height; text: h.now || ""; color: root.labelTone }
       }
       Column {
         y: Style.space(6)
@@ -642,30 +691,7 @@ Panel {
         visible: !!h.gpus
         Repeater {
           model: h.gpus || []
-          GpuRow { required property var modelData; g: modelData; inset: 14 }
-        }
-      }
-    }
-    Item {
-      width: parent.width
-      height: sub.implicitHeight + (h.caps.length ? chips.implicitHeight + Style.space(6) : 0)
-      Label { id: sub; anchors.right: parent.right; text: h.sub }
-      Flow {
-        id: chips
-        anchors.right: parent.right
-        anchors.top: sub.bottom
-        anchors.topMargin: Style.space(6)
-        width: parent.width
-        layoutDirection: Qt.RightToLeft
-        spacing: Style.space(6)
-        Repeater {
-          model: h.caps
-          Box {
-            required property var modelData
-            width: chip.implicitWidth + Style.space(12)
-            height: chip.implicitHeight + Style.space(4)
-            Label { id: chip; anchors.centerIn: parent; text: modelData }
-          }
+          GpuRow { required property var modelData; g: modelData; inset: root.pad }
         }
       }
     }

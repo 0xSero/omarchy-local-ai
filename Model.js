@@ -21,6 +21,45 @@ function caps(c, n) {
 }
 function parse(text) { try { return JSON.parse(text) } catch (e) { return null } }
 
+// APCA-W3 0.1.9 lightness contrast (Lc) of text on a background. Colors are {r, g, b} in 0..1, as Qt gives them.
+// Every text and line color in the panel is picked by the Lc it must reach, so any theme stays readable.
+function lum(c) { return 0.2126729 * Math.pow(c.r, 2.4) + 0.7151522 * Math.pow(c.g, 2.4) + 0.072175 * Math.pow(c.b, 2.4) }
+function apca(text, bg) {
+  var t = lum(text), b = lum(bg)
+  if (t < 0.022) t += Math.pow(0.022 - t, 1.414)
+  if (b < 0.022) b += Math.pow(0.022 - b, 1.414)
+  if (Math.abs(b - t) < 0.0005) return 0
+  var s = b > t ? (Math.pow(b, 0.56) - Math.pow(t, 0.57)) * 1.14 : (Math.pow(b, 0.65) - Math.pow(t, 0.62)) * 1.14
+  return Math.abs(s) < 0.1 ? 0 : (s > 0 ? s - 0.027 : s + 0.027) * 100
+}
+function mix(a, b, t) { return { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t, a: 1 } }
+// a translucent color as it lands on an opaque one
+function over(c, bg) { var a = c.a === undefined ? 1 : c.a; return mix(bg, c, a) }
+// the color closest to `from` on the way to `to` that reaches |Lc| >= target on bg; `to` when nothing does
+function reach(from, to, bg, target) {
+  if (Math.abs(apca(from, bg)) >= target) return mix(from, from, 0)
+  if (Math.abs(apca(to, bg)) < target) return mix(to, to, 0)
+  var lo = 0, hi = 1
+  for (var i = 0; i < 24; i++) {
+    var m = (lo + hi) / 2
+    if (Math.abs(apca(mix(from, to, m), bg)) >= target) hi = m
+    else lo = m
+  }
+  return mix(from, to, hi)
+}
+// The panel's tones, all measured on the card surface (the lighter of its two backgrounds, so the worst case):
+// ink is for what matters now (a model's name, the primary action, a choice made), value for what a label
+// names, label for every label, rule for lines and borders that are not text, alert for problems.
+// A theme whose foreground is too soft to lead is pushed toward white (or black, on a light theme) until it does.
+var LC = { ink: 90, value: 80, label: 60, rule: 15, alert: 60 }
+function tones(ink, bg, surface, urgent) {
+  var card = over(surface, bg), white = { r: 1, g: 1, b: 1 }, black = { r: 0, g: 0, b: 0 }
+  var far = Math.abs(apca(white, card)) > Math.abs(apca(black, card)) ? white : black
+  var top = reach(over(ink, bg), far, card, LC.ink)
+  return { ink: top, value: reach(card, top, card, LC.value), label: reach(card, top, card, LC.label),
+    rule: reach(card, top, card, LC.rule), alert: reach(urgent, top, card, LC.alert), alertRule: reach(urgent, top, card, LC.rule) }
+}
+
 // the bar mark: failed, busy, ready or idle
 function mark(s) {
   var d = (s && s.deployments) || []
@@ -29,10 +68,11 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-// home: one panel per running model, one dashed line per free card kind, a bordered warning for busy ones
+// home: one panel per running model, then one list of the other cards: free ones to run on, busy or
+// unsupported ones and why
 function homeView(s, ui) {
-  if (!s.gpus) return { title: "LOCAL AI", right: "", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
-  var rows = [], shown = {}
+  if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
+  var rows = [], cards = [], shown = {}
   if (ui.problem) rows.push({ type: "error", label: ui.problem })
   function panel(d) {
     shown[d.id] = 1
@@ -65,20 +105,21 @@ function homeView(s, ui) {
       return d.keys.some(function(x) { return kd.keys.indexOf(x) >= 0 })
     }).forEach(panel)
     var r = kd.recipe
-    if (kd.free.length) rows.push({ type: "free", label: kd.free.length + " × " + kd.name + " · free", model: r.name,
+    if (kd.free.length) cards.push({ type: "free", label: kd.free.length + " × " + kd.name, model: r.name,
       family: r.family, more: "kind|" + kd.hw, action: "run|" + r.id + "|" + kd.free[0] })
-    if (kd.taken.length) rows.push({ type: "busy", label: kd.taken.length + " × " + kd.name, note: "busy · another program is using it" })
+    if (kd.taken.length) cards.push({ type: "busy", label: kd.taken.length + " × " + kd.name, note: "in use by another program", warn: true })
   })
   ;(s.deployments || []).filter(function(d) { return !shown[d.id] }).forEach(panel)
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
-  ;(s.unsupported || []).forEach(function(u) { rows.push({ type: "busy", label: u.n + " × " + u.name, note: "no validated model yet" }) })
-  return { title: "LOCAL AI", version: s.version, right: k(s.week) + " this week", rows: rows }
+  ;(s.unsupported || []).forEach(function(u) { cards.push({ type: "busy", label: u.n + " × " + u.name, note: "no validated model yet" }) })
+  if (cards.length) rows = rows.concat([{ type: "sec", label: "GPUS" }], cards)
+  return { title: "LOCAL AI", version: s.version, stat: k(s.week), statLabel: "this week", rows: rows }
 }
 
 // nothing to run on: one line on what this machine has, and where the list of supported cards lives
 function soonView(s) {
   var found = (s.gpus || []).map(function(g) { return g.name }).filter(function(n, i, a) { return a.indexOf(n) === i })
-  return { title: "LOCAL AI", version: s.version, right: "", rows: [{ type: "soon",
+  return { title: "LOCAL AI", version: s.version, rows: [{ type: "soon",
     head: found.length ? "No tested model for " + found.join(", ") + " yet" : "No supported GPU on this machine",
     action: "url|https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md" }] }
 }
@@ -89,24 +130,24 @@ function runView(s, id, ui) {
   if (!d) return null
   var u = d.session || {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
   var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
-  var v = { back: true, title: "MORE", rows: [], hero: { name: d.name, family: d.family, line: line,
+  var v = { back: true, rows: [], hero: { name: d.name, family: d.family, line: line,
     top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: "now",
     sub: [d.format, d.keys.length + " × " + (cards[0] ? cards[0].name : "GPU")].filter(Boolean).join(" · "),
-    caps: caps(d.caps, d.ctx) } }
+    caps: caps(d.caps, d.ctx).join(" · ") } }
   v.rows.push({ type: "grid", cells: [
-    { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "DECODE AVG" },
-    { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "PREFILL AVG" },
-    { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "FIRST TOKEN" },
-    { v: k(u.tokens), u: "", k: "SESSION" },
-    { v: k(s.week), u: "", k: "WEEK" },
-    { v: dur((Date.now() - Date.parse(d.startedAt)) / 1000), u: "", k: "UP" }] })
+    { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
+    { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
+    { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
+    { v: k(u.tokens), u: "", k: "session" },
+    { v: k(s.week), u: "", k: "week" },
+    { v: dur((Date.now() - Date.parse(d.startedAt)) / 1000), u: "", k: "up" }] })
   v.rows.push({ type: "sec", label: "GPUS" })
   cards.forEach(function(g) { v.rows.push(gpuRow(g)) })
   v.rows.push({ type: "sec", label: "OPENS WITH" })
   pickers(s, v.rows, ui, d.agent, d.folder, id)
   weights(v.rows, d.weights)
   v.rows.push({ type: "sec", label: "REACH" })
-  v.rows.push({ type: "field", label: "this machine", value: "127.0.0.1:" + d.port, plain: true })
+  v.rows.push({ type: "field", label: "this machine", value: "127.0.0.1:" + d.port })
   if (s.tailnet) v.rows.push(d.shared
     ? { type: "field", label: "tailnet", value: d.shared, secret: true, action: "copy|" + d.shared }
     : { type: "field", label: "tailnet", value: "share", action: "share|" + id })
@@ -124,10 +165,10 @@ function kindView(s, hw, ui) {
   var gpus = kd.keys.map(function(key) {
     var g = find(s.gpus, "key", key), free = kd.free.indexOf(key) >= 0
     return Object.assign(gpuRow(g), { check: kd.keys.length > 1 ? key === chosen : undefined, disabled: !free,
-      action: free ? "tick|" + key : "", status: kd.taken.indexOf(key) >= 0 ? "busy, another program" : g.busy ? "running a model" : "" })
+      action: free ? "tick|" + key : "", status: kd.taken.indexOf(key) >= 0 ? "in use by another program" : g.busy ? "running a model" : "" })
   })
-  var v = { back: true, title: kd.keys.length + " × " + kd.name.toUpperCase(), rows: [], hero: { name: pick.name,
-    family: pick.family, gpus: gpus, caps: caps(pick.caps, 0),
+  var v = { back: true, rows: [], hero: { name: pick.name,
+    family: pick.family, gpus: gpus, caps: caps(pick.caps, 0).join(" · "),
     sub: [pick.format, ctx(pick.ctx) + " context", gb(pick.sizeGb)].filter(Boolean).join(" · ") } }
   v.rows.push({ type: "sec", label: "OPENS WITH" })
   pickers(s, v.rows, ui, s.defaults.agent, s.defaults.folder, "")
@@ -172,3 +213,5 @@ function build(s, ui) {
   var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : null) || homeView(s, ui)
   return Object.assign(v, { mark: mark(s) })
 }
+
+if (typeof module !== "undefined") module.exports = { build: build, parse: parse, apca: apca, reach: reach, tones: tones, over: over, LC: LC }
