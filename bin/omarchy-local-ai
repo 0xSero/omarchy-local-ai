@@ -702,9 +702,10 @@ tokens() {
 session() {
   { grep '^{' "$STATE/usage/$1/usage.jsonl" 2>/dev/null || true; } | jq -sc --argjson s "$2" --argjson now "$(date +%s)" '
     def avg: if length > 0 then add / length | round else null end;
-    ([.[].t] | min // $s) as $from | (($now - $from) / 24 + 1) as $step
+    # the line runs from the first answer to the last one, so the latest growth sits at the right edge
+    ([.[].t] | min // $s) as $from | ([.[].t] | max // $now) as $last | (($last - $from) / 24 + 1) as $step
     | {tokens: ([.[] | select(.t >= $s) | .prompt + .completion] | add // 0),
-       all: {since: ($from | strftime("%b %-d")), tokens: ([.[] | .prompt + .completion] | add // 0),
+       all: {since: ($from | strftime("%b %-d")), last: $last, tokens: ([.[] | .prompt + .completion] | add // 0),
          decode: ([.[] | select(.completion > 8 and .ms > 0)
            | .completion / ((if .ms > .ttft_ms then .ms - .ttft_ms else .ms end) / 1000)] | avg),
          prefill: ([.[] | select(.prompt > 64 and .ttft_ms > 0 and .ttft_ms < .ms) | .prompt / (.ttft_ms / 1000)] | avg),

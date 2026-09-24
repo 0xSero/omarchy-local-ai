@@ -11,6 +11,11 @@ function dur(s) {
   s = Math.max(0, Math.round(s))
   return s < 3600 ? Math.floor(s / 60) + "m" : Math.floor(s / 3600) + ":" + ("0" + Math.floor(s % 3600 / 60)).slice(-2) + "h"
 }
+// how long ago a unix time was, in the fewest words: now, 12m ago, 10h ago, 3d ago
+function ago(t) {
+  var s = Date.now() / 1000 - (t || 0)
+  return s < 300 ? "now" : s < 3600 ? Math.round(s / 60) + "m ago" : s < 86400 ? Math.floor(s / 3600) + "h ago" : Math.floor(s / 86400) + "d ago"
+}
 function home(dir) { return (dir || "").replace(/^\/home\/[^\/]+/, "~") }
 function find(list, key, v) { return (list || []).filter(function(x) { return x[key] === v })[0] || null }
 function working(d) { return d.state === "download" || d.state === "starting" || d.state === "stopping" }
@@ -173,57 +178,62 @@ function soonView(s) {
     action: "url|https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md" }] }
 }
 
-// a running model's page: its token line, six figures, its cards, what Open uses, where it answers
-function runView(s, id, ui) {
-  var d = find(s.deployments, "id", id)
-  if (!d) return null
-  var u = d.session || {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
-  var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
-  var v = { back: true, rows: [], hero: { name: d.name, family: d.family, line: line,
-    top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: "now",
-    sub: [d.format, d.keys.length + " × " + (cards[0] ? cards[0].name : "GPU")].filter(Boolean).join(" · "),
-    icons: icons(d.caps), caps: d.ctx ? ctx(d.ctx) + " context" : "" } }
-  v.rows.push({ type: "grid", cells: [
-    { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
-    { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
-    { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
-    { v: k(u.tokens), u: "", k: "session" },
-    { v: k(s.week), u: "", k: "week" },
-    { v: dur((Date.now() - Date.parse(d.startedAt)) / 1000), u: "", k: "up" }] })
+// A model's page, the same for a running model and a free card kind: its name and what it is, its token line and
+// figures when it runs, its cards (ticked to choose which a free one runs on), what Open uses, its weights, where it
+// answers when it runs, and Run or Log and Stop.
+function page(s, ui, m) {
+  var run = m.d, u = run ? run.session || {} : {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
+  var v = { back: true, rows: [], hero: { name: m.name, family: m.family, icons: icons(m.caps),
+    sub: [m.format, m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU"), m.sizeGb && !run ? gb(m.sizeGb) : ""].filter(Boolean).join(" · "),
+    caps: m.ctx ? ctx(m.ctx) + " context" : "" } }
+  if (run) {
+    Object.assign(v.hero, { line: line, top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: all.last ? ago(all.last) : "now" })
+    v.rows.push({ type: "grid", cells: [
+      { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
+      { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
+      { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
+      { v: k(u.tokens), u: "", k: "session" },
+      { v: k(s.week), u: "", k: "week" },
+      { v: dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
+  }
   v.rows.push({ type: "sec", label: "GPUS" })
-  cards.forEach(function(g) { v.rows.push(gpuRow(g)) })
+  m.cards.forEach(function(g) { v.rows.push(g) })
   v.rows.push({ type: "sec", label: "OPENS WITH" })
-  pickers(s, v.rows, ui, d.agent, d.folder, id)
-  weights(v.rows, d.weights)
-  v.rows.push({ type: "sec", label: "REACH" })
-  v.rows.push({ type: "field", label: "this machine", value: "127.0.0.1:" + d.port })
-  if (s.tailnet) v.rows.push(d.shared
-    ? { type: "field", label: "tailnet", value: d.shared, secret: true, action: "copy|" + d.shared }
-    : { type: "field", label: "tailnet", value: "share", action: "share|" + id })
-  if (d.error) v.rows.push({ type: "error", label: d.error })
-  v.rows.push({ type: "acts", items: [{ label: "Log", action: "log" }, { label: "Stop", action: "stop|" + id, danger: true }] })
+  pickers(s, v.rows, ui, run ? run.agent : s.defaults.agent, run ? run.folder : s.defaults.folder, run ? run.id : "")
+  weights(v.rows, m.weights)
+  if (run) {
+    v.rows.push({ type: "sec", label: "REACH" })
+    v.rows.push({ type: "field", label: "this machine", value: "127.0.0.1:" + run.port })
+    if (s.tailnet) v.rows.push(run.shared
+      ? { type: "field", label: "tailnet", value: run.shared, secret: true, action: "copy|" + run.shared }
+      : { type: "field", label: "tailnet", value: "share", action: "share|" + run.id })
+    if (run.error) v.rows.push({ type: "error", label: run.error })
+    v.rows.push({ type: "acts", items: [{ label: "Log", action: "log" }, { label: "Stop", action: "stop|" + run.id, danger: true }] })
+  } else {
+    v.rows.push({ type: "acts", items: [{ label: "Run ›", action: m.action, primary: true }] })
+  }
   return v
 }
 
-// a free card kind's page: the same look, with its cards in the lit panel where a running model has its line;
-// each card kind has one validated model, which runs on one card
+function runView(s, id, ui) {
+  var d = find(s.deployments, "id", id)
+  if (!d) return null
+  return page(s, ui, { d: d, name: d.name, family: d.family, format: d.format, caps: d.caps, ctx: d.ctx, weights: d.weights,
+    cards: (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 }).map(gpuRow) })
+}
+
+// a free card kind: its card to run on, ticked (the one the row was opened from, else the first free one)
 function kindView(s, hw, ui) {
   var kd = find(s.kinds, "hw", hw), pick = kd && kd.recipe
   if (!pick) return null
   var chosen = kd.free.indexOf(ui.key) >= 0 ? ui.key : kd.free[0]
-  var gpus = kd.keys.map(function(key) {
-    var g = find(s.gpus, "key", key), free = kd.free.indexOf(key) >= 0
-    return Object.assign(gpuRow(g), { check: kd.keys.length > 1 ? key === chosen : undefined, disabled: !free,
-      action: free ? "tick|" + key : "", status: kd.taken.indexOf(key) >= 0 ? "in use by another program" : g.busy ? "running a model" : "" })
-  })
-  var v = { back: true, rows: [], hero: { name: pick.name,
-    family: pick.family, gpus: gpus, icons: icons(pick.caps), caps: "",
-    sub: [pick.format, ctx(pick.ctx) + " context", gb(pick.sizeGb)].filter(Boolean).join(" · ") } }
-  v.rows.push({ type: "sec", label: "OPENS WITH" })
-  pickers(s, v.rows, ui, s.defaults.agent, s.defaults.folder, "")
-  weights(v.rows, pick.weights)
-  v.rows.push({ type: "acts", items: [{ label: "Run ›", action: chosen ? "run|" + pick.id + "|" + chosen : "", primary: true }] })
-  return v
+  return page(s, ui, { name: pick.name, family: pick.family, format: pick.format, caps: pick.caps, ctx: pick.ctx, sizeGb: pick.sizeGb,
+    weights: pick.weights, action: chosen ? "run|" + pick.id + "|" + chosen : "",
+    cards: kd.keys.map(function(key) {
+      var g = find(s.gpus, "key", key), free = kd.free.indexOf(key) >= 0
+      return Object.assign(gpuRow(g), { check: kd.keys.length > 1 ? key === chosen : undefined, disabled: !free,
+        action: free ? "tick|" + key : "", status: kd.taken.indexOf(key) >= 0 ? "in use by another program" : g.busy ? "running a model" : "" })
+    }) })
 }
 
 function gpuRow(g) {

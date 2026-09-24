@@ -13,6 +13,8 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - A GPU row has one quick action on the right (run its model, or run again after a crash); clicking the row opens a line under it with the rest: details, run on several cards, agent & folder, the crash reason, log, dismiss (dismiss stops it, freeing the card).
 - Model cards sit a little above the page, with a slow glow on their border; "now" sits at the chart's right edge. Capabilities are icons (eye, wrench, brain) on the model's page.
 - The header shows all-time tokens and a smaller, dimmer version. Loading reads "loading".
+- A model's page is the same for a running model and a free card: its token line and figures appear when it runs, its cards are the GPUS section (ticked to choose which a free one runs on), then Run or Log and Stop.
+- The token line runs from the first answer to the last, so the latest growth sits at the right edge; its right label says how long ago that was.
 
 ### Fixed
 - The panel flickered on every refresh: its rows were rebuilt each time. They now update in place.

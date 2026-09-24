@@ -783,32 +783,20 @@ Panel {
       }
     }
     Item { width: 1; height: root.topGap }
+    // a running model's token line, edge to edge, with its numbers over it (a free card has none)
     Rectangle {
+      visible: !!h.line
       width: parent.width
-      height: h.gpus ? h.gpus.length * Style.space(36) + Style.space(12) : Style.space(110)
+      height: visible ? Style.space(110) : 0
       color: root.surface
-      border.width: h.gpus ? 0 : 1
+      border.width: 1
       border.color: Util.alpha(root.theme, root.glow)
       clip: true
-      // The same token line as on home, edge to edge, with its numbers over it
-      Item {
-        anchors.fill: parent
-        visible: !h.gpus
-        Line { anchors.fill: parent; values: h.line || [] }
-        Label { x: root.pad; y: Style.space(8); text: h.top || ""; color: root.labelTone }
-        Label { x: root.pad; y: parent.height / 2 - height / 2; text: h.mid || ""; color: root.labelTone }
-        Label { x: root.pad; y: parent.height - Style.space(8) - height; text: h.since || ""; color: root.labelTone }
-        Label { x: parent.width - Style.space(6) - width; y: parent.height - Style.space(8) - height; text: h.now || ""; color: root.labelTone }
-      }
-      Column {
-        y: Style.space(6)
-        width: parent.width
-        visible: !!h.gpus
-        Repeater {
-          model: h.gpus || []
-          GpuRow { required property var modelData; g: modelData; inset: root.pad }
-        }
-      }
+      Line { anchors.fill: parent; values: h.line || [] }
+      Label { x: root.pad; y: Style.space(8); text: h.top || ""; color: root.labelTone }
+      Label { x: root.pad; y: parent.height / 2 - height / 2; text: h.mid || ""; color: root.labelTone }
+      Label { x: root.pad; y: parent.height - Style.space(8) - height; text: h.since || ""; color: root.labelTone }
+      Label { x: parent.width - Style.space(6) - width; y: parent.height - Style.space(8) - height; text: h.now || ""; color: root.labelTone }
     }
   }
 }
