@@ -100,13 +100,13 @@ function slot(s, ui, g, at) {
     row.run = { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }
     row.dismiss = "stop|" + d.id
     note = d.error || "stopped"
-    items = [{ label: "Run again ›", action: row.run.action, primary: true }, { label: "Log", action: "log" }, config,
-      { label: "Dismiss", action: "stop|" + d.id, danger: true }]
+    // dismiss is on the row itself
+    items = [{ label: "Run again ›", action: row.run.action, primary: true }, { label: "View logs", action: "log" }, config]
   } else if (d) {
     row.rank = 1
     row.note = (d.state === "ready" ? "running " : d.state === "stopping" ? "stopping " : "starting ") + d.name
     items = (d.state === "ready" ? [{ label: "Open " + d.agent + " ›", action: "open|" + d.id, primary: true }] : [])
-      .concat([config, { label: "Stop", action: "stop|" + d.id, danger: true }])
+      .concat([config, { label: "Stop model", action: "stop|" + d.id, danger: true }])
   } else if (kd.taken.indexOf(g.key) >= 0) {
     row.rank = 3
     row.warn = true
@@ -181,7 +181,7 @@ function card(s, d) {
   } else {
     r.progress = d.percent > 0 && d.state !== "stopping" ? d.percent : -1
     r.sub = (d.detail || d.state) + (r.progress >= 0 && d.state !== "download" ? " · " + d.percent + "%" : "")
-    r.primary = { label: "Stop", action: "stop|" + d.id, quiet: true }
+    r.primary = { label: "Stop model", action: "stop|" + d.id, quiet: true }
   }
   return r
 }
@@ -230,7 +230,7 @@ function page(s, ui, m) {
       ? { type: "field", icon: "tailnet", label: "tailnet", value: run.shared, secret: true, action: "copy|" + run.shared }
       : { type: "field", icon: "tailnet", label: "tailnet", value: "share", action: "share|" + run.id })
     if (run.error) v.rows.push({ type: "error", label: run.error })
-    v.rows.push({ type: "acts", items: [{ label: "Log", action: "log" }, { label: "Stop", action: "stop|" + run.id, danger: true }] })
+    v.rows.push({ type: "acts", items: [{ label: "View logs", action: "log" }, { label: "Stop model", action: "stop|" + run.id, danger: true }] })
   } else {
     v.rows.push({ type: "acts", items: [{ label: "Run ›", action: m.action, primary: true }] })
   }
