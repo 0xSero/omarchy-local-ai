@@ -774,14 +774,13 @@ cmd_snapshot() {
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, week: $tokens.week, total: $tokens.total, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
-       kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, name: .[0].name, keys: map(.key),
+       kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
          recipe: ([$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1)][0] // $rec[0].hardware[.[0].hw].recipes[0]
            | {id, name, family, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}),
-         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1)
-           | {id, name, family, cards, format, sizeGb, ctx: .serving.ctxTokens}]}],
-       unsupported: [$g[] | select(.hw == "") | .name] | group_by(.) | map({name: .[0], n: length}), deployments: $deps}'
+         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1) | {id, name, cards}]}],
+       deployments: $deps}'
 }
 
 if [[ ${1:-} =~ ^__(start|stop|share|purge)$ ]]; then

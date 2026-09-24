@@ -6,16 +6,19 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ### Added
 - Groups: one model across several cards of a kind. The bundle keeps each card kind's own recipe and the registry's first for each larger number of cards (Arc Pro B70: 2; RTX 3090: 2 and 4; RTX Pro 6000: 4). `run <recipe> <gpu>,<gpu>` checks every card and gives the engine exactly those; a free GPU's opened line offers "run on 2 cards" when enough cards of its kind are free.
-- An "all GPUs" page: every card with its memory, temperature and what it is doing.
+- An "all GPUs" page: every card as home's rows, so any of them, busy ones too, opens to its buttons and Config.
 
 ### Changed
 - Home is running and available: running models as cards (tall, with their token line drawn dim, speed and tokens small in the bottom-right corner), then the available GPUs as rows, free ones first, then crashed ones. A GPU already running a model is not listed again; cards another program holds or with no model are behind "all GPUs".
-- A GPU row has one quick action on the right (run its model, or run again after a crash); clicking the row opens it: its details or crash reason, then buttons like a model card's: Run (or Run again), Run on N cards, Agent & folder, Log, Dismiss (dismiss stops it, freeing the card).
+- A GPU row has one quick action on the right (run its model, or run again after a crash); clicking the row opens it: its details or crash reason, then buttons like a model card's: Run (or Run again), Run on N cards, Config, Log, Dismiss (dismiss stops it, freeing the card).
 - Model cards sit a little above the page, with a slow glow on their border; "now" sits at the chart's right edge. A vision model shows an eye on its page.
 - The tailnet address stays hidden, small and dim, until clicked; "copy" is always beside it and copies it in one click.
 - The header shows all-time tokens and a smaller, dimmer version. Loading reads "loading".
 - A model's page is the same for a running model and a free card: its token line and figures appear when it runs, its cards are the GPUS section (ticked to choose which a free one runs on), then Run or Log and Stop.
 - The token line runs from the first answer to the last, so the latest growth sits at the right edge; its right label says how long ago that was.
+
+### Removed
+- Unused snapshot fields (`unsupported`, a kind's name, most of a group's fields) and the panel's dead row types.
 
 ### Fixed
 - The panel flickered on every refresh: its rows were rebuilt each time. They now update in place.

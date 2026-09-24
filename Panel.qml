@@ -206,7 +206,7 @@ Panel {
           bottomPadding: Style.space(16)
           spacing: 0
 
-          // The top line: the name and version, or the way back; on home, this week's tokens
+          // The top line: the name and version, or the way back; on home, all-time tokens
           Item {
             width: parent.width
             height: root.headH
@@ -268,8 +268,8 @@ Panel {
                 x: inset
                 y: parent.gap
                 width: parent.width - 2 * inset
-                sourceComponent: ({ run: runC, slot: slotC, links: linksC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
-                  field: fieldC, opt: optC, path: pathC, acts: actsC })[r.type] || textC
+                sourceComponent: ({ run: runC, slot: slotC, links: linksC, soon: soonC, grid: gridC, gpu: gpuC,
+                  field: fieldC, opt: optC, path: pathC, acts: linksC })[r.type] || textC
               }
 
               // A running model: its all-time token line across the whole card, behind its name, card, speed and
@@ -297,9 +297,9 @@ Panel {
                     Label { width: parent.width; text: r.gpu; color: root.labelTone; elide: Text.ElideRight }
                     Item { width: 1; height: Style.space(4) }
                     Label {
-                      visible: (r.sub || []).length > 0
+                      visible: !!r.sub
                       width: parent.width
-                      text: (r.sub || []).join("  ·  ")
+                      text: r.sub || ""
                       color: root.valueTone
                       wrapMode: Text.WordWrap
                       maximumLineCount: 2
@@ -387,7 +387,7 @@ Panel {
                 }
               }
 
-              // The line a GPU row opens: what there is to know, then everything that can be done with that card
+              // A row of buttons, with what there is to know above it: the line a GPU row opens, or a page's actions
               Component {
                 id: linksC
                 Column {
@@ -412,26 +412,6 @@ Panel {
                       }
                     }
                   }
-                }
-              }
-
-              // A free card kind, one row in the GPUs list: its left opens the kind's page, its right runs the model
-              Component {
-                id: freeC
-                Item {
-                  height: root.rowH
-                  Label { id: kindLabel; x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label }
-                  Click { anchors.fill: kindLabel; action: r.more }
-                  Row {
-                    id: runLink
-                    anchors.right: parent.right
-                    anchors.rightMargin: root.gutter
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Style.space(6)
-                    Logo { family: r.family; size: 12; anchors.verticalCenter: parent.verticalCenter }
-                    Label { text: "run " + r.model + " ›"; color: root.ink }
-                  }
-                  Click { anchors.fill: runLink; action: r.action || r.more }
                 }
               }
 
@@ -472,17 +452,6 @@ Panel {
                     wrapMode: Text.WordWrap
                   }
                   Btn { anchors.horizontalCenter: parent.horizontalCenter; label: "See supported cards ›"; action: r.action }
-                }
-              }
-
-              // A card Local AI cannot use, one row in the GPUs list with why: another program holds it (a problem),
-              // or no model is validated for it yet (a fact)
-              Component {
-                id: busyC
-                Item {
-                  height: root.rowH
-                  Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: r.label }
-                  Right { margin: root.gutter; text: r.note; color: r.warn ? root.alertTone : root.labelTone }
                 }
               }
 
@@ -530,7 +499,7 @@ Panel {
                 }
               }
 
-              Component { id: gpuC; GpuRow { g: r; height: r.status ? Style.space(36) : root.rowH; inset: root.gutter } }
+              Component { id: gpuC; GpuRow { g: r; height: r.status ? Style.space(36) : root.rowH } }
 
               // A label on the left, a value on the right; a secret value stays hidden, small, until clicked, beside an always-on copy
               Component {
@@ -581,7 +550,7 @@ Panel {
                     color: root.ink
                     font.family: root.mono
                     font.pixelSize: Style.font.caption
-                    background: Box {}
+                    background: Rectangle { color: "transparent"; border.width: 1; border.color: root.ruleTone }
                     onAccepted: {
                       var path = text.indexOf("~") === 0 ? Quickshell.env("HOME") + text.slice(1) : text
                       root.activate("set|folder|" + path + "|" + r.id)
@@ -590,23 +559,6 @@ Panel {
                 }
               }
 
-              Component {
-                id: actsC
-                Row {
-                  leftPadding: root.gutter
-                  spacing: Style.space(8)
-                  Repeater {
-                    model: r.items
-                    Btn {
-                      required property var modelData
-                      label: modelData.label
-                      action: modelData.action
-                      primary: !!modelData.primary
-                      danger: !!modelData.danger
-                    }
-                  }
-                }
-              }
             }
           }
         }
@@ -621,17 +573,6 @@ Panel {
     color: root.valueTone
     font.family: root.mono
     font.pixelSize: Style.font.caption
-  }
-
-  // A hairline frame
-  component Box: Rectangle { color: "transparent"; border.width: 1; border.color: root.ruleTone }
-
-  // A model's capability as a small glyph from the shell's Nerd Font: an eye for vision
-  component CapIcon: Label {
-    property string cap
-    text: cap === "vision" ? "\udb81\uded0" : ""
-    color: root.labelTone
-    font.pixelSize: Style.font.body
   }
 
   // A label against its row's right edge
@@ -667,14 +608,13 @@ Panel {
   component GpuRow: Item {
     id: gpu
     property var g
-    property int inset
     readonly property bool box: g.check !== undefined
     readonly property color tone: g.disabled ? root.labelTone : g.check ? root.ink : root.valueTone
     width: parent.width
     height: Style.space(36)
     Rectangle {
       visible: gpu.box
-      x: gpu.inset
+      x: root.gutter
       width: Style.space(10)
       height: width
       anchors.verticalCenter: parent.verticalCenter
@@ -683,7 +623,7 @@ Panel {
       border.color: gpu.g.disabled ? root.ruleTone : root.valueTone
     }
     Column {
-      x: gpu.inset + (gpu.box ? Style.space(20) : 0)
+      x: root.gutter + (gpu.box ? Style.space(20) : 0)
       width: Style.space(100)
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(2)
@@ -691,7 +631,7 @@ Panel {
       Label { visible: !!text; text: gpu.g.status || ""; color: root.labelTone }
     }
     Rectangle {
-      x: gpu.inset + Style.space(gpu.box ? 124 : 104)
+      x: root.gutter + Style.space(gpu.box ? 124 : 104)
       visible: gpu.g.bar
       width: Math.max(0, mem.x - x - Style.space(12))
       height: 3
@@ -703,15 +643,13 @@ Panel {
         color: gpu.g.disabled ? root.labelTone : root.valueTone
       }
     }
-    Right { id: mem; margin: gpu.inset; text: gpu.g.mem + (gpu.g.temp ? "  " + gpu.g.temp : ""); color: gpu.g.disabled ? root.labelTone : root.valueTone }
+    Right { id: mem; margin: root.gutter; text: gpu.g.mem + (gpu.g.temp ? "  " + gpu.g.temp : ""); color: gpu.g.disabled ? root.labelTone : root.valueTone }
     Click { action: gpu.g.action || "" }
   }
 
-  // Tokens over time, cumulative, rising to the right. Where text sits on it (a card on home) it is only a faint
-  // area, which leaves the text's contrast as it is; on a model's page it also gets its line, in the rule tone.
+  // Tokens over time, cumulative, rising to the right: a dim line over a faint area, so text over it keeps its contrast
   component Line: Canvas {
     property var values: []
-    property bool stroke: true
     onValuesChanged: requestPaint()
     Component.onCompleted: requestPaint()
     onPaint: {
@@ -724,11 +662,9 @@ Panel {
         if (i) g.lineTo(x, y)
         else g.moveTo(x, y)
       }
-      if (stroke) {
-        g.strokeStyle = Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
-        g.lineWidth = 1.2
-        g.stroke()
-      }
+      g.strokeStyle = Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.25)
+      g.lineWidth = 1.2
+      g.stroke()
       g.lineTo(width, height)
       g.lineTo(0, height)
       g.closePath()
@@ -785,12 +721,10 @@ Panel {
       }
       Label { width: parent.width; text: h.sub; elide: Text.ElideRight }
       Row {
-        visible: (h.icons || []).length > 0 || !!h.caps
+        visible: h.vision || !!h.caps
         spacing: Style.space(10)
-        Repeater {
-          model: h.icons || []
-          CapIcon { required property var modelData; cap: modelData; anchors.verticalCenter: parent.verticalCenter }
-        }
+        // a vision model's eye, a glyph from the shell's Nerd Font
+        Label { visible: !!h.vision; text: "\udb81\uded0"; color: root.labelTone; anchors.verticalCenter: parent.verticalCenter }
         Label { visible: !!text; text: h.caps || ""; anchors.verticalCenter: parent.verticalCenter }
       }
     }

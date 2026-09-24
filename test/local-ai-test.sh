@@ -91,9 +91,9 @@ export PATH=$TMP/bin:/usr/bin:/bin
 
 recipes "$PIN"
 "$CLI" snapshot >"$TMP/snap.json"
-[[ $(jq -r '.kinds[0].hw, .kinds[0].free[0], .kinds[0].recipe.id, .unsupported[0].name' "$TMP/snap.json" | paste -sd' ') == "rtx-4090-24gb nvidia:0 $ID GT 710" ]] ||
+[[ $(jq -r '.kinds[0].hw, .kinds[0].free[0], .kinds[0].recipe.id, (.gpus[] | select(.hw == "") | .name)' "$TMP/snap.json" | paste -sd' ') == "rtx-4090-24gb nvidia:0 $ID GT 710" ]] ||
   fail "snapshot" "$(jq -c . "$TMP/snap.json")"
-pass "the snapshot matches the card to its kind and its one recipe, and names a card with no recipe"
+pass "the snapshot matches the card to its kind and its one recipe, and lists a card with no recipe"
 
 # The panel's view model reads this exact snapshot: a shape the backend changed and Model.js did not is a
 # view that throws, which the panel can only show as an error
