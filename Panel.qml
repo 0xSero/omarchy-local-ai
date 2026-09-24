@@ -394,21 +394,23 @@ Panel {
                 id: linksC
                 Column {
                   topPadding: Style.space(2)
-                  bottomPadding: Style.space(6)
-                  spacing: Style.space(4)
-                  Label { visible: !!r.note; x: root.gutter + Style.space(12); width: parent.width - 2 * root.gutter - Style.space(12); text: r.note || ""; color: root.labelTone; wrapMode: Text.WordWrap }
+                  bottomPadding: Style.space(10)
+                  spacing: Style.space(8)
+                  Label { visible: !!r.note; x: root.gutter; width: parent.width - 2 * root.gutter; text: r.note || ""; color: root.labelTone; wrapMode: Text.WordWrap }
+                  // the same buttons as a model card's: filled for the main action, outlined for the rest
                   Flow {
                     visible: (r.items || []).length > 0
-                    x: root.gutter + Style.space(12)
-                    width: parent.width - 2 * root.gutter - Style.space(12)
-                    spacing: Style.space(12)
+                    x: root.gutter
+                    width: parent.width - 2 * root.gutter
+                    spacing: Style.space(8)
                     Repeater {
                       model: r.items || []
-                      Label {
+                      Btn {
                         required property var modelData
-                        text: modelData.label
-                        color: modelData.quiet ? root.labelTone : root.ink
-                        Click { action: modelData.action }
+                        label: modelData.label
+                        action: modelData.action
+                        primary: !!modelData.primary
+                        danger: !!modelData.danger
                       }
                     }
                   }

@@ -113,19 +113,19 @@ function homeView(s, ui) {
     if (!kd) {
       row.rank = 4
       row.note = "no validated model yet"
-      more.items = [{ label: "see supported cards ›", action: "url|https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md" }]
+      more.items = [{ label: "See supported cards ›", action: "url|https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md" }]
     } else if (d && d.state === "error") {
       row.rank = 2
       row.crashed = true
       row.hint = "crashed"
       row.run = { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }
       more.note = d.error || "stopped"
-      more.items = [row.run, { label: "log", action: "log", quiet: true }, { label: "dismiss", action: "stop|" + d.id, quiet: true }]
+      more.items = [{ label: "Run again ›", action: row.run.action, primary: true }, { label: "Log", action: "log" }, { label: "Dismiss", action: "stop|" + d.id, danger: true }]
     } else if (d) {
       row.rank = 1
       row.note = (d.state === "ready" ? "running " : d.state === "stopping" ? "stopping " : "starting ") + d.name
-      more.items = (d.state === "ready" ? [{ label: "open " + d.agent + " ›", action: "open|" + d.id }] : [])
-        .concat([{ label: "more ›", action: "more|" + d.id }, { label: "stop", action: "stop|" + d.id, quiet: true }])
+      more.items = (d.state === "ready" ? [{ label: "Open " + d.agent + " ›", action: "open|" + d.id, primary: true }] : [])
+        .concat([{ label: "More", action: "more|" + d.id }, { label: "Stop", action: "stop|" + d.id, danger: true }])
     } else if (kd.taken.indexOf(g.key) >= 0) {
       row.rank = 3
       row.warn = true
@@ -136,16 +136,16 @@ function homeView(s, ui) {
       row.rank = 0
       row.run = { family: r.family, label: "run " + r.name + " ›", action: "run|" + r.id + "|" + g.key }
       more.note = [r.format, r.ctx ? ctx(r.ctx) + " context" : "", r.sizeGb ? gb(r.sizeGb) : ""].filter(Boolean).join(" · ")
-      more.items = [{ label: "run ›", action: row.run.action }]
+      more.items = [{ label: "Run ›", action: row.run.action, primary: true }]
       // a group: one model across this card and other free ones of its kind, when enough are free
       var others = kd.free.filter(function(x) { return x !== g.key }), sizes = {}
       ;(kd.groups || []).forEach(function(gr) {
         if (sizes[gr.cards] || others.length + 1 < gr.cards) return
         sizes[gr.cards] = 1
-        more.items.push({ label: (gr.name !== r.name ? "run " + gr.name + " on " : "run on ") + gr.cards + " cards ›",
+        more.items.push({ label: (gr.name !== r.name ? "Run " + gr.name + " on " : "Run on ") + gr.cards + " cards",
           action: "run|" + gr.id + "|" + [g.key].concat(others.slice(0, gr.cards - 1)).join(",") })
       })
-      more.items.push({ label: "agent & folder ›", action: "kind|" + kd.hw + "|" + g.key, quiet: true })
+      more.items.push({ label: "Agent & folder", action: "kind|" + kd.hw + "|" + g.key })
     }
     row.open = ui.open === "gpu:" + g.key
     if (row.rank === 0 || row.rank === 2) slots.push({ rank: row.rank, at: at, rows: row.open ? [row, more] : [row] })
