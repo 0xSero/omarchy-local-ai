@@ -39,6 +39,14 @@ Panel {
   readonly property int edge: Style.space(8)
   readonly property int pad: gutter - edge
   readonly property int rowH: Style.space(22)
+  // the chart borders breathe between 12% and 26% of the ink, slowly, while the panel is open
+  property real glow: 0.12
+  SequentialAnimation on glow {
+    running: root.opened
+    loops: Animation.Infinite
+    NumberAnimation { to: 0.26; duration: 1800; easing.type: Easing.InOutSine }
+    NumberAnimation { to: 0.12; duration: 1800; easing.type: Easing.InOutSine }
+  }
   readonly property int headH: Style.space(16)
   readonly property int groupGap: Style.space(20)
   readonly property int blockGap: Style.space(8)
@@ -261,7 +269,7 @@ Panel {
                 x: inset
                 y: parent.gap
                 width: parent.width - 2 * inset
-                sourceComponent: ({ run: runC, slot: slotC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
+                sourceComponent: ({ run: runC, slot: slotC, links: linksC, free: freeC, soon: soonC, busy: busyC, grid: gridC, gpu: gpuC,
                   field: fieldC, opt: optC, path: pathC, acts: actsC })[r.type] || textC
               }
 
@@ -271,10 +279,10 @@ Panel {
                 id: runC
                 Rectangle {
                   height: Style.space(156)
-                  // a little above the page: a lighter surface and a light border
+                  // a little above the page: a lighter surface, and a light border that glows slowly
                   color: Util.alpha(root.theme, 0.08)
                   border.width: 1
-                  border.color: Util.alpha(root.theme, 0.14)
+                  border.color: Util.alpha(root.theme, root.glow)
                   clip: true
                   Line { anchors.fill: parent; values: r.line }
                   Column {
@@ -333,13 +341,12 @@ Panel {
                 }
               }
 
-              // One GPU, in the look of the earlier card rows: its name on the left (with "set up ›" when free, which
-              // opens its page), and on the right what it runs, or the model to run on it, or what holds it. A crashed
-              // one is framed in dashes and runs again or is dismissed.
+              // One GPU: its name, and on the right one quick action (the model to run on it, or run again) or what
+              // it is doing. Clicking the row opens a line under it with the rest; a crashed one is framed in dashes.
               Component {
                 id: slotC
                 Item {
-                  height: r.crashed ? Style.space(36) : root.rowH
+                  height: r.crashed ? Style.space(34) : root.rowH
                   Canvas {
                     visible: !!r.crashed
                     x: root.edge
@@ -353,15 +360,14 @@ Panel {
                       g.strokeRect(0.5, 0.5, width - 1, height - 1)
                     }
                   }
+                  Click { action: r.toggle || "" }
                   Row {
-                    id: slotName
                     x: root.gutter
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(10)
-                    Label { text: r.label }
-                    Label { visible: !!r.hint; text: r.hint || ""; color: r.crashed ? root.alertTone : root.labelTone }
+                    Label { text: r.label; color: r.open ? root.ink : root.valueTone }
+                    Label { visible: !!r.hint; text: r.hint || ""; color: root.alertTone }
                   }
-                  Click { anchors.fill: slotName; action: r.open || "" }
                   Row {
                     id: slotRun
                     visible: !!r.run
@@ -369,25 +375,33 @@ Panel {
                     anchors.rightMargin: root.gutter
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(6)
-                    Logo { family: r.run ? r.run.family : ""; size: 12; anchors.verticalCenter: parent.verticalCenter }
+                    Logo { family: r.run && r.run.family || ""; size: 12; anchors.verticalCenter: parent.verticalCenter }
                     Label { text: r.run ? r.run.label : ""; color: root.ink }
                   }
                   Click { anchors.fill: slotRun; action: r.run ? r.run.action : "" }
                   Right {
-                    visible: !r.run && !(r.acts || []).length
+                    visible: !r.run
                     margin: root.gutter
                     text: r.note || ""
                     color: r.warn ? root.alertTone : root.labelTone
-                    Click { action: r.open || "" }
                   }
+                }
+              }
+
+              // The line a GPU row opens: what there is to know, then everything that can be done with that card
+              Component {
+                id: linksC
+                Column {
+                  topPadding: Style.space(2)
+                  bottomPadding: Style.space(6)
+                  spacing: Style.space(4)
+                  Label { visible: !!r.note; x: root.gutter + Style.space(12); width: parent.width - 2 * root.gutter - Style.space(12); text: r.note || ""; color: root.labelTone; wrapMode: Text.WordWrap }
                   Row {
-                    visible: (r.acts || []).length > 0
-                    anchors.right: parent.right
-                    anchors.rightMargin: root.gutter
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Style.space(14)
+                    visible: (r.items || []).length > 0
+                    x: root.gutter + Style.space(12)
+                    spacing: Style.space(16)
                     Repeater {
-                      model: r.acts || []
+                      model: r.items || []
                       Label {
                         required property var modelData
                         text: modelData.label
@@ -771,6 +785,8 @@ Panel {
       width: parent.width
       height: h.gpus ? h.gpus.length * Style.space(36) + Style.space(12) : Style.space(110)
       color: root.surface
+      border.width: h.gpus ? 0 : 1
+      border.color: Util.alpha(root.theme, root.glow)
       clip: true
       // The same token line as on home, edge to edge, with its numbers over it
       Item {
@@ -780,7 +796,7 @@ Panel {
         Label { x: root.pad; y: Style.space(8); text: h.top || ""; color: root.labelTone }
         Label { x: root.pad; y: parent.height / 2 - height / 2; text: h.mid || ""; color: root.labelTone }
         Label { x: root.pad; y: parent.height - Style.space(8) - height; text: h.since || ""; color: root.labelTone }
-        Label { x: parent.width - root.pad - width; y: parent.height - Style.space(8) - height; text: h.now || ""; color: root.labelTone }
+        Label { x: parent.width - Style.space(6) - width; y: parent.height - Style.space(8) - height; text: h.now || ""; color: root.labelTone }
       }
       Column {
         y: Style.space(6)

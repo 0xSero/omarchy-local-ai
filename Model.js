@@ -70,9 +70,9 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-// home: one card per working model (ready, then starting or stopping), then one row per GPU, numbered only when
-// a machine has several of its kind. A free GPU can be set up (its page) or run on; a busy one says what holds it;
-// a crashed one runs again or is dismissed.
+// home: one card per working model (ready, then starting or stopping), then one row per GPU: free ones first,
+// then running, crashed, held by another program, and cards with no model. A row has one quick action on the
+// right; clicking it opens a line under it with everything else that can be done with that card.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
   var rows = [], slots = [], models = []
@@ -100,36 +100,45 @@ function homeView(s, ui) {
     models.push({ rank: d.state === "ready" ? 0 : 1, at: models.length, row: r })
   }
   ;(s.deployments || []).filter(function(d) { return d.state !== "error" }).forEach(panel)
-  ;(s.kinds || []).forEach(function(kd) {
-    var many = kd.keys.length > 1
-    kd.keys.forEach(function(key, i) {
-      var d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(key) >= 0 })[0]
-      var row = { type: "slot", label: kd.name + (many ? " #" + (i + 1) : ""), acts: [] }
-      if (d && d.state === "error") {
-        row.hint = "crashed"
-        row.crashed = true
-        row.open = "more|" + d.id
-        row.acts = [{ label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }, { label: "dismiss", action: "stop|" + d.id, quiet: true }]
-      } else if (d) {
-        row.note = (d.state === "ready" ? "running " : d.state === "stopping" ? "stopping " : "starting ") + d.name
-        row.open = "more|" + d.id
-      } else if (kd.taken.indexOf(key) >= 0) {
-        row.note = "in use by another program"
-        row.warn = true
-      } else {
-        row.open = "kind|" + kd.hw + "|" + key
-        row.hint = "set up ›"
-        row.run = { family: kd.recipe.family, label: "run " + kd.recipe.name + " ›", action: "run|" + kd.recipe.id + "|" + key }
-      }
-      slots.push(row)
-    })
-  })
-  ;(s.gpus || []).filter(function(g) { return !g.hw }).forEach(function(g) {
-    slots.push({ type: "slot", label: g.name, note: "no validated model yet", acts: [] })
+  // one row per GPU, free ones first; a row opens in place to the rest of what can be done with that card
+  ;(s.gpus || []).forEach(function(g, at) {
+    var kd = find(s.kinds || [], "hw", g.hw), d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0]
+    var row = { type: "slot", label: g.name, toggle: "pick|gpu:" + g.key }, more = { type: "links", items: [] }
+    if (!kd) {
+      row.rank = 4
+      row.note = "no validated model yet"
+      more.items = [{ label: "see supported cards ›", action: "url|https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md" }]
+    } else if (d && d.state === "error") {
+      row.rank = 2
+      row.crashed = true
+      row.hint = "crashed"
+      row.run = { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }
+      more.note = d.error || "stopped"
+      more.items = [row.run, { label: "log", action: "log", quiet: true }, { label: "dismiss", action: "stop|" + d.id, quiet: true }]
+    } else if (d) {
+      row.rank = 1
+      row.note = (d.state === "ready" ? "running " : d.state === "stopping" ? "stopping " : "starting ") + d.name
+      more.items = (d.state === "ready" ? [{ label: "open " + d.agent + " ›", action: "open|" + d.id }] : [])
+        .concat([{ label: "more ›", action: "more|" + d.id }, { label: "stop", action: "stop|" + d.id, quiet: true }])
+    } else if (kd.taken.indexOf(g.key) >= 0) {
+      row.rank = 3
+      row.warn = true
+      row.note = "in use by another program"
+      more.note = g.usedMiB != null ? Math.round(g.usedMiB / 1024) + " of " + g.vramGb + " GB held by another program" : "held by another program"
+    } else {
+      var r = kd.recipe
+      row.rank = 0
+      row.run = { family: r.family, label: "run " + r.name + " ›", action: "run|" + r.id + "|" + g.key }
+      more.note = [r.format, r.ctx ? ctx(r.ctx) + " context" : "", r.sizeGb ? gb(r.sizeGb) : ""].filter(Boolean).join(" · ")
+      more.items = [{ label: "run ›", action: row.run.action }, { label: "choose agent and folder ›", action: "kind|" + kd.hw + "|" + g.key, quiet: true }]
+    }
+    row.open = ui.open === "gpu:" + g.key
+    slots.push({ rank: row.rank, at: at, rows: row.open ? [row, more] : [row] })
   })
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
   models.sort(function(a, b) { return a.rank - b.rank || a.at - b.at }).forEach(function(m) { rows.push(m.row) })
-  if (slots.length) rows = rows.concat([{ type: "sec", label: "GPUS" }], slots)
+  slots.sort(function(a, b) { return a.rank - b.rank || a.at - b.at })
+  if (slots.length) rows = rows.concat([{ type: "sec", label: "GPUS" }], [].concat.apply([], slots.map(function(x) { return x.rows })))
   return { title: "LOCAL AI", version: s.version, stat: k(s.total), statLabel: "all time", rows: rows }
 }
 
