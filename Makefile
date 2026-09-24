@@ -1,5 +1,5 @@
 # test:       every shell test (docker, curl, the GPU tools and pkexec are shimmed; node for Model.js)
-# sync:       take the first recipe of each card kind from the registry's published schema-2 export
+# sync:       take every recipe of each card kind from the registry's published schema-2 export
 #             (REGISTRY=<checkout>, at its origin/main), written one card kind per line
 # sync-check: fail when the vendored copy has fallen behind that export
 # check:      test, plus the recipes.json sanity and currency checks
@@ -20,9 +20,9 @@ test:
 # "Published" means the file committed at the registry's origin/main, not a checkout's working tree.
 export_ = if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >/dev/null 2>&1; then git -C "$(REGISTRY)" show "$(REGISTRY_REF):plugin/v2/recipes.json"; else cat "$(REGISTRY_EXPORT)"; fi
 commit = $$(git -C "$(REGISTRY)" rev-parse "$(REGISTRY_REF)" 2>/dev/null || git -C "$(REGISTRY)" rev-parse HEAD)
-# the registry lists each kind's recipes best first: the bundle keeps the first (the card's own model) and the
-# first for each larger number of cards (a group: one model across that many cards of the kind)
-published = $(export_) | jq -r --arg c "$(commit)" '.hardware |= map_values(.recipes |= ([.[0]] + ([.[] | select((.cards // 1) > 1)] | group_by(.cards) | map(.[0])) | unique_by(.id) | sort_by(.cards // 1))) | .registryCommit = $$c \
+# the registry lists each kind's recipes best first: the bundle keeps every one, one card first, in that order, so the
+# first is a card's recommended model and the rest are what its Config offers (a group: one model across several cards)
+published = $(export_) | jq -r --arg c "$(commit)" '.hardware |= map_values(.recipes |= sort_by(.cards // 1)) | .registryCommit = $$c \
   | (del(.hardware) | tojson | .[:-1]) + ",\"hardware\":{\n" + ([.hardware | to_entries[] | "\(.key | tojson):\(.value | tojson)"] | join(",\n")) + "\n}}"'
 PROVENANCE = del(.registryCommit, .generatedAt)
 

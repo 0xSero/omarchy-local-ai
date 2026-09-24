@@ -104,7 +104,7 @@ view() {
 }
 if command -v node >/dev/null; then
   [[ $(view home) == " sec,slot,slot,field" ]] || fail "home view" "$(view home 2>&1)"
-  [[ $(view kind rtx-4090-24gb) == " sec,gpu,gpu,sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
+  [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"

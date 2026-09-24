@@ -483,6 +483,8 @@ cmd_run() {
   for k in "${keys[@]}"; do
     valid_key "$k" || die "run <recipe> <gpu>[,<gpu>...]"
     grep -qxF -- "$k" <<<"$busy" && die "$k is in use"
+    jq -e --arg k "$k" --arg h "$(jq -r .hw <<<"$r")" 'any(.[]; .key == $k and .hw == $h)' <<<"$g" >/dev/null ||
+      die "$(jq -r .name <<<"$r") is not validated for $k"
     jq -e --arg k "$k" 'any(.[]; .key == $k and (.usedMiB // 0) > 2048)' <<<"$g" >/dev/null &&
       die "$k is in use by another program ($(jq -r --arg k "$k" '.[] | select(.key == $k) | .usedMiB / 1024 | floor' <<<"$g") GB)"
   done
@@ -692,10 +694,16 @@ cmd_share() {
 }
 
 # tokens this week (today and the six days before it) and all time, over every model's usage log
+# tokens: this week's and all-time tokens, and the lifetime line across every model: requests, the first and the last
+# answer, and 24 cumulative points between them (so the latest growth sits at the right edge)
 tokens() {
   { cat "$STATE"/usage/*/usage.jsonl 2>/dev/null | grep '^{' || true; } |
-    jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" '{week: ([.[] | select(.t >= $d0) | .prompt + .completion] | add // 0),
-      total: ([.[] | .prompt + .completion] | add // 0)}' 2>/dev/null || echo '{"week":0,"total":0}'
+    jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" --argjson now "$(date +%s)" '
+      ([.[].t] | min // $now) as $from | ([.[].t] | max // $now) as $last | (($last - $from) / 24 + 1) as $step
+      | {week: ([.[] | select(.t >= $d0) | .prompt + .completion] | add // 0), total: ([.[] | .prompt + .completion] | add // 0),
+         life: {requests: length, since: ($from | strftime("%b %-d")), last: $last,
+           line: (if length > 0 then [range(1; 25) as $i | [.[] | select(.t < $from + $i * $step) | .prompt + .completion] | add // 0] else [] end)}}' \
+    2>/dev/null || echo '{"week":0,"total":0,"life":{"requests":0,"line":[]}}'
 }
 
 # session <id> <since>: tokens since this start, and over every run of this model: averages and a 24-point line
@@ -772,13 +780,15 @@ cmd_snapshot() {
     --argjson agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done | jq -Rsc 'split("\n") | map(select(length > 0))')" '
     ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, week: $tokens.week, total: $tokens.total, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
+    | {version: $version, week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
          recipe: ([$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1)][0] // $rec[0].hardware[.[0].hw].recipes[0]
            | {id, name, family, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}),
+         models: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1)
+           | {id, name, family, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}],
          groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1)
            | {id, name, family, cards, format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, weights: [.weights[]? | {repository, revision}]}]}],
        deployments: $deps}'
