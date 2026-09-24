@@ -262,7 +262,7 @@ Panel {
               // A Loader sizes its item, so a surface's inset lives on the Loader; other rows keep their own gutter
               Loader {
                 id: row
-                readonly property real inset: ["run", "grid", "life"].indexOf(r.type) >= 0 ? root.edge : 0
+                readonly property real inset: ["run", "grid"].indexOf(r.type) >= 0 ? root.edge : 0
                 x: inset
                 y: parent.gap
                 width: parent.width - 2 * inset
@@ -270,25 +270,55 @@ Panel {
                   field: fieldC, opt: optC, path: pathC, acts: linksC })[r.type] || textC
               }
 
-              // Your lifetime: every answer from every model, tokens and requests over it, from the first answer to the last
+              // Your lifetime: the totals, then the activity grid (a column a week, a row a weekday) with its months
               Component {
                 id: lifeC
-                Rectangle {
-                  height: Style.space(104)
-                  color: root.surface
-                  border.width: 1
-                  border.color: Util.alpha(root.theme, root.glow)
-                  clip: true
-                  Line { anchors.fill: parent; values: r.line }
-                  Column {
-                    x: root.pad
-                    y: Style.space(10)
-                    spacing: Style.space(4)
-                    Label { text: r.tokens; color: root.ink; font.pixelSize: Style.font.body }
-                    Label { text: r.requests; color: root.labelTone }
+                Column {
+                  id: life
+                  readonly property int cols: Math.ceil((r.cells || []).length / 7)
+                  readonly property real cell: Math.min(Style.space(12), (width - 2 * root.gutter - (cols - 1) * Style.space(3)) / cols)
+                  spacing: Style.space(10)
+                  Item {
+                    width: parent.width
+                    height: lifeTokens.implicitHeight
+                    Row {
+                      x: root.gutter
+                      spacing: Style.space(10)
+                      Label { id: lifeTokens; text: r.tokens; color: root.ink }
+                      Label { anchors.baseline: lifeTokens.baseline; text: r.requests; color: root.labelTone }
+                    }
+                    Right { margin: root.gutter; text: r.since; color: root.labelTone }
                   }
-                  Label { x: root.pad; y: parent.height - Style.space(8) - height; text: r.since; color: root.labelTone }
-                  Label { x: parent.width - Style.space(6) - width; y: parent.height - Style.space(8) - height; text: r.now; color: root.labelTone }
+                  Grid {
+                    x: root.gutter
+                    rows: 7
+                    flow: Grid.TopToBottom
+                    spacing: Style.space(3)
+                    Repeater {
+                      model: r.cells || []
+                      Rectangle {
+                        required property var modelData
+                        width: life.cell
+                        height: life.cell
+                        radius: 2
+                        color: modelData < 0 ? "transparent" : Util.alpha(root.theme, [0.07, 0.25, 0.45, 0.7, 0.95][modelData])
+                      }
+                    }
+                  }
+                  Item {
+                    width: parent.width
+                    height: Style.space(12)
+                    Repeater {
+                      model: r.months || []
+                      Label {
+                        required property var modelData
+                        x: root.gutter + modelData.col * (life.cell + Style.space(3))
+                        text: modelData.label
+                        color: root.labelTone
+                        font.pixelSize: Style.font.caption - 1
+                      }
+                    }
+                  }
                 }
               }
 

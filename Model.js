@@ -156,8 +156,7 @@ function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
   var rows = ui.problem ? [{ type: "error", label: ui.problem }] : [], life = s.life || {}
-  if (life.requests > 0) rows.push({ type: "life", line: life.line || [], tokens: k(s.total) + " tokens",
-    requests: k(life.requests) + (life.requests === 1 ? " request" : " requests"), since: life.since || "", now: ago(life.last) })
+  if (life.requests > 0) rows.push(activity(s))
   ;(s.deployments || []).filter(function(d) { return d.state === "ready" })
     .concat((s.deployments || []).filter(function(d) { return working(d) })).forEach(function(d) { rows.push(card(s, d)) })
   var free = slots(s, ui, function(r) { return r < 1 || r === 2 })
@@ -165,6 +164,23 @@ function homeView(s, ui) {
   if (s.gpus.length > free.filter(function(x) { return !x.group }).length)
     rows.push({ type: "field", icon: "gpu", label: "all GPUs", value: String(s.gpus.length), action: "gpus" })
   return { title: "LOCAL AI", version: s.version, rows: rows }
+}
+
+// Your lifetime as an activity grid: a column a week, a row a weekday, each day shaded in four steps by its tokens
+// against your busiest day (days still to come are blank), the months under their first week, the totals above
+var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+function activity(s) {
+  var life = s.life, days = life.days || [], top = Math.max.apply(null, days.concat([1])), months = [], last = -1
+  for (var c = 0; c * 7 < days.length; c++) {
+    var m = new Date((life.start + c * 7 * 86400) * 1000).getMonth()
+    if (m !== last) months.push({ col: c, label: MONTHS[m] })
+    last = m
+  }
+  // the first, partial month keeps its name unless the next one would crowd it
+  if (months.length > 1 && months[1].col < 3) months.shift()
+  return { type: "life", tokens: k(s.total) + " tokens", requests: k(life.requests) + (life.requests === 1 ? " request" : " requests"),
+    since: "since " + life.since, months: months,
+    cells: days.map(function(v, i) { return i > life.today ? -1 : v > 0 ? Math.ceil(v / top * 4) : 0 }) }
 }
 
 // A running model's card: its all-time token line, its name and cards, and Open (or Stop while it starts) and More

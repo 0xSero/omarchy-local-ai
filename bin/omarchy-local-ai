@@ -694,16 +694,19 @@ cmd_share() {
 }
 
 # tokens this week (today and the six days before it) and all time, over every model's usage log
-# tokens: this week's and all-time tokens, and the lifetime line across every model: requests, the first and the last
-# answer, and 24 cumulative points between them (so the latest growth sits at the right edge)
+# tokens: this week's and all-time tokens, and your lifetime: requests, the first and last answer, and the tokens of
+# each day of the last 20 weeks, from a Monday (the activity grid on home: a column a week, a row a weekday)
 tokens() {
+  local w0
+  w0=$(date -d "$(date +%F) -$(($(date +%u) - 1 + 133)) days 00:00" +%s)
   { cat "$STATE"/usage/*/usage.jsonl 2>/dev/null | grep '^{' || true; } |
-    jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" --argjson now "$(date +%s)" '
-      ([.[].t] | min // $now) as $from | ([.[].t] | max // $now) as $last | (($last - $from) / 24 + 1) as $step
+    jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" --argjson now "$(date +%s)" --argjson w0 "$w0" '
+      ([.[] | {d: ((.t - $w0) / 86400 | floor), v: (.prompt + .completion)} | select(.d >= 0 and .d < 140)]
+        | reduce .[] as $x ([range(140) | 0]; .[$x.d] += $x.v)) as $days
       | {week: ([.[] | select(.t >= $d0) | .prompt + .completion] | add // 0), total: ([.[] | .prompt + .completion] | add // 0),
-         life: {requests: length, since: ($from | strftime("%b %-d")), last: $last,
-           line: (if length > 0 then [range(1; 25) as $i | [.[] | select(.t < $from + $i * $step) | .prompt + .completion] | add // 0] else [] end)}}' \
-    2>/dev/null || echo '{"week":0,"total":0,"life":{"requests":0,"line":[]}}'
+         life: {requests: length, since: ([.[].t] | min // $now | strftime("%b %-d")), last: ([.[].t] | max // $now),
+           start: $w0, today: (($now - $w0) / 86400 | floor), days: $days}}' \
+    2>/dev/null || echo '{"week":0,"total":0,"life":{"requests":0,"days":[]}}'
 }
 
 # session <id> <since>: tokens since this start, and over every run of this model: averages and a 24-point line
