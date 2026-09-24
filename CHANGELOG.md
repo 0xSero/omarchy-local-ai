@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.1.2] - 2026-09-24
+
+### Changed
+- Recipes at registry 0362dbdf: the Arc Pro B70's recommended Qwen3.8-27B EXL3 runs on exl3xpu 86276b00 with exact 1600-token KV blocks, 4096-token prefill chunks and prefix caching (272,570 KV tokens; thinking on, 16 streams 344-410 tok/s, up from about 295-349; a repeated 14K-token prompt answers in 1.8 s instead of 11.1 s).
+
 ## [6.1.1] - 2026-09-24
 
 ### Changed
