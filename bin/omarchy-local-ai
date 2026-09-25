@@ -84,6 +84,24 @@ policy() {
     else "ok" end' <<<"$1"
 }
 
+# cdi_stale: the first NVIDIA CDI spec whose device numbers no longer match /dev (a driver update can move them, as
+# /dev/nvidia-uvm from 237 to 238). Docker hands --gpus through that spec, so the engine would see no CUDA device.
+cdi_stale() {
+  local f p ma mi x y
+  for f in /etc/cdi/nvidia*.yaml /var/run/cdi/nvidia*.yaml; do
+    [[ -f $f ]] || continue
+    while read -r p ma mi; do
+      [[ -e $p ]] && read -r x y < <(stat -c '%t %T' "$p") || continue
+      if ((16#$x != ma || 16#$y != mi)); then
+        echo "$f"
+        return
+      fi
+    done < <(awk '/^ *- /{if (p != "" && ma != "") print p, ma, mi; p = ""; ma = ""; mi = 0}
+      /^ *- path: \/dev\//{p = $3} p != "" && $1 == "major:"{ma = $2} p != "" && $1 == "minor:"{mi = $2}
+      END{if (p != "" && ma != "") print p, ma, mi}' "$f")
+  done
+}
+
 # nvidia: index, name, memory and temperature per card, as nvidia-smi prints them
 nvidia() {
   timeout 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>/dev/null || true
@@ -301,6 +319,9 @@ phase_start() {
   backend=${1%%:*}
   if [[ $backend == "nvidia" ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
     die "the NVIDIA container toolkit is not set up: run $PANEL/bin/omarchy-install-ai-local"
+  fi
+  if [[ $backend == "nvidia" ]] && v=$(cdi_stale) && [[ -n $v ]]; then
+    die "the NVIDIA device list in $v is out of date: run sudo nvidia-ctk cdi generate --output=$v"
   fi
   owned "$KEY"
   owned "$STATE/usage/$id"
@@ -766,12 +787,14 @@ tokens() {
   w0=$(date -d "$(printf '%(%F)T' -1) -$(($(printf '%(%u)T' -1) - 1 + 133)) days 00:00" +%s)
   for d in "$STATE"/usage/*/; do [[ -d $d ]] && summary "${d%/}"; done |
     jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" --argjson now "$EPOCHSECONDS" --argjson w0 "$w0" '
-      [.[] | select(.requests > 0)] as $all
+      # a day is a local calendar day: a daylight-saving change makes one 23 or 25 hours long
+      def day: localtime | mktime / 86400 | floor;
+      [.[] | select(.requests > 0)] as $all | ($w0 | day) as $l0
       | [$all[] | .hours | to_entries[] | {t: (.key | tonumber * 3600), v: .value}] as $h
       | {week: ([$h[] | select(.t >= $d0) | .v] | add // 0), total: ([$all[].total] | add // 0),
          life: {requests: ([$all[].requests] | add // 0), since: ([$all[].first] | min // $now | strflocaltime("%b %-d")),
-           last: ([$all[].last] | max // $now), start: $w0, today: (($now - $w0) / 86400 | floor),
-           days: ([$h[] | {d: ((.t - $w0) / 86400 | floor), v} | select(.d >= 0 and .d < 140)]
+           last: ([$all[].last] | max // $now), start: $w0, today: (($now | day) - $l0),
+           days: ([$h[] | {d: ((.t | day) - $l0), v} | select(.d >= 0 and .d < 140)]
              | reduce .[] as $x ([range(140) | 0]; .[$x.d] += $x.v))}}' \
     2>/dev/null || echo '{"week":0,"total":0,"life":{"requests":0,"days":[]}}'
 }

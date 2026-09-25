@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.1.5] - 2026-09-25
+
+### Fixed
+- A start on an NVIDIA card whose CDI spec (`/etc/cdi/nvidia.yaml`) names device numbers that no longer match `/dev` now stops at once with the command that regenerates it, instead of loading until the 30-minute limit: Docker passes the cards through that spec, and after a driver update moved `/dev/nvidia-uvm` the engine saw no CUDA device (#17, thanks @carlbme).
+- The activity grid files tokens under the local calendar day, so a daylight-saving change no longer moves an hour into the day before or after (the same bug @saitakarcesme found in the 5.x telemetry, #16).
+
 ## [6.1.4] - 2026-09-25
 
 ### Changed
