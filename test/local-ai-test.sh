@@ -49,6 +49,7 @@ shim omarchy-notification-send 'echo 7'
 shim omarchy-launch-tui 'printf "%s\n" "$*" >>"$SHIM/tui.log"'
 shim pkexec 'printf "%s\n" "$*" >>"$SHIM/pkexec.log"; exit 126'
 shim pi 'exit 0'
+shim hermes 'exit 0'
 shim lspci 'exit 0'
 shim ss 'exit 0'
 shim docker '
@@ -173,6 +174,13 @@ sleep 0.5
 grep -q -- "--provider omarchy-local --model Test Model" "$SHIM/tui.log" && ! grep -q "$key" "$SHIM/tui.log" || fail "open argv" "$(cat "$SHIM/tui.log")"
 [[ $(jq -r .agent "$STATE/settings.json") == pi ]] || fail "default agent"
 pass "open starts the chosen agent on the gateway in a terminal, with the key only in its private config; the choice becomes the default"
+
+"$CLI" set agent hermes "$ID"
+"$CLI" open "$ID"
+sleep 0.5
+grep -q -- "CUSTOM_BASE_URL=http://127.0.0.1:12434/v1 OPENAI_BASE_URL=http://127.0.0.1:12434/v1 .*hermes chat --provider custom --model Test Model" "$SHIM/tui.log" &&
+  ! grep -q "$key" "$SHIM/tui.log" || fail "hermes argv" "$(tail -1 "$SHIM/tui.log")"
+pass "Hermes opens on the gateway through --provider custom, without its own config.yaml, the key only in the environment"
 
 "$CLI" stop "$ID"
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"

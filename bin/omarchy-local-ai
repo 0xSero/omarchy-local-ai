@@ -682,6 +682,13 @@ argv() {
     keyed XAI_API_KEY
     printf '%s\0' env "GROK_HOME=$ag" "$b" --model omarchy-local
     ;;
+  hermes)
+    # Hermes takes its endpoint from its own config.yaml, never from OPENAI_BASE_URL: --provider custom and
+    # CUSTOM_BASE_URL point this session at the gateway without touching that file, and a matching OPENAI_BASE_URL
+    # is what lets it send OPENAI_API_KEY there (and no other key)
+    keyed OPENAI_API_KEY
+    printf '%s\0' env "CUSTOM_BASE_URL=$ep/v1" "OPENAI_BASE_URL=$ep/v1" "$b" chat --provider custom --model "$m"
+    ;;
   *)
     keyed OPENAI_API_KEY
     printf '%s\0' env "OPENAI_BASE_URL=$ep/v1" "OPENAI_API_BASE=$ep/v1" "OPENAI_MODEL=$m" "$b"

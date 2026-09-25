@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.1.6] - 2026-09-25
+
+### Fixed
+- Hermes opens on the running model. It takes its endpoint from its own `config.yaml` and ignores `OPENAI_BASE_URL`, so it used to start on whatever provider that file named. It now starts with `--provider custom`, `--model` and `CUSTOM_BASE_URL` for this session only: its `config.yaml`, memory and sessions are untouched, and only the gateway key is sent (thanks @Zodomo on omacom/omarchy#13036).
+
 ## [6.1.5] - 2026-09-25
 
 ### Fixed
