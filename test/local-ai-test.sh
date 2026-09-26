@@ -96,6 +96,20 @@ recipes "$PIN"
   fail "snapshot" "$(jq -c . "$TMP/snap.json")"
 pass "the snapshot matches the card to its kind and its one recipe, and lists a card with no recipe"
 
+# A probe that answers with something other than its own format is no cards, never a snapshot the panel
+# cannot read: nvidia-utils without a driver prints its failure on stdout, and amd-smi prints an import
+# error when its python module is out of reach (the AMD probe already reads that as no cards, held here
+# so it stays that way)
+shim nvidia-smi 'printf "NVIDIA-SMI has failed because it couldn'\''t communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running.\n"'
+"$CLI" snapshot >"$TMP/snap-nosmi.json" 2>"$TMP/nosmi.err" || fail "a failed nvidia-smi broke the snapshot" "$(cat "$TMP/nosmi.err")"
+[[ $(jq -r '.gpus | length' "$TMP/snap-nosmi.json") == 0 ]] || fail "a failed nvidia-smi is no NVIDIA cards" "$(jq -c . "$TMP/snap-nosmi.json")"
+shim amd-smi 'printf "Unhandled import error: No module named '\''amdsmi'\''\n"'
+"$CLI" snapshot >"$TMP/snap-nosmi.json" || fail "a failed amd-smi broke the snapshot"
+[[ $(jq -r '.gpus | length' "$TMP/snap-nosmi.json") == 0 ]] || fail "a failed amd-smi is no AMD cards" "$(jq -c . "$TMP/snap-nosmi.json")"
+rm -f "$TMP/bin/amd-smi"
+shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
+pass "a probe that fails (nvidia-smi's and amd-smi's own error text) reads as no cards, not as a broken snapshot"
+
 # The panel's view model reads this exact snapshot: a shape the backend changed and Model.js did not is a
 # view that throws, which the panel can only show as an error
 view() {
