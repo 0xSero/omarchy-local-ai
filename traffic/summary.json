@@ -1,11 +1,11 @@
 {
-  "updated": "2026-09-25",
+  "updated": "2026-09-26",
   "repo": {
-    "stars": 58,
-    "forks": 12,
-    "watchers": 2,
-    "open_issues": 4,
-    "size_kb": 29827
+    "stars": 80,
+    "forks": 14,
+    "watchers": 3,
+    "open_issues": 2,
+    "size_kb": 29885
   },
   "clones": {
     "days": 26,
@@ -28,27 +28,51 @@
     "uniques_14d": 378
   },
   "stars": {
-    "days": 6,
+    "days": 7,
     "first": "2026-09-20",
-    "last": "2026-09-25",
+    "last": "2026-09-26",
     "first_count": 24,
-    "last_count": 58,
-    "gained": 34
+    "last_count": 80,
+    "gained": 56
   },
   "downloads": {
-    "total": 18,
-    "release_count": 29,
-    "latest": "v6.1.4",
+    "total": 19,
+    "release_count": 31,
+    "latest": "v6.1.6",
     "by_release": [
+      {
+        "tag": "v6.1.6",
+        "name": "v6.1.6",
+        "published": "2026-09-25T11:59:16Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.1.6.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
+      {
+        "tag": "v6.1.5",
+        "name": "v6.1.5",
+        "published": "2026-09-25T11:46:19Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.1.5.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
       {
         "tag": "v6.1.4",
         "name": "v6.1.4",
         "published": "2026-09-24T23:35:07Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.4.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -376,24 +400,24 @@
     ]
   },
   "interactions": {
-    "day": "2026-09-25",
-    "stars": 58,
-    "forks": 12,
-    "watchers": 2,
+    "day": "2026-09-26",
+    "stars": 80,
+    "forks": 14,
+    "watchers": 3,
     "issues": {
       "open": 2,
       "closed": 1,
       "total": 3
     },
     "pull_requests": {
-      "open": 2,
+      "open": 0,
       "merged": 11,
-      "closed": 1,
+      "closed": 3,
       "total": 14
     },
     "discussions": 0,
     "default_branch": "main",
-    "commits": 220
+    "commits": 222
   },
   "referrers": [
     {
