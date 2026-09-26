@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  statuses: write
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -28,4 +29,15 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add recipes.json
           git commit -m "recipes: take the registry's export ($(jq -r '.registryCommit[:12]' recipes.json), $(jq -r '.hardware | length' recipes.json) hardware, $(jq -r '[.hardware[].recipes[]] | length' recipes.json) recipes)"
-          git push
+          # main requires the `test` check, which a commit made here never gets on its own (a push by this
+          # token starts no workflow). So: publish the commit on a side branch, run what test.yml runs,
+          # record the result as the `test` status on that commit, then fast-forward main to it.
+          git push --force origin HEAD:refs/heads/registry-sync
+          make check REGISTRY="$GITHUB_WORKSPACE/registry"
+          for f in bin/* test/*; do bash -n "$f"; done
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$(git rev-parse HEAD)" -f state=success -f context=test \
+            -f description="make check and bash -n, run by the registry sync" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+          git push origin HEAD:main
+          git push origin --delete registry-sync
+        env:
+          GH_TOKEN: ${{ github.token }}
