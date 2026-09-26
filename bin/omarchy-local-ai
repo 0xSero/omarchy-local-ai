@@ -104,7 +104,10 @@ cdi_stale() {
 
 # nvidia: index, name, memory and temperature per card, as nvidia-smi prints them
 nvidia() {
-  timeout 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>/dev/null || true
+  local out
+  out=$(timeout 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>/dev/null) || true
+  # nvidia-utils without a driver has nvidia-smi print why it failed on stdout: only CSV rows are cards
+  grep -E '^[0-9]+, ' <<<"$out" || true
 }
 
 # Arc Pro B70 by PCI id. The xe driver gives users its temperature but not its memory use.
