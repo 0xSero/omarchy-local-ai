@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.1.7] - 2026-09-26
+
+### Changed
+- Recipes from the new registry at a908edb: every card's recipe passed the lab's six checks (load, chat, reasoning, tools, 85% context recall, speed) on the real card or its sibling, or is the one validated before the lab. EXL3 Qwen now runs on the RTX 3060 Ti, 3070, 3070 Ti, 3080, 4060, 4060 Ti 8GB, 5060 and 5060 Ti 8GB, where there was only LFM2.5 with reasoning off.
+- "See supported cards" opens https://local.sybilsolutions.ai.
+
 ## [6.1.6] - 2026-09-25
 
 ### Fixed
