@@ -89,6 +89,10 @@ http://127.0.0.1:*)
 esac'
 ! command -v node >/dev/null || ln -s "$(command -v node)" "$TMP/bin/node"
 export PATH=$TMP/bin:/usr/bin:/bin
+# NVIDIA CDI specs are read from here, not /etc/cdi: one device, /dev/null, at its real numbers (1:3)
+export CDI_DIRS=$TMP/cdi
+cdi() { mkdir -p "$CDI_DIRS"; printf 'devices:\n  - name: "0"\n    containerEdits:\n      deviceNodes:\n        - path: /dev/null\n          major: %s\n          minor: 3\n' "$1" >"$CDI_DIRS/nvidia.yaml"; }
+cdi 1
 
 recipes "$PIN"
 "$CLI" snapshot >"$TMP/snap.json"
@@ -110,6 +114,25 @@ rm -f "$TMP/bin/amd-smi"
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 pass "a probe that fails (nvidia-smi's and amd-smi's own error text) reads as no cards, not as a broken snapshot"
 
+# AMD cards come from amd-smi 7.2 (ROCm 7.2, what Arch ships), which wraps both listings in gpu_data. Against
+# the vendored recipes an RX 7600 XT 16 GB is its card kind and an 8 GB RX 7600 is a card with no recipe, not
+# an XT (issue #12)
+shim amd-smi 'case $1 in
+static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 7600 XT\"},\"vram\":{\"size\":{\"value\":16368,\"unit\":\"MB\"}},\"bus\":{\"bdf\":\"0000:03:00.0\"}},{\"gpu\":1,\"asic\":{\"market_name\":\"AMD Radeon RX 7600\"},\"vram\":{\"size\":{\"value\":8176,\"unit\":\"MB\"}},\"bus\":{\"bdf\":\"0000:07:00.0\"}}]}" ;;
+metric) printf "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210,\"unit\":\"MB\"}},\"temperature\":{\"edge\":{\"value\":41,\"unit\":\"C\"}}},{\"gpu\":1,\"mem_usage\":{\"used_vram\":{\"value\":90,\"unit\":\"MB\"}},\"temperature\":{\"edge\":{\"value\":38,\"unit\":\"C\"}}}]}" ;;
+esac'
+shim nvidia-smi 'exit 9'
+cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
+"$CLI" snapshot >"$TMP/snap-amd.json" || fail "the AMD snapshot"
+[[ $(jq -r '.gpus | map("\(.key)=\(.hw)=\(.vramGb)=\(.tempC)") | join(" ")' "$TMP/snap-amd.json") == "amd-rocm:0=rx-7600-xt-16gb=16=41 amd-rocm:1==8=38" ]] ||
+  fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"
+jq -e '[.kinds[] | select(.hw == "rx-7600-xt-16gb") | .free[0], (.models | length > 0)] == ["amd-rocm:0", true]' "$TMP/snap-amd.json" >/dev/null ||
+  fail "the RX 7600 XT kind" "$(jq -c .kinds "$TMP/snap-amd.json")"
+rm -f "$TMP/bin/amd-smi"
+shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
+recipes "$PIN"
+pass "amd-smi 7.2's cards: an RX 7600 XT runs its recipes, an 8 GB RX 7600 is listed as a card with none"
+
 # The panel's view model reads this exact snapshot: a shape the backend changed and Model.js did not is a
 # view that throws, which the panel can only show as an error
 view() {
@@ -124,6 +147,18 @@ if command -v node >/dev/null; then
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
 fi
+
+# A CDI spec whose device numbers no longer match /dev (a driver update moved /dev/nvidia-uvm from 237 to 238 in
+# issue #17) stops the start at once with the command that regenerates it, before an engine container exists
+cdi 237
+"$CLI" run "$ID" nvidia:0
+wait_for error
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list in $CDI_DIRS/nvidia.yaml is out of date: run sudo nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" ]] ||
+  fail "stale CDI reason" "$(cat "$STATE/deploy/$ID/status.json")"
+! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-engine' "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
+cdi 1
+pass "a stale NVIDIA CDI spec stops the start before the engine, naming the command that fixes it"
+"$CLI" stop "$ID"
 
 "$CLI" run "$ID" nvidia:0
 wait_for ready
