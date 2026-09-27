@@ -2,6 +2,16 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.1.8] - 2026-09-27
+
+### Fixed
+- A machine with nvidia-utils but no working NVIDIA driver (an AMD or Intel box, or a driver update whose kernel modules are out of step) no longer breaks the panel. nvidia-smi prints its failure on stdout, and that text was read as a card, so the snapshot failed and the bar had nothing to draw. Only real card rows count now (#18, thanks @AlucarDWeb).
+
+### Changed
+- Recipes from the registry at b94e4255. Most NVIDIA cards gain a second and third pick: Gemma 4 12B on 8-12 GB cards, Qwen3.8-27B at 32K on 12 GB cards, Qwen3.5-9B and Gemma 4 26B A4B on 16-48 GB cards, Qwen3.6-35B-A3B on the RTX 3090, 5090 and 6000 Ada. The RTX PRO 6000 now leads with Qwen3.8-Flash-Next (165 tok/s), then Qwen3.8-27B NVFP4 at 256K and Qwen3.6-35B-A3B. The RX 7600 XT adds Qwen3.8-27B with MTP at 64K (thanks @AlucarDWeb).
+- Regression tests for a stale NVIDIA CDI spec (#17) and for AMD cards as amd-smi 7.2 lists them (#12).
+- The daily registry sync passes main's required test check instead of being refused.
+
 ## [6.1.7] - 2026-09-26
 
 ### Changed
