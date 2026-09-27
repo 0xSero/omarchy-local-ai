@@ -87,18 +87,20 @@ policy() {
 # cdi_stale: the first NVIDIA CDI spec whose device numbers no longer match /dev (a driver update can move them, as
 # /dev/nvidia-uvm from 237 to 238). Docker hands --gpus through that spec, so the engine would see no CUDA device.
 cdi_stale() {
-  local f p ma mi x y
-  for f in /etc/cdi/nvidia*.yaml /var/run/cdi/nvidia*.yaml; do
-    [[ -f $f ]] || continue
-    while read -r p ma mi; do
-      [[ -e $p ]] && read -r x y < <(stat -c '%t %T' "$p") || continue
-      if ((16#$x != ma || 16#$y != mi)); then
-        echo "$f"
-        return
-      fi
-    done < <(awk '/^ *- /{if (p != "" && ma != "") print p, ma, mi; p = ""; ma = ""; mi = 0}
-      /^ *- path: \/dev\//{p = $3} p != "" && $1 == "major:"{ma = $2} p != "" && $1 == "minor:"{mi = $2}
-      END{if (p != "" && ma != "") print p, ma, mi}' "$f")
+  local d f p ma mi x y
+  for d in ${CDI_DIRS:-/etc/cdi /var/run/cdi}; do
+    for f in "$d"/nvidia*.yaml; do
+      [[ -f $f ]] || continue
+      while read -r p ma mi; do
+        [[ -e $p ]] && read -r x y < <(stat -c '%t %T' "$p") || continue
+        if ((16#$x != ma || 16#$y != mi)); then
+          echo "$f"
+          return
+        fi
+      done < <(awk '/^ *- /{if (p != "" && ma != "") print p, ma, mi; p = ""; ma = ""; mi = 0}
+        /^ *- path: \/dev\//{p = $3} p != "" && $1 == "major:"{ma = $2} p != "" && $1 == "minor:"{mi = $2}
+        END{if (p != "" && ma != "") print p, ma, mi}' "$f")
+    done
   done
 }
 
