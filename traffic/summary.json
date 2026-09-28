@@ -1,11 +1,11 @@
 {
-  "updated": "2026-09-27",
+  "updated": "2026-09-28",
   "repo": {
-    "stars": 83,
-    "forks": 14,
+    "stars": 84,
+    "forks": 15,
     "watchers": 2,
-    "open_issues": 2,
-    "size_kb": 29866
+    "open_issues": 1,
+    "size_kb": 29829
   },
   "clones": {
     "days": 26,
@@ -28,18 +28,30 @@
     "uniques_14d": 378
   },
   "stars": {
-    "days": 8,
+    "days": 9,
     "first": "2026-09-20",
-    "last": "2026-09-27",
+    "last": "2026-09-28",
     "first_count": 24,
-    "last_count": 83,
-    "gained": 59
+    "last_count": 84,
+    "gained": 60
   },
   "downloads": {
-    "total": 21,
-    "release_count": 32,
-    "latest": "v6.1.7",
+    "total": 22,
+    "release_count": 33,
+    "latest": "v6.1.8",
     "by_release": [
+      {
+        "tag": "v6.1.8",
+        "name": "v6.1.8",
+        "published": "2026-09-27T10:21:33Z",
+        "downloads": 1,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.1.8.tar.gz",
+            "downloads": 1
+          }
+        ]
+      },
       {
         "tag": "v6.1.7",
         "name": "v6.1.7",
@@ -412,24 +424,24 @@
     ]
   },
   "interactions": {
-    "day": "2026-09-27",
-    "stars": 83,
-    "forks": 14,
+    "day": "2026-09-28",
+    "stars": 84,
+    "forks": 15,
     "watchers": 2,
     "issues": {
-      "open": 2,
-      "closed": 1,
+      "open": 1,
+      "closed": 2,
       "total": 3
     },
     "pull_requests": {
       "open": 0,
-      "merged": 13,
+      "merged": 15,
       "closed": 3,
-      "total": 16
+      "total": 18
     },
     "discussions": 0,
     "default_branch": "main",
-    "commits": 229
+    "commits": 235
   },
   "referrers": [
     {
