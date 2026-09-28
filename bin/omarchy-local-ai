@@ -364,7 +364,10 @@ phase_start() {
     v=$(printf '%s,' "${@#*:}")
     a+=(--gpus "\"device=${v%,}\"")
   else
-    [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd --group-add video --group-add render)
+    # by GID, not name: the engine image need not share the host's group names.
+    [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd \
+      --group-add "$(getent group video | cut -d: -f3)" \
+      --group-add "$(stat -c %g /dev/dri/renderD128)")
     # oneCCL opens every by-path link it finds, so the engine sees only its own cards'
     for k in "$@"; do
       v=$(readlink -f "$(jq -r --arg k "$k" '.[] | select(.key == $k) | .node' <<<"$g")")
