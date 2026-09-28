@@ -18,7 +18,8 @@ shopt -s nullglob
 exec </dev/null
 
 if ((EUID == 0)); then
-  export PATH=/usr/bin:/usr/sbin:/bin:/sbin
+  # /opt/rocm/bin holds amd-smi, which AMD discovery needs but pkexec omits.
+  export PATH=/usr/bin:/usr/sbin:/bin:/sbin:/opt/rocm/bin
   export LC_ALL=C.UTF-8
 fi
 TARGET=$(readlink -f -- "${BASH_SOURCE[0]}")
