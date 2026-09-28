@@ -253,6 +253,38 @@ grep -q "image is not pinned by digest" "$TMP/err" || fail "unpinned reason" "$(
 pass "a recipe whose image is not pinned by digest is refused before anything runs"
 
 recipes "$PIN"
+jq '.hardware["rtx-4090-24gb"].recipes[0].launch.halogen = true' "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+"$CLI" run "$ID" nvidia:0 2>"$TMP/err" && fail "halogen with unrelated image"
+grep -q 'halogen requires a peonist image' "$TMP/err" || fail "halogen image policy" "$(cat "$TMP/err")"
+pass "halogen-only runtime privileges cannot be requested by an unrelated image"
+
+# Exercise the opt-in container flags without claiming that this synthetic GPU
+# can actually run Halogen. The Docker, GPU and HTTP endpoints are all shims.
+recipes "ghcr.io/peonist-ai/halogen@sha256:$(printf 'a%.0s' {1..64})"
+jq '.hardware["rx-7600-xt-16gb"] = (.hardware["rtx-4090-24gb"]
+  | .match = {backend: "amd-rocm", names: ["rx7600xt"], vramGb: 16}
+  | .recipes[0].launch.halogen = true)
+  | del(.hardware["rtx-4090-24gb"])' "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+shim amd-smi 'case $1 in
+static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 7600 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) echo "{\"gpu_data\":[]}" ;;
+esac'
+shim readlink 'if [[ $1 == -f && $2 == /dev/dri/by-path/* ]]; then echo /dev/dri/renderD128; else /usr/bin/readlink "$@"; fi'
+shim nvidia-smi 'exit 9'
+"$CLI" run "$ID" amd-rocm:0
+wait_for ready
+engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+[[ $engine == *'--security-opt seccomp=unconfined --ipc host --ulimit memlock=-1:-1'* &&
+  $engine == *'--device /dev/kfd --group-add video --group-add render'* &&
+  $engine == *'--device /dev/dri/renderD128'* && $engine != *'--publish'* ]] || fail "halogen engine argv" "$engine"
+"$CLI" stop "$ID"
+rm -f "$TMP/bin/readlink" "$TMP/bin/amd-smi"
+shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
+recipes "$PIN"
+pass "a halogen recipe receives the required runtime flags without publishing its engine"
+
 rm -rf "$HOME/.cache/omarchy"
 SHIM_CORRUPT=1 "$CLI" run "$ID" nvidia:0
 wait_for error

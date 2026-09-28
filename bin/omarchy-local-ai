@@ -81,6 +81,10 @@ policy() {
     elif ([.launch.arguments[]? | select(type != "string")] | length) > 0 then "invalid arguments"
     elif (.launch.entrypoint // "" | test("^[A-Za-z0-9_./-]*$") | not) then "invalid entrypoint"
     elif (.launch.shm // "" | test("^([0-9]+[kmg]?)?$") | not) then "invalid shm size"
+    elif (.launch.halogen // false) != false and (.launch.halogen // false) != true then "invalid halogen setting"
+    elif (.launch.halogen // false) and
+      ((.image | test("^ghcr.io/peonist-ai/(halogen|halogen-flash-server)@sha256:")) | not) then "halogen requires a peonist image"
+    elif (.launch.halogen // false) and .cards != 1 then "halogen requires one card"
     else "ok" end' <<<"$1"
 }
 
@@ -322,6 +326,9 @@ phase_start() {
       die "$k is not a card this recipe runs on"
   done
   backend=${1%%:*}
+  if [[ $(jq -r '.launch.halogen // false' <<<"$r") == true && $backend != amd-rocm ]]; then
+    die "halogen requires an AMD ROCm card"
+  fi
   if [[ $backend == "nvidia" ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
     die "the NVIDIA container toolkit is not set up: run $PANEL/bin/omarchy-install-ai-local"
   fi
@@ -340,6 +347,9 @@ phase_start() {
   docker network create --label "$LABEL=1" "omarchy-local-ai-$id" >/dev/null
   a=(docker run -d --name "$(engine "$id")" --restart unless-stopped --security-opt no-new-privileges
     --network "omarchy-local-ai-$id" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=${PKEXEC_UID:-$(id -u)}")
+  if [[ $(jq -r '.launch.halogen // false' <<<"$r") == true ]]; then
+    a+=(--security-opt seccomp=unconfined --ipc host --ulimit memlock=-1:-1)
+  fi
   if [[ $backend == "nvidia" ]]; then
     v=$(printf '%s,' "${@#*:}")
     a+=(--gpus "\"device=${v%,}\"")
