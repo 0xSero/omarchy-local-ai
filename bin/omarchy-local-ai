@@ -18,10 +18,12 @@ shopt -s nullglob
 exec </dev/null
 
 if ((EUID == 0)); then
-  # /opt/rocm/bin holds amd-smi, which AMD discovery needs but pkexec omits.
-  export PATH=/usr/bin:/usr/sbin:/bin:/sbin:/opt/rocm/bin
+  export PATH=/usr/bin:/usr/sbin:/bin:/sbin
   export LC_ALL=C.UTF-8
 fi
+# /opt/rocm/bin holds amd-smi, which AMD discovery needs but neither pkexec's
+# sanitized PATH nor a session started before ROCm was installed includes.
+export PATH=$PATH:/opt/rocm/bin
 TARGET=$(readlink -f -- "${BASH_SOURCE[0]}")
 PANEL=${TARGET%/bin/*}
 RECIPES=$PANEL/recipes.json
