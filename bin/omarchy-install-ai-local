@@ -25,4 +25,8 @@ if omarchy-hw-nvidia && ! docker info 2>/dev/null | grep -qi nvidia; then
   sudo systemctl restart docker
 fi
 
+if lspci -Dn -d 1002: 2>/dev/null | grep -q . && ! command -v amd-smi >/dev/null; then
+  echo "AMD-SMI is needed to discover AMD GPUs. Install amd-smi from ROCm before running a model." >&2
+fi
+
 echo "Local AI is ready. Click its mark in the bar to run the model for your GPU."
