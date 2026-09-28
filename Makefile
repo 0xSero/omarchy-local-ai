@@ -22,7 +22,8 @@ export_ = if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >
 commit = $$(git -C "$(REGISTRY)" rev-parse "$(REGISTRY_REF)" 2>/dev/null || git -C "$(REGISTRY)" rev-parse HEAD)
 # the registry lists each kind's recipes best first: the bundle keeps every one, one card first, in that order, so the
 # first is a card's recommended model and the rest are what its Config offers (a group: one model across several cards)
-published = $(export_) | jq -r --arg c "$(commit)" '.hardware |= map_values(.recipes |= sort_by(.cards // 1)) | .registryCommit = $$c \
+# Halogen recipes are local until validated on Strix Halo and moved into the registry.
+published = $(export_) | jq -r --arg c "$(commit)" --slurpfile halogen halogen-recipes.json '.hardware += $$halogen[0] | .hardware |= map_values(.recipes |= sort_by(.cards // 1)) | .registryCommit = $$c \
   | (del(.hardware) | tojson | .[:-1]) + ",\"hardware\":{\n" + ([.hardware | to_entries[] | "\(.key | tojson):\(.value | tojson)"] | join(",\n")) + "\n}}"'
 PROVENANCE = del(.registryCommit, .generatedAt)
 

@@ -85,6 +85,8 @@ policy() {
     elif (.launch.halogen // false) and
       ((.image | test("^ghcr.io/peonist-ai/(halogen|halogen-flash-server)@sha256:")) | not) then "halogen requires a peonist image"
     elif (.launch.halogen // false) and .cards != 1 then "halogen requires one card"
+    elif (.launch.minRamGiB // 0 | type) != "number" or
+      (.launch.minRamGiB // 0) < 0 or (.launch.minRamGiB // 0) > 1024 then "invalid RAM requirement"
     else "ok" end' <<<"$1"
 }
 
@@ -134,11 +136,14 @@ intel() {
 amd() {
   omarchy-cmd-present amd-smi || { echo '[]'; return; }
   jq -nc --argjson s "$(timeout 10 amd-smi static --json 2>/dev/null || echo '{}')" \
-    --argjson m "$(timeout 10 amd-smi metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
+    --argjson m "$(timeout 10 amd-smi metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" \
+    --argjson ram "$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)" '
     [($s.gpu_data // [])[] | . as $g | ([($m.gpu_data // [])[] | select(.gpu == $g.gpu)][0] // {}) as $u
      | select(($g.asic.market_name // "") != "")
-     | {backend: "amd-rocm", index: ($g.gpu | tonumber), product: $g.asic.market_name, totalMiB: ($g.vram.size.value // 0),
-        usedMiB: ($u.mem_usage.used_vram.value // null), tempC: ($u.temperature.edge.value // null),
+     | {backend: "amd-rocm", index: ($g.gpu | tonumber), product: $g.asic.market_name,
+        totalMiB: (if ($g.asic.market_name | test("Radeon (8050S|8060S)"; "i")) then $ram else ($g.vram.size.value // 0) end),
+        usedMiB: (if ($g.asic.market_name | test("Radeon (8050S|8060S)"; "i")) then null else ($u.mem_usage.used_vram.value // null) end),
+        tempC: ($u.temperature.edge.value // null),
         node: ("/dev/dri/by-path/pci-" + ($g.bus.bdf // "") + "-render")}]' 2>/dev/null || echo '[]'
 }
 
@@ -153,7 +158,8 @@ MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | sp
   def match($r): [.[] | . as $x
     | ([$r.hardware | to_entries[] | select(.value.match.backend == $x.backend
         and (.value.match.names | index($x.product | norm)) != null
-        and (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024) | .key][0] // "") as $hw
+        and (if .value.match.unifiedMemory // false then $x.totalMiB >= 120 * 1024
+          else (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024 end)) | .key][0] // "") as $hw
     | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw, vramGb: (($x.totalMiB / 1024) | round),
         name: ($x.product | gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )"; ""))}];'
 
@@ -329,6 +335,9 @@ phase_start() {
   if [[ $(jq -r '.launch.halogen // false' <<<"$r") == true && $backend != amd-rocm ]]; then
     die "halogen requires an AMD ROCm card"
   fi
+  if (($(awk '/^MemTotal:/ {print int($2 / 1048576)}' /proc/meminfo) < $(jq -r '.launch.minRamGiB // 0' <<<"$r"))); then
+    die "this model needs at least $(jq -r '.launch.minRamGiB' <<<"$r") GiB of system RAM"
+  fi
   if [[ $backend == "nvidia" ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
     die "the NVIDIA container toolkit is not set up: run $PANEL/bin/omarchy-install-ai-local"
   fi
@@ -362,9 +371,15 @@ phase_start() {
       for w in /dev/dri/by-path/*-render; do
         [[ $(readlink -f "$w") == "$v" ]] && ln -s "../${v##*/}" "$run/by-path/${w##*/}"
       done
-      a+=(--device "$v")
+      if [[ $(jq -r '.launch.halogen // false' <<<"$r") != true ]]; then
+        a+=(--device "$v")
+      fi
     done
-    a+=(--volume "$run/by-path:/dev/dri/by-path:ro")
+    if [[ $(jq -r '.launch.halogen // false' <<<"$r") == true ]]; then
+      a+=(--device /dev/dri)
+    else
+      a+=(--volume "$run/by-path:/dev/dri/by-path:ro")
+    fi
   fi
   while IFS='|' read -r _ _ _ _ v w _; do
     owned "$w"

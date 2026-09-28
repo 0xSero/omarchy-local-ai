@@ -48,7 +48,13 @@ Omarchy keeps you out of the docker group, so every start and stop asks for your
 - **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. The last agent and folder you picked become the default.
 - **Share** a running model on your tailnet with `tailscale serve` (tailnet only, still keyed).
 
-Supported: NVIDIA RTX 30, 40 and 50 series, RTX A6000, RTX Ada and RTX Pro Blackwell, Intel Arc Pro B70, and AMD Instinct MI300X and Radeon RX 6800 XT (with ROCm's `amd-smi`).
+Supported: NVIDIA RTX 30, 40 and 50 series, RTX A6000, RTX Ada and RTX Pro Blackwell, Intel Arc Pro B70, AMD Instinct MI300X and Radeon RX 6800 XT (with ROCm's `amd-smi`).
+
+### Experimental: Halogen on Strix Halo
+
+Two additional recipes target the Ryzen AI Max 365 (Radeon 8050S) with at least 120 GiB of system RAM: [Halogen Qwen3.8-27B](https://github.com/peonist-ai/halogen-server) and [Halogen Flash-Next](https://github.com/peonist-ai/halogen-flash-server). **These have not yet been validated on the Max 365.** The images are pinned by registry digest, and the model repositories by Hugging Face revision. The plugin downloads and checks the weights, mounts them read-only at `/models`, and starts the server behind its usual keyed gateway. The standard recipe downloads about 36 GB; the Flash recipe downloads the full repository (over 130 GB, including sidecars). Make sure there is sufficient disk space before starting it.
+
+Before running, set the BIOS UMA frame buffer to the smallest explicit value, ensure a ROCm-capable kernel exposes `/dev/kfd` and `/dev/dri`, install `amd-smi` (used for discovery), and run the normal plugin installer. Check `amd-smi static --json`: the GPU must be reported as `Radeon 8050S`. The container runs with host IPC, unlimited memlock, unconfined seccomp and access to `/dev/dri`, as required by the upstream Halogen run examples; only the gateway publishes a localhost port. Both recipes use a 262144-token context and text-only mode initially. On the Max 365, verify the engine loads and answers before relying on it for agent work. Report the GPU name, `rocminfo` architecture, `amd-smi` output, and engine logs if it does not appear or load. These local recipes will be moved into the validated registry once measured on the device.
 
 ## From a shell
 

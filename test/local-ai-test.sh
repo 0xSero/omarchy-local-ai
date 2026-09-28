@@ -128,10 +128,30 @@ cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
   fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"
 jq -e '[.kinds[] | select(.hw == "rx-7600-xt-16gb") | .free[0], (.models | length > 0)] == ["amd-rocm:0", true]' "$TMP/snap-amd.json" >/dev/null ||
   fail "the RX 7600 XT kind" "$(jq -c .kinds "$TMP/snap-amd.json")"
+# Strix Halo's reported VRAM is the BIOS carve-out, not the shared RAM.
+# It must match on its GPU name and host RAM, without treating 512 MiB as the model capacity.
+shim amd-smi 'case $1 in
+static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon 8050S\"},\"vram\":{\"size\":{\"value\":512}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) echo "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210}}]}" ;;
+esac'
+"$CLI" snapshot >"$TMP/snap-strix.json"
+host_mib=$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)
+[[ $(jq -r '.gpus[0] | "\(.totalMiB) \(.usedMiB)"' "$TMP/snap-strix.json") == "$host_mib null" ]] ||
+  fail "unified memory" "$(jq -c .gpus "$TMP/snap-strix.json")"
+if ((host_mib >= 120 * 1024)); then
+  [[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == ryzen-ai-max-365-128gb ]] ||
+    fail "Strix Halo match" "$(jq -c .gpus "$TMP/snap-strix.json")"
+  [[ $(jq -r '.kinds[0].models | map(.id) | join(" ")' "$TMP/snap-strix.json") ==
+    'halogen-qwen38-27b-strix-halo halogen-flash-next-strix-halo' ]] ||
+    fail "Halogen models in snapshot" "$(jq -c .kinds "$TMP/snap-strix.json")"
+else
+  [[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == '' ]] ||
+    fail "insufficient RAM" "$(jq -c .gpus "$TMP/snap-strix.json")"
+fi
 rm -f "$TMP/bin/amd-smi"
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"
-pass "amd-smi 7.2's cards: an RX 7600 XT runs its recipes, an 8 GB RX 7600 is listed as a card with none"
+pass "amd-smi 7.2's cards include RX 7600 XT and treat Strix Halo memory as unified RAM"
 
 # The panel's view model reads this exact snapshot: a shape the backend changed and Model.js did not is a
 # view that throws, which the panel can only show as an error
@@ -278,7 +298,7 @@ wait_for ready
 engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *'--security-opt seccomp=unconfined --ipc host --ulimit memlock=-1:-1'* &&
   $engine == *'--device /dev/kfd --group-add video --group-add render'* &&
-  $engine == *'--device /dev/dri/renderD128'* && $engine != *'--publish'* ]] || fail "halogen engine argv" "$engine"
+  $engine == *'--device /dev/dri'* && $engine != *'--publish'* ]] || fail "halogen engine argv" "$engine"
 "$CLI" stop "$ID"
 rm -f "$TMP/bin/readlink" "$TMP/bin/amd-smi"
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
