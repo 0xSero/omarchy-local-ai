@@ -21,6 +21,7 @@ docker)
   else echo '{}'; fi ;;
 nvidia-ctk) touch "$SETUP_TEST/configured" ;;
 test | rm) "$@" ;;
+setfacl) printf '%s\n' "$*" >>"$SETUP_TEST/acl" ;;
 *) exit 1 ;;
 esac
 SH
@@ -45,6 +46,9 @@ SH
 printf '#!/bin/bash\nexit 0\n' >"$TMP/bin/tailscale"
 chmod +x "$TMP/bin/"*
 export PATH=$TMP/bin:$PATH
+# the daemon's socket, not reachable by this login until setup
+export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
+: >"$OMARCHY_DOCKER_SOCKET"; chmod 000 "$OMARCHY_DOCKER_SOCKET"
 setup() { bash "$TMP/plugin/bin/omarchy-install-ai-local" >"$TMP/out" 2>&1; }
 
 if BUSY=1 setup; then exit 1; fi
@@ -63,9 +67,10 @@ setup
 grep -qx 'sudoless 1' "$TMP/calls"
 [[ -f $TMP/group ]]
 grep -qx "tailscale set --operator=$USER" "$TMP/calls"
+grep -qx "setfacl -m u:$USER:rw $OMARCHY_DOCKER_SOCKET" "$TMP/acl"
 [[ -z $(ls "$TMP/etc") ]]
 grep -qx 'systemctl reload polkit' "$TMP/calls"
-echo 'ok - setup turns on Sudoless Docker without its reboot, makes you the tailnet operator, and removes the old polkit files'
+echo 'ok - setup turns on Sudoless Docker, lets this login reach the daemon now, makes you the tailnet operator, and removes the old polkit files'
 
 : >"$TMP/calls"
 READY=1 BUSY=1 setup

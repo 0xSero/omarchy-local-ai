@@ -17,8 +17,9 @@ mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
 sed -i "s/setup_needed \&\& echo true || echo false/echo false/" "$CLI"
 sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
-# the docker group is taken as active in this process; one case below checks the sg that lends it
-export LOCAL_AI_SG=1
+# the daemon's socket, reachable unless a case says otherwise
+export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
+: >"$OMARCHY_DOCKER_SOCKET"
 STATE=$HOME/.local/state/omarchy/local-ai
 ID=test-model-rtx4090
 SHA=ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7 # 4096 zero bytes, what the Hub shim serves
@@ -325,14 +326,12 @@ grep -q "not set up yet: choose Set up Local AI" "$TMP/nogroup.err" || fail "set
 [[ ! -d $STATE/deploy/$ID ]] || fail "a deployment before setup"
 pass "before setup a start asks for no password and says to set up Local AI"
 
-# after setup, until the next login, this session lacks the docker group: the backend runs itself under sg docker
-shim sg 'printf "%s\n" "$*" >>"$SHIM/sg.log"; [[ $1 == docker && $2 == -c ]] && exec bash -c "$3"'
-LOCAL_AI_SG= OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$CLI" snapshot >/dev/null
-grep -q "^docker -c .*omarchy-local-ai.* snapshot" "$SHIM/sg.log" || fail "sg" "$(cat "$SHIM/sg.log" 2>/dev/null)"
-: >"$SHIM/sg.log"
-LOCAL_AI_SG= OMARCHY_DOCKER_SOCKET=$TMP/no-socket SHIM_NOGROUP=1 "$CLI" snapshot >/dev/null
-[[ ! -s $SHIM/sg.log ]] || fail "sg without the group" "$(cat "$SHIM/sg.log")"
-pass "after setup the docker group is borrowed through sg until the next login; without it, no sg"
+# after setup the account is in the docker group, but a login from before it cannot reach the daemon unless setup
+# gave it the socket: the panel says to log in again, and a start says the same instead of failing inside docker
+[[ $(OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$CLI" snapshot | jq -c '[.setupNeeded, .relogin]') == "[false,true]" ]] || fail "relogin"
+if OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$CLI" run "$ID" nvidia:0 2>"$TMP/relogin.err"; then fail "started without docker"; fi
+grep -q "log out and back in once" "$TMP/relogin.err" || fail "relogin reason" "$(cat "$TMP/relogin.err")"
+pass "set up but unreachable from this login: the panel and a start both say to log in again"
 
 recipes "$PIN"
 mkdir -p "$STATE/deploy" "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" "$HOME/.cache/huggingface"
@@ -360,6 +359,7 @@ cp "$ROOT/bin/omarchy-local-ai" "$fresh"
 cp "$TMP/plugin/recipes.json" "$TMP/plugin/manifest.json" "$TMP/fresh/"
 sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
 [[ $(SHIM_NOGROUP=1 "$fresh" snapshot | jq .setupNeeded) == true ]] || fail "setup before setup"
+[[ $(SHIM_NOGROUP=1 OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$fresh" snapshot | jq -c '[.setupNeeded, .relogin]') == "[true,false]" ]] || fail "setup before relogin"
 [[ $("$fresh" snapshot | jq .setupNeeded) == false ]] || fail "setup after setup"
 printf '\n# an update\n' >>"$fresh"
 [[ $("$fresh" snapshot | jq .setupNeeded) == false ]] || fail "setup asked again after an update"

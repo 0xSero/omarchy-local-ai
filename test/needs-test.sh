@@ -17,8 +17,9 @@ cp "$ROOT/manifest.json" "$TMP/plugin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
 sed -i "s/setup_needed \&\& echo true || echo false/echo false/" "$CLI"
 sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
-# the docker group is taken as active in this process; one case below checks the sg that lends it
-export LOCAL_AI_SG=1
+# the daemon's socket, reachable unless a case says otherwise
+export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
+: >"$OMARCHY_DOCKER_SOCKET"
 MODELS=$HOME/.cache/omarchy/local-ai/models
 PIN=ghcr.io/x/engine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 shim() { printf '#!/bin/bash\n%s\n' "$2" >"$TMP/bin/$1"; chmod +x "$TMP/bin/$1"; }

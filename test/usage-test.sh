@@ -4,7 +4,6 @@
 set -u
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 B=$ROOT/bin/omarchy-local-ai
-export LOCAL_AI_SG=1
 FNS=$(mktemp); sed '/^paths "\$HOME"$/,$d' "$B" >"$FNS"
 T=$(mktemp -d); D=$T/usage/m; mkdir -p "$D"
 line() { printf '{"t":%d,"prompt":%d,"completion":10,"ms":500,"ttft_ms":50}\n' "$EPOCHSECONDS" "$1"; }
