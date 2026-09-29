@@ -6,7 +6,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ### Added
 - Recipes that keep part of the model in system RAM and on disk say what the machine needs besides the card (the registry's `needs`: `host_ram_gb` of available RAM, `disk_gb` free under the models folder, and `fast_storage: "nvme"`), and Local AI offers them only where it has that. The backend reads MemAvailable, the free space under `~/.cache/omarchy/local-ai/models`, and whether that folder is on an NVMe drive, following LUKS and LVM (Omarchy's `/dev/mapper/root`) down to the drive. A recipe the machine cannot run is never a card's pick or a group's; Config lists it greyed out with the reason ("needs 68 GB RAM, you have 31"), and `run` refuses it with the same words. Weights already downloaded and checked need no more disk, and a download under way (or weights linked in from another copy) needs only what is left. Recipes without `needs` are unchanged.
-- Qwen3.8-Flash-Next on one RTX 3090 or one Arc Pro B70: a 180B MoE with its experts in 68 GB of RAM and its n-gram table read from NVMe (85 GB of weights), after the card's other models.
+- Qwen3.8-Flash-Next on one RTX 3090, with vision: a 180B MoE with its experts in RAM (75 GB free RAM) and its n-gram table read from NVMe (85 GB of weights), after the card's other models. Validated on the owner's 3090 through this plugin's own start (all six lab gates, 50.7 tok/s, 166K-token context).
 
 ## [6.1.8] - 2026-09-27
 
