@@ -929,17 +929,26 @@ cmd_snapshot() {
   omarchy-cmd-present tailscale && ts=$(timeout 3 tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "" | rtrimstr(".")' || true)
   # each running model: its config and status in one read, then whether its worker or engine is gone; the final
   # step joins its recipe
+  # a worker is gone when its pid is not one of ours (after a reboot the number can belong to anything) or its status
+  # was written before this boot
+  boot=$(awk '/^btime/ {print $2}' /proc/stat 2>/dev/null || echo 0)
   for d in "$STATE"/deploy/*/; do
     [[ -f $d/status.json ]] && sf=$d/status.json || sf=/dev/null
-    { IFS=$'\t' read -r id port at st pid && IFS= read -r obj; } < <(jq -r --slurpfile s "$sf" --arg ts "$ts" '
+    { IFS=$'\t' read -r id port at st pid sat && IFS= read -r obj; } < <(jq -r --slurpfile s "$sf" --arg ts "$ts" '
       ($s[0] // {state: "error", error: "no status"}) as $st
-      | ([.id, .port, .startedAt, $st.state // "error", $st.pid // 0] | @tsv),
+      | ([.id, .port, .startedAt, $st.state // "error", $st.pid // 0, $st.at // .startedAt] | @tsv),
         (. + ($st | {state, detail, percent, error})
           + {shared: (if $ts != "" and (.shared // false) then "https://\($ts):\(.port)" else "" end)} | tojson)' "$d/config.json" 2>/dev/null) ||
       continue
     why=""
     case $st in
-    download | starting | stopping) kill -0 "$pid" 2>/dev/null || why="stopped unexpectedly; run again" ;;
+    download | starting | stopping)
+      if (($(date -d "$sat" +%s 2>/dev/null || echo 0) < boot)); then
+        why="the machine restarted while it was ${st/#download/downloading}"
+      elif ! grep -qa omarchy-local-ai "/proc/$pid/cmdline" 2>/dev/null; then
+        why="stopped unexpectedly"
+      fi
+      ;;
     ready)
       # refused or an empty reply means the engine is gone; a slow answer only means it is busy
       rc=0

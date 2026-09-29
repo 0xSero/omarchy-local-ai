@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.5.1] - 2026-09-29
+
+### Fixed
+- A model that was loading when the machine restarted no longer shows "starting" forever when its old process number now belongs to another program: it reads "the machine restarted while it was starting", with Run again and dismiss. A worker that died otherwise reads "stopped unexpectedly" (the button already says run again).
+
 ## [6.5.0] - 2026-09-29
 
 ### Security
