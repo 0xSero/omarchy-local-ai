@@ -25,7 +25,8 @@ TARGET=$(readlink -f -- "${BASH_SOURCE[0]}")
 PANEL=${TARGET%/bin/*}
 CATALOG=/var/cache/omarchy-local-ai/recipes.json
 RECIPES=$PANEL/recipes.json
-[[ ! -f $CATALOG ]] || RECIPES=$CATALOG
+# a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
+[[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
 LABEL=io.omarchy.local-ai
 AGENTS=(pi claude codex opencode omp crush grok copilot hermes)
 umask 077

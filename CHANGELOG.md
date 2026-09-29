@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.2.2] - 2026-09-29
+
+### Fixed
+- A plugin update brings its recipes again after an earlier "Refresh models": the refreshed catalog is read only while it is newer than the bundled recipes, so a 6.2.0 refresh no longer hides the models an update adds (Qwen3.8-Flash-Next on the RTX 3090 in 6.2.1).
+
 ## [6.2.1] - 2026-09-29
 
 ### Added
