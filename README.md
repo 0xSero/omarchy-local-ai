@@ -36,9 +36,9 @@ Home: your tokens and requests over the last 20 weeks, running models as cards, 
 omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 ```
 
-Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, installs the descriptive password prompts, and configures NVIDIA container support when needed. Return to the panel when setup finishes. No script path or separate manual command is needed. Setup refuses to restart Docker while containers are running.
+Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, installs the descriptive password prompts and the rule that lets you start and stop models without a password, and configures NVIDIA container support when needed. Return to the panel when setup finishes. No script path or separate manual command is needed. Setup refuses to restart Docker while containers are running.
 
-Omarchy keeps you out of the docker group, so every start and stop asks for your password once. With sudoless Docker (_Setup > Security_) it doesn't ask.
+Setup is the only time you type your password to run models: it lets your account start and stop them without asking again while you sit at the machine (a polkit rule for Local AI's start and stop only). Sharing on the tailnet, removing everything and updating the catalog still ask, each prompt saying what it is for. Before setup, Local AI asks for no password at all.
 
 ## What it does
 

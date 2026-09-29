@@ -117,10 +117,14 @@ phase_registry() (
 )
 
 # Setup is offered inside the plugin; the terminal handles package progress and sudo.
+# prompts_ready: this version's setup is installed, so every password prompt says what it is for in fixed words
+# (without it, polkit would show the raw command line) and start and stop need none
+prompts_ready() {
+  cmp -s "/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy" <(sed -e "s#/usr/bin/omarchy-local-ai#$TARGET#" \
+    -e "s#org\\.omarchy\\.local-ai\\.#sero.local-ai.u$(id -u).#" "$PANEL/local-ai.policy")
+}
 setup_needed() {
-  local policy=/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy
-  cmp -s "$policy" <(sed -e "s#/usr/bin/omarchy-local-ai#$TARGET#" \
-    -e "s#org\\.omarchy\\.local-ai\\.#sero.local-ai.u$(id -u).#" "$PANEL/local-ai.policy") || return 0
+  prompts_ready || return 0
   omarchy-hw-nvidia && ! command -v nvidia-ctk >/dev/null && return 0
   return 1
 }
@@ -346,6 +350,7 @@ elevate() {
 
 asroot() {
   priv_target || die "refusing to run $TARGET as root: it is not a plain file"
+  prompts_ready || die "Local AI is not set up yet: open Local AI and choose Set up Local AI"
   local rc=0
   # each phase is its own first argument, so the password prompt can say what it is for
   pkexec "$TARGET" "__$1" "${@:2}" || rc=$?

@@ -5,6 +5,7 @@
 set -euo pipefail
 HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 POLICY=/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy
+RULES=/etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules
 # Keep a failed setup visible in the terminal opened by the panel.
 finish() {
   local rc=$?
@@ -30,7 +31,10 @@ if omarchy-hw-nvidia; then
   fi
 fi
 
-echo "Setting up Local AI password prompts..."
+echo "Setting up Local AI: starting and stopping models will not ask for your password again..."
+sed -e "s#org\.omarchy\.local-ai\.#sero.local-ai.u$(id -u).#g" -e "s#LOCAL_AI_USER#$(id -un)#g" "$HERE/../local-ai.rules" |
+  sudo install -D -m 644 /dev/stdin "$RULES"
+# the policy last: it is what the panel reads to know setup is done
 sed -e "s#/usr/bin/omarchy-local-ai#$HERE/omarchy-local-ai#" -e "s#org\.omarchy\.local-ai\.#sero.local-ai.u$(id -u).#" "$HERE/../local-ai.policy" |
   sudo install -D -m 644 /dev/stdin "$POLICY"
 sudo systemctl reload polkit

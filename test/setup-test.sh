@@ -5,10 +5,11 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/plugin/bin" "$TMP/bin" "$TMP/home"
 cp "$ROOT/bin/omarchy-install-ai-local" "$TMP/plugin/bin/"
-cp "$ROOT/local-ai.policy" "$TMP/plugin/"
+cp "$ROOT/local-ai.policy" "$ROOT/local-ai.rules" "$TMP/plugin/"
 export HOME=$TMP/home SETUP_TEST=$TMP
 # Only this disposable installer writes to the test policy location.
 sed -i "s|POLICY=/etc/polkit-1/actions/sero.local-ai.u\$(id -u).policy|POLICY=$TMP/plugin.policy|" "$TMP/plugin/bin/omarchy-install-ai-local"
+sed -i "s|RULES=/etc/polkit-1/rules.d/49-sero.local-ai.u\$(id -u).rules|RULES=$TMP/plugin.rules|" "$TMP/plugin/bin/omarchy-install-ai-local"
 cat >"$TMP/bin/sudo" <<'SH'
 #!/bin/bash
 printf '%s\n' "$*" >>"$SETUP_TEST/calls"
@@ -44,6 +45,12 @@ bash "$TMP/plugin/bin/omarchy-install-ai-local" >"$TMP/out" 2>&1
 grep -q 'Local AI needs your password to update the model catalog' "$TMP/plugin.policy"
 grep -q '__registry' "$TMP/plugin.policy"
 echo 'ok - setup installs the custom catalog authorization message'
+u=$(id -u)
+grep -q "action.id == \"sero.local-ai.u$u.start\" || action.id == \"sero.local-ai.u$u.stop\"" "$TMP/plugin.rules"
+grep -q "subject.user == \"$(id -un)\" && subject.local && subject.active" "$TMP/plugin.rules"
+! grep -qE 'LOCAL_AI_USER|org\.omarchy' "$TMP/plugin.rules"
+! grep -q 'share\|purge\|registry"' "$TMP/plugin.rules"
+echo 'ok - setup lets this account start and stop models without a password; sharing, removal and the catalog still ask'
 : >"$TMP/calls"
 READY=1 BUSY=1 bash "$TMP/plugin/bin/omarchy-install-ai-local" >"$TMP/out" 2>&1
 ! grep -q 'restart docker' "$TMP/calls"
