@@ -959,7 +959,7 @@ adopt() {
 
 # what the widget needs of a recipe
 SUMMARY='def summary($h): {id, name, family, cards: (.cards // 1), format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
-  weights: [.weights[]? | {repository, revision}], unfit: unfit($h)};'
+  needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h)};'
 
 cmd_snapshot() {
   local deps=() d id port at st pid obj why rc code ts="" sa="" sf="" sfs="" v="" a

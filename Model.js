@@ -73,10 +73,18 @@ function mark(s) {
   return d.some(function(x) { return x.state === "ready" }) ? "ready" : ""
 }
 
-// a recipe's facts as chips (an icon name and a short text): its format, context and download size
-function fmt(f) { return (f || "").replace(/ · /g, " ") }
+// a recipe's facts as chips (an icon name and a short text): its format, context, download size and the RAM it
+// takes besides the card; a format's detail in parentheses is left to the registry
+function fmt(f) { return (f || "").replace(/ · /g, " ").replace(/ \(.*\)$/, "") }
+function ram(r) { return r.needs && r.needs.host_ram_gb ? Math.ceil(r.needs.host_ram_gb) + " GB RAM" : "" }
 function spec(r) {
-  return [{ text: fmt(r.format) }, r.ctx ? { icon: "context", text: ctx(r.ctx) } : null, r.sizeGb ? { icon: "weights", text: gb(r.sizeGb) } : null].filter(Boolean)
+  return [{ text: fmt(r.format) }, r.ctx ? { icon: "context", text: ctx(r.ctx) } : null, r.sizeGb ? { icon: "weights", text: gb(r.sizeGb) } : null,
+    ram(r) ? { icon: "memory", text: ram(r) } : null].filter(Boolean)
+}
+// whether a recipe fits this machine: on the card alone, with part of it in RAM, or what it lacks
+function room(r) {
+  if (r.unfit) return r.unfit.split("; ")[0].replace(/, you have \d+$/, "").replace("the models folder on ", "")
+  return ram(r) ? "+" + ram(r) : "fits"
 }
 // a card's memory and temperature as chips
 function health(g) {
@@ -258,13 +266,12 @@ function page(s, ui, m) {
       { v: k(s.week), u: "", k: "week" },
       { v: dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
   }
-  // a card's Config: every model validated for it, the chosen one checked; one this machine cannot run says why
-  // and cannot be chosen
+  // a card's Config: every model validated for it, the chosen one checked, each saying whether it fits (its format
+  // and context are on the page once chosen); one this machine cannot run says what it lacks and cannot be chosen
   if ((m.models || []).length > 1) {
     v.rows.push({ type: "sec", label: "MODEL" })
     m.models.forEach(function(x) {
-      v.rows.push({ type: "opt", label: x.name, value: x.unfit ? x.unfit.split("; ")[0] : [fmt(x.format), x.ctx ? ctx(x.ctx) : ""].filter(Boolean).join("  "),
-        on: x.id === m.id, off: !fits(x), action: fits(x) ? "model|" + x.id : "" })
+      v.rows.push({ type: "opt", label: x.name, value: room(x), on: x.id === m.id, off: !fits(x), action: fits(x) ? "model|" + x.id : "" })
     })
   }
   v.rows.push({ type: "sec", label: "GPUS" })

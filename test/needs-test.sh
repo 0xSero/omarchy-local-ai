@@ -28,7 +28,7 @@ recipes() {
     def r($id; $w): {id: $id, name: $id, family: "qwen", format: "EXL3", sizeGb: 1, cards: 1, image: $img, servedName: "s",
       weights: [{repository: ("test/" + $w), revision: ("0" * 40), layout: "dir", mountPath: "/models", dir: $w, files: ""}],
       launch: {arguments: [], environment: {}, port: 8000, shm: ""}, serving: {ctxTokens: 32768}, capabilities: {}};
-    def big: {needs: {host_ram_gb: 96, disk_gb: 120, fast_storage: "nvme"}};
+    def big: {needs: {host_ram_gb: 96, disk_gb: 120, fast_storage: "nvme"}, format: "EXL3 · 3.05 bpw, vision (experts in RAM, n-gram table on NVMe)"};
     {schemaVersion: "omarchy-local-ai/recipes/2", registryCommit: ("d" * 40), gateway: {image: ("ghcr.io/x/gateway@sha256:" + ("b" * 64))},
      hardware: {"rtx-3090-24gb": {match: {backend: "nvidia", vramGb: 24, names: ["rtx3090"]}, recipes: [
        r("big"; "big") + big, r("small"; "small"), r("big-tp2"; "big") + big + {cards: 2}, r("small-tp2"; "small") + {cards: 2}]}}}' \
@@ -67,6 +67,10 @@ if command -v node >/dev/null; then
   [[ $(view home | jq -r '[.[] | select(.type == "slot") | .run.action] | join(" ")') == "run|big|nvidia:0 run|big|nvidia:1 run|big-tp2|nvidia:0,nvidia:1" ]] ||
     fail "fit picks" "$(view home)"
   pass "and the card and its group are offered it first, as the registry orders them"
+  # a Config row says whether its model fits; the offload one's page names its RAM beside a format without its detail
+  rows=$(view kind rtx-3090-24gb)
+  [[ $(jq -r 'map(select(.type == "opt") | .value) | join("|")' <<<"$rows") == "+96 GB RAM|fits" ]] || fail "config rows" "$rows"
+  pass "a Config row says whether its model fits, and an offload recipe the RAM it takes"
 fi
 
 host 64 500 "$NVME_CRYPT"
@@ -77,7 +81,7 @@ if command -v node >/dev/null; then
   [[ $(view home | jq -r '[.[] | select(.type == "slot") | .run.action] | join(" ")') == "run|small|nvidia:0 run|small|nvidia:1 run|small-tp2|nvidia:0,nvidia:1" ]] ||
     fail "unfit skipped" "$(view home)"
   rows=$(view kind rtx-3090-24gb)
-  jq -e 'map(select(.type == "opt")) | .[0] == {type: "opt", label: "big", value: "needs 96 GB RAM, you have 64", on: false, off: true, action: ""}
+  jq -e 'map(select(.type == "opt")) | .[0] == {type: "opt", label: "big", value: "needs 96 GB RAM", on: false, off: true, action: ""}
     and .[1].on and .[1].action == "model|small"' <<<"$rows" >/dev/null || fail "config" "$rows"
   jq -e 'any(.[]; .type == "acts" and .items[0].action == "run|small|nvidia:0")' <<<"$rows" >/dev/null || fail "config run" "$rows"
   pass "the card's pick and its group skip it; Config shows it with the reason and cannot choose it"
