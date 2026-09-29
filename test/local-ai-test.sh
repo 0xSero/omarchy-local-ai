@@ -207,6 +207,12 @@ if command -v node >/dev/null; then
   [[ $(js 'vm.runInNewContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/property string cli: (.*)/)[1],
     {Qt: {resolvedUrl: u => "file:///home/a%2525b%23c/" + u}})') == "/home/a%25b#c/bin/omarchy-local-ai" ]] || fail "the backend's path"
   pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
+  # a folder choice goes from Model.js's action through Panel.qml's activate to the backend's set as one argument
+  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw, open: "folder"})).rows.find(r => r.on && r.type === "opt").action
+    var p = {ui: {}, nav() {}, run(x) { p.args = x }}; vm.createContext(p)
+    vm.runInContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/function activate\([^]*?\n  \}/)[0], p); p.activate(a); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b" ]] ||
+    fail "a folder with a | in it"
+  pass "a folder with a | in its path is one argument of its action"
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
 fi

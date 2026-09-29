@@ -369,16 +369,17 @@ function weights(rows, list) {
   })
 }
 
-// the agent and folder rows, and their choices when open; a choice on a running model also becomes the default
+// the agent and folder rows, and their choices when open; a choice on a running model also becomes the default.
+// The value is URI-encoded in its action (Panel.qml decodes it), so a folder with a "|" in it stays one argument
 function pickers(s, rows, ui, agent, folder, id) {
   rows.push({ type: "field", icon: "agent", label: "agent", value: agent, action: "pick|agent", drop: true, open: ui.open === "agent" })
   if (ui.open === "agent") (s.agents || []).forEach(function(a) {
-    rows.push({ type: "opt", label: a, on: a === agent, action: "set|agent|" + a + "|" + id })
+    rows.push({ type: "opt", label: a, on: a === agent, action: "set|agent|" + encodeURIComponent(a) + "|" + id })
   })
   rows.push({ type: "field", icon: "folder", label: "folder", value: home(folder), action: "pick|folder", drop: true, open: ui.open === "folder" })
   if (ui.open === "folder") {
     ;[folder].concat(s.folders || []).filter(function(f, i, a) { return f && a.indexOf(f) === i }).forEach(function(f) {
-      rows.push({ type: "opt", label: home(f), on: f === folder, action: "set|folder|" + f + "|" + id })
+      rows.push({ type: "opt", label: home(f), on: f === folder, action: "set|folder|" + encodeURIComponent(f) + "|" + id })
     })
     rows.push({ type: "path", id: id })
   }
