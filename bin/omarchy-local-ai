@@ -201,9 +201,32 @@ MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | sp
     | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw, vramGb: (($x.totalMiB / 1024) | round),
         name: ($x.product | gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )"; ""))}];'
 
-# Every GPU, matched
+# Every GPU, matched and reserved by any running container, regardless of account or labels.
+# Unknown NVIDIA UUID/count requests reserve all NVIDIA cards; memory alone cannot detect idle allocations.
 gpus() {
-  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile rec "$RECIPES" "$MATCH"'gpus($nv; $xe; $am) | match($rec[0])'
+  local ids claims='[]' p
+  if docker_ok; then
+    ids=$(docker ps -q) || die "could not check Docker GPU allocations; try again"
+    if [[ -n $ids ]]; then
+      # Read only allocation fields, never container environments or credentials.
+      # shellcheck disable=SC2086
+      claims=$(docker inspect --format '{"devices":{{json .HostConfig.Devices}},"requests":{{json .HostConfig.DeviceRequests}},"privileged":{{json .HostConfig.Privileged}}}' $ids | jq -s '.') ||
+        die "could not check Docker GPU allocations; try again"
+    fi
+  fi
+  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile rec "$RECIPES" --argjson claims "$claims" \
+    --arg links "$(for p in /dev/dri/by-path/*-render; do printf '%s\t%s\n' "$p" "$(readlink -f "$p")"; done)" "$MATCH"'
+    ($links | split("\n") | map(select(length > 0) | split("\t") | {key: .[0], value: .[1]}) | from_entries) as $links
+    | def node: $links[.] // .;
+    (gpus($nv; $xe; $am) | match($rec[0])) | map(. as $g
+      | (if .backend == "nvidia" then "/dev/nvidia" + (.index | tostring) else .node | node end) as $node
+      | . + {held: any($claims[];
+          .privileged == true
+          or any(.devices[]?; (.PathOnHost | node) as $p | $node == $p or ($node | startswith($p + "/")))
+          or ($g.backend == "nvidia" and any(.requests[]?;
+            (.Driver == "nvidia" or any(.Capabilities[]?; index("gpu") != null))
+            and ((.DeviceIDs // [] | length) == 0 or any(.DeviceIDs[];
+              . == ($g.index | tostring) or (test("^[0-9]+$") | not))))))})'
 }
 
 # host: what a recipe that offloads weights to the machine needs of it besides the card (its `needs`): available RAM,
@@ -576,8 +599,8 @@ cmd_run() {
     grep -qxF -- "$k" <<<"$busy" && die "$k is in use"
     jq -e --arg k "$k" --arg h "$(jq -r .hw <<<"$r")" 'any(.[]; .key == $k and .hw == $h)' <<<"$g" >/dev/null ||
       die "$(jq -r .name <<<"$r") is not validated for $k"
-    jq -e --arg k "$k" 'any(.[]; .key == $k and (.usedMiB // 0) > 2048)' <<<"$g" >/dev/null &&
-      die "$k is in use by another program ($(jq -r --arg k "$k" '.[] | select(.key == $k) | .usedMiB / 1024 | floor' <<<"$g") GB)"
+    jq -e --arg k "$k" 'any(.[]; .key == $k and (.held or (.usedMiB // 0) > 2048))' <<<"$g" >/dev/null &&
+      die "$k is in use by another program"
   done
   while [[ -f $(dir_of "$id")/config.json ]]; do
     n=$((n + 1))
@@ -621,7 +644,7 @@ cmd_stop() {
   fi
   status "$1" stopping "" 0
   if [[ $(jq -r '.shared // false' "$d/config.json" 2>/dev/null) == "true" ]]; then
-    cmd_share "$1" off || return 1
+    (cmd_share "$1" off) || say "could not unshare $1; stopping the model anyway"
   fi
   if ! phase_stop "$1"; then
     status "$1" error "" 0 "could not stop it; try again"
@@ -816,15 +839,19 @@ cmd_open() {
     </dev/null >/dev/null 2>&1 || die "could not open the agent terminal; try again"
 }
 
-# share <id> [off]: tailscale serve as you; setup makes you the tailnet's operator
+# share <id> [off]: tailscale serve as you; never take over another account's operator.
 cmd_share() {
-  local f on=${2:-on} p
+  local f on=${2:-on} p operator
   f=$(dir_of "${1:-}")/config.json
   valid_id "${1:-}" && [[ -f $f ]] || die "the model is not running"
   [[ $on == on || $on == off ]] || die "share <recipe> [off]"
   [[ $on == off || $(jq -r .state "${f%/*}/status.json") == ready ]] || die "the model is not ready to share"
   p=$(jq -r .port "$f")
-  serve "$p" "$on" || die "tailscale would not change the share: choose Set up Local AI, which makes you the tailnet's operator"
+  if ! serve "$p" "$on"; then
+    operator=$(timeout 10 tailscale debug prefs 2>/dev/null | jq -r '.OperatorUser // ""') || operator=""
+    [[ -z $operator || $operator == "$USER" ]] || die "another account manages Tailscale; ask that account to change the share"
+    die "Tailscale could not change the share; check that it is running and ask its operator for access"
+  fi
   jq --argjson s "$([[ $on == "on" ]] && echo true || echo false)" '.shared = $s' "$f" >"$f.tmp"
   mv -f "$f.tmp" "$f"
 }
@@ -980,19 +1007,19 @@ cmd_snapshot() {
   { IFS= read -r -d '' sa && IFS= read -r -d '' sf && IFS= read -r -d '' sfs; } < <(jq -j '.agent // "", "\u0000",
     .folder // "", "\u0000", (.folders // [] | tojson), "\u0000"' "$STATE/settings.json" 2>/dev/null) || true
   [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
-  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
+  jq -nc --argjson g "$(gpus)" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
     --argjson setup "$(setup_needed && echo true || echo false)" --argjson relogin "$(docker_ok && echo false || echo true)" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg setupError "$(cat "$STATE/setup-error" 2>/dev/null || true)" --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --argjson folders "${sfs:-[]}" \
-    --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY$MATCH"'
-    (gpus($nv; $xe; $am) | match($rec[0])) as $g | ($agents | split("\n") | map(select(length > 0))) as $agents
+    --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
+    ($agents | split("\n") | map(select(length > 0))) as $agents
     # a running model with its session, in error when its worker or engine is gone; a second copy of a recipe runs
     # as <recipe>--2: its recipe is the one before the last "--"
     | ([$deps[] | .d + {session: .u} + (if .why != "" then {state: "error", error: .why} else {} end)
       | (.id | if test("--") then .[:rindex("--")] else . end) as $rid
       | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
-    | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
+    | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, setupError: $setupError, setupNeeded: $setup, relogin: ($relogin and ($setup | not)), host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),

@@ -23,7 +23,7 @@ The gateway (`ghcr.io/0xsero/gateway`, pinned by digest) listens on `127.0.0.1` 
 
 ## Privilege
 
-Setup opens one terminal and validates sudo once. It turns on Omarchy's Sudoless Docker, makes the user the tailnet's operator and adds the NVIDIA runtime when needed, refusing to restart Docker while containers are running. It removes the old per-user authorization files. Every later backend operation runs as the user.
+Setup opens one terminal and validates sudo once. It turns on Omarchy's Sudoless Docker, sets the tailnet operator only when unset or already this user and adds the NVIDIA runtime when needed, refusing to restart Docker while containers are running. It removes the old per-user authorization files. Every later backend operation runs as the user.
 
 A session carries the groups it logged in with, so setup grants the account read-write access to the Docker socket through an ACL; the docker group covers later logins. If Docker recreates the socket before the next login, the snapshot says `relogin` and the panel asks the user to log out and back in once. Setup is judged from machine state (`omarchy-sudo-docker --configured` and NVIDIA toolkit availability), never a plugin version marker.
 
@@ -43,5 +43,5 @@ The backend validates recipe arguments before starting, mounts paths owned by th
 - AMD cards are found through `amd-smi`, which comes with ROCm; without it they show Coming soon.
 - A model has up to 30 minutes to become ready; repeated engine restarts fail sooner. Stop cancels the download or startup worker.
 - A socket ACL lasts until Docker recreates the socket; an old login then needs to log out and back in once.
-- Tailscale must be running and logged in for sharing; setup reports if operator configuration could not finish.
+- Tailscale must be running and logged in for sharing; setup preserves another account’s operator. Failed unsharing is logged but never prevents stopping a model.
 - `bin/omarchy-remove-ai-local` deletes models, containers, engine images, weights and settings; `omarchy plugin remove sero.local-ai` removes the plugin.

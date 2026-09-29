@@ -45,7 +45,11 @@ cat >"$TMP/bin/omarchy-sudo-docker" <<'SH'
 #!/bin/bash
 [[ ! -f $SETUP_TEST/group ]]
 SH
-printf '#!/bin/bash\nexit 0\n' >"$TMP/bin/tailscale"
+cat >"$TMP/bin/tailscale" <<'SH'
+#!/bin/bash
+[[ ${FAIL_PREFS:-0} == 0 ]] || exit 1
+jq -nc --arg user "${TEST_OPERATOR:-}" '{OperatorUser:$user}'
+SH
 chmod +x "$TMP/bin/"*
 export PATH=$TMP/bin:$PATH
 # the daemon's socket, not reachable by this login until setup
@@ -76,24 +80,37 @@ echo 'ok - setup turns on Sudoless Docker, lets this login reach the daemon now,
 
 : >"$TMP/calls"
 READY=1 BUSY=1 setup
-! grep -q 'restart docker' "$TMP/calls"
-! grep -q 'reload polkit' "$TMP/calls"
+if grep -q 'restart docker' "$TMP/calls"; then exit 1; fi
+if grep -q 'reload polkit' "$TMP/calls"; then exit 1; fi
 echo 'ok - run again, setup restarts nothing'
 [[ $(grep -cx -- '-v' "$TMP/calls") == 1 ]]
 echo 'ok - setup validates sudo once per terminal'
 : >"$TMP/calls"
 NVIDIA=0 setup
-! grep -q '^docker\|^nvidia-ctk\|restart docker' "$TMP/calls"
+if grep -q '^docker\|^nvidia-ctk\|restart docker' "$TMP/calls"; then exit 1; fi
 echo 'ok - a non-NVIDIA machine needs no NVIDIA installation or daemon restart'
 if FAIL_SUDO=1 setup; then exit 1; fi
 if FAIL_ACL=1 setup; then exit 1; fi
-! grep -q 'Local AI is ready' "$TMP/out"
+if grep -q 'Local AI is ready' "$TMP/out"; then exit 1; fi
 grep -qx 'Setup did not finish; choose Set up Local AI to try again.' "$HOME/.local/state/omarchy/local-ai/setup-error"
 echo 'ok - denied sudo or socket ACL failure never reports success and leaves a panel error'
 FAIL_TAILNET=1 setup
 [[ ! -f $HOME/.local/state/omarchy/local-ai/setup-error ]]
 grep -q 'Tailscale is not running' "$TMP/out"
 echo 'ok - unavailable Tailscale names the remaining sharing step'
+: >"$TMP/calls"
+TEST_OPERATOR=another-account setup
+if grep -q 'tailscale set' "$TMP/calls"; then exit 1; fi
+grep -q 'another account' "$TMP/out"
+echo 'ok - setup preserves another account as Tailscale operator'
+: >"$TMP/calls"
+TEST_OPERATOR=$USER setup
+grep -qx "tailscale set --operator=$USER" "$TMP/calls"
+echo 'ok - setup accepts the existing operator when it is this account'
+: >"$TMP/calls"
+FAIL_PREFS=1 setup
+if grep -q 'tailscale set' "$TMP/calls"; then exit 1; fi
+echo 'ok - unreadable Tailscale preferences never change the operator'
 node - "$ROOT/Model.js" <<'JS'
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const c = {module:{exports:{}}}; vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'),c);

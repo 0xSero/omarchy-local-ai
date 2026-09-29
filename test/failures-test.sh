@@ -34,6 +34,21 @@ serve() { echo 'serve was called' >"$TMP/served"; }
 check 'share refuses a model that is not ready' 1 cmd_share test
 [[ ! -f $TMP/served ]] || { echo 'not ok - shared a model before readiness'; failed=$((failed + 1)); }
 check 'share rejects unknown mode' 1 cmd_share test nonsense
+# Tailscale failure cannot trap a model in the running state.
+echo '{"id":"test","port":12434,"shared":true}' >"$STATE/deploy/test/config.json"
+echo '{"state":"ready"}' >"$STATE/deploy/test/status.json"
+serve() { return 1; }
+tailscale() { echo '{"OperatorUser":"another-account"}'; }
+# timeout normally execs a binary; this fixture invokes the shell function instead.
+timeout() { shift; "$@"; }
+check 'share reports that another account manages Tailscale' 1 cmd_share test
+grep -q 'another account.*ask that account' "$TMP/out" || { echo 'not ok - wrong operator advice'; failed=$((failed + 1)); }
+docker() { case $1 in inspect) echo "1|$(id -u)";; rm) :;; esac; }
+check 'a shared model can stop when unsharing fails' 0 cmd_stop test
+[[ ! -d $STATE/deploy/test ]] && grep -q 'could not unshare' "$LOG" || { echo 'not ok - unshare failure trapped the model'; failed=$((failed + 1)); }
+unset -f timeout
+mkdir -p "$STATE/deploy/test"
+echo '{"id":"test","port":12434}' >"$STATE/deploy/test/config.json"
 # A remembered worker PID can belong to another process after reboot.
 echo '{"state":"starting","pid":0}' >"$STATE/deploy/test/status.json"
 docker() { :; }

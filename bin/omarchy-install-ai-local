@@ -47,7 +47,15 @@ sock=${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock}
 
 # sharing a model on your tailnet without a prompt
 if command -v tailscale >/dev/null; then
-  sudo tailscale set --operator="$USER" || echo "Tailscale is not running; sharing on your tailnet will work once it is and you run setup again."
+  if operator=$(timeout 10 tailscale debug prefs 2>/dev/null | jq -er '.OperatorUser // "" | select(type == "string")'); then
+    if [[ -z $operator || $operator == "$USER" ]]; then
+      timeout 20 sudo tailscale set --operator="$USER" || echo "Tailscale is not running; sharing on your tailnet will work once it is and you run setup again."
+    else
+      echo "Tailscale is managed by another account; ask that account to share your models."
+    fi
+  else
+    echo "Could not read Tailscale preferences; its operator was left unchanged."
+  fi
 fi
 
 # earlier versions asked for a password through polkit; nothing uses these any more
