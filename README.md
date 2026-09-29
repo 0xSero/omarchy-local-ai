@@ -40,6 +40,24 @@ Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for 
 
 Setup is the only password Local AI asks for, once per machine: starting, stopping, sharing, refreshing and removing never ask, and plugin updates never ask for setup again. Sudoless Docker is root-equivalent, as Omarchy's own warning says; turn it off in Setup > Security.
 
+### What setup runs as root
+
+`bin/omarchy-install-ai-local` runs only when you click **Set up Local AI**; adding or updating the plugin never runs it. It asks for your password once (`sudo -v`), then:
+
+- NVIDIA only, when Docker has no `nvidia` runtime: installs `nvidia-container-toolkit` with `omarchy-pkg-add`, runs `nvidia-ctk runtime configure --runtime=docker` (which edits Docker's daemon configuration) and `systemctl restart docker`. It stops without changing anything if containers are running.
+- Runs Omarchy's `omarchy-setup-security-sudoless-docker`, which explains the change and asks first.
+- Until your next login, `setfacl` gives your account read and write access to the Docker socket.
+- When Tailscale is installed and has no operator or you are the operator, `tailscale set --operator=$USER`, so sharing needs no prompt.
+- Removes the polkit policy and rule files that earlier versions wrote for this user, then `systemctl reload polkit`.
+
+## Requirements
+
+- Omarchy with the Quattro shell and its bar. Local AI calls Omarchy's own commands: `omarchy-sudo-docker`, `omarchy-setup-security-sudoless-docker`, `omarchy-pkg-add`, `omarchy-hw-nvidia`, `omarchy-launch-tui`, `omarchy-launch-browser`, `omarchy-notification-send` and `omarchy-cmd-present`.
+- Docker, `jq`, `curl`, `flock` and `sha256sum`.
+- A supported GPU (below). NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. AMD needs ROCm's `amd-smi`.
+- Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
+- Network access to `huggingface.co` (weights), `ghcr.io/0xsero` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (**Refresh models**).
+
 ## What it does
 
 - **Validated models per card, or one across several.** `recipes.json` holds, for each of 40 card kinds, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
@@ -114,3 +132,7 @@ so hard-linked files there may continue to occupy disk space.
 
 The equivalent commands are `omarchy-local-ai registry` and
 `omarchy-local-ai forget <recipe>` (or the plugin's `bin/omarchy-local-ai`).
+
+## License
+
+[MIT](LICENSE). The agent and GPU-maker logos in `preview.png` belong to their owners and identify compatibility only; their sources and terms are in [docs/preview/logos/README.md](docs/preview/logos/README.md).

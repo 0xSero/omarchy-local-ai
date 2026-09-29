@@ -22,10 +22,31 @@ echo "ok - name (${#name}) and description (${#description} of 500 characters) a
 grep -q "^## \[$version\]" "$ROOT/CHANGELOG.md" || fail "CHANGELOG.md has no '## [$version]' section"
 echo "ok - CHANGELOG.md has a section for $version"
 
-for f in README.md LICENSE "$(jq -r .entryPoints.barWidget "$M")"; do
+# validateManifest in build-catalog.mjs: schema 1, a lowercase id outside the reserved omarchy.* namespace,
+# every kind backed by an entry point, entry points that are safe relative paths to real files
+jq -e '.schemaVersion == 1' "$M" >/dev/null || fail "schemaVersion must be exactly 1"
+jq -e '.author | type == "string" and length > 0' "$M" >/dev/null || fail "author is required"
+id=$(jq -r .id "$M")
+[[ $id =~ ^[a-z0-9][a-z0-9._-]*$ && $id != *..* ]] || fail "id '$id' must be lowercase letters, digits, . _ - and not contain '..'"
+[[ $id != omarchy.* ]] || fail "the omarchy.* namespace is reserved"
+jq -e '(.kinds | type == "array" and length > 0) and (.kinds | all(. == "bar-widget"))' "$M" >/dev/null || fail "kinds must be a non-empty list of supported values (bar-widget)"
+jq -e '.entryPoints | has("barWidget")' "$M" >/dev/null || fail "kind bar-widget has no entryPoints.barWidget"
+jq -e '(.barWidget.defaultSection // "right") | IN("left", "center", "right")' "$M" >/dev/null || fail "barWidget.defaultSection must be left, center or right"
+while IFS= read -r f; do
+  [[ $f != /* && $f != *..* && $f != *[\\:]* && -n $f ]] || fail "entry point '$f' is not a safe relative path"
+  [[ -s $ROOT/$f ]] || fail "entry point $f is missing or empty"
+done < <(jq -r '.entryPoints[]' "$M")
+echo "ok - id $id, schema 1, kinds and entry points"
+
+# SUBMISSION.md asks for a root README with install and removal instructions, the license and the external
+# dependencies documented, and a root license file
+for f in README.md LICENSE; do
   [[ -s $ROOT/$f ]] || fail "$f is missing or empty"
 done
-echo "ok - README, LICENSE and the bar widget entry point exist"
+for section in 'Install' 'Remov(e|al)|Uninstall' 'Requirements|Dependencies' 'Licen[cs]e'; do
+  grep -Eqi "^#{1,3} ($section)" "$ROOT/README.md" || fail "README.md has no heading for: $section"
+done
+echo "ok - README and LICENSE exist; README has install, removal, requirements and license sections"
 
 links=$(find "$ROOT" -type l -not -path "$ROOT/.git/*" | head -3)
 [[ -z $links ]] || fail "the marketplace refuses symlinks: $links"

@@ -9,10 +9,11 @@ The marketplace listing only; the panel and the backend are unchanged.
 ### Changed
 - The listing's preview is now a 16:9 picture that reads at card size: Local AI and its keyed gateway on 127.0.0.1 in the middle, the logo of every coding agent it opens scattered around it, and the NVIDIA, Intel and AMD logos, each in a circle with an orange line to Local AI. The old one was three panels shrunk into a thumbnail.
 - The manifest description is shorter and no longer carries a card count that goes stale with every registry sync.
+- The README now has a Requirements section (Omarchy commands, Docker and the other tools, GPU drivers, optional Tailscale and Hugging Face token, the hosts it reaches), lists exactly what setup runs as root, and states the license. The marketplace asks submitters to document all three, and its security baseline flags the installer, `sudo` and `systemctl` in setup for a maintainer to review against that documentation.
 
 ### Added
 - `make preview` renders that picture from the agent list in `bin/omarchy-local-ai` and the logos in `docs/preview/logos/` (sources and licences in its README), and checks its own layout (no circle touching another, no line through a circle, every logo drawn and visible); it stops until a new agent has a name, a logo and a spot.
-- `test/listing-test.sh` checks the manifest and preview against the limits the marketplace enforces.
+- `test/listing-test.sh` checks the manifest (schema, id, kinds and entry points) and preview against the limits the marketplace enforces, and that the README has install, removal, requirements and license sections.
 
 ## [6.6.0] - 2026-09-29
 
