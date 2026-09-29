@@ -18,6 +18,10 @@ function ago(t) {
 }
 function home(dir) { return (dir || "").replace(/^\/home\/[^\/]+/, "~") }
 function find(list, key, v) { return (list || []).filter(function(x) { return x[key] === v })[0] || null }
+// a recipe this machine can run: one whose `needs` (RAM, disk, an NVMe drive) the backend found met; the best of a
+// list is the first of those, the registry's order otherwise kept
+function fits(r) { return !r.unfit }
+function best(list) { return (list || []).filter(fits)[0] || null }
 function working(d) { return d.state === "download" || d.state === "starting" || d.state === "stopping" }
 
 function parse(text) { try { return JSON.parse(text) } catch (e) { return null } }
@@ -112,8 +116,13 @@ function slot(s, ui, g, at) {
     row.warn = true
     row.note = "in use by another program"
     items = [config]
+  } else if (!best(kd.models)) {
+    // every model for this card needs more of the machine than it has: why, and Config to see them
+    row.rank = 3
+    row.note = kd.models[0].unfit
+    items = [config]
   } else {
-    var r = kd.models[0]
+    var r = best(kd.models)
     row.rank = 0
     row.run = { family: r.family, label: "run " + r.name + " ›", action: "run|" + r.id + "|" + g.key }
     chips = spec(r)
@@ -130,7 +139,7 @@ function groups(s, ui) {
   ;(s.kinds || []).forEach(function(kd, at) {
     var first = find(s.gpus || [], "key", kd.keys[0]), seen = {}
     ;(kd.groups || []).forEach(function(gr) {
-      if (seen[gr.cards] || kd.free.length < gr.cards) return
+      if (seen[gr.cards] || kd.free.length < gr.cards || !fits(gr)) return
       seen[gr.cards] = 1
       var id = "group:" + kd.hw + ":" + gr.cards
       var row = { type: "slot", label: gr.cards + " × " + (first ? first.name : kd.hw), toggle: "pick|" + id, open: ui.open === id,
@@ -243,12 +252,13 @@ function page(s, ui, m) {
       { v: k(s.week), u: "", k: "week" },
       { v: dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
   }
-  // a card's Config: every model validated for it, the chosen one checked
+  // a card's Config: every model validated for it, the chosen one checked; one this machine cannot run says why
+  // and cannot be chosen
   if ((m.models || []).length > 1) {
     v.rows.push({ type: "sec", label: "MODEL" })
     m.models.forEach(function(x) {
-      v.rows.push({ type: "opt", label: x.name, value: [fmt(x.format), x.ctx ? ctx(x.ctx) : ""].filter(Boolean).join("  "),
-        on: x.id === m.id, action: "model|" + x.id })
+      v.rows.push({ type: "opt", label: x.name, value: x.unfit ? x.unfit.split("; ")[0] : [fmt(x.format), x.ctx ? ctx(x.ctx) : ""].filter(Boolean).join("  "),
+        on: x.id === m.id, off: !fits(x), action: fits(x) ? "model|" + x.id : "" })
     })
   }
   v.rows.push({ type: "sec", label: "GPUS" })
@@ -264,6 +274,8 @@ function page(s, ui, m) {
       : { type: "field", icon: "tailnet", label: "tailnet", value: "share", action: "share|" + run.id })
     if (run.error) v.rows.push({ type: "error", label: run.error })
     v.rows.push({ type: "acts", items: [{ label: "View logs", action: "log" }, { label: "Stop model", action: "stop|" + run.id, danger: true }] })
+  } else if (m.unfit) {
+    v.rows.push({ type: "error", label: m.unfit })
   } else {
     v.rows.push({ type: "acts", items: [{ label: "Run ›", action: m.action, primary: true }] })
   }
@@ -279,7 +291,7 @@ function runView(s, id, ui) {
 // a card kind's page, for the card its row was opened from (else the first free one): the models validated for it,
 // the recommended one chosen until another is, and Run when that card is free; a card another program holds says why
 function kindView(s, hw, ui) {
-  var kd = find(s.kinds, "hw", hw), models = kd ? kd.models : [], pick = find(models, "id", ui.model) || models[0]
+  var kd = find(s.kinds, "hw", hw), models = kd ? kd.models : [], pick = find(models.filter(fits), "id", ui.model) || best(models) || models[0]
   if (!pick) return null
   var key = kd.keys.indexOf(ui.key) >= 0 ? ui.key : kd.free[0], free = kd.free.indexOf(key) >= 0, g = key && find(s.gpus, "key", key)
   return page(s, ui, Object.assign({}, pick, { models: models, action: free ? "run|" + pick.id + "|" + key : "",
@@ -289,7 +301,7 @@ function kindView(s, hw, ui) {
 // a group of free cards of a kind: the models validated for that many cards, on the cards it would run on
 function groupView(s, hw, n, ui) {
   var kd = find(s.kinds, "hw", hw), models = kd ? (kd.groups || []).filter(function(x) { return x.cards === n }) : []
-  var gr = find(models, "id", ui.model) || models[0]
+  var gr = find(models.filter(fits), "id", ui.model) || best(models) || models[0]
   if (!gr || kd.free.length < n) return null
   var keys = kd.free.slice(0, n)
   return page(s, ui, Object.assign({}, gr, { models: models, action: "run|" + gr.id + "|" + keys.join(","),

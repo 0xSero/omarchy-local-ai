@@ -158,6 +158,34 @@ gpus() {
   jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile rec "$RECIPES" "$MATCH"'gpus($nv; $xe; $am) | match($rec[0])'
 }
 
+# host: what a recipe that offloads weights to the machine needs of it besides the card (its `needs`): available RAM,
+# the free space under the models folder, and whether that folder is on NVMe, through LUKS or LVM to the drive itself.
+# Sizes are GB of 1e9 bytes, as the registry states them. Weights folders already downloaded and checked are listed.
+host() {
+  local d=$MODELS ram=0 free=0 src="" avail=0 disk="" have=()
+  while [[ ! -d $d && $d == /*/* ]]; do d=${d%/*}; done
+  read -r ram free < <(awk '/^MemTotal:/{t = $2} /^MemAvailable:/{a = $2} END{print t + 0, a + 0}' "${MEMINFO:-/proc/meminfo}" 2>/dev/null) || true
+  read -r src avail < <(df -B1 --output=source,avail -- "$d" 2>/dev/null | tail -1) || true
+  # every drive under the filesystem: nvme when each is a non-rotational NVMe drive, else what the first one is
+  [[ $src == /dev/* ]] && disk=$(lsblk -snro TYPE,ROTA,TRAN -- "$src" 2>/dev/null | awk '$1 == "disk" {n++; if ($2 == "0" && $3 == "nvme") v++
+    else if (k == "") k = ($2 == "0" ? "ssd" : "hdd")} END {print n && v == n ? "nvme" : k}')
+  for d in "$MODELS"/*/.verified "$MODELS"/*/*/.verified; do have+=("${d#"$MODELS"/}"); done
+  jq -nc --argjson r "${ram:-0}" --argjson f "${free:-0}" --argjson a "${avail:-0}" --arg d "$disk" \
+    'def gb: . * 10 | floor / 10; {ramGb: ($r * 1024 / 1e9 | gb), freeRamGb: ($f * 1024 / 1e9 | gb), diskFreeGb: ($a / 1e9 | gb), disk: $d,
+      have: $ARGS.positional}' --args ${have[@]+"${have[@]}"}
+}
+
+# unfit($host): why this machine cannot run the recipe, "" when it can. A recipe's `needs` (the registry's contract):
+# host_ram_gb of MemAvailable, disk_gb free under the models folder, and with fast_storage "nvme" that folder on a
+# non-rotational NVMe drive. A recipe without `needs` always fits; weights already downloaded and checked take no more disk.
+NEEDS='def unfit($h): (.needs // {}) as $n | def gb: ceil | tostring;
+  ([.weights[]? | if .layout == "hub" then "" else "\(.repository | gsub("/"; "--"))@\(.revision[:12])\(if (.dir // "") != "" then "/" + .dir else "" end)/.verified" end]) as $w
+  | [if ($n.host_ram_gb // 0) > $h.freeRamGb then "needs \($n.host_ram_gb | gb) GB RAM, you have \($h.freeRamGb | floor)" else empty end,
+     if ($n.disk_gb // 0) > $h.diskFreeGb and (($w | length) == 0 or any($w[]; . as $x | $h.have | index($x) == null))
+       then "needs \($n.disk_gb | gb) GB free disk, you have \($h.diskFreeGb | floor)" else empty end,
+     if ($n.fast_storage // "") == "nvme" and $h.disk != "nvme" then "needs the models folder on an NVMe drive" else empty end]
+  | join("; ");'
+
 # wpaths <weights-item>: repository|revision|files|layout|mountPath|the folder the engine mounts|where the files are in it
 wpaths() {
   jq -r --arg m "$MODELS" '(.repository | gsub("/"; "--")) as $r
@@ -507,6 +535,8 @@ cmd_run() {
   [[ $(policy "$r") == "ok" ]] || die "recipe refused: $(policy "$r")"
   ((${#keys[@]} == $(jq -r '.cards // 1' <<<"$r"))) || die "$(jq -r .name <<<"$r") here runs on $(jq -r '.cards // 1' <<<"$r") card(s)"
   [[ $(printf '%s\n' "${keys[@]}" | sort -u | wc -l) == "${#keys[@]}" ]] || die "a card is named twice"
+  k=$(jq -r --argjson h "$(host)" "$NEEDS"'unfit($h)' <<<"$r")
+  [[ -z $k ]] || die "$(jq -r .name <<<"$r") $k"
 
   # the log keeps its last 5,000 lines once it passes 1 MB
   if [[ -f $LOG ]] && (($(wc -c <"$LOG") > 1048576)); then
@@ -845,8 +875,8 @@ adopt() {
 }
 
 # what the widget needs of a recipe
-SUMMARY='def summary: {id, name, family, cards: (.cards // 1), format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
-  weights: [.weights[]? | {repository, revision}]};'
+SUMMARY='def summary($h): {id, name, family, cards: (.cards // 1), format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
+  weights: [.weights[]? | {repository, revision}], unfit: unfit($h)};'
 
 cmd_snapshot() {
   local deps=() d id port at st pid obj why rc code ts="" sa="" sf="" sfs="" v="" a
@@ -882,23 +912,23 @@ cmd_snapshot() {
     --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --argjson folders "${sfs:-[]}" \
-    --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" "$SUMMARY$MATCH"'
+    --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY$MATCH"'
     (gpus($nv; $xe; $am) | match($rec[0])) as $g | ($agents | split("\n") | map(select(length > 0))) as $agents
     # a running model with its session, in error when its worker or engine is gone; a second copy of a recipe runs
     # as <recipe>--2: its recipe is the one before the last "--"
     | ([$deps[] | .d + {session: .u} + (if .why != "" then {state: "error", error: .why} else {} end)
       | (.id | if test("--") then .[:rindex("--")] else . end) as $rid
-      | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary | del(.id) | with_entries(select(.value != null))) + .]) as $deps
+      | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
+    | {version: $version, host: ($host | del(.have)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
          # the registry lists the recipes of a kind best first: the first on one card is its recommended model
-         models: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1) | summary],
-         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1) | summary]}],
+         models: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1) | summary($host)],
+         groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1) | summary($host)]}],
        deployments: $deps}'
 }
 
