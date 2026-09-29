@@ -2,6 +2,14 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.3.1] - 2026-09-29
+
+### Fixed
+- A long model format no longer runs over the model's name in a card's model list (Qwen3.8-Flash-Next's did), and a header fact longer than the line wraps inside the panel.
+
+### Changed
+- A card's model list says only whether each model fits: "fits" on the card alone, "+75 GB RAM" for a model that also takes system RAM, or what the machine lacks ("needs 96 GB RAM"). Format and context show on the page once a model is chosen, and an offload model's page shows the RAM it takes.
+
 ## [6.3.0] - 2026-09-29
 
 - First-run setup is available inside Local AI, including password prompts and NVIDIA container support. No separate script command is needed after installing the plugin.
