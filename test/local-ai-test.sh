@@ -163,6 +163,12 @@ view() {
     const s = JSON.parse(fs.readFileSync(process.argv[2], "utf8")), v = c.build(s, {view: process.argv[3], id: process.argv[4] || "", open: "", key: "", problem: ""})
     console.log(v.mark + " " + v.rows.map(r => r.type).join(","))' "$ROOT/Model.js" "$TMP/snap.json" "$@"
 }
+# js <expression>: its value, with the view model's functions under c, the snapshot as s and ui(patch) a ui state
+js() {
+  node -e 'const fs = require("fs"), vm = require("vm"), c = {}; vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), c)
+    const s = JSON.parse(fs.readFileSync(process.argv[2], "utf8")), ui = p => Object.assign({view: "home", id: "", open: "", key: "", problem: ""}, p)
+    const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
+}
 if command -v node >/dev/null; then
   [[ $(view home) == " sec,slot,slot,field,acts" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
@@ -247,6 +253,18 @@ recipes "$PIN"
 "$CLI" run "$ID" nvidia:0
 wait_for ready
 pass "a group runs one model across two cards of a kind, refuses the wrong number of cards, and is in the snapshot"
+
+# a model's week is its own: another copy's tokens count in the machine's week, not on this model's page
+usage() { mkdir -p "$STATE/usage/$1"; printf '{"t":%d,"prompt":%d,"completion":10,"ms":500,"ttft_ms":50}\n' "$EPOCHSECONDS" "$2" >"$STATE/usage/$1/usage.jsonl"; }
+usage "$ID" 990
+usage "$ID--2" 49990
+"$CLI" snapshot >"$TMP/snap.json"
+[[ $(jq -r '"\(.week) \(.deployments[0].session.week)"' "$TMP/snap.json") == "51000 1000" ]] || fail "week per model" "$(jq -c '{week, d: .deployments}' "$TMP/snap.json")"
+if command -v node >/dev/null; then
+  [[ $(js 'c.build(s, ui({view: "run", id: s.deployments[0].id})).rows[0].cells[4].v') == 1K ]] || fail "week on the model's page" "$(js 'c.build(s, ui({view: "run", id: s.deployments[0].id})).rows[0]')"
+fi
+rm -rf "$STATE/usage/$ID--2"
+pass "a model's page counts its own week, not every model's on the machine"
 
 "$CLI" set agent pi "$ID"
 "$CLI" open "$ID"

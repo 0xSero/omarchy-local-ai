@@ -267,7 +267,7 @@ function page(s, ui, m) {
       { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
       { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
       { v: k(u.tokens), u: "", k: "session" },
-      { v: k(s.week), u: "", k: "week" },
+      { v: k(u.week), u: "", k: "week" },
       { v: dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
   }
   // a card's Config: every model validated for it, the chosen one checked, each saying whether it fits (its format
