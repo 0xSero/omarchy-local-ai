@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
-<!-- What the password prompt says when Local AI needs root to reach Docker: one action per phase of omarchy-local-ai -->
+<!-- What the password prompt says when Local AI needs root to reach Docker: one action per phase of omarchy-local-ai.
+     Setup 2 also installs local-ai.rules (start and stop without a password); rules.d is unreadable to the user, so
+     this line changing is what makes an update ask for setup again. -->
 <policyconfig>
   <vendor>Omarchy</vendor>
   <action id="org.omarchy.local-ai.start">

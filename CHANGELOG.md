@@ -2,6 +2,14 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.4.0] - 2026-09-29
+
+### Changed
+- Setup is the only time you type your password to run models: it installs a polkit rule that lets your account start and stop models without asking while you sit at the machine. Sharing on the tailnet, removing everything and updating the catalog still ask. Updating to 6.4.0 offers Set up Local AI once more to install it.
+
+### Fixed
+- Before setup, Local AI no longer opens a password prompt that shows the plugin's path and arguments: a start or stop says to set up Local AI instead, so every prompt it shows has fixed wording.
+
 ## [6.3.2] - 2026-09-29
 
 ### Fixed

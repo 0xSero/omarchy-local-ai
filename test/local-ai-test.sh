@@ -17,6 +17,8 @@ mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
 sed -i "s/setup_needed \&\& echo true || echo false/echo false/" "$CLI"
 sed -i "s|CATALOG=/var/cache/omarchy-local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+# setup's policy counts as installed unless a case says otherwise (NOSETUP=1)
+sed -i 's/^prompts_ready() {$/prompts_ready() { [[ -z ${NOSETUP:-} ]] \&\& return 0/' "$CLI"
 STATE=$HOME/.local/state/omarchy/local-ai
 ID=test-model-rtx4090
 SHA=ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7 # 4096 zero bytes, what the Hub shim serves
@@ -316,6 +318,15 @@ wait_for error
 grep -qx "$CLI __start $ID 12434 nvidia:0" "$SHIM/pkexec.log" || fail "pkexec argv" "$(cat "$SHIM/pkexec.log")"
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == *"password prompt was dismissed"* ]] || fail "dismissed" "$(cat "$STATE/deploy/$ID/status.json")"
 pass "without the docker group a start is one pkexec of this file with the recipe, port and card; a dismissed prompt is the reason shown"
+"$CLI" stop "$ID"
+
+# before setup there is no policy to describe the prompt, so polkit would show the raw command line: no pkexec at all
+: >"$SHIM/pkexec.log"
+NOSETUP=1 SHIM_PROMPT=1 "$CLI" run "$ID" nvidia:0
+wait_for error
+[[ ! -s $SHIM/pkexec.log ]] || fail "pkexec before setup" "$(cat "$SHIM/pkexec.log")"
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == *"not set up yet"* ]] || fail "setup reason" "$(cat "$STATE/deploy/$ID/status.json")"
+pass "before setup a start asks for no password and says to set up Local AI"
 
 recipes "$PIN"
 mkdir -p "$STATE/deploy" "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" "$HOME/.cache/huggingface"
