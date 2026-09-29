@@ -48,6 +48,9 @@ shim omarchy-cmd-missing '! command -v "$1" >/dev/null'
 shim omarchy-notification-send 'echo 7'
 shim omarchy-launch-tui 'printf "%s\n" "$*" >>"$SHIM/tui.log"'
 shim pkexec 'printf "%s\n" "$*" >>"$SHIM/pkexec.log"; exit 126'
+shim date 'if [[ $1 == +%s%3N && -n ${SHIM_COLD:-} ]]; then
+  if [[ -f $SHIM/probe-start ]]; then echo 70000; else touch "$SHIM/probe-start"; echo 0; fi
+else /usr/bin/date "$@"; fi'
 shim pi 'exit 0'
 shim hermes 'exit 0'
 shim lspci 'exit 0'
@@ -84,7 +87,9 @@ http://127.0.0.1:*)
     printf "{\"data\":[{\"id\":\"served\"}]}" >"$out"
     [[ $* == *http_code* ]] && printf 200
   else
-    echo "{\"usage\":{\"completion_tokens\":60}}"
+    if [[ -n ${SHIM_EMPTY:-} ]]; then echo "{}"; else
+      echo "{\"choices\":[{\"message\":{\"content\":\"1, 2, 3\"}}],\"usage\":{\"completion_tokens\":200}}"
+    fi
   fi ;;
 esac'
 ! command -v node >/dev/null || ln -s "$(command -v node)" "$TMP/bin/node"
@@ -234,6 +239,19 @@ pass "Hermes opens on the gateway through --provider custom, without its own con
 "$CLI" stop "$ID"
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"
 pass "stop removes both containers and the model's folder"
+
+# The first answer may wait on cold compilation: 200 tokens in 70 seconds is not proof of CPU fallback.
+SHIM_COLD=1 "$CLI" run "$ID" nvidia:0
+wait_for ready
+"$CLI" stop "$ID"
+pass "a successful cold first answer reaches ready regardless of wall-clock throughput"
+SHIM_EMPTY=1 "$CLI" run "$ID" nvidia:0
+wait_for error
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer" ]] || fail "empty answer reason"
+[[ -z $(ls "$SHIM/containers") ]] || fail "empty answer cleanup"
+"$CLI" stop "$ID"
+pass "an empty completion is rejected and its containers are removed"
+
 
 # a 5.x install left a model running: its ledger names it, its containers carry no uid label
 echo '{"slots":{"old-model":{"keys":["nvidia:0"],"port":12434,"engine":"omarchy-local-ai-old-model-engine"}}}' >"$STATE/ledger.json"
