@@ -85,6 +85,8 @@ for ((i = 1; i <= $#; i++)); do
 done
 printf "%s\n" "$*" >>"$SHIM/curl.log"
 case $url in
+*api.github.com/repos/*/commits/main) printf "{\"sha\":\"%040d\"}" 1 ;;
+*raw.githubusercontent.com/*/recipes.json) cat "$SHIM/registry.json" ;;
 */api/models/*) printf "[{\"type\":\"file\",\"path\":\"model.safetensors\",\"size\":4096,\"lfs\":{\"oid\":\"%s\"}}]" '"$SHA"' ;;
 */resolve/*) if [[ -n ${SHIM_CORRUPT:-} ]]; then head -c 4096 /dev/urandom >"$out"; else head -c 4096 /dev/zero >"$out"; fi ;;
 http://127.0.0.1:*)
@@ -346,5 +348,36 @@ if "$CLI" forget "$ID" 2>"$TMP/forget.err"; then fail "followed a symlink while 
 [[ -f $HOME/.cache/huggingface/keep ]] || fail "symlink target deleted"
 pass "forget refuses a symlink outside the managed download"
 
+# The whole life of an install, counting password prompts: before setup, after it, after an update, then run,
+# share, unshare, refresh the catalog, stop and remove. Setup is judged by the machine, so a changed backend (an
+# update) does not ask for it again.
+shim omarchy-hw-nvidia 'exit 1'
+shim tailscale 'printf "%s\n" "$*" >>"$SHIM/tailscale.log"'
+fresh=$TMP/fresh/bin/omarchy-local-ai
+mkdir -p "${fresh%/*}"
+cp "$ROOT/bin/omarchy-local-ai" "$fresh"
+cp "$TMP/plugin/recipes.json" "$TMP/plugin/manifest.json" "$TMP/fresh/"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
+[[ $(SHIM_NOGROUP=1 "$fresh" snapshot | jq .setupNeeded) == true ]] || fail "setup before setup"
+[[ $("$fresh" snapshot | jq .setupNeeded) == false ]] || fail "setup after setup"
+printf '\n# an update\n' >>"$fresh"
+[[ $("$fresh" snapshot | jq .setupNeeded) == false ]] || fail "setup asked again after an update"
+pass "setup is needed before it runs, and neither after it nor after an update"
+
+rm -f "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" # the symlink the case above left
+"$CLI" run "$ID" nvidia:0
+wait_for ready
+"$CLI" share "$ID"
+grep -q "^serve --bg --https=12434 http://127.0.0.1:12434" "$SHIM/tailscale.log" || fail "share" "$(cat "$SHIM/tailscale.log" 2>/dev/null)"
+"$CLI" share "$ID" off
+grep -q "^serve --https=12434 off" "$SHIM/tailscale.log" || fail "unshare" "$(cat "$SHIM/tailscale.log")"
+cp "$TMP/plugin/recipes.json" "$SHIM/registry.json"
+"$CLI" registry
+jq -e '.registryCommit == "0000000000000000000000000000000000000001"' "$TMP/catalog.json" >/dev/null || fail "refresh" "$(head -c 300 "$TMP/catalog.json" 2>/dev/null)"
+"$CLI" stop "$ID"
+"$CLI" remove
+[[ ! -d $STATE && -z $(ls "$SHIM/containers") ]] || fail "remove" "$(ls "$SHIM/containers")"
+pass "run, share, unshare, refresh the catalog, stop and remove, as you"
+
 [[ ! -s $SHIM/prompts.log ]] || fail "a password prompt" "$(cat "$SHIM/prompts.log")"
-pass "nothing above asked for a password: no pkexec, no sudo"
+pass "no step asked for a password: setup is the only one, and it is not part of any of these"
