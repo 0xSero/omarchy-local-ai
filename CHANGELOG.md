@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.3.2] - 2026-09-29
+
+### Fixed
+- Running the same model on two cards at once no longer corrupts its download: the second waits ("waiting for the other download of these weights") and then uses the checked files, instead of a second download appending to the same partial file until the checksum fails and the model never loads.
+
 ## [6.3.1] - 2026-09-29
 
 ### Fixed
