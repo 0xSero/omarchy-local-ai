@@ -108,12 +108,12 @@ function slot(s, ui, g, at) {
   } else if (d && d.state === "error") {
     row.rank = 2
     row.crashed = true
-    row.hint = "crashed"
+    row.hint = "stopped"
     row.run = { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }
     row.dismiss = "stop|" + d.id
     note = d.error || "stopped"
-    // dismiss is on the row itself
-    items = [{ label: "Run again ›", action: row.run.action, primary: true }, { label: "View logs", action: "log" }, config]
+    // run again and dismiss are on the row itself
+    items = [{ label: "View logs", action: "log" }, config]
   } else if (d) {
     row.rank = 1
     row.note = (d.state === "ready" ? "running " : d.state === "stopping" ? "stopping " : "starting ") + d.name
@@ -173,7 +173,7 @@ function homeView(s, ui) {
   if (s.setupNeeded) return { title: "LOCAL AI", version: s.version, rows:
     (ui.problem ? [{ type: "error", label: ui.problem }] : []).concat([
       { type: "sec", label: "SETUP" },
-      { type: "links", note: "One-time setup: Docker without a password prompt (Omarchy's Sudoless Docker) and GPU support. Opens a terminal for your password; updates never ask again.", items: [] },
+      { type: "links", note: "Once per machine: Docker access (Omarchy's Sudoless Docker) and GPU support. A terminal opens for your password.", items: [] },
       { type: "acts", items: [{ label: "Set up Local AI", action: "setup", primary: true }] }]) }
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
   var rows = ui.problem ? [{ type: "error", label: ui.problem }] : [], life = s.life || {}
