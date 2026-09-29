@@ -78,3 +78,17 @@ Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); t
 | `recipes.json` | The vendored recipes, one card kind per line (`make sync`) |
 
 The same files are proposed for Omarchy itself in [omacom/omarchy#13036](https://github.com/omacom/omarchy/pull/13036); this plugin differs only in where it finds itself, and in taking over a model a 5.x install left running. `docs/design.md` has the design and `test/all` runs the tests.
+
+### Container boundary
+
+Images are pinned by SHA-256. The gateway runs as the calling user, with no
+Linux capabilities, a read-only root filesystem, a bounded temporary directory
+and external DNS disabled. Docker service discovery still resolves the engine;
+usage records remain writable in their dedicated directory. Existing containers
+receive these restrictions when stopped and started again.
+
+Model engines still have writable container filesystems and outbound network
+access. Digest pins and build attestations establish image identity; they do
+not make untrusted code safe. Engine restrictions need per-engine hardware
+validation before rollout. Disabling gateway DNS does not block outbound IP
+connections.

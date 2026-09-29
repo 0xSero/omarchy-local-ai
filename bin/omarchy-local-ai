@@ -377,6 +377,7 @@ phase_start() {
   fi
 
   if ! docker run -d --name "$(gateway "$id")" --restart unless-stopped --security-opt no-new-privileges \
+    --cap-drop ALL --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --dns 127.0.0.1 \
     --network "omarchy-local-ai-$id" --user "${RUN_AS:-$(id -u):$(id -g)}" --publish "127.0.0.1:$port:12434" \
     --label "$LABEL=1" --label "$LABEL.uid=${PKEXEC_UID:-$(id -u)}" \
     --env "UPSTREAM=http://engine:$(jq -r .launch.port <<<"$r")" --env "MODEL=$(jq -r '.servedName // ""' <<<"$r")" \
