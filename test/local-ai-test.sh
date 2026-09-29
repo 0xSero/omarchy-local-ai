@@ -1,7 +1,7 @@
 #!/bin/bash
-# The backend end to end with shims for docker, curl, nvidia-smi, pkexec and the Omarchy helpers: no GPU,
+# The backend end to end with shims for docker, curl, nvidia-smi and the Omarchy helpers: no GPU,
 # no daemon, no network. A synthetic recipe runs, answers, opens an agent and stops; the failure paths
-# (an unpinned image, a corrupt download, a dismissed password prompt) end with the right reason.
+# (an unpinned image, a corrupt download, missing Docker access) end with the right reason.
 
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -12,6 +12,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 export HOME=$TMP/home SHIM=$TMP/shim XDG_RUNTIME_DIR=$TMP/run
 mkdir -p "$HOME" "$SHIM/containers" "$TMP/bin" "$TMP/plugin/bin"
+cp "$ROOT/bin/omarchy-remove-ai-local" "$TMP/plugin/bin/"
 cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null || true
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
@@ -56,9 +57,6 @@ shim omarchy-launch-tui 'printf "%s\n" "$*" >>"$SHIM/tui.log"'
 # nothing may ask for a password after setup: every pkexec or sudo lands here and fails the run at its end
 shim pkexec 'printf "%s\n" "$*" >>"$SHIM/prompts.log"; exit 126'
 shim sudo 'printf "sudo %s\n" "$*" >>"$SHIM/prompts.log"; exit 1'
-shim date 'if [[ $1 == +%s%3N && -n ${SHIM_COLD:-} ]]; then
-  if [[ -f $SHIM/probe-start ]]; then echo 70000; else touch "$SHIM/probe-start"; echo 0; fi
-else /usr/bin/date "$@"; fi'
 shim pi 'exit 0'
 shim hermes 'exit 0'
 shim lspci 'exit 0'
@@ -177,11 +175,12 @@ fi
 cdi 237
 "$CLI" run "$ID" nvidia:0
 wait_for error
-[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list in $CDI_DIRS/nvidia.yaml is out of date: run sudo nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" ]] ||
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date; see the log for the repair command" ]] ||
   fail "stale CDI reason" "$(cat "$STATE/deploy/$ID/status.json")"
 ! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-engine' "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
 cdi 1
-pass "a stale NVIDIA CDI spec stops the start before the engine, naming the command that fixes it"
+grep -q "sudo nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" "$STATE/log" || fail "CDI repair log"
+pass "a stale NVIDIA CDI spec stops before the engine, with the repair command in the log"
 "$CLI" stop "$ID"
 
 "$CLI" run "$ID" nvidia:0
@@ -261,15 +260,33 @@ grep -q -- "CUSTOM_BASE_URL=http://127.0.0.1:12434/v1 OPENAI_BASE_URL=http://127
   ! grep -q "$key" "$SHIM/tui.log" || fail "hermes argv" "$(tail -1 "$SHIM/tui.log")"
 pass "Hermes opens on the gateway through --provider custom, without its own config.yaml, the key only in the environment"
 
+# All supported agent adapters stay in private config or keyed environments, never a gateway key in argv.
+for agent in pi claude codex opencode omp crush grok copilot hermes; do
+  shim "$agent" 'exit 0'
+  "$CLI" set agent "$agent" "$ID"
+  "$CLI" open "$ID"
+  ! grep -q "$key" "$SHIM/tui.log" || fail "agent key leaked" "$agent"
+done
+pass "every supported agent opens without exposing the gateway key in terminal arguments"
+shim omarchy-launch-tui 'exit 1'
+if "$CLI" open "$ID" 2>"$TMP/open.err"; then fail "a failed launcher looked successful"; fi
+grep -qx 'local-ai: could not open the agent terminal; try again' "$TMP/open.err" || fail "launcher error"
+shim omarchy-launch-tui 'printf "%s\n" "$*" >>"$SHIM/tui.log"'
+"$CLI" setup
+"$CLI" log
+grep -q -- '--app-id=org.omarchy.local-ai-setup' "$SHIM/tui.log" || fail "setup terminal"
+grep -q -- '--app-id=org.omarchy.local-ai-log less +G' "$SHIM/tui.log" || fail "log terminal"
+pass "setup and log launch their dedicated terminals; a failed agent launcher reports its error"
+mkdir -p "$HOME/Work with spaces"
+"$CLI" set folder "$HOME/Work with spaces" "$ID"
+[[ $(jq -r .folder "$STATE/deploy/$ID/config.json") == "$HOME/Work with spaces" ]] || fail "folder update"
+[[ $(jq -r '.folders[0]' "$STATE/settings.json") == "$HOME/Work with spaces" ]] || fail "recent folder"
+pass "folder changes update both the running model and recent defaults without a prompt"
+
 "$CLI" stop "$ID"
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"
 pass "stop removes both containers and the model's folder"
 
-# The first answer may wait on cold compilation: 200 tokens in 70 seconds is not proof of CPU fallback.
-SHIM_COLD=1 "$CLI" run "$ID" nvidia:0
-wait_for ready
-"$CLI" stop "$ID"
-pass "a successful cold first answer reaches ready regardless of wall-clock throughput"
 SHIM_EMPTY=1 "$CLI" run "$ID" nvidia:0
 wait_for error
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer" ]] || fail "empty answer reason"
@@ -295,7 +312,6 @@ recipes "ghcr.io/x/engine:latest"
 grep -q "image is not pinned by digest" "$TMP/err" || fail "unpinned reason" "$(cat "$TMP/err")"
 pass "a recipe whose image is not pinned by digest is refused before anything runs"
 
-recipes "$PIN"
 recipes "$PIN"
 jq '.hardware["rtx-4090-24gb"].match = {backend:"amd-vulkan", names:["rx9070xt"], vramGb:16}' "$TMP/plugin/recipes.json" >"$TMP/r2"
 mv "$TMP/r2" "$TMP/plugin/recipes.json"
@@ -364,6 +380,10 @@ sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catal
 printf '\n# an update\n' >>"$fresh"
 [[ $("$fresh" snapshot | jq .setupNeeded) == false ]] || fail "setup asked again after an update"
 pass "setup is needed before it runs, and neither after it nor after an update"
+echo 'Setup did not finish' >"$STATE/setup-error"
+[[ $("$fresh" snapshot | jq -r .setupError) == 'Setup did not finish' ]] || fail "setup error missing from snapshot"
+rm "$STATE/setup-error"
+pass "a failed setup terminal leaves its reason in the next snapshot"
 
 rm -f "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" # the symlink the case above left
 "$CLI" run "$ID" nvidia:0
@@ -382,7 +402,7 @@ wait_for error
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer: RuntimeError: XPU out of memory. Tried to allocate 2.00 GiB" ]] ||
   fail "crash reason" "$(cat "$STATE/deploy/$ID/status.json")"
 grep -q "^loading shards" "$STATE/deploy/$ID/err" || fail "engine log kept" "$(cat "$STATE/deploy/$ID/err")"
-! ls "$SHIM/containers" | grep -q engine || fail "engine left running" "$(ls "$SHIM/containers")"
+! compgen -G "$SHIM/containers/*engine" >/dev/null || fail "engine left running" "$(ls "$SHIM/containers")"
 pass "a failed engine's last lines stay in the log and its first error is the reason shown"
 "$CLI" stop "$ID"
 "$CLI" run "$ID" nvidia:0
@@ -403,7 +423,7 @@ cp "$TMP/ready.json" "$STATE/deploy/$ID/status.json"
 pass "a load cut by a restart says so, a pid that is not ours reads as stopped, and a live worker keeps loading"
 
 "$CLI" stop "$ID"
-"$CLI" remove
+"$TMP/plugin/bin/omarchy-remove-ai-local"
 [[ ! -d $STATE && -z $(ls "$SHIM/containers") ]] || fail "remove" "$(ls "$SHIM/containers")"
 pass "run, share, unshare, refresh the catalog, stop and remove, as you"
 

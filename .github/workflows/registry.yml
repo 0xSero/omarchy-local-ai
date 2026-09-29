@@ -1,7 +1,6 @@
 name: registry
-# The registry is the source of truth for recipes; this repo only vendors its schema-2 export. Nothing is
-# fetched at runtime, so this daily job is the one way a new recipe reaches the plugin: a commit here,
-# delivered by the next plugin update.
+# The registry is the source of truth for recipes; this daily job vendors its schema-2 export for
+# plugin updates. Users can also refresh the catalog directly from the panel.
 on:
   schedule:
     - cron: '17 4 * * *'

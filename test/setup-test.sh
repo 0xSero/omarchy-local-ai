@@ -6,7 +6,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/plugin/bin" "$TMP/bin" "$TMP/home" "$TMP/etc"
-cp "$ROOT/bin/omarchy-install-ai-local" "$TMP/plugin/bin/"
+cp "${INSTALLER:-$ROOT/bin/omarchy-install-ai-local}" "$TMP/plugin/bin/omarchy-install-ai-local"
 export HOME=$TMP/home SETUP_TEST=$TMP
 # the earlier polkit files live in a test folder
 sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|" "$TMP/plugin/bin/omarchy-install-ai-local"
@@ -14,14 +14,16 @@ cat >"$TMP/bin/sudo" <<'SH'
 #!/bin/bash
 printf '%s\n' "$*" >>"$SETUP_TEST/calls"
 case $1 in
--v | systemctl | tailscale) exit 0 ;;
+-v) exit "${FAIL_SUDO:-0}" ;;
+systemctl) exit 0 ;;
+tailscale) exit "${FAIL_TAILNET:-0}" ;;
 docker)
   if [[ $2 == ps ]]; then [[ ${BUSY:-0} == 0 ]] || echo busy
   elif [[ ${READY:-0} == 1 || -f $SETUP_TEST/configured ]]; then echo '{"nvidia":{}}'
   else echo '{}'; fi ;;
 nvidia-ctk) touch "$SETUP_TEST/configured" ;;
 test | rm) "$@" ;;
-setfacl) printf '%s\n' "$*" >>"$SETUP_TEST/acl" ;;
+setfacl) [[ ${FAIL_ACL:-0} == 0 ]] || exit 1; printf '%s\n' "$*" >>"$SETUP_TEST/acl" ;;
 *) exit 1 ;;
 esac
 SH
@@ -77,10 +79,25 @@ READY=1 BUSY=1 setup
 ! grep -q 'restart docker' "$TMP/calls"
 ! grep -q 'reload polkit' "$TMP/calls"
 echo 'ok - run again, setup restarts nothing'
+[[ $(grep -cx -- '-v' "$TMP/calls") == 1 ]]
+echo 'ok - setup validates sudo once per terminal'
+: >"$TMP/calls"
+NVIDIA=0 setup
+! grep -q '^docker\|^nvidia-ctk\|restart docker' "$TMP/calls"
+echo 'ok - a non-NVIDIA machine needs no NVIDIA installation or daemon restart'
+if FAIL_SUDO=1 setup; then exit 1; fi
+if FAIL_ACL=1 setup; then exit 1; fi
+! grep -q 'Local AI is ready' "$TMP/out"
+grep -qx 'Setup did not finish; choose Set up Local AI to try again.' "$HOME/.local/state/omarchy/local-ai/setup-error"
+echo 'ok - denied sudo or socket ACL failure never reports success and leaves a panel error'
+FAIL_TAILNET=1 setup
+[[ ! -f $HOME/.local/state/omarchy/local-ai/setup-error ]]
+grep -q 'Tailscale is not running' "$TMP/out"
+echo 'ok - unavailable Tailscale names the remaining sharing step'
 node - "$ROOT/Model.js" <<'JS'
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const c = {module:{exports:{}}}; vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'),c);
 const v=c.module.exports.build({gpus:[],kinds:[],setupNeeded:true}, {view:'home'});
-assert(v.rows.some(r => (r.items||[]).some(b => b.action === 'setup')));
+assert.deepEqual(Array.from(v.rows.flatMap(r => (r.items||[]).map(b => b.action))), ['setup']);
 console.log('ok - fresh installs offer setup directly in the panel');
 JS

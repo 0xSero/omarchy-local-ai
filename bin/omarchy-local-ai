@@ -13,6 +13,8 @@
 # (Omarchy's Sudoless Docker) and lets this login reach the socket until the group applies at the next one.
 # Nothing here runs as root, so there is no password prompt after setup and none after an update.
 
+# jq programs and child shell programs deliberately keep their own dollar expansions.
+# shellcheck disable=SC2016
 set -euo pipefail
 shopt -s nullglob
 exec </dev/null
@@ -39,6 +41,8 @@ paths() {
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 say() { printf '%s %s\n' "$(now)" "$*" >>"$LOG"; }
 die() { printf 'local-ai: %s\n' "$*" >&2; exit 1; }
+# Bound daemon calls; image pulls get time to transfer, ordinary operations do not.
+docker() { timeout --kill-after=5 "$( [[ ${1:-} == pull ]] && echo 1800 || echo 30 )" docker "$@"; }
 notify() { omarchy-notification-send --app-name "Local AI" "$@" 2>/dev/null || echo 0; }
 valid_id() { [[ $1 =~ ^[a-z0-9][a-z0-9.-]{0,63}$ ]]; }
 valid_key() { [[ $1 =~ ^(nvidia|intel-xpu|amd-rocm):[0-9]{1,2}$ ]]; }
@@ -64,7 +68,7 @@ recipe() {
 
 # Every string of a recipe that becomes a path, an argument or an image is checked before anything runs.
 policy() {
-  jq -er --slurpfile all "$RECIPES" '
+  jq -er --slurpfile all "${2:-$RECIPES}" '
     def name: test("^([A-Za-z0-9_-][A-Za-z0-9_.-]*)?$");
     def abs: test("^/[A-Za-z0-9_./-]+$") and (contains("..") | not);
     if (.image | test("^[a-z0-9./_:-]+@sha256:[0-9a-f]{64}$") | not) then "image is not pinned by digest"
@@ -90,7 +94,7 @@ cmd_registry() (
   umask 022
   install -d -m 755 "${CATALOG%/*}"
   exec 8>"${CATALOG%/*}/update.lock"
-  flock 8
+  flock -w 10 8 || die "a model refresh is already running"
   tmp=$(mktemp "${CATALOG%/*}/.recipes.XXXXXX")
   trap 'rm -f "$tmp"' EXIT
   sha=$(curl -fsSL --proto '=https' --connect-timeout 10 --max-time 30 --max-filesize 1048576 \
@@ -102,9 +106,8 @@ cmd_registry() (
   jq -e '.schemaVersion == "omarchy-local-ai/recipes/2" and (.hardware | type == "object" and length > 0)
     and all(.hardware[]; (.recipes | type == "array" and length > 0))
     and all(.hardware[].recipes[]; .id | test("^[a-z0-9][a-z0-9.-]{0,63}$"))' "$tmp" >/dev/null || die "invalid registry catalog"
-  RECIPES=$tmp
   while IFS= read -r r; do
-    [[ $(policy "$r") == "ok" ]] || die "registry recipe refused: $(policy "$r")"
+    [[ $(policy "$r" "$tmp") == "ok" ]] || die "registry recipe refused: $(policy "$r" "$tmp")"
   done < <(jq -c '.hardware[].recipes[]' "$tmp")
   r=$(jq --arg sha "$sha" --arg at "$(now)" '.registryCommit = $sha | .refreshedAt = $at' "$tmp")
   printf '%s\n' "$r" >"$tmp"
@@ -119,6 +122,7 @@ cmd_registry() (
 # login it ran in)
 docker_ok() { [[ -w ${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock} ]]; }
 setup_needed() {
+  command -v omarchy-sudo-docker >/dev/null || return 0
   omarchy-sudo-docker --configured && return 0
   omarchy-hw-nvidia && ! command -v nvidia-ctk >/dev/null && return 0
   return 1
@@ -134,7 +138,8 @@ cdi_stale() {
     for f in "$d"/nvidia*.yaml; do
       [[ -f $f ]] || continue
       while read -r p ma mi; do
-        [[ -e $p ]] && read -r x y < <(stat -c '%t %T' "$p") || continue
+        [[ -e $p ]] || continue
+        read -r x y < <(stat -c '%t %T' "$p") || continue
         if ((16#$x != ma || 16#$y != mi)); then
           echo "$f"
           return
@@ -160,7 +165,7 @@ intel() {
   for a in $(lspci -Dn -d 8086:e223 2>/dev/null | cut -d' ' -f1 | sort -u); do
     [[ -e /dev/dri/by-path/pci-$a-render ]] || continue
     t=null
-    f=$(grep -lx pkg /sys/bus/pci/devices/$a/hwmon/hwmon*/temp*_label 2>/dev/null | head -1 || true)
+    f=$(grep -lx pkg /sys/bus/pci/devices/"$a"/hwmon/hwmon*/temp*_label 2>/dev/null | head -1 || true)
     [[ -n $f ]] && t=$(($(<"${f%_label}_input") / 1000))
     rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")")
   done
@@ -287,6 +292,7 @@ fetch() {
   done
   [[ ! -f $d/.verified ]] || { exec 7>&-; return 0; }
   rows=$(tree "$repo" "$rev" "$files") || die "Hugging Face did not list $repo (rate limit or no network): try again in a minute"
+  [[ -n $rows ]] || die "Hugging Face listed no model files; refresh models and try again"
   total=$(awk -F'\t' '{s += $2} END {print s + 0}' <<<"$rows")
   (umask 022 && mkdir -p "$d")
   while IFS=$'\t' read -r path sz sha; do
@@ -298,7 +304,7 @@ fetch() {
       if good "$src" "$sz" "$sha"; then
         ln -f "$(readlink -f "$src")" "$d/$path" 2>/dev/null || cp -f "$(readlink -f "$src")" "$d/$path"
       else
-        curl -fsSL --retry 3 -C - --proto =https ${HF[@]+"${HF[@]}"} -o "$d/$path.part" \
+        curl -fsSL --connect-timeout 15 --max-time 7200 --speed-limit 1024 --speed-time 60 --retry 3 -C - --proto =https ${HF[@]+"${HF[@]}"} -o "$d/$path.part" \
           "https://huggingface.co/$repo/resolve/$rev/$path" &
         pid=$!
         while kill -0 "$pid" 2>/dev/null; do
@@ -330,7 +336,7 @@ fetch() {
 # owned <path>: an existing path of the caller's, with no symlink on the way, is safe to hand the daemon
 owned() {
   [[ $(realpath -e -- "$1" 2>/dev/null) == "$1" && $(stat -c %u -- "$1") == "$(id -u)" ]] ||
-    die "refusing to mount $1: it is not a plain path of yours"
+    die "the model files must be owned by you and cannot be symbolic links"
 }
 
 engine() { printf 'omarchy-local-ai-%s-engine' "$1"; }
@@ -348,7 +354,7 @@ rundir() { echo "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-local-ai/$1"; }
 remove() {
   local c
   for c in "$(engine "$1")" "$(gateway "$1")"; do
-    ours "$c" && docker rm -f "$c" >/dev/null 2>&1
+    if ours "$c"; then docker rm -f "$c" >/dev/null 2>&1 || return 1; fi
   done
   docker network rm "omarchy-local-ai-$1" >/dev/null 2>&1 || true
   rm -rf -- "$(rundir "$1")"
@@ -356,7 +362,7 @@ remove() {
 
 # phase_start <id> <port> <key>: re-read the recipe here, check every path, build both containers
 phase_start() {
-  valid_id "$1" && [[ $2 =~ ^[0-9]+$ ]] && (($2 >= 12434 && $2 < 12450)) || die "invalid request"
+  valid_id "$1" && [[ $2 =~ ^[0-9]+$ && $2 -ge 12434 && $2 -lt 12450 ]] || die "invalid request"
   local id=$1 port=$2 r g backend run a=() k v w
   shift 2
   r=$(recipe "$id") || die "no recipe $id"
@@ -371,10 +377,11 @@ phase_start() {
   done
   backend=$(jq -r --arg h "$(jq -r .hw <<<"$r")" '.hardware[$h].match.backend' "$RECIPES")
   if [[ $backend == "nvidia" ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
-    die "the NVIDIA container toolkit is not set up: run $PANEL/bin/omarchy-install-ai-local"
+    die "NVIDIA container support is not ready: choose Set up Local AI"
   fi
   if [[ $backend == "nvidia" ]] && v=$(cdi_stale) && [[ -n $v ]]; then
-    die "the NVIDIA device list in $v is out of date: run sudo nvidia-ctk cdi generate --output=$v"
+    say "stale NVIDIA device list; repair with: sudo nvidia-ctk cdi generate --output=$v"
+    die "the NVIDIA device list is out of date; see the log for the repair command"
   fi
   owned "$KEY"
   owned "$STATE/usage/$id"
@@ -439,6 +446,7 @@ phase_start() {
 
 phase_stop() {
   valid_id "$1" || die "invalid request"
+  docker info >/dev/null 2>&1 || die "Docker is not responding; try again when it is running"
   remove "$1"
 }
 
@@ -454,11 +462,13 @@ serve() {
 # This user's containers and networks, and the engine images the recipes name (Docker keeps any another container uses)
 phase_purge() {
   local c
-  for c in $(docker ps -aq --filter "label=$LABEL=1"); do
-    ours "$c" && docker rm -f "$c" >/dev/null
+  local containers
+  containers=$(docker ps -aq --filter "label=$LABEL=1") || die "Docker is not responding; nothing was removed"
+  for c in $containers; do
+    if ours "$c"; then docker rm -f "$c" >/dev/null || die "could not remove a model container; try again"; fi
   done
-  docker network ls -q --filter "label=$LABEL=1" | xargs -r docker network rm >/dev/null 2>&1 || true
-  jq -r '.gateway.image, .hardware[].recipes[].image' "$RECIPES" | sort -u | xargs -r docker rmi >/dev/null 2>&1 || true
+  docker network ls -q --filter "label=$LABEL=1" | xargs -r timeout --kill-after=5 30 docker network rm >/dev/null 2>&1 || true
+  jq -r '.gateway.image, .hardware[].recipes[].image' "$RECIPES" | sort -u | xargs -r timeout --kill-after=5 30 docker rmi >/dev/null 2>&1 || true
 }
 
 # fail <message>: keep the engine's last lines in the log (taking the containers down deletes them), name its first
@@ -484,6 +494,7 @@ worker_run() {
   WNAME=$(jq -r .name <<<"$r")
   NID=0
   trap 'rc=$?; if ((rc)) && [[ ! -f $WD/cancel ]]; then WHY=$(grep "^local-ai: " "$WD/err" | tail -1 | cut -c11- || true);
+    WHY=${WHY:-"the model could not start; see the log and try again"};
     status "$WID" error "" 0 "$WHY"; notify -r "$NID" -u critical "$WNAME did not start" "$WHY" >/dev/null; fi' EXIT
   exec 2>>"$WD/err"
 
@@ -556,7 +567,7 @@ cmd_run() {
     tail -n 5000 "$LOG" >"$LOG.tmp" && mv -f "$LOG.tmp" "$LOG"
   fi
   exec 9>"$STATE/claim.lock"
-  flock 9
+  flock -w 10 9 || die "another model operation is running; try again"
   busy=$(cat "$STATE"/deploy/*/config.json 2>/dev/null | jq -r '.keys[], .port')
   g=$(gpus)
   for k in "${keys[@]}"; do
@@ -588,7 +599,7 @@ cmd_run() {
   disown
 }
 
-# Stop waits for a starting worker, including a root start it cannot kill, before taking the containers down.
+# Stop waits for the starting worker before taking its containers down.
 cmd_stop() {
   valid_id "${1:-}" || die "stop <recipe>"
   local d p i
@@ -597,15 +608,19 @@ cmd_stop() {
   : >"$d/cancel"
   if [[ $(jq -r .state "$d/status.json" 2>/dev/null) =~ ^(download|starting)$ ]]; then
     p=$(jq -r '.pid // 0' "$d/status.json")
-    kill -- -"$p" 2>/dev/null || true
-    for ((i = 0; i < 120; i++)); do
-      pgrep -g "$p" >/dev/null || break
-      sleep 0.5
-    done
+    # A reboot can reuse a worker's pid; never signal an unrelated process group (or group zero).
+    if [[ $p =~ ^[0-9]+$ && $p -gt 1 ]] && grep -qa 'omarchy-local-ai.*__worker' "/proc/$p/cmdline" 2>/dev/null; then
+      kill -- -"$p" 2>/dev/null || true
+      for ((i = 0; i < 120; i++)); do
+        pgrep -g "$p" >/dev/null || break
+        sleep 0.5
+      done
+      pgrep -g "$p" >/dev/null && die "the model is still stopping; try again"
+    fi
   fi
   status "$1" stopping "" 0
   if [[ $(jq -r '.shared // false' "$d/config.json" 2>/dev/null) == "true" ]]; then
-    cmd_share "$1" off || true
+    cmd_share "$1" off || return 1
   fi
   if ! phase_stop "$1"; then
     status "$1" error "" 0 "could not stop it; try again"
@@ -622,7 +637,7 @@ cmd_forget() {
   r=$(recipe "$1") || die "no recipe $1"
   [[ $(policy "$r") == "ok" ]] || die "recipe refused"
   exec 9>"$STATE/claim.lock"
-  flock 9
+  flock -w 10 9 || die "another model operation is running; try again"
   while IFS= read -r w; do
     IFS='|' read -r _ _ _ _ _ _ d < <(wpaths "$w")
     [[ $d == "$MODELS/"* && $d != *"/../"* ]] || die "invalid download path"
@@ -671,7 +686,7 @@ cmd_set() {
   case $k in
   agent) printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$v" || die "unknown agent" ;;
   folder)
-    [[ -d $v ]] || die "no folder $v"
+    [[ -d $v ]] || die "that folder does not exist"
     v=$(cd -- "$v" && pwd)
     ;;
   *) die "set agent|folder <value> [recipe]" ;;
@@ -786,7 +801,7 @@ cmd_open() {
   a=$(jq -r .agent <<<"$c")
   dir=$(jq -r .folder <<<"$c")
   b=$(bin "$a") || die "$a is not installed"
-  [[ -d $dir ]] || die "folder $dir is gone"
+  [[ -d $dir ]] || die "the chosen folder is gone; choose another folder"
   ag=$STATE/agents/$a
   mkdir -p "$ag"
   # the gateway maps any model name onto the served one, so agents see the recipe's name
@@ -796,16 +811,17 @@ cmd_open() {
     "$(jq -r '.serving.ctxTokens // 32768' <<<"$r")" "$(jq -r '.capabilities.vision // false' <<<"$r")" "$ag")
   [[ $a == "omp" && $dir -ef $HOME_DIR ]] && cmd+=(--allow-home)
   say "open $a on $1 in $dir"
-  setsid omarchy-launch-tui --app-id=org.omarchy.local-ai bash -c 'cd -- "$1" && shift && exec "$@"' local-ai "$dir" "${cmd[@]}" \
-    </dev/null >/dev/null 2>&1 &
-  disown
+  omarchy-launch-tui --app-id=org.omarchy.local-ai bash -c 'cd -- "$1" && shift && exec "$@"' local-ai "$dir" "${cmd[@]}" \
+    </dev/null >/dev/null 2>&1 || die "could not open the agent terminal; try again"
 }
 
 # share <id> [off]: tailscale serve as you; setup makes you the tailnet's operator
 cmd_share() {
   local f on=${2:-on} p
   f=$(dir_of "${1:-}")/config.json
-  valid_id "${1:-}" && [[ -f $f ]] || die "$1 is not running"
+  valid_id "${1:-}" && [[ -f $f ]] || die "the model is not running"
+  [[ $on == on || $on == off ]] || die "share <recipe> [off]"
+  [[ $on == off || $(jq -r .state "${f%/*}/status.json") == ready ]] || die "the model is not ready to share"
   p=$(jq -r .port "$f")
   serve "$p" "$on" || die "tailscale would not change the share: choose Set up Local AI, which makes you the tailnet's operator"
   jq --argjson s "$([[ $on == "on" ]] && echo true || echo false)" '.shared = $s' "$f" >"$f.tmp"
@@ -839,7 +855,7 @@ summary() {
       flock -n 9 || exit 0
       while ((seen < n)) || [[ ! -f $s ]]; do
         take=$((n - seen < 100000 ? n - seen : 100000))
-        tail -n +"$((seen + 1))" "$f" | head -n "$take" | { grep '^{' || true; } |
+        if tail -n +"$((seen + 1))" "$f" | head -n "$take" | { grep '^{' || true; } |
           jq -sc --argjson n "$((seen + take))" --slurpfile old <(cat "$s" 2>/dev/null || echo '{}') '
             def rate: .completion / ((if .ms > .ttft_ms then .ms - .ttft_ms else .ms end) / 1000);
             def bump(groups; key; val): reduce groups[] as $g (.; .[$g[0] | key | tostring] += ($g | val));
@@ -855,7 +871,8 @@ summary() {
                 prefill: {n: (($o.prefill.n // 0) + ($pre | length)), sum: (($o.prefill.sum // 0) + ($pre | add // 0))},
                 ttftn: (($o.ttftn // 0) + ($tt | length)),
                 ttft: (($o.ttft // {}) | bump($tt | group_by(.ttft_ms / 50 | floor); .ttft_ms / 50 | floor; length))}' \
-          >"$s.$$" 2>/dev/null && mv -f "$s.$$" "$s" || { rm -f "$s.$$"; break; }
+          >"$s.$$" 2>/dev/null && mv -f "$s.$$" "$s"; then :
+        else rm -f "$s.$$"; break; fi
         seen=$((seen + take))
       done
       touch -r "$s.mark" "$s"
@@ -924,7 +941,7 @@ SUMMARY='def summary($h): {id, name, family, cards: (.cards // 1), format, sizeG
   needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h)};'
 
 cmd_snapshot() {
-  local deps=() d id port at st pid obj why rc code ts="" sa="" sf="" sfs="" v="" a
+  local deps=() d id port at st pid sat boot obj why rc code ts="" sa="" sf="" sfs="" v="" a
   mkdir -p "$STATE/deploy"
   adopt
   omarchy-cmd-present tailscale && ts=$(timeout 3 tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "" | rtrimstr(".")' || true)
@@ -964,7 +981,7 @@ cmd_snapshot() {
   [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
   jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
     --argjson setup "$(setup_needed && echo true || echo false)" --argjson relogin "$(docker_ok && echo false || echo true)" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
-    --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
+    --arg setupError "$(cat "$STATE/setup-error" 2>/dev/null || true)" --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --argjson folders "${sfs:-[]}" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY$MATCH"'
     (gpus($nv; $xe; $am) | match($rec[0])) as $g | ($agents | split("\n") | map(select(length > 0))) as $agents
@@ -975,7 +992,7 @@ cmd_snapshot() {
       | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, setupNeeded: $setup, relogin: ($relogin and ($setup | not)), host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
+    | {version: $version, setupError: $setupError, setupNeeded: $setup, relogin: ($relogin and ($setup | not)), host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
@@ -993,7 +1010,7 @@ setup | registry | forget | snapshot | run | stop | open | set | share) "cmd_$1"
 log) exec omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G "$LOG" ;;
 remove)
   for d in "$STATE"/deploy/*/; do
-    cmd_stop "$(basename "$d")" || true
+    cmd_stop "$(basename "$d")" || die "could not stop every model; files were kept"
   done
   phase_purge
   rm -rf -- "$MODELS" "$STATE"

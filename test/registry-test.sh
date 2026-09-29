@@ -4,7 +4,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 CATALOG=$TMP/cache/recipes.json
-RECIPES=$ROOT/recipes.json
+export RECIPES=$ROOT/recipes.json
 SOURCE=$ROOT/recipes.json
 MODE=ok
 now() { echo 2026-09-29T00:00:00Z; }
