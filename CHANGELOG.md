@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.5.3] - 2026-09-29
+
+### Fixed
+- A model that fails to start keeps the engine's last 60 lines in its log, and the reason shown names the engine's first error ("the engine did not answer within 30 minutes: RuntimeError: …"). Before, taking the engine down deleted its output, so a timeout said nothing about why.
+
 ## [6.5.2] - 2026-09-29
 
 ### Changed

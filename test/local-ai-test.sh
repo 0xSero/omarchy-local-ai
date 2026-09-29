@@ -72,6 +72,7 @@ pull) : ;;
 network) : ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
+logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || printf "loading shards\nRuntimeError: XPU out of memory. Tried to allocate 2.00 GiB\n" ;;
 rm) rm -f "$c/${@: -1}" ;;
 ps) ls "$c" ;;
 esac'
@@ -374,6 +375,19 @@ grep -q "^serve --https=12434 off" "$SHIM/tailscale.log" || fail "unshare" "$(ca
 cp "$TMP/plugin/recipes.json" "$SHIM/registry.json"
 "$CLI" registry
 jq -e '.registryCommit == "0000000000000000000000000000000000000001"' "$TMP/catalog.json" >/dev/null || fail "refresh" "$(head -c 300 "$TMP/catalog.json" 2>/dev/null)"
+"$CLI" stop "$ID"
+# an engine that fails leaves its last lines in the log and its first error in the message, though its container is gone
+SHIM_ENGINE_LOG=1 SHIM_EMPTY=1 "$CLI" run "$ID" nvidia:0
+wait_for error
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer: RuntimeError: XPU out of memory. Tried to allocate 2.00 GiB" ]] ||
+  fail "crash reason" "$(cat "$STATE/deploy/$ID/status.json")"
+grep -q "^loading shards" "$STATE/deploy/$ID/err" || fail "engine log kept" "$(cat "$STATE/deploy/$ID/err")"
+! ls "$SHIM/containers" | grep -q engine || fail "engine left running" "$(ls "$SHIM/containers")"
+pass "a failed engine's last lines stay in the log and its first error is the reason shown"
+"$CLI" stop "$ID"
+"$CLI" run "$ID" nvidia:0
+wait_for ready
+
 # a load whose worker is gone reads as one line: a status from before this boot is a restart, a pid that is not a
 # worker of ours (after a reboot the number can belong to anything) stopped unexpectedly, and a live worker is left be
 st() { jq -c --arg a "$1" --argjson p "$2" '.state = "starting" | .at = $a | .pid = $p' "$STATE/deploy/$ID/status.json" >"$TMP/st" &&
