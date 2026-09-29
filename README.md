@@ -43,6 +43,7 @@ Omarchy keeps you out of the docker group, so every start and stop asks for your
 ## What it does
 
 - **Validated models per card, or one across several.** `recipes.json` holds, for each of 36 card kinds, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
+- **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them, and Config says what is missing.
 - **Weights** are downloaded as you, from the pinned revision, and every file's size and sha256 is checked against the Hub before it is used. A matching copy in your Hugging Face cache is reused.
 - **Containers.** The engine runs on a private network with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
 - **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. The last agent and folder you picked become the default.
@@ -92,3 +93,21 @@ access. Digest pins and build attestations establish image identity; they do
 not make untrusted code safe. Engine restrictions need per-engine hardware
 validation before rollout. Disabling gateway DNS does not block outbound IP
 connections.
+
+### Refresh and remove models
+
+Use **Refresh models** at the bottom of Local AI to fetch the latest published
+registry for your GPUs without reinstalling the plugin. One password prompt
+updates a shared, root-owned catalog. Downloads are pinned to a registry commit,
+validated before an atomic replacement, and failures keep the previous catalog.
+Refreshing does not stop running models or download model weights. Offload
+recipes are offered only when their RAM, disk and storage requirements fit.
+
+Choose a GPU's **Config**, select a model, then **Run** to download and start it.
+**Remove download** deletes that model's managed weights after it is stopped;
+shared weights in use by another managed model are protected. The recipe stays
+available to download again. Files in your separate Hugging Face cache are kept,
+so hard-linked files there may continue to occupy disk space.
+
+The equivalent commands are `omarchy-local-ai registry` and
+`omarchy-local-ai forget <recipe>` (or the plugin's `bin/omarchy-local-ai`).
