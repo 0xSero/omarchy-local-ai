@@ -161,6 +161,14 @@ fi
 SHIM_RAM_MIB=65536 "$CLI" snapshot >"$TMP/snap-small-strix.json"
 [[ $(jq -r '.gpus[0].hw' "$TMP/snap-small-strix.json") == '' ]] || fail "64 GiB Strix Halo must not match"
 rm -f "$TMP/bin/awk"
+# A Vulkan recipe uses the same physical AMD detector, without requiring ROCm at launch.
+shim amd-smi 'case $1 in
+static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 9070 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) echo "{}" ;;
+esac'
+"$CLI" snapshot >"$TMP/snap-vulkan.json"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-vulkan.json") == rx-9070-xt-16gb ]] || fail "AMD Vulkan card match"
+pass "AMD discovery matches the RX 9070 XT Vulkan recipes"
 rm -f "$TMP/bin/amd-smi"
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"
@@ -332,6 +340,22 @@ rm -f "$TMP/bin/readlink" "$TMP/bin/amd-smi" "$TMP/bin/getent" "$TMP/bin/stat"
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"
 pass "a halogen recipe receives the required runtime flags without publishing its engine"
+recipes "$PIN"
+jq '.hardware["rtx-4090-24gb"].match = {backend:"amd-vulkan", names:["rx9070xt"], vramGb:16}' "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+shim amd-smi 'case $1 in
+static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 9070 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) echo "{}" ;;
+esac'
+shim readlink 'if [[ $1 == -f && $2 == /dev/dri/by-path/* ]]; then echo /dev/dri/renderD129; else /usr/bin/readlink "$@"; fi'
+"$CLI" run "$ID" amd-rocm:0
+wait_for ready
+engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+[[ $engine == *'--device /dev/dri/renderD129'* && $engine != *'/dev/kfd'* && $engine != *'--gpus'* ]] || fail "Vulkan devices" "$engine"
+"$CLI" stop "$ID"
+rm -f "$TMP/bin/amd-smi" "$TMP/bin/readlink"
+recipes "$PIN"
+pass "a Vulkan recipe receives its render node without ROCm or NVIDIA devices"
 
 rm -rf "$HOME/.cache/omarchy"
 SHIM_CORRUPT=1 "$CLI" run "$ID" nvidia:0
