@@ -652,7 +652,7 @@ cmd_forget() {
   while IFS= read -r w; do
     IFS='|' read -r _ _ _ _ _ _ d < <(wpaths "$w")
     [[ $d == "$MODELS/"* && $d != *"/../"* ]] || die "invalid download path"
-    paths+=("$d")
+    paths+=("${d%/}")
   done < <(jq -c '.weights[]?' <<<"$r")
   for other in "$STATE"/deploy/*/config.json; do
     live=$(recipe "$(jq -r .id "$other")") || die "stop existing models before removing downloads"
@@ -663,7 +663,7 @@ cmd_forget() {
   done
   for target in "${paths[@]}"; do
     for d in "${busy[@]}"; do
-      [[ ${target%/} != "${d%/}" ]] || die "stop models using these weights before removing the download"
+      [[ $target != "${d%/}" && $target != "${d%/}/"* && ${d%/} != "$target/"* ]] || die "stop models using these weights before removing the download"
     done
     if [[ -e $target || -L $target ]]; then
       owned "$target"

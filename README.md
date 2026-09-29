@@ -93,3 +93,21 @@ access. Digest pins and build attestations establish image identity; they do
 not make untrusted code safe. Engine restrictions need per-engine hardware
 validation before rollout. Disabling gateway DNS does not block outbound IP
 connections.
+
+### Refresh and remove models
+
+Use **Refresh models** at the bottom of Local AI to fetch the latest published
+registry for your GPUs without reinstalling the plugin. One password prompt
+updates a shared, root-owned catalog. Downloads are pinned to a registry commit,
+validated before an atomic replacement, and failures keep the previous catalog.
+Refreshing does not stop running models or download model weights. Offload
+recipes are offered only when their RAM, disk and storage requirements fit.
+
+Choose a GPU's **Config**, select a model, then **Run** to download and start it.
+**Remove download** deletes that model's managed weights after it is stopped;
+shared weights in use by another managed model are protected. The recipe stays
+available to download again. Files in your separate Hugging Face cache are kept,
+so hard-linked files there may continue to occupy disk space.
+
+The equivalent commands are `omarchy-local-ai registry` and
+`omarchy-local-ai forget <recipe>` (or the plugin's `bin/omarchy-local-ai`).
