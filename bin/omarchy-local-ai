@@ -9,21 +9,24 @@
 # `snapshot` reads those with the GPUs and the vendored recipes and prints what the widget draws.
 #
 # `run` downloads the weights as you and checks every file against the Hub, then starts the engine on
-# a private network and a keyed gateway on 127.0.0.1. Starting containers needs root when you are not in
-# the docker group, so that one step runs this file through pkexec, which re-reads the recipe beside it,
-# checks every string of it, and takes only paths it has checked belong to you.
+# a private network and a keyed gateway on 127.0.0.1, as you: setup puts you in the docker group once
+# (Omarchy's Sudoless Docker), and until your next login this file borrows that group through sg. Nothing
+# here runs as root, so there is no password prompt after setup and none after an update.
 
 set -euo pipefail
 shopt -s nullglob
 exec </dev/null
 
-if ((EUID == 0)); then
-  export PATH=/usr/bin:/usr/sbin:/bin:/sbin
-  export LC_ALL=C.UTF-8
-fi
 TARGET=$(readlink -f -- "${BASH_SOURCE[0]}")
 PANEL=${TARGET%/bin/*}
-CATALOG=/var/cache/omarchy-local-ai/recipes.json
+# setup added you to the docker group, but a session only carries the groups it logged in with: sg lends it
+# until the next login (it asks nothing of a member)
+if [[ ! -w ${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock} && -z ${LOCAL_AI_SG:-} ]] && command -v sg omarchy-sudo-docker >/dev/null &&
+  ! omarchy-sudo-docker --configured; then
+  export LOCAL_AI_SG=1
+  exec sg docker -c "$(printf '%q ' "$TARGET" "$@")"
+fi
+CATALOG=$HOME/.cache/omarchy/local-ai/recipes.json
 RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
@@ -87,9 +90,9 @@ policy() {
     else "ok" end' <<<"$1"
 }
 
-# Fetch only the registry's data, pinned to the commit resolved before downloading.
-# Both the unprivileged view and privileged launcher use this root-owned cache.
-phase_registry() (
+# Fetch only the registry's data, pinned to the commit resolved before downloading; every recipe checked before it
+# replaces the catalog.
+cmd_registry() (
   local sha tmp r
   umask 022
   install -d -m 755 "${CATALOG%/*}"
@@ -116,22 +119,16 @@ phase_registry() (
   mv -f "$tmp" "$CATALOG"
 )
 
-# Setup is offered inside the plugin; the terminal handles package progress and sudo.
-# prompts_ready: this version's setup is installed, so every password prompt says what it is for in fixed words
-# (without it, polkit would show the raw command line) and start and stop need none
-prompts_ready() {
-  cmp -s "/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy" <(sed -e "s#/usr/bin/omarchy-local-ai#$TARGET#" \
-    -e "s#org\\.omarchy\\.local-ai\\.#sero.local-ai.u$(id -u).#" "$PANEL/local-ai.policy")
-}
+# Setup is offered inside the plugin; the terminal handles package progress and sudo. It is needed while the account
+# is not in the docker group or an NVIDIA card has no container runtime: what the machine is, never which plugin
+# version set it up, so an update never asks for it again.
 setup_needed() {
-  prompts_ready || return 0
+  omarchy-sudo-docker --configured && return 0
   omarchy-hw-nvidia && ! command -v nvidia-ctk >/dev/null && return 0
   return 1
 }
 
 cmd_setup() { omarchy-launch-tui --app-id=org.omarchy.local-ai-setup "$PANEL/bin/omarchy-install-ai-local"; }
-
-cmd_registry() { asroot registry; }
 
 # cdi_stale: the first NVIDIA CDI spec whose device numbers no longer match /dev (a driver update can move them, as
 # /dev/nvidia-uvm from 237 to 238). Docker hands --gpus through that spec, so the engine would see no CUDA device.
@@ -334,43 +331,9 @@ fetch() {
   exec 7>&-
 }
 
-# This file, resolved: pkexec runs whatever it is handed, and its prompt names this path.
-priv_target() {
-  [[ -f $TARGET && ! -L $TARGET && -x $TARGET ]]
-}
-
-# elevate <phase> <args>: directly when Docker is reachable, else one pkexec of the packaged command
-elevate() {
-  if omarchy-sudo-docker; then
-    asroot "$@"
-  else
-    "phase_$1" "${@:2}"
-  fi
-}
-
-asroot() {
-  priv_target || die "refusing to run $TARGET as root: it is not a plain file"
-  prompts_ready || die "Local AI is not set up yet: open Local AI and choose Set up Local AI"
-  local rc=0
-  # each phase is its own first argument, so the password prompt can say what it is for
-  pkexec "$TARGET" "__$1" "${@:2}" || rc=$?
-  ((rc != 126 && rc != 127)) || die "the password prompt was dismissed; nothing changed"
-  return $rc
-}
-
-# Root: who asked comes from pkexec and the account database, never from the environment.
-caller() {
-  local home
-  [[ ${PKEXEC_UID:-} =~ ^[1-9][0-9]{0,9}$ ]] || die "run through pkexec"
-  IFS=: read -r _ _ _ CALLER_GID _ home _ < <(getent passwd "$PKEXEC_UID") || die "no account $PKEXEC_UID"
-  [[ -d $home && $(realpath -e -- "$home") == "$home" && $(stat -Lc %u "$home") == "$PKEXEC_UID" ]] || die "invalid home"
-  paths "$home"
-  RUN_AS="$PKEXEC_UID:$CALLER_GID"
-}
-
 # owned <path>: an existing path of the caller's, with no symlink on the way, is safe to hand the daemon
 owned() {
-  [[ $(realpath -e -- "$1" 2>/dev/null) == "$1" && $(stat -c %u -- "$1") == "${PKEXEC_UID:-$(id -u)}" ]] ||
+  [[ $(realpath -e -- "$1" 2>/dev/null) == "$1" && $(stat -c %u -- "$1") == "$(id -u)" ]] ||
     die "refusing to mount $1: it is not a plain path of yours"
 }
 
@@ -380,17 +343,11 @@ gateway() { printf 'omarchy-local-ai-%s-gateway' "$1"; }
 ours() {
   local l
   l=$(docker inspect -f "{{index .Config.Labels \"$LABEL\"}}|{{index .Config.Labels \"$LABEL.uid\"}}" "$1" 2>/dev/null) || return 1
-  [[ $l == "1|${PKEXEC_UID:-$(id -u)}" || $l == "1|" ]]
+  [[ $l == "1|$(id -u)" || $l == "1|" ]]
 }
 
-# rundir <id>: what the start writes for the engine (the config asset, its GPUs' by-path links); root's is in /run
-rundir() {
-  if ((EUID == 0)); then
-    echo "/run/omarchy-local-ai/$PKEXEC_UID/$1"
-  else
-    echo "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-local-ai/$1"
-  fi
-}
+# rundir <id>: what the start writes for the engine (the config asset, its GPUs' by-path links)
+rundir() { echo "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-local-ai/$1"; }
 
 remove() {
   local c
@@ -434,7 +391,7 @@ phase_start() {
   mkdir -p "$run/by-path"
   docker network create --label "$LABEL=1" "omarchy-local-ai-$id" >/dev/null
   a=(docker run -d --name "$(engine "$id")" --restart unless-stopped --security-opt no-new-privileges
-    --network "omarchy-local-ai-$id" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=${PKEXEC_UID:-$(id -u)}")
+    --network "omarchy-local-ai-$id" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=$(id -u)")
   if [[ $backend == "nvidia" ]]; then
     v=$(printf '%s,' "${@#*:}")
     a+=(--gpus "\"device=${v%,}\"")
@@ -473,8 +430,8 @@ phase_start() {
 
   if ! docker run -d --name "$(gateway "$id")" --restart unless-stopped --security-opt no-new-privileges \
     --cap-drop ALL --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --dns 127.0.0.1 \
-    --network "omarchy-local-ai-$id" --user "${RUN_AS:-$(id -u):$(id -g)}" --publish "127.0.0.1:$port:12434" \
-    --label "$LABEL=1" --label "$LABEL.uid=${PKEXEC_UID:-$(id -u)}" \
+    --network "omarchy-local-ai-$id" --user "$(id -u):$(id -g)" --publish "127.0.0.1:$port:12434" \
+    --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" \
     --env "UPSTREAM=http://engine:$(jq -r .launch.port <<<"$r")" --env "MODEL=$(jq -r '.servedName // ""' <<<"$r")" \
     --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY:/run/gateway.key:ro" \
     --env GATEWAY_USAGE_LOG=/var/lib/local-ai/usage.jsonl --volume "$STATE/usage/$id:/var/lib/local-ai" \
@@ -498,15 +455,6 @@ serve() {
   fi
 }
 
-# phase_share <id> on|off: tailscale serve for this user's own gateway, on the port docker publishes it
-phase_share() {
-  local p
-  valid_id "$1" && [[ ${2:-} =~ ^(on|off)$ ]] && ours "$(gateway "$1")" || die "$1 is not running"
-  p=$(docker port "$(gateway "$1")" | grep -o '127\.0\.0\.1:[0-9]*' | head -1 | cut -d: -f2)
-  [[ $p =~ ^[0-9]{4,5}$ ]] || die "no gateway port"
-  serve "$p" "$2"
-}
-
 # This user's containers and networks, and the engine images the recipes name (Docker keeps any another container uses)
 phase_purge() {
   local c
@@ -519,7 +467,7 @@ phase_purge() {
 
 # fail <message>: take the containers down and stop with the message
 fail() {
-  elevate stop "$WID" || true
+  phase_stop "$WID" || true
   die "$*"
 }
 
@@ -550,13 +498,9 @@ worker_run() {
   printf 'Authorization: Bearer %s\n' "$(<"$KEY")" >"$AUTH"
   mkdir -p "$STATE/usage/$WID"
   PORTNUM=$(jq -r .port "$WD/config.json")
-  if omarchy-sudo-docker; then
-    status "$WID" starting "waiting for your password (the first start also downloads the engine)" 0
-  else
-    status "$WID" starting "starting the engine (the first start downloads it, a few GB)" 0
-  fi
+  status "$WID" starting "starting the engine (the first start downloads it, a few GB)" 0
   NID=$(notify -p "Starting $WNAME" "Loading it on $(gpus | jq -r --arg k "$1" --argjson n $# '[.[] | select(.key == $k) | .name][0] | if $n > 1 then "\($n) × \(.)" else . end'). This takes a few minutes.")
-  elevate start "$WID" "$PORTNUM" "$@"
+  phase_start "$WID" "$PORTNUM" "$@"
 
   # the last load of this recipe, on any card, sets the pace of the percentage; before one, 6 s per GB
   t0=$SECONDS
@@ -569,7 +513,7 @@ worker_run() {
     [[ $code == "200" && -n $served ]] && break
     [[ $code == "401" ]] && fail "the gateway refuses this install's key"
     ((SECONDS - t0 < 1800)) || fail "the engine did not answer within 30 minutes"
-    if ! omarchy-sudo-docker && (($(docker inspect -f '{{.RestartCount}}' "$(engine "$WID")" 2>/dev/null || echo 0) >= 2)); then
+    if (($(docker inspect -f '{{.RestartCount}}' "$(engine "$WID")" 2>/dev/null || echo 0) >= 2)); then
       docker logs --tail 60 "$(engine "$WID")" >>"$WD/err" 2>&1
       fail "the engine keeps crashing: $(docker logs --tail 30 "$(engine "$WID")" 2>&1 | grep -i -m1 -e error -e 'out of' | cut -c1-160)"
     fi
@@ -596,6 +540,7 @@ worker_run() {
 
 cmd_run() {
   valid_id "${1:-}" && [[ -n ${2:-} ]] || die "run <recipe> <gpu>[,<gpu>...]"
+  ! omarchy-sudo-docker --configured || die "Local AI is not set up yet: choose Set up Local AI"
   local id=${1%--*} keys=() k r d g port busy n=1
   IFS=, read -ra keys <<<"$2"
   r=$(recipe "$id") || die "no recipe $id"
@@ -661,7 +606,7 @@ cmd_stop() {
   if [[ $(jq -r '.shared // false' "$d/config.json" 2>/dev/null) == "true" ]]; then
     cmd_share "$1" off || true
   fi
-  if ! elevate stop "$1"; then
+  if ! phase_stop "$1"; then
     status "$1" error "" 0 "could not stop it; try again"
     return 1
   fi
@@ -855,13 +800,13 @@ cmd_open() {
   disown
 }
 
-# share <id> [off]: tailscale serve as you when you are the tailnet's operator, else through the same prompt as a start
+# share <id> [off]: tailscale serve as you; setup makes you the tailnet's operator
 cmd_share() {
   local f on=${2:-on} p
   f=$(dir_of "${1:-}")/config.json
   valid_id "${1:-}" && [[ -f $f ]] || die "$1 is not running"
   p=$(jq -r .port "$f")
-  serve "$p" "$on" || asroot share "$1" "$on" || die "tailscale would not change the share"
+  serve "$p" "$on" || die "tailscale would not change the share: choose Set up Local AI, which makes you the tailnet's operator"
   jq --argjson s "$([[ $on == "on" ]] && echo true || echo false)" '.shared = $s' "$f" >"$f.tmp"
   mv -f "$f.tmp" "$f"
 }
@@ -1031,13 +976,6 @@ cmd_snapshot() {
        deployments: $deps}'
 }
 
-if [[ ${1:-} =~ ^__(start|stop|share|purge|registry)$ ]]; then
-  ((EUID == 0)) || die "${1} runs through pkexec"
-  caller
-  "phase_${1#__}" "${@:2}"
-  exit
-fi
-
 paths "$HOME"
 mkdir -p "$STATE"
 case ${1:-} in
@@ -1047,7 +985,7 @@ remove)
   for d in "$STATE"/deploy/*/; do
     cmd_stop "$(basename "$d")" || true
   done
-  elevate purge
+  phase_purge
   rm -rf -- "$MODELS" "$STATE"
   ;;
 __worker) worker_run "${@:2}" ;;

@@ -2,6 +2,15 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.5.0] - 2026-09-29
+
+### Security
+- 6.4.0's passwordless start and stop ran this plugin's backend, a file in your home folder, as root: anything running as you could have changed what root ran. Removed. Nothing in the plugin runs as root any more.
+
+### Changed
+- Setup is the only password, once per machine: it turns on Omarchy's Sudoless Docker (Omarchy explains it and asks), makes you the tailnet's operator and adds NVIDIA container support when needed. Starting, stopping, sharing, refreshing and removing never ask, and a plugin update never asks for setup again: setup is judged by the machine, not by the version that ran it. No logout is needed; Local AI borrows the new group through `sg` until your next login.
+- Setup removes the earlier versions' polkit policy and rule. Refresh models keeps the catalog in your cache instead of a root-owned folder.
+
 ## [6.4.0] - 2026-09-29
 
 ### Changed

@@ -1,9 +1,8 @@
 #!/bin/bash
 
-# omarchy:summary=Set up Local AI password prompts and GPU support
+# omarchy:summary=Set up Local AI once: Docker without a password prompt, and GPU support
 # omarchy:requires-sudo=true
 set -euo pipefail
-HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 POLICY=/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy
 RULES=/etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules
 # Keep a failed setup visible in the terminal opened by the panel.
@@ -31,11 +30,19 @@ if omarchy-hw-nvidia; then
   fi
 fi
 
-echo "Setting up Local AI: starting and stopping models will not ask for your password again..."
-sed -e "s#org\.omarchy\.local-ai\.#sero.local-ai.u$(id -u).#g" -e "s#LOCAL_AI_USER#$(id -un)#g" "$HERE/../local-ai.rules" |
-  sudo install -D -m 644 /dev/stdin "$RULES"
-# the policy last: it is what the panel reads to know setup is done
-sed -e "s#/usr/bin/omarchy-local-ai#$HERE/omarchy-local-ai#" -e "s#org\.omarchy\.local-ai\.#sero.local-ai.u$(id -u).#" "$HERE/../local-ai.policy" |
-  sudo install -D -m 644 /dev/stdin "$POLICY"
-sudo systemctl reload polkit
+# Local AI starts its containers as you, so it needs Docker without a prompt: Omarchy's own Sudoless Docker, which
+# explains what that means and asks. Local AI uses it at once; the reboot it mentions is not needed for Local AI.
+OMARCHY_DEFER_REBOOT=1 omarchy-setup-security-sudoless-docker
+omarchy-sudo-docker --configured && { echo "Local AI needs Sudoless Docker to start models. Nothing else was changed."; exit 1; }
+
+# sharing a model on your tailnet without a prompt
+if command -v tailscale >/dev/null; then
+  sudo tailscale set --operator="$USER" || echo "Tailscale is not running; sharing on your tailnet will work once it is and you run setup again."
+fi
+
+# earlier versions asked for a password through polkit; nothing uses these any more
+if sudo test -e "$POLICY" -o -e "$RULES"; then
+  sudo rm -f "$POLICY" "$RULES"
+  sudo systemctl reload polkit
+fi
 echo "Local AI is ready. Return to the panel to choose a model."

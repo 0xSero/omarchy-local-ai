@@ -16,9 +16,9 @@ cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
 sed -i "s/setup_needed \&\& echo true || echo false/echo false/" "$CLI"
-sed -i "s|CATALOG=/var/cache/omarchy-local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
-# setup's policy counts as installed unless a case says otherwise (NOSETUP=1)
-sed -i 's/^prompts_ready() {$/prompts_ready() { [[ -z ${NOSETUP:-} ]] \&\& return 0/' "$CLI"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+# the docker group is taken as active in this process; one case below checks the sg that lends it
+export LOCAL_AI_SG=1
 STATE=$HOME/.local/state/omarchy/local-ai
 ID=test-model-rtx4090
 SHA=ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7 # 4096 zero bytes, what the Hub shim serves
@@ -46,12 +46,15 @@ wait_for() {
 shim() { printf '#!/bin/bash\n%s\n' "$2" >"$TMP/bin/$1"; chmod +x "$TMP/bin/$1"; }
 
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
-shim omarchy-sudo-docker '[[ -n ${SHIM_PROMPT:-} ]]'
+# SHIM_NOGROUP: the account is not in the docker group (setup not run)
+shim omarchy-sudo-docker '[[ -n ${SHIM_NOGROUP:-} ]]'
 shim omarchy-cmd-present 'command -v "$1" >/dev/null'
 shim omarchy-cmd-missing '! command -v "$1" >/dev/null'
 shim omarchy-notification-send 'echo 7'
 shim omarchy-launch-tui 'printf "%s\n" "$*" >>"$SHIM/tui.log"'
-shim pkexec 'printf "%s\n" "$*" >>"$SHIM/pkexec.log"; exit 126'
+# nothing may ask for a password after setup: every pkexec or sudo lands here and fails the run at its end
+shim pkexec 'printf "%s\n" "$*" >>"$SHIM/prompts.log"; exit 126'
+shim sudo 'printf "sudo %s\n" "$*" >>"$SHIM/prompts.log"; exit 1'
 shim date 'if [[ $1 == +%s%3N && -n ${SHIM_COLD:-} ]]; then
   if [[ -f $SHIM/probe-start ]]; then echo 70000; else touch "$SHIM/probe-start"; echo 0; fi
 else /usr/bin/date "$@"; fi'
@@ -313,20 +316,20 @@ wait_for error
 pass "a download that does not match the Hub's hash is deleted and reported"
 "$CLI" stop "$ID"
 
-SHIM_PROMPT=1 "$CLI" run "$ID" nvidia:0
-wait_for error
-grep -qx "$CLI __start $ID 12434 nvidia:0" "$SHIM/pkexec.log" || fail "pkexec argv" "$(cat "$SHIM/pkexec.log")"
-[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == *"password prompt was dismissed"* ]] || fail "dismissed" "$(cat "$STATE/deploy/$ID/status.json")"
-pass "without the docker group a start is one pkexec of this file with the recipe, port and card; a dismissed prompt is the reason shown"
-"$CLI" stop "$ID"
-
-# before setup there is no policy to describe the prompt, so polkit would show the raw command line: no pkexec at all
-: >"$SHIM/pkexec.log"
-NOSETUP=1 SHIM_PROMPT=1 "$CLI" run "$ID" nvidia:0
-wait_for error
-[[ ! -s $SHIM/pkexec.log ]] || fail "pkexec before setup" "$(cat "$SHIM/pkexec.log")"
-[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == *"not set up yet"* ]] || fail "setup reason" "$(cat "$STATE/deploy/$ID/status.json")"
+# before setup (not in the docker group) a start asks for nothing and says what to do
+if SHIM_NOGROUP=1 "$CLI" run "$ID" nvidia:0 2>"$TMP/nogroup.err"; then fail "started before setup"; fi
+grep -q "not set up yet: choose Set up Local AI" "$TMP/nogroup.err" || fail "setup reason" "$(cat "$TMP/nogroup.err")"
+[[ ! -d $STATE/deploy/$ID ]] || fail "a deployment before setup"
 pass "before setup a start asks for no password and says to set up Local AI"
+
+# after setup, until the next login, this session lacks the docker group: the backend runs itself under sg docker
+shim sg 'printf "%s\n" "$*" >>"$SHIM/sg.log"; [[ $1 == docker && $2 == -c ]] && exec bash -c "$3"'
+LOCAL_AI_SG= OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$CLI" snapshot >/dev/null
+grep -q "^docker -c .*omarchy-local-ai.* snapshot" "$SHIM/sg.log" || fail "sg" "$(cat "$SHIM/sg.log" 2>/dev/null)"
+: >"$SHIM/sg.log"
+LOCAL_AI_SG= OMARCHY_DOCKER_SOCKET=$TMP/no-socket SHIM_NOGROUP=1 "$CLI" snapshot >/dev/null
+[[ ! -s $SHIM/sg.log ]] || fail "sg without the group" "$(cat "$SHIM/sg.log")"
+pass "after setup the docker group is borrowed through sg until the next login; without it, no sg"
 
 recipes "$PIN"
 mkdir -p "$STATE/deploy" "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" "$HOME/.cache/huggingface"
@@ -342,3 +345,6 @@ ln -s "$HOME/.cache/huggingface" "$HOME/.cache/omarchy/local-ai/models/test--mod
 if "$CLI" forget "$ID" 2>"$TMP/forget.err"; then fail "followed a symlink while deleting"; fi
 [[ -f $HOME/.cache/huggingface/keep ]] || fail "symlink target deleted"
 pass "forget refuses a symlink outside the managed download"
+
+[[ ! -s $SHIM/prompts.log ]] || fail "a password prompt" "$(cat "$SHIM/prompts.log")"
+pass "nothing above asked for a password: no pkexec, no sudo"

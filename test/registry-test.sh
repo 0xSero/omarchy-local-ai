@@ -17,12 +17,12 @@ curl() {
   elif [[ $MODE == unpinned ]]; then jq '.gateway.image = "gateway:latest"' "$SOURCE"
   else cat "$SOURCE"; fi
 }
-phase_registry
+cmd_registry
 jq -e '.registryCommit == "0000000000000000000000000000000000000001" and (.hardware|length > 0)' "$CATALOG" >/dev/null
 before=$(sha256sum "$CATALOG")
 for MODE in offline malformed unpinned; do
   set +e
-  (set -e; phase_registry) >"$TMP/out" 2>&1
+  (set -e; cmd_registry) >"$TMP/out" 2>&1
   rc=$?
   set -e
   [[ $rc != 0 && $(sha256sum "$CATALOG") == "$before" ]] || { echo "not ok - $MODE replaced the catalog"; exit 1; }
