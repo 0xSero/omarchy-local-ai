@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.5.2] - 2026-09-29
+
+### Changed
+- A card whose model stopped reads "stopped" rather than "crashed" (often the machine just restarted), and opened it offers View logs and Config: run again and dismiss are already on the row.
+- The setup screen says it in one line: once per machine, Docker access and GPU support, a terminal for your password.
+
 ## [6.5.1] - 2026-09-29
 
 ### Fixed
