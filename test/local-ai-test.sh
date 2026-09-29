@@ -15,6 +15,7 @@ mkdir -p "$HOME" "$SHIM/containers" "$TMP/bin" "$TMP/plugin/bin"
 cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null || true
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
+sed -i "s|CATALOG=/var/cache/omarchy-local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 STATE=$HOME/.local/state/omarchy/local-ai
 ID=test-model-rtx4090
 SHA=ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7 # 4096 zero bytes, what the Hub shim serves
@@ -154,7 +155,7 @@ view() {
     console.log(v.mark + " " + v.rows.map(r => r.type).join(","))' "$ROOT/Model.js" "$TMP/snap.json" "$@"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " sec,slot,slot,field" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view home) == " sec,slot,slot,field,acts" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
 else
@@ -177,13 +178,16 @@ pass "a stale NVIDIA CDI spec stops the start before the engine, naming the comm
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready run,sec,slot,field" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
+  [[ $(view home) == "ready run,sec,slot,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi
 pass "run downloads the weights, starts the engine and the gateway, and waits until the model answers"
 [[ -f $HOME/.cache/omarchy/local-ai/models/test--model@000000000000/model.safetensors ]] || fail "weights" "$(find "$HOME/.cache" -type f)"
 pass "the weights land under the model cache, checked against the Hub's size and sha256"
+if "$CLI" forget "$ID" 2>"$TMP/forget.err"; then fail "removed running weights"; fi
+grep -q 'stop models using these weights' "$TMP/forget.err" || fail "forget reason"
+pass "running models protect their shared download from removal"
 engine=$(grep -- '--name omarchy-local-ai-.*-engine' "$SHIM/docker.log")
 [[ $engine == *"--gpus \"device=0\""* && $engine == *"--security-opt no-new-privileges"* && $engine == *":/models:ro"* &&
   $engine == *"--shm-size 8g"* && $engine == *"--env A=1"* && $engine != *NVIDIA_VISIBLE_DEVICES* && $engine != *--publish* &&
@@ -311,3 +315,18 @@ wait_for error
 grep -qx "$CLI __start $ID 12434 nvidia:0" "$SHIM/pkexec.log" || fail "pkexec argv" "$(cat "$SHIM/pkexec.log")"
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == *"password prompt was dismissed"* ]] || fail "dismissed" "$(cat "$STATE/deploy/$ID/status.json")"
 pass "without the docker group a start is one pkexec of this file with the recipe, port and card; a dismissed prompt is the reason shown"
+
+recipes "$PIN"
+mkdir -p "$STATE/deploy" "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" "$HOME/.cache/huggingface"
+# Prior tests finish with no managed deployment.
+rm -rf "$STATE/deploy"/*
+echo keep >"$HOME/.cache/huggingface/keep"
+echo weights >"$HOME/.cache/omarchy/local-ai/models/test--model@000000000000/weights"
+"$CLI" forget "$ID"
+[[ ! -e $HOME/.cache/omarchy/local-ai/models/test--model@000000000000 && -f $HOME/.cache/huggingface/keep ]] || fail "forget scope"
+pass "forget removes stopped managed weights and preserves the external Hugging Face cache"
+
+ln -s "$HOME/.cache/huggingface" "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000"
+if "$CLI" forget "$ID" 2>"$TMP/forget.err"; then fail "followed a symlink while deleting"; fi
+[[ -f $HOME/.cache/huggingface/keep ]] || fail "symlink target deleted"
+pass "forget refuses a symlink outside the managed download"

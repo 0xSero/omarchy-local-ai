@@ -171,6 +171,7 @@ function homeView(s, ui) {
   if (free.length) rows = rows.concat([{ type: "sec", label: "AVAILABLE" }], flat(free))
   if (s.gpus.length > free.filter(function(x) { return !x.group }).length)
     rows.push({ type: "field", icon: "gpu", label: "all GPUs", value: String(s.gpus.length), action: "gpus" })
+  rows.push({ type: "acts", items: [{ label: ui.registryBusy ? "Refreshing models…" : "Refresh models", action: ui.registryBusy ? "" : "registry" }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
 }
 
@@ -179,7 +180,7 @@ function homeView(s, ui) {
 var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 function activity(s) {
-  var life = s.life, days = life.days || [], top = Math.max.apply(null, days.concat([1])), months = [], last = -1
+  var life = s.life, days = (life.days || []).slice(0, Math.max(0, life.today + 1)), top = Math.max.apply(null, days.concat([1])), months = [], last = -1
   for (var c = 0; c * 7 < days.length; c++) {
     var m = new Date((life.start + c * 7 * 86400) * 1000).getMonth()
     if (m !== last) months.push({ col: c, label: MONTHS[m] })
@@ -189,7 +190,7 @@ function activity(s) {
   if (months.length > 1 && months[1].col < 3) months.shift()
   return { type: "life", tokens: k(s.total) + " tokens", requests: k(life.requests) + (life.requests === 1 ? " request" : " requests"),
     since: "since " + life.since, months: months,
-    cells: days.map(function(v, i) { return i > life.today ? -1 : v > 0 ? Math.ceil(v / top * 4) : 0 }),
+    cells: days.map(function(v, i) { return v > 0 ? Math.ceil(v / top * 4) : 0 }),
     // what a hovered day says: its date and its tokens
     labels: days.map(function(v, i) {
       var d = new Date(life.start * 1000)
@@ -230,7 +231,7 @@ function soonView(s) {
   var found = (s.gpus || []).map(function(g) { return g.name }).filter(function(n, i, a) { return a.indexOf(n) === i })
   return { title: "LOCAL AI", version: s.version, rows: [{ type: "soon",
     head: found.length ? "No tested model for " + found.join(", ") + " yet" : "No supported GPU on this machine",
-    action: SUPPORTED }] }
+    action: SUPPORTED }, { type: "acts", items: [{ label: "Refresh models", action: "registry" }] }] }
 }
 
 // A model's page, the same for a running model, a free card and a group: m is the running model (d) or the chosen
@@ -277,7 +278,8 @@ function page(s, ui, m) {
   } else if (m.unfit) {
     v.rows.push({ type: "error", label: m.unfit })
   } else {
-    v.rows.push({ type: "acts", items: [{ label: "Run ›", action: m.action, primary: true }] })
+    v.rows.push({ type: "acts", items: [{ label: "Run ›", action: m.action, primary: true },
+      { label: "Remove download", action: "forget|" + m.id, danger: true }] })
   }
   return v
 }

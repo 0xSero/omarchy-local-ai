@@ -104,6 +104,8 @@ Panel {
   function activate(action) {
     var a = (action || "").split("|")
     switch (a[0]) {
+    case "forget": run(["forget", a[1]]); nav({ open: "" }); break
+    case "registry": ui = Object.assign({}, ui, { registryBusy: true, problem: "" }); run(["registry"]); break
     case "run": run(["run", a[1], a[2]]); home(); break
     case "again": run(["stop", a[1]]); run(["run", a[1], a[2]]); home(); break
     case "stop": run(["stop", a[1]]); home(); break
@@ -133,6 +135,7 @@ Panel {
     id: verb
     stderr: StdioCollector { id: verbErr; waitForEnd: true }
     onExited: function(code) {
+      root.ui = Object.assign({}, root.ui, { registryBusy: false })
       if (code !== 0) {
         var m = (verbErr.text || "").split("\n").filter(function(l) { return l.indexOf("local-ai: ") === 0 }).pop()
         root.queue = []
@@ -283,7 +286,7 @@ Panel {
                   objectName: "local-ai-life"
                   readonly property int cols: Math.ceil((r.cells || []).length / 7)
                   readonly property real cell: Math.min(Style.space(12), (width - 2 * root.gutter - (cols - 1) * Style.space(3)) / cols)
-                  // the hovered day, whose date and tokens replace "since" at the top right
+                  // Day details stay beneath the chart; the totals never move on hover.
                   property int hover: -1
                   spacing: Style.space(10)
                   Item {
@@ -297,8 +300,8 @@ Panel {
                     }
                     Right {
                       margin: root.gutter
-                      text: life.hover >= 0 ? (r.labels || [])[life.hover] || "" : r.since
-                      color: life.hover >= 0 ? root.ink : root.labelTone
+                      text: r.since
+                      color: root.labelTone
                     }
                   }
                   Grid {
@@ -341,6 +344,13 @@ Panel {
                         font.pixelSize: Style.font.caption - 1
                       }
                     }
+                  }
+                  Label {
+                    x: root.gutter
+                    width: parent.width - 2 * root.gutter
+                    text: (r.labels || [])[life.hover >= 0 ? life.hover : (r.labels || []).length - 1] || ""
+                    color: root.labelTone
+                    font.pixelSize: Style.font.caption
                   }
                 }
               }
