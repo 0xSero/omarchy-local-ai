@@ -1,28 +1,37 @@
 #!/bin/bash
 
-# omarchy:summary=Set up Local AI: a plain password prompt, and the NVIDIA container runtime when an NVIDIA card needs it
+# omarchy:summary=Set up Local AI password prompts and GPU support
 # omarchy:requires-sudo=true
-
-# The card and the backend are already here (this plugin). Two things need root once:
-# - polkit's description of the backend's phases, so the password prompt says what it is for
-#   ("Local AI needs your password to start a model on your GPU") instead of showing a command line;
-# - the NVIDIA container runtime, which Omarchy does not ship. Docker itself is part of Omarchy.
-
-set -e
-
+set -euo pipefail
 HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 POLICY=/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy
+# Keep a failed setup visible in the terminal opened by the panel.
+finish() {
+  local rc=$?
+  if [[ -t 0 ]]; then
+    ((rc == 0)) || echo "Setup did not finish. Resolve the error above, then click Set up Local AI again."
+    read -r -p "Press Enter to close. " _ || true
+  fi
+}
+trap finish EXIT
+mkdir -p "$HOME/.local/state/omarchy/local-ai"
+exec 9>"$HOME/.local/state/omarchy/local-ai/setup.lock"
+flock -n 9 || { echo "Local AI setup is already open."; exit 1; }
+sudo -v
+if omarchy-hw-nvidia; then
+  info=$(sudo docker info --format '{{json .Runtimes}}')
+  if ! jq -e 'has("nvidia")' <<<"$info" >/dev/null; then
+    [[ -z $(sudo docker ps -q) ]] || { echo "Stop your running Docker containers before setting up NVIDIA support. Nothing was changed."; exit 1; }
+    echo "Installing NVIDIA container support..."
+    omarchy-pkg-add nvidia-container-toolkit
+    sudo nvidia-ctk runtime configure --runtime=docker
+    sudo systemctl restart docker
+    sudo docker info --format '{{json .Runtimes}}' | jq -e 'has("nvidia")' >/dev/null
+  fi
+fi
 
-echo "Describing Local AI's password prompts to polkit..."
+echo "Setting up Local AI password prompts..."
 sed -e "s#/usr/bin/omarchy-local-ai#$HERE/omarchy-local-ai#" -e "s#org\.omarchy\.local-ai\.#sero.local-ai.u$(id -u).#" "$HERE/../local-ai.policy" |
   sudo install -D -m 644 /dev/stdin "$POLICY"
 sudo systemctl reload polkit
-
-if omarchy-hw-nvidia && ! docker info 2>/dev/null | grep -qi nvidia; then
-  echo "Setting up the NVIDIA container runtime..."
-  omarchy-pkg-add nvidia-container-toolkit
-  sudo nvidia-ctk runtime configure --runtime=docker
-  sudo systemctl restart docker
-fi
-
-echo "Local AI is ready. Click its mark in the bar to run the model for your GPU."
+echo "Local AI is ready. Return to the panel to choose a model."

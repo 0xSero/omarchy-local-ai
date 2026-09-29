@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.3.0] - 2026-09-29
+
+- First-run setup is available inside Local AI, including password prompts and NVIDIA container support. No separate script command is needed after installing the plugin.
+- Refresh models asks for permission to update the model catalog using a dedicated polkit description.
+- Setup checks Docker through sudo, leaves configured runtimes alone, and refuses to restart Docker with running containers.
+
 ## [6.2.2] - 2026-09-29
 
 ### Fixed

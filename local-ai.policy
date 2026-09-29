@@ -32,4 +32,11 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/omarchy-local-ai</annotate>
     <annotate key="org.freedesktop.policykit.exec.argv1">__purge</annotate>
   </action>
+  <action id="org.omarchy.local-ai.registry">
+    <description>Update the local model catalog</description>
+    <message>Local AI needs your password to update the model catalog</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>auth_admin</allow_active></defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/omarchy-local-ai</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">__registry</annotate>
+  </action>
 </policyconfig>

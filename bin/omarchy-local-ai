@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=registry | forget <recipe> | snapshot | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
+# omarchy:args=setup | registry | forget <recipe> | snapshot | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -115,6 +115,17 @@ phase_registry() (
   chmod 644 "$tmp"
   mv -f "$tmp" "$CATALOG"
 )
+
+# Setup is offered inside the plugin; the terminal handles package progress and sudo.
+setup_needed() {
+  local policy=/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy
+  cmp -s "$policy" <(sed -e "s#/usr/bin/omarchy-local-ai#$TARGET#" \
+    -e "s#org\\.omarchy\\.local-ai\\.#sero.local-ai.u$(id -u).#" "$PANEL/local-ai.policy") || return 0
+  omarchy-hw-nvidia && ! command -v nvidia-ctk >/dev/null && return 0
+  return 1
+}
+
+cmd_setup() { omarchy-launch-tui --app-id=org.omarchy.local-ai-setup "$PANEL/bin/omarchy-install-ai-local"; }
 
 cmd_registry() { asroot registry; }
 
@@ -981,7 +992,7 @@ cmd_snapshot() {
     .folder // "", "\u0000", (.folders // [] | tojson), "\u0000"' "$STATE/settings.json" 2>/dev/null) || true
   [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
   jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
-    --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
+    --argjson setup "$(setup_needed && echo true || echo false)" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --argjson folders "${sfs:-[]}" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY$MATCH"'
@@ -993,7 +1004,7 @@ cmd_snapshot() {
       | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
+    | {version: $version, setupNeeded: $setup, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
@@ -1014,7 +1025,7 @@ fi
 paths "$HOME"
 mkdir -p "$STATE"
 case ${1:-} in
-registry | forget | snapshot | run | stop | open | set | share) "cmd_$1" "${@:2}" ;;
+setup | registry | forget | snapshot | run | stop | open | set | share) "cmd_$1" "${@:2}" ;;
 log) exec omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G "$LOG" ;;
 remove)
   for d in "$STATE"/deploy/*/; do
