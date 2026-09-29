@@ -42,14 +42,14 @@ function fittedContentHeight(h){return h} }
 'Ui/BarIconButton.qml':'''import QtQuick
 Item { property var bar; property string tooltipText; property Component iconComponent; signal pressed(); implicitWidth:24; implicitHeight:24 }
 ''',
-'bin/omarchy-local-ai':'#!/bin/bash\ncat "${BASH_SOURCE[0]%/bin/*}/snapshot.json"\n',
+'bin/omarchy-local-ai':'#!/bin/bash\nif [[ $1 == registry ]]; then echo "models up to date · 12345678"; exit 0; fi\ncat "${BASH_SOURCE[0]%/bin/*}/snapshot.json"\n',
 'shell.qml':'''import QtQuick
 import Quickshell
 ShellRoot {
   id: runner
   property int at: 0
   property bool failed: false
-  property var modes: ["setup","kind","run","error","crash"]
+  property var modes: ["setup","kind","run","error","crash","stopped","refreshed"]
   FloatingWindow {
     implicitWidth:340; implicitHeight:1000; color:"#121214"
     Loader { id: ld; source:"Panel.qml"; onLoaded: { item.open(); step.start() } }
@@ -66,14 +66,18 @@ ShellRoot {
       var p=ld.item, mode=runner.modes[runner.at]
       if(!p.snap.gpus){step.start();return}
       p.snap=Object.assign({},p.snap,{setupNeeded:mode==="setup"})
-      if(mode==="crash")p.snap=Object.assign({},p.snap,{deployments:p.snap.deployments.map(function(d){return Object.assign({},d,{state:"error",error:"The engine stopped; see the log, then run again."})})})
+      if(mode==="crash" || mode==="stopped")p.snap=Object.assign({},p.snap,{deployments:p.snap.deployments.map(function(d){return Object.assign({},d,{state:"error",error:"the engine stopped"})})})
       p.ui={view:mode==="crash"?"home":mode==="setup"?"home":mode==="kind"?"kind":"run",id:"test",problem:mode==="error"?"Could not open the agent terminal; try again.":""}
+      if(mode==="refreshed"){p.ui={view:"home"};p.activate("registry")}
       capture.start()
     }
   }
   Timer {
     id: capture; interval:150
     onTriggered: {
+      if(runner.modes[runner.at]==="refreshed" && (ld.item.ui.notice!=="models up to date · 12345678" || ld.item.ui.registryBusy)){
+        console.log("FAIL registry completion was not shown");runner.failed=true
+      }
       var content=runner.find(ld.item,"local-ai-content")
       if(!content){console.log("FAIL no content");Qt.quit();return}
       var name=runner.find(content,"local-ai-option-name"), fit=runner.find(content,"local-ai-option-fit")
@@ -112,9 +116,13 @@ if ! env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u DBUS_SE
   exit 1
 fi
 if grep -Eq 'FAIL|ReferenceError|TypeError|Unable to assign|Binding loop' "$TMP/log" ||
-  [[ $(grep -c 'PASS rendered' "$TMP/log") != 5 ]] || ! grep -q 'PASS model name and fit do not overlap' "$TMP/log"; then
+  [[ $(grep -c 'PASS rendered' "$TMP/log") != 7 ]] || ! grep -q 'PASS model name and fit do not overlap' "$TMP/log"; then
   cat "$TMP/log"
   exit 1
 fi
-for name in setup kind run error crash; do test -s "$TMP/output/$name.png"; done
-echo 'ok - real panel renders setup, model choices, sharing, errors and crashes offscreen without overlap'
+for name in setup kind run error crash stopped refreshed; do test -s "$TMP/output/$name.png"; done
+if [[ -n ${PANEL_ARTIFACTS:-} ]]; then
+  mkdir -p "$PANEL_ARTIFACTS"
+  cp "$TMP/output/"*.png "$TMP/log" "$PANEL_ARTIFACTS/"
+fi
+echo 'ok - real panel renders setup, choices, sharing, errors, stopped models and refresh results offscreen without overlap'

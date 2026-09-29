@@ -90,6 +90,7 @@ case $url in
 */api/models/*) printf "[{\"type\":\"file\",\"path\":\"model.safetensors\",\"size\":4096,\"lfs\":{\"oid\":\"%s\"}}]" '"$SHA"' ;;
 */resolve/*) if [[ -n ${SHIM_CORRUPT:-} ]]; then head -c 4096 /dev/urandom >"$out"; else head -c 4096 /dev/zero >"$out"; fi ;;
 http://127.0.0.1:*)
+  [[ -z ${SHIM_STOPPED:-} ]] || exit 7
   ls "$SHIM/containers" | grep -q gateway || exit 7
   [[ $key == "$(cat "$HOME/.local/state/omarchy/local-ai/gateway.key")" ]] || { [[ $* == *http_code* ]] && printf 401; exit 22; }
   if [[ $url == */v1/models ]]; then
@@ -192,6 +193,9 @@ if command -v node >/dev/null; then
   pass "the view model builds home and the model's page for a running model"
 fi
 pass "run downloads the weights, starts the engine and the gateway, and waits until the model answers"
+[[ $(SHIM_STOPPED=1 "$CLI" snapshot | jq -r '.deployments[0].error') == 'the engine stopped' ]] || fail "stopped engine message"
+pass "a stopped engine has one concise recovery message"
+
 [[ -f $HOME/.cache/omarchy/local-ai/models/test--model@000000000000/model.safetensors ]] || fail "weights" "$(find "$HOME/.cache" -type f)"
 pass "the weights land under the model cache, checked against the Hub's size and sha256"
 if "$CLI" forget "$ID" 2>"$TMP/forget.err"; then fail "removed running weights"; fi

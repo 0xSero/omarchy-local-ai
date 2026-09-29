@@ -255,12 +255,12 @@ function soonView(s, ui) {
 // recipe, with its cards, the models to choose from and what Run does. Its name and what it is, its token line and
 // figures when it runs, its cards, what Open uses, its weights, where it answers when it runs, and Run or Log and Stop.
 function page(s, ui, m) {
-  var run = m.d, u = run ? run.session || {} : {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
+  var run = m.d, failed = run && run.state === "error", u = run ? run.session || {} : {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
   var facts = spec(run ? Object.assign({}, m, { sizeGb: 0 }) : m)
   facts.splice(1, 0, { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") })
   if ((m.caps || {}).vision) facts.push({ icon: "vision", text: "" })
   var v = { back: true, rows: [], hero: { name: m.name, family: m.family, chips: facts } }
-  if (run) {
+  if (run && !failed) {
     Object.assign(v.hero, { line: line, top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: all.last ? ago(all.last) : "now" })
     v.rows.push({ type: "grid", cells: [
       { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
@@ -283,7 +283,11 @@ function page(s, ui, m) {
   v.rows.push({ type: "sec", label: "OPENS WITH" })
   pickers(s, v.rows, ui, run ? run.agent : (s.defaults || {}).agent, run ? run.folder : (s.defaults || {}).folder, run ? run.id : "")
   weights(v.rows, m.weights)
-  if (run) {
+  if (failed) {
+    v.rows.push({ type: "error", label: run.error || "the engine stopped" })
+    v.rows.push({ type: "acts", items: [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true },
+      { label: "View logs", action: "log" }, { label: "Dismiss", action: "stop|" + run.id, danger: true }] })
+  } else if (run) {
     v.rows.push({ type: "sec", label: "REACH" })
     v.rows.push({ type: "field", icon: "machine", label: "this machine", value: "127.0.0.1:" + run.port })
     if (s.tailnet) v.rows.push(run.shared
@@ -362,6 +366,7 @@ function build(s, ui) {
   s = s || {}
   var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
   if (ui.problem || ui.pollProblem || s.setupError) v.rows.unshift({ type: "error", label: ui.problem || ui.pollProblem || s.setupError })
+  else if (ui.notice) v.rows.unshift({ type: "links", note: ui.notice, items: [] })
   return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })
 }
 

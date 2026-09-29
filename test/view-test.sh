@@ -46,5 +46,37 @@ test('failed and malformed polls retain the last snapshot, show a problem, and r
   }
   ctx.polled(0,JSON.stringify(s)); assert.equal(ctx.ui.pollProblem,''); assert.equal(ctx.snap.gpus[0].name,gpu.name);
 });
+test('a held Intel card with unknown VRAM has no run action', () => {
+  const held={...s,gpus:[{...gpu,usedMiB:null}],deployments:[],kinds:[{...s.kinds[0],free:[],taken:[gpu.key]}]};
+  assert(m.build(held,{view:'gpus'}).rows.some(r=>r.note==='in use by another program'));
+  const rows=m.build(held,{view:'kind',id:'test',key:gpu.key}).rows;
+  assert(rows.some(r=>r.status==='in use by another program'));
+  assert(!rows.some(r=>(r.items||[]).some(a=>a.action.startsWith('run|'))));
+});
+test('stopped model details offer recovery without live reach or uptime', () => {
+  const rows=m.build({...s,deployments:[{...s.deployments[0],state:'error',error:'the engine stopped'}]}, {view:'run',id:'test'}).rows;
+  assert(!rows.some(r=>r.label==='REACH'||r.icon==='machine'||r.icon==='tailnet'));
+  assert(!rows.some(r=>(r.cells||[]).some(c=>c.k==='up')));
+  const actions=rows.flatMap(r=>r.items||[]);
+  assert.deepEqual(Array.from(actions,a=>a.label),['Run again ›','View logs','Dismiss']);
+  assert(actions[0].primary); assert.equal(actions[0].action,'again|test|nvidia:0');
+  assert.equal(actions[2].action,'stop|test');
+});
+test('refresh completion survives polls until the next action', () => {
+  const qml=fs.readFileSync(process.argv[3],'utf8');
+  const ctx={Model:m,snap:s,ui:{registryBusy:true},queue:[],opened:true,next(){},root:null}; ctx.root=ctx;
+  vm.createContext(ctx);
+  for (const name of ['finished','polled','activate']) {
+    const fn=qml.match(new RegExp('function '+name+'\\([^]*?\\n  \\}'));
+    assert(fn, name+' missing'); vm.runInContext(fn[0],ctx);
+  }
+  ctx.finished(0,'registry','models up to date · 12345678','');
+  assert.equal(ctx.ui.registryBusy,false); assert.equal(ctx.ui.notice,'models up to date · 12345678');
+  ctx.polled(0,JSON.stringify(s));
+  assert(m.build(s,ctx.ui).rows.some(r=>r.note===ctx.ui.notice));
+  ctx.activate(''); assert.equal(ctx.ui.notice,'');
+  ctx.finished(1,'registry','','local-ai: refresh failed');
+  assert.equal(ctx.ui.problem,'refresh failed'); assert(!ctx.ui.notice);
+});
 process.exitCode = failed ? 1 : 0;
 JS

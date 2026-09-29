@@ -87,6 +87,7 @@ Panel {
   function next() {
     if (!queue.length) return refresh()
     var args = queue.shift()
+    verb.operation = args[0]
     verb.command = (args[0] === "setup" ? [cli] : ["timeout", "--kill-after=5", "120", cli]).concat(args)
     verb.running = true
   }
@@ -103,6 +104,7 @@ Panel {
 
   // An action is "verb|arg|arg", from Model.js
   function activate(action) {
+    ui = Object.assign({}, ui, { notice: "" })
     var a = (action || "").split("|")
     switch (a[0]) {
     case "forget": run(["forget", a[1]]); nav({ open: "" }); break
@@ -139,20 +141,25 @@ Panel {
     stdout: StdioCollector { id: pollOut; waitForEnd: true }
     onExited: function(code) { root.polled(code, pollOut.text) }
   }
-  // A verb that fails says why on its last "local-ai:" line; the panel opens to show it
+  // A verb that fails says why on its last "local-ai:" line; the panel opens to show it.
+  function finished(code, operation, output, error) {
+    ui = Object.assign({}, ui, { registryBusy: false })
+    if (code !== 0) {
+      var m = (error || "").split("\n").filter(function(l) { return l.indexOf("local-ai: ") === 0 }).pop()
+      queue = []
+      if (!root.opened) root.open()
+      ui = Object.assign({}, ui, { problem: code === 124 || code === 137 ? "That took too long; try again." : m ? m.slice(10) : "that did not work (see the log)" })
+    } else if (operation === "registry") {
+      ui = Object.assign({}, ui, { notice: output.trim(), problem: "" })
+    }
+    next()
+  }
   Process {
     id: verb
+    property string operation: ""
+    stdout: StdioCollector { id: verbOut; waitForEnd: true }
     stderr: StdioCollector { id: verbErr; waitForEnd: true }
-    onExited: function(code) {
-      root.ui = Object.assign({}, root.ui, { registryBusy: false })
-      if (code !== 0) {
-        var m = (verbErr.text || "").split("\n").filter(function(l) { return l.indexOf("local-ai: ") === 0 }).pop()
-        root.queue = []
-        if (!root.opened) root.open()
-        root.ui = Object.assign({}, root.ui, { problem: code === 124 || code === 137 ? "That took too long; try again." : m ? m.slice(10) : "that did not work (see the log)" })
-      }
-      root.next()
-    }
+    onExited: function(code) { root.finished(code, operation, verbOut.text, verbErr.text) }
   }
   Process { id: copy }
   Timer { id: copiedTimer; interval: 1500; onTriggered: root.copied = false }

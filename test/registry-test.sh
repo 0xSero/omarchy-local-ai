@@ -17,7 +17,8 @@ curl() {
   elif [[ $MODE == unpinned ]]; then jq '.gateway.image = "gateway:latest"' "$SOURCE"
   else cat "$SOURCE"; fi
 }
-cmd_registry
+[[ $(cmd_registry) == "models up to date · 00000000" ]]
+echo "ok - registry refresh reports the published revision"
 jq -e '.registryCommit == "0000000000000000000000000000000000000001" and (.hardware|length > 0)' "$CATALOG" >/dev/null
 before=$(sha256sum "$CATALOG")
 for MODE in offline malformed unpinned; do
