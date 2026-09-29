@@ -137,7 +137,10 @@ function slot(s, ui, g, at) {
     items = [{ label: "Run ›", action: row.run.action, primary: true }, config]
   }
   chips = health(g).concat(chips)
-  return { rank: row.rank, at: at, rows: row.open ? [row, { type: "links", chips: chips, note: note, items: items }] : [row] }
+  var rows = [row]
+  if (row.crashed) rows.push({ type: "error", label: note })
+  if (row.open) rows.push({ type: "links", chips: chips, note: row.crashed ? "" : note, items: items })
+  return { rank: row.rank, at: at, rows: rows }
 }
 
 // A group, its own row: one model across several free cards of a kind, offered when enough of them are free
@@ -169,16 +172,15 @@ function flat(list) { return [].concat.apply([], list.map(function(x) { return x
 // available GPUs as rows: free ones, then groups of free cards, then crashed ones to run again or dismiss. A GPU
 // already running a model is not listed again; the rest are one "all GPUs" away.
 function homeView(s, ui) {
-  if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
-  if (s.relogin) return { title: "LOCAL AI", version: s.version, rows: [{ type: "sec", label: "SETUP" },
+  if (!s.gpus) return { title: "LOCAL AI", rows: [] }
+  if (s.relogin && !s.setupError) return { title: "LOCAL AI", version: s.version, rows: [{ type: "sec", label: "SETUP" },
     { type: "links", note: "Log out and back in once to finish setting up: Docker access applies to new logins.", items: [] }] }
-  if (s.setupNeeded) return { title: "LOCAL AI", version: s.version, rows:
-    (ui.problem ? [{ type: "error", label: ui.problem }] : []).concat([
+  if (s.setupNeeded || s.setupError) return { title: "LOCAL AI", version: s.version, rows: [
       { type: "sec", label: "SETUP" },
       { type: "links", note: "Once per machine: Docker access (Omarchy's Sudoless Docker) and GPU support. A terminal opens for your password.", items: [] },
-      { type: "acts", items: [{ label: "Set up Local AI", action: "setup", primary: true }] }]) }
-  if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
-  var rows = ui.problem ? [{ type: "error", label: ui.problem }] : [], life = s.life || {}
+      { type: "acts", items: [{ label: "Set up Local AI", action: "setup", primary: true }] }] }
+  if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s, ui)
+  var rows = [], life = s.life || {}
   if (life.requests > 0) rows.push(activity(s))
   ;(s.deployments || []).filter(function(d) { return d.state === "ready" })
     .concat((s.deployments || []).filter(function(d) { return working(d) })).forEach(function(d) { rows.push(card(s, d)) })
@@ -242,23 +244,23 @@ function gpusView(s, ui) {
 }
 
 // nothing to run on: one line on what this machine has, and where the list of supported cards lives
-function soonView(s) {
+function soonView(s, ui) {
   var found = (s.gpus || []).map(function(g) { return g.name }).filter(function(n, i, a) { return a.indexOf(n) === i })
   return { title: "LOCAL AI", version: s.version, rows: [{ type: "soon",
     head: found.length ? "No tested model for " + found.join(", ") + " yet" : "No supported GPU on this machine",
-    action: SUPPORTED }, { type: "acts", items: [{ label: "Refresh models", action: "registry" }] }] }
+    action: SUPPORTED }, { type: "acts", items: [{ label: ui.registryBusy ? "Refreshing models…" : "Refresh models", action: ui.registryBusy ? "" : "registry" }] }] }
 }
 
 // A model's page, the same for a running model, a free card and a group: m is the running model (d) or the chosen
 // recipe, with its cards, the models to choose from and what Run does. Its name and what it is, its token line and
 // figures when it runs, its cards, what Open uses, its weights, where it answers when it runs, and Run or Log and Stop.
 function page(s, ui, m) {
-  var run = m.d, u = run ? run.session || {} : {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
+  var run = m.d, failed = run && run.state === "error", u = run ? run.session || {} : {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
   var facts = spec(run ? Object.assign({}, m, { sizeGb: 0 }) : m)
   facts.splice(1, 0, { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") })
   if ((m.caps || {}).vision) facts.push({ icon: "vision", text: "" })
   var v = { back: true, rows: [], hero: { name: m.name, family: m.family, chips: facts } }
-  if (run) {
+  if (run && !failed) {
     Object.assign(v.hero, { line: line, top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: all.last ? ago(all.last) : "now" })
     v.rows.push({ type: "grid", cells: [
       { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
@@ -281,14 +283,19 @@ function page(s, ui, m) {
   v.rows.push({ type: "sec", label: "OPENS WITH" })
   pickers(s, v.rows, ui, run ? run.agent : (s.defaults || {}).agent, run ? run.folder : (s.defaults || {}).folder, run ? run.id : "")
   weights(v.rows, m.weights)
-  if (run) {
+  if (failed) {
+    v.rows.push({ type: "error", label: run.error || "the engine stopped" })
+    v.rows.push({ type: "acts", items: [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true },
+      { label: "View logs", action: "log" }, { label: "Dismiss", action: "stop|" + run.id, danger: true }] })
+  } else if (run) {
     v.rows.push({ type: "sec", label: "REACH" })
     v.rows.push({ type: "field", icon: "machine", label: "this machine", value: "127.0.0.1:" + run.port })
     if (s.tailnet) v.rows.push(run.shared
       ? { type: "field", icon: "tailnet", label: "tailnet", value: run.shared, secret: true, action: "copy|" + run.shared }
       : { type: "field", icon: "tailnet", label: "tailnet", value: "share", action: "share|" + run.id })
     if (run.error) v.rows.push({ type: "error", label: run.error })
-    v.rows.push({ type: "acts", items: [{ label: "View logs", action: "log" }, { label: "Stop model", action: "stop|" + run.id, danger: true }] })
+    v.rows.push({ type: "acts", items: (run.shared ? [{ label: "Stop sharing", action: "share|" + run.id + "|off" }] : [])
+      .concat([{ label: "View logs", action: "log" }, { label: "Stop model", action: "stop|" + run.id, danger: true }]) })
   } else if (m.unfit) {
     v.rows.push({ type: "error", label: m.unfit })
   } else {
@@ -358,7 +365,9 @@ function pickers(s, rows, ui, agent, folder, id) {
 function build(s, ui) {
   s = s || {}
   var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
-  return Object.assign(v, { mark: mark(s) })
+  if (ui.problem || ui.pollProblem || s.setupError) v.rows.unshift({ type: "error", label: ui.problem || ui.pollProblem || s.setupError })
+  else if (ui.notice) v.rows.unshift({ type: "links", note: ui.notice, items: [] })
+  return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })
 }
 
 if (typeof module !== "undefined") module.exports = { build: build, parse: parse, apca: apca, reach: reach, tones: tones, over: over, LC: LC }

@@ -1,4 +1,4 @@
-# test:       every shell test (docker, curl, the GPU tools and pkexec are shimmed; node for Model.js)
+# test:       every shell test (docker, curl, the GPU tools and privilege helpers are shimmed; node for Model.js)
 # sync:       take every recipe of each card kind from the registry's published schema-2 export
 #             (REGISTRY=<checkout>, at its origin/main), written one card kind per line
 # sync-check: fail when the vendored copy has fallen behind that export

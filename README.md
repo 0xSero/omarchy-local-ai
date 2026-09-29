@@ -36,24 +36,27 @@ Home: your tokens and requests over the last 20 weeks, running models as cards, 
 omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 ```
 
-Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, turns on Omarchy's Sudoless Docker (it explains what that means and asks first), makes you the tailnet's operator so a model can be shared, and configures NVIDIA container support when needed. Return to the panel when setup finishes; no logout or reboot is needed. Setup refuses to restart Docker while containers are running.
+Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, turns on Omarchy's Sudoless Docker (it explains what that means and asks first), makes you the tailnet's operator when none is set so a model can be shared, and configures NVIDIA container support when needed. Return to the panel when setup finishes; the current login gets a temporary Docker socket ACL, so no logout or reboot is needed. If Docker recreates its socket before your next login, the panel asks you to log out and back in once. Setup refuses to restart Docker while containers are running.
 
 Setup is the only password Local AI asks for, once per machine: starting, stopping, sharing, refreshing and removing never ask, and plugin updates never ask for setup again. Sudoless Docker is root-equivalent, as Omarchy's own warning says; turn it off in Setup > Security.
 
 ## What it does
 
-- **Validated models per card, or one across several.** `recipes.json` holds, for each of 36 card kinds, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
+- **Validated models per card, or one across several.** `recipes.json` holds, for each of 40 card kinds, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
 - **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them, and Config says what is missing.
 - **Weights** are downloaded as you, from the pinned revision, and every file's size and sha256 is checked against the Hub before it is used. A matching copy in your Hugging Face cache is reused.
 - **Containers.** The engine runs on a private network with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
 - **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. The last agent and folder you picked become the default.
-- **Share** a running model on your tailnet with `tailscale serve` (tailnet only, still keyed).
+- **Share** a running model on your tailnet with `tailscale serve` (tailnet only, still keyed). **Stop sharing** on its page removes that share. Tailscale must be running and logged in. Setup preserves another account’s operator; ask that account to manage sharing. A failed unshare is logged and does not prevent stopping the model.
 
 Supported: NVIDIA RTX 30, 40 and 50 series, RTX A6000, RTX Ada and RTX Pro Blackwell, Intel Arc Pro B70, and AMD Instinct MI300X and Radeon RX 6800 XT (with ROCm's `amd-smi`).
 
 ## From a shell
 
 ```bash
+bin/omarchy-local-ai setup                    # one-time machine setup
+bin/omarchy-local-ai registry                 # refresh the validated catalog
+bin/omarchy-local-ai forget <recipe>          # remove stopped managed weights
 bin/omarchy-local-ai snapshot                 # what the card draws, as JSON
 bin/omarchy-local-ai run <recipe> <gpu>[,<gpu>] # e.g. run qwen38-27b-exl3-3bpw-rtx3090-sglang-tp1 nvidia:0
 bin/omarchy-local-ai stop <recipe>
@@ -67,7 +70,7 @@ Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); t
 
 ## Remove
 
-`bin/omarchy-remove-ai-local` stops every model and deletes its containers, engine images, weights and settings. Then `omarchy plugin remove sero.local-ai`.
+`bin/omarchy-remove-ai-local` stops this user’s managed models and deletes their containers, engine images, weights and settings. Then `omarchy plugin remove sero.local-ai`.
 
 ## Files
 
@@ -78,7 +81,7 @@ Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); t
 | `Panel.qml` | Draws the view and runs the backend's verbs |
 | `recipes.json` | The vendored recipes, one card kind per line (`make sync`) |
 
-The same files are proposed for Omarchy itself in [omacom/omarchy#13036](https://github.com/omacom/omarchy/pull/13036); this plugin differs only in where it finds itself, and in taking over a model a 5.x install left running. `docs/design.md` has the design and `test/all` runs the tests.
+`docs/design.md` has the design and `test/all` runs the tests.
 
 ### Container boundary
 

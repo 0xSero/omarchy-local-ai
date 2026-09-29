@@ -1,6 +1,6 @@
 # Local AI
 
-A bar widget that runs the one model validated for each GPU in the machine and opens a coding agent on it. It is these files, the same ones proposed for Omarchy in [omacom/omarchy#13036](https://github.com/omacom/omarchy/pull/13036); only where the backend finds itself and the Panel's module name differ:
+A bar widget that runs the one model validated for each GPU in the machine and opens a coding agent on it. The plugin has four main parts:
 
 | File | Role |
 |---|---|
@@ -23,11 +23,16 @@ The gateway (`ghcr.io/0xsero/gateway`, pinned by digest) listens on `127.0.0.1` 
 
 ## Privilege
 
-Nothing in the plugin runs as root. Setup (one terminal, one sudo) turns on Omarchy's Sudoless Docker, makes the user the tailnet's operator and adds the NVIDIA runtime when needed; the backend then drives Docker as the user. A session only carries the groups it logged in with, so setup also gives the account read-write on the docker socket (an ACL) for the login it ran in; the group covers every later login. Omarchy has no `sg`. If the socket is still unreachable (the daemon restarted before the next login), the snapshot says `relogin` and the panel asks for a new login instead of failing inside docker. Whether setup is needed is read from the machine (`omarchy-sudo-docker --configured`, the NVIDIA runtime), never from which plugin version ran it, so updates never ask again. The store plugin lives in the user's home, so running it as root through pkexec would let anything running as the user rewrite what root runs; 6.4.0 did that for start and stop, and 6.5.0 removed it. The backend still checks every recipe string with `policy()` before a start, mounts only paths that resolve to themselves and belong to the user, runs engine containers with `no-new-privileges`, and labels them with the user's uid so stop and remove touch only that user's containers. The Omarchy PR keeps the pkexec design, where the backend is root-owned in /usr/bin.
+Setup opens one terminal and validates sudo once. It turns on Omarchy's Sudoless Docker, sets the tailnet operator only when unset or already this user and adds the NVIDIA runtime when needed, refusing to restart Docker while containers are running. It removes the old per-user authorization files. Every later backend operation runs as the user.
+
+A session carries the groups it logged in with, so setup grants the account read-write access to the Docker socket through an ACL; the docker group covers later logins. If Docker recreates the socket before the next login, the snapshot says `relogin` and the panel asks the user to log out and back in once. Setup is judged from machine state (`omarchy-sudo-docker --configured` and NVIDIA toolkit availability), never a plugin version marker.
+
+The backend validates recipe arguments before starting, mounts paths owned by the user without symbolic links, and labels containers with the user's uid. Stop and remove retain deployment state if Docker cannot remove a container. Legacy 5.x containers without a uid are still adopted. Docker operations and panel polls have time limits; downloads fail on stalled transfers and keep partial files for resumption. Action and poll failures appear on the current page, including Config and unsupported-GPU pages.
+
 
 ## Why it is shaped this way
 
-- **Validated models, vendored.** Every recipe was accepted on its exact card, or cards: download, load, a correctness check, speed at several context lengths. Nothing is fetched at runtime: a new recipe reaches you in a plugin update, and the privileged step checks every string of it with `policy()`. A card without an accepted recipe shows Coming soon and links the list in `supported/`.
+- **Validated models, vendored.** Every recipe was accepted on its exact card, or cards: download, load, a correctness check, speed at several context lengths. Recipes arrive through plugin updates or an explicit **Refresh models**. Refresh resolves a registry commit, validates its catalog and replaces the cache atomically; failures retain the previous catalog. The backend checks recipe arguments again before a start. A card without an accepted recipe shows Coming soon and links the list in `supported/`.
 - **EXL3 first, engines that serve it in-process.** The registry recommends, per card, EXL3 weights on SGLang or vLLM ahead of TabbyAPI and llama.cpp, then vision, context and measured decode. On a 3090 that is Qwen3.8-27B on SGLang at 200K context and about 90 tok/s.
 - **Containers, not packages.** Engines need exact CUDA, ROCm or oneAPI stacks; an image pinned by digest is the smallest thing that reproduces the accepted run.
 - **A gateway in front.** Engines differ in API and none checks a key; the gateway gives every engine the same keyed endpoint and the same usage accounting.
@@ -36,5 +41,7 @@ Nothing in the plugin runs as root. Setup (one terminal, one sudo) turns on Omar
 ## Limits
 
 - AMD cards are found through `amd-smi`, which comes with ROCm; without it they show Coming soon.
-- In the prompt path the backend cannot read Docker, so a crashing engine is reported when its 30-minute wait ends rather than on its second restart.
+- A model has up to 30 minutes to become ready; repeated engine restarts fail sooner. Stop cancels the download or startup worker.
+- A socket ACL lasts until Docker recreates the socket; an old login then needs to log out and back in once.
+- Tailscale must be running and logged in for sharing; setup preserves another account’s operator. Failed unsharing is logged but never prevents stopping a model.
 - `bin/omarchy-remove-ai-local` deletes models, containers, engine images, weights and settings; `omarchy plugin remove sero.local-ai` removes the plugin.

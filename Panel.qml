@@ -78,7 +78,7 @@ Panel {
   // a new view starts at its top with nothing chosen; within a view, a chosen model stays chosen
   function nav(patch) {
     var moved = patch.view !== undefined || patch.id !== undefined
-    ui = Object.assign({ view: ui.view, id: ui.id, open: "", key: ui.key, problem: "", model: moved ? "" : ui.model || "" }, patch)
+    ui = Object.assign({ view: ui.view, id: ui.id, open: "", key: ui.key, problem: "", pollProblem: ui.pollProblem || "", model: moved ? "" : ui.model || "" }, patch)
     revealed = false
     if (moved) flick.contentY = 0
   }
@@ -86,7 +86,9 @@ Panel {
   function run(args) { queue.push(args); if (!verb.running) next() }
   function next() {
     if (!queue.length) return refresh()
-    verb.command = [cli].concat(queue.shift())
+    var args = queue.shift()
+    verb.operation = args[0]
+    verb.command = (args[0] === "setup" ? [cli] : ["timeout", "--kill-after=5", "120", cli]).concat(args)
     verb.running = true
   }
   function refresh() { if (!poll.running) poll.running = true }
@@ -102,6 +104,7 @@ Panel {
 
   // An action is "verb|arg|arg", from Model.js
   function activate(action) {
+    ui = Object.assign({}, ui, { notice: "" })
     var a = (action || "").split("|")
     switch (a[0]) {
     case "forget": run(["forget", a[1]]); nav({ open: "" }); break
@@ -111,7 +114,7 @@ Panel {
     case "again": run(["stop", a[1]]); run(["run", a[1], a[2]]); home(); break
     case "stop": run(["stop", a[1]]); home(); break
     case "open": run(["open", a[1]]); root.close(); break
-    case "share": run(["share", a[1]]); break
+    case "share": run(["share", a[1]].concat(a[2] ? [a[2]] : [])); break
     case "set": run(["set", a[1], a[2]].concat(a[3] ? [a[3]] : [])); nav({ open: "" }); break
     case "more": nav({ view: "run", id: a[1] }); break
     case "kind": nav({ view: "kind", id: a[1], key: a[2] || "" }); break
@@ -120,35 +123,46 @@ Panel {
     case "gpus": nav({ view: "gpus", id: "" }); break
     case "pick": nav({ open: ui.open === a[1] ? "" : a[1] }); break
     case "home": home(); break
-    case "log": logOpen.running = true; root.close(); break
+    case "log": run(["log"]); root.close(); break
     case "url": Quickshell.execDetached(["omarchy-launch-browser", a[1]]); root.close(); break
     case "copy": copy.command = ["wl-copy", a[1]]; copy.running = true; copied = true; copiedTimer.restart(); break
     }
   }
 
+  function polled(code, text) {
+    var s = code === 0 ? Model.parse(text) : null
+    var ok = s && Array.isArray(s.gpus) && Array.isArray(s.kinds) && Array.isArray(s.deployments)
+    if (ok) snap = s
+    ui = Object.assign({}, ui, { pollProblem: ok ? "" : "Could not refresh Local AI; retrying." })
+  }
   Process {
     id: poll
-    command: [root.cli, "snapshot"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.snap = Model.parse(text) || root.snap }
+    command: ["timeout", "--kill-after=5", "90", root.cli, "snapshot"]
+    stdout: StdioCollector { id: pollOut; waitForEnd: true }
+    onExited: function(code) { root.polled(code, pollOut.text) }
   }
-  // A verb that fails says why on its last "local-ai:" line; the panel opens to show it
+  // A verb that fails says why on its last "local-ai:" line; the panel opens to show it.
+  function finished(code, operation, output, error) {
+    ui = Object.assign({}, ui, { registryBusy: false })
+    if (code !== 0) {
+      var m = (error || "").split("\n").filter(function(l) { return l.indexOf("local-ai: ") === 0 }).pop()
+      queue = []
+      if (!root.opened) root.open()
+      ui = Object.assign({}, ui, { problem: code === 124 || code === 137 ? "That took too long; try again." : m ? m.slice(10) : "that did not work (see the log)" })
+    } else if (operation === "registry") {
+      ui = Object.assign({}, ui, { notice: output.trim(), problem: "" })
+    }
+    next()
+  }
   Process {
     id: verb
+    property string operation: ""
+    stdout: StdioCollector { id: verbOut; waitForEnd: true }
     stderr: StdioCollector { id: verbErr; waitForEnd: true }
-    onExited: function(code) {
-      root.ui = Object.assign({}, root.ui, { registryBusy: false })
-      if (code !== 0) {
-        var m = (verbErr.text || "").split("\n").filter(function(l) { return l.indexOf("local-ai: ") === 0 }).pop()
-        root.queue = []
-        if (!root.opened) root.open()
-        root.ui = Object.assign({}, root.ui, { problem: m ? m.slice(10) : "that did not work (see the log)" })
-      }
-      root.next()
-    }
+    onExited: function(code) { root.finished(code, operation, verbOut.text, verbErr.text) }
   }
   Process { id: copy }
   Timer { id: copiedTimer; interval: 1500; onTriggered: root.copied = false }
-  Process { id: logOpen; command: [root.cli, "log"] }
   Timer {
     interval: root.view.mark === "busy" ? 1500 : root.opened ? 5000 : 30000
     running: true; repeat: true; triggeredOnStart: true
@@ -374,9 +388,10 @@ Panel {
                     width: parent.width - 2 * root.pad
                     spacing: Style.space(6)
                     Row {
+                      width: parent.width
                       spacing: Style.space(10)
-                      Logo { family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
-                      Label { text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
+                      Logo { id: cardLogo; family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
+                      Label { width: parent.width - (cardLogo.visible ? cardLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
                     }
                     Row {
                       spacing: Style.space(10)
@@ -676,6 +691,8 @@ Panel {
                     anchors.right: fieldValue.left
                     anchors.rightMargin: Style.space(10)
                     anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(0, fieldValue.x - fieldLabel.x - fieldLabel.width - Style.space(20))
+                    elide: Text.ElideMiddle
                     text: !r.secret ? "" : root.revealed ? r.value : r.value.replace(/[^.:\/]+/g, "•••")
                     color: Util.alpha(root.labelTone, root.revealed ? 1 : 0.55)
                     font.pixelSize: Style.font.caption - 2
@@ -693,18 +710,26 @@ Panel {
                   Row {
                     id: optLabel
                     x: root.gutter
+                    width: Math.max(0, optValue.x - x - Style.space(10))
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(8)
                     Label { width: Style.space(12); text: r.on ? root.glyph("check") : ""; color: root.ink }
-                    Label { text: r.label; color: r.on ? root.ink : r.off ? root.labelTone : root.valueTone }
+                    Label {
+                      objectName: "local-ai-option-name"
+                      width: Math.max(0, optLabel.width - Style.space(20))
+                      elide: Text.ElideRight
+                      text: r.label
+                      color: r.on ? root.ink : r.off ? root.labelTone : root.valueTone
+                    }
                   }
-                  // a long format gives way in its middle, keeping the context at its end, rather than run over the name
+                  // Keep the fit visible and give long model names the remaining space.
                   Right {
-                    visible: !!r.value
+                    id: optValue
+                    objectName: "local-ai-option-fit"
                     margin: root.gutter
-                    width: Math.min(implicitWidth, parent.width - optLabel.x - optLabel.width - root.gutter - Style.space(10))
+                    width: r.value ? Math.min(implicitWidth, (parent.width - 2 * root.gutter) / 2) : 0
                     horizontalAlignment: Text.AlignRight
-                    elide: Text.ElideMiddle
+                    elide: Text.ElideRight
                     text: r.value || ""
                     color: root.labelTone
                   }
@@ -728,7 +753,8 @@ Panel {
                     background: Rectangle { color: "transparent"; border.width: 1; border.color: root.ruleTone }
                     onAccepted: {
                       var path = text.indexOf("~") === 0 ? Quickshell.env("HOME") + text.slice(1) : text
-                      root.activate("set|folder|" + path + "|" + r.id)
+                      root.run(["set", "folder", path].concat(r.id ? [r.id] : []))
+                      root.nav({ open: "" })
                     }
                   }
                 }
@@ -875,9 +901,10 @@ Panel {
       width: parent.width - 2 * root.pad
       spacing: Style.space(4)
       Row {
+        width: parent.width
         spacing: Style.space(8)
-        Logo { family: h.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
-        Label { text: h.name; color: root.ink; font.pixelSize: Style.font.body }
+        Logo { id: heroLogo; family: h.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
+        Label { width: parent.width - (heroLogo.visible ? heroLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: h.name; color: root.ink; font.pixelSize: Style.font.body }
       }
       Chips { width: parent.width; items: h.chips || []; tone: root.valueTone }
     }

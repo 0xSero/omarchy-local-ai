@@ -2,6 +2,23 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.6.0] - 2026-09-29
+
+From an independent audit (Codex, gpt-6-astra) and a click-through of every panel path with cua on a real Omarchy desktop, including a fresh account's setup.
+
+### Added
+- **Stop sharing** on a shared model's page.
+- Refresh models says what happened: "models up to date · <commit>", or the error.
+
+### Fixed
+- A card is in use when any running container holds it, whoever started it: a second model no longer lands on a GPU another account or tool is using (the Arc Pro B70 reports no memory, so this was the only way to see it).
+- Setup no longer takes the tailnet operator from another account; sharing says who manages Tailscale when it is someone else.
+- A stopped model's page shows why it stopped with Run again, View logs and Dismiss, instead of uptime and a share link that could not work; the reason also shows on its card without opening it.
+- Stop keeps the model's state when Docker fails to remove it, and still stops a shared model when unsharing fails.
+- An empty file listing from Hugging Face is refused instead of counted as a complete download.
+- Every failure shows a reason, including a failed setup, an agent terminal that did not open, and a panel refresh that failed; Docker, downloads and panel actions have time limits instead of waiting forever.
+- Long model names no longer run into the fit column.
+
 ## [6.5.4] - 2026-09-29
 
 ### Fixed

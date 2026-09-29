@@ -55,6 +55,7 @@ shim omarchy-cmd-present 'command -v "$1" >/dev/null'
 shim omarchy-sudo-docker 'exit 1'
 shim lspci 'exit 0'
 shim ss 'exit 0'
+shim docker '[[ $1 == ps ]]'
 ! command -v node >/dev/null || ln -s "$(command -v node)" "$TMP/bin/node"
 export PATH=$TMP/bin:/usr/bin:/bin
 recipes
