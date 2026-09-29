@@ -92,7 +92,14 @@ mkdir -p "$MODELS/test--big@000000000000/big" && : >"$MODELS/test--big@000000000
 "$CLI" snapshot >"$TMP/snap.json"
 [[ -z $(unfit big) ]] || fail "downloaded weights" "$(unfit big)"
 rm -rf "$MODELS"
-pass "too little free disk: needs 120 GB free disk, you have 54; once its weights are downloaded and checked it fits"
+mkdir -p "$MODELS/test--big@000000000000/big" && truncate -s 60G "$MODELS/test--big@000000000000/big/model.safetensors.part"
+"$CLI" snapshot >"$TMP/snap.json"
+[[ $(unfit big) == "needs 120 GB free disk, you have 54" ]] || fail "partial download short" "$(unfit big)"
+truncate -s 10G "$MODELS/test--big@000000000000/big/model-2.safetensors"
+"$CLI" snapshot >"$TMP/snap.json"
+[[ -z $(unfit big) ]] || fail "partial download" "$(unfit big)"
+rm -rf "$MODELS"
+pass "too little free disk: needs 120 GB free disk, you have 54; it fits once what is left of its weights does, or they are checked"
 
 host 256 500 'disk 0 sata'
 "$CLI" snapshot >"$TMP/snap.json"
