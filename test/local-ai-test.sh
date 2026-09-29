@@ -173,6 +173,18 @@ if command -v node >/dev/null; then
   [[ $(view home) == " sec,slot,slot,field,acts" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
+  # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
+  # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
+  [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,acts" &&
+    $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
+    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,acts:Refresh models" &&
+    $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
+    fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
+  [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
+    v.mark + " " + v.rows.filter(r => r.type === "run").map(r => r.sub + " " + r.primary.action)') == "busy pulling image stop|m" ]] ||
+    fail "an unknown state" "$(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling"}]; c.build(s, ui())')"
+  pass "a crashed model no GPU row shows can be dismissed from home, and a state the panel does not know shows as working"
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
 fi
