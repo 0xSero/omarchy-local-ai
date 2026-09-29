@@ -192,7 +192,10 @@ pass "the engine gets its card, a read-only weights mount and the recipe's optio
 gateway=$(grep -- '--name omarchy-local-ai-.*-gateway' "$SHIM/docker.log")
 [[ $gateway == *"--publish 127.0.0.1:12434:12434"* && $gateway == *"--user $(id -u):$(id -g)"* && $gateway == *"gateway.key:/run/gateway.key:ro"* ]] ||
   fail "gateway argv" "$gateway"
-pass "the gateway runs as the user on 127.0.0.1 with the key mounted read-only"
+[[ $gateway == *"--cap-drop ALL"* && $gateway == *"--read-only"* &&
+  $gateway == *"--tmpfs /tmp:rw,nosuid,nodev,size=64m"* && $gateway == *"--dns 127.0.0.1"* ]] ||
+  fail "gateway isolation" "$gateway"
+pass "the gateway runs as the user with a read-only root, no capabilities and no external DNS"
 key=$(cat "$STATE/gateway.key")
 ! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
 [[ $(stat -c %a "$STATE/gateway.key") == 600 ]] || fail "key mode"
