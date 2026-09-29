@@ -259,11 +259,11 @@ function page(s, ui, m) {
       { v: dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
   }
   // a card's Config: every model validated for it, the chosen one checked; one this machine cannot run says why
-  // and cannot be chosen
+  // and cannot be chosen. A format's detail in parentheses stays on the model's own page, not in its row
   if ((m.models || []).length > 1) {
     v.rows.push({ type: "sec", label: "MODEL" })
     m.models.forEach(function(x) {
-      v.rows.push({ type: "opt", label: x.name, value: x.unfit ? x.unfit.split("; ")[0] : [fmt(x.format), x.ctx ? ctx(x.ctx) : ""].filter(Boolean).join("  "),
+      v.rows.push({ type: "opt", label: x.name, value: x.unfit ? x.unfit.split("; ")[0] : [fmt(x.format).replace(/ \(.*\)$/, ""), x.ctx ? ctx(x.ctx) : ""].filter(Boolean).join("  "),
         on: x.id === m.id, off: !fits(x), action: fits(x) ? "model|" + x.id : "" })
     })
   }

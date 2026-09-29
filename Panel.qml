@@ -691,13 +691,23 @@ Panel {
                 Item {
                   height: root.rowH
                   Row {
+                    id: optLabel
                     x: root.gutter
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(8)
                     Label { width: Style.space(12); text: r.on ? root.glyph("check") : ""; color: root.ink }
                     Label { text: r.label; color: r.on ? root.ink : r.off ? root.labelTone : root.valueTone }
                   }
-                  Right { visible: !!r.value; margin: root.gutter; text: r.value || ""; color: root.labelTone }
+                  // a long format gives way in its middle, keeping the context at its end, rather than run over the name
+                  Right {
+                    visible: !!r.value
+                    margin: root.gutter
+                    width: Math.min(implicitWidth, parent.width - optLabel.x - optLabel.width - root.gutter - Style.space(10))
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideMiddle
+                    text: r.value || ""
+                    color: root.labelTone
+                  }
                   Click { action: r.action }
                 }
               }
@@ -752,8 +762,16 @@ Panel {
       Row {
         required property var modelData
         spacing: Style.space(4)
-        Label { visible: !!modelData.icon; text: root.glyph(modelData.icon || ""); color: root.labelTone; font.pixelSize: chips.size }
-        Label { visible: !!modelData.text; text: modelData.text || ""; color: chips.tone; font.pixelSize: chips.size }
+        Label { id: chipIcon; visible: !!modelData.icon; text: root.glyph(modelData.icon || ""); color: root.labelTone; font.pixelSize: chips.size }
+        // a fact longer than the line wraps inside it
+        Label {
+          visible: !!modelData.text
+          width: Math.min(implicitWidth, chips.width - (chipIcon.visible ? chipIcon.width + Style.space(4) : 0))
+          wrapMode: Text.WordWrap
+          text: modelData.text || ""
+          color: chips.tone
+          font.pixelSize: chips.size
+        }
       }
     }
   }

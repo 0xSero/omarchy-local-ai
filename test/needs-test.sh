@@ -28,7 +28,7 @@ recipes() {
     def r($id; $w): {id: $id, name: $id, family: "qwen", format: "EXL3", sizeGb: 1, cards: 1, image: $img, servedName: "s",
       weights: [{repository: ("test/" + $w), revision: ("0" * 40), layout: "dir", mountPath: "/models", dir: $w, files: ""}],
       launch: {arguments: [], environment: {}, port: 8000, shm: ""}, serving: {ctxTokens: 32768}, capabilities: {}};
-    def big: {needs: {host_ram_gb: 96, disk_gb: 120, fast_storage: "nvme"}};
+    def big: {needs: {host_ram_gb: 96, disk_gb: 120, fast_storage: "nvme"}, format: "EXL3 · 3.05 bpw, vision (experts in RAM, n-gram table on NVMe)"};
     {schemaVersion: "omarchy-local-ai/recipes/2", registryCommit: ("d" * 40), gateway: {image: ("ghcr.io/x/gateway@sha256:" + ("b" * 64))},
      hardware: {"rtx-3090-24gb": {match: {backend: "nvidia", vramGb: 24, names: ["rtx3090"]}, recipes: [
        r("big"; "big") + big, r("small"; "small"), r("big-tp2"; "big") + big + {cards: 2}, r("small-tp2"; "small") + {cards: 2}]}}}' \
@@ -67,6 +67,10 @@ if command -v node >/dev/null; then
   [[ $(view home | jq -r '[.[] | select(.type == "slot") | .run.action] | join(" ")') == "run|big|nvidia:0 run|big|nvidia:1 run|big-tp2|nvidia:0,nvidia:1" ]] ||
     fail "fit picks" "$(view home)"
   pass "and the card and its group are offered it first, as the registry orders them"
+  # the parenthesised detail of a long format stays on the model's page, so its Config row fits beside the name
+  [[ $(view kind rtx-3090-24gb | jq -r 'map(select(.type == "opt"))[0].value') == "EXL3 3.05 bpw, vision  32K" ]] ||
+    fail "config row format" "$(view kind rtx-3090-24gb)"
+  pass "a Config row leaves a long format's parenthesised detail to the model's page"
 fi
 
 host 64 500 "$NVME_CRYPT"
