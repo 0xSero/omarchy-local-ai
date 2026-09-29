@@ -465,10 +465,17 @@ phase_purge() {
   jq -r '.gateway.image, .hardware[].recipes[].image' "$RECIPES" | sort -u | xargs -r docker rmi >/dev/null 2>&1 || true
 }
 
-# fail <message>: take the containers down and stop with the message
+# fail <message>: keep the engine's last lines in the log (taking the containers down deletes them), name its first
+# error in the message, take the containers down and stop
 fail() {
+  local e hint=""
+  e=$(engine "$WID")
+  if docker inspect "$e" >/dev/null 2>&1; then
+    docker logs --tail 60 "$e" >>"$WD/err" 2>&1 || true
+    hint=$(docker logs --tail 200 "$e" 2>&1 | grep -i -m1 -e error -e 'out of' -e exception | cut -c1-160 || true)
+  fi
   phase_stop "$WID" || true
-  die "$*"
+  die "$*${hint:+: $hint}"
 }
 
 # __worker <id> <key>: download, start, wait for the model, check it answers; status.json tells the widget each step
@@ -513,10 +520,7 @@ worker_run() {
     [[ $code == "200" && -n $served ]] && break
     [[ $code == "401" ]] && fail "the gateway refuses this install's key"
     ((SECONDS - t0 < 1800)) || fail "the engine did not answer within 30 minutes"
-    if (($(docker inspect -f '{{.RestartCount}}' "$(engine "$WID")" 2>/dev/null || echo 0) >= 2)); then
-      docker logs --tail 60 "$(engine "$WID")" >>"$WD/err" 2>&1
-      fail "the engine keeps crashing: $(docker logs --tail 30 "$(engine "$WID")" 2>&1 | grep -i -m1 -e error -e 'out of' | cut -c1-160)"
-    fi
+    (($(docker inspect -f '{{.RestartCount}}' "$(engine "$WID")" 2>/dev/null || echo 0) < 2)) || fail "the engine keeps crashing"
     status "$WID" starting "loading" $(((SECONDS - t0) * 100 / (expect + 1) > 95 ? 95 : (SECONDS - t0) * 100 / (expect + 1) + 1))
     sleep 3
   done
