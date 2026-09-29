@@ -34,6 +34,9 @@ fi
 # explains what that means and asks. Local AI uses it at once; the reboot it mentions is not needed for Local AI.
 OMARCHY_DEFER_REBOOT=1 omarchy-setup-security-sudoless-docker
 omarchy-sudo-docker --configured && { echo "Local AI needs Sudoless Docker to start models. Nothing else was changed."; exit 1; }
+# the group applies from the next login; until then let this account reach the daemon, so Local AI works now
+sock=${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock}
+[[ -w $sock ]] || sudo setfacl -m "u:$USER:rw" "$sock"
 
 # sharing a model on your tailnet without a prompt
 if command -v tailscale >/dev/null; then

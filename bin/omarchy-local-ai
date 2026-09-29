@@ -10,8 +10,8 @@
 #
 # `run` downloads the weights as you and checks every file against the Hub, then starts the engine on
 # a private network and a keyed gateway on 127.0.0.1, as you: setup puts you in the docker group once
-# (Omarchy's Sudoless Docker), and until your next login this file borrows that group through sg. Nothing
-# here runs as root, so there is no password prompt after setup and none after an update.
+# (Omarchy's Sudoless Docker) and lets this login reach the socket until the group applies at the next one.
+# Nothing here runs as root, so there is no password prompt after setup and none after an update.
 
 set -euo pipefail
 shopt -s nullglob
@@ -19,13 +19,6 @@ exec </dev/null
 
 TARGET=$(readlink -f -- "${BASH_SOURCE[0]}")
 PANEL=${TARGET%/bin/*}
-# setup added you to the docker group, but a session only carries the groups it logged in with: sg lends it
-# until the next login (it asks nothing of a member)
-if [[ ! -w ${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock} && -z ${LOCAL_AI_SG:-} ]] && command -v sg omarchy-sudo-docker >/dev/null &&
-  ! omarchy-sudo-docker --configured; then
-  export LOCAL_AI_SG=1
-  exec sg docker -c "$(printf '%q ' "$TARGET" "$@")"
-fi
 CATALOG=$HOME/.cache/omarchy/local-ai/recipes.json
 RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
@@ -122,6 +115,9 @@ cmd_registry() (
 # Setup is offered inside the plugin; the terminal handles package progress and sudo. It is needed while the account
 # is not in the docker group or an NVIDIA card has no container runtime: what the machine is, never which plugin
 # version set it up, so an update never asks for it again.
+# docker_ok: this process can reach the daemon (the docker group from login, or the socket permission setup gives the
+# login it ran in)
+docker_ok() { [[ -w ${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock} ]]; }
 setup_needed() {
   omarchy-sudo-docker --configured && return 0
   omarchy-hw-nvidia && ! command -v nvidia-ctk >/dev/null && return 0
@@ -545,6 +541,7 @@ worker_run() {
 cmd_run() {
   valid_id "${1:-}" && [[ -n ${2:-} ]] || die "run <recipe> <gpu>[,<gpu>...]"
   ! omarchy-sudo-docker --configured || die "Local AI is not set up yet: choose Set up Local AI"
+  docker_ok || die "log out and back in once to finish setting up Local AI"
   local id=${1%--*} keys=() k r d g port busy n=1
   IFS=, read -ra keys <<<"$2"
   r=$(recipe "$id") || die "no recipe $id"
@@ -966,7 +963,7 @@ cmd_snapshot() {
     .folder // "", "\u0000", (.folders // [] | tojson), "\u0000"' "$STATE/settings.json" 2>/dev/null) || true
   [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
   jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
-    --argjson setup "$(setup_needed && echo true || echo false)" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
+    --argjson setup "$(setup_needed && echo true || echo false)" --argjson relogin "$(docker_ok && echo false || echo true)" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --argjson folders "${sfs:-[]}" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY$MATCH"'
@@ -978,7 +975,7 @@ cmd_snapshot() {
       | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select(.usedMiB != null and .usedMiB > 2048 and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, setupNeeded: $setup, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
+    | {version: $version, setupNeeded: $setup, relogin: ($relogin and ($setup | not)), host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],

@@ -170,6 +170,8 @@ function flat(list) { return [].concat.apply([], list.map(function(x) { return x
 // already running a model is not listed again; the rest are one "all GPUs" away.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: ui.problem ? [{ type: "error", label: ui.problem }] : [] }
+  if (s.relogin) return { title: "LOCAL AI", version: s.version, rows: [{ type: "sec", label: "SETUP" },
+    { type: "links", note: "Log out and back in once to finish setting up: Docker access applies to new logins.", items: [] }] }
   if (s.setupNeeded) return { title: "LOCAL AI", version: s.version, rows:
     (ui.problem ? [{ type: "error", label: ui.problem }] : []).concat([
       { type: "sec", label: "SETUP" },

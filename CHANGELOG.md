@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.5.4] - 2026-09-29
+
+### Fixed
+- After setup, Local AI did nothing until the next login: it borrowed the new docker group through `sg`, which Omarchy does not have, and every call failed. Setup now lets the login it ran in reach Docker directly (the docker group covers later logins), with the same one password. If Docker is still out of reach, the panel says to log out and back in once, and a start says the same.
+
 ## [6.5.3] - 2026-09-29
 
 ### Fixed
