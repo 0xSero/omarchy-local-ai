@@ -374,6 +374,20 @@ grep -q "^serve --https=12434 off" "$SHIM/tailscale.log" || fail "unshare" "$(ca
 cp "$TMP/plugin/recipes.json" "$SHIM/registry.json"
 "$CLI" registry
 jq -e '.registryCommit == "0000000000000000000000000000000000000001"' "$TMP/catalog.json" >/dev/null || fail "refresh" "$(head -c 300 "$TMP/catalog.json" 2>/dev/null)"
+# a load whose worker is gone reads as one line: a status from before this boot is a restart, a pid that is not a
+# worker of ours (after a reboot the number can belong to anything) stopped unexpectedly, and a live worker is left be
+st() { jq -c --arg a "$1" --argjson p "$2" '.state = "starting" | .at = $a | .pid = $p' "$STATE/deploy/$ID/status.json" >"$TMP/st" &&
+  cp "$TMP/st" "$STATE/deploy/$ID/status.json"; "$CLI" snapshot | jq -r --arg id "$ID" '.deployments[] | select(.id == $id) | "\(.state) \(.error)"'; }
+cp "$STATE/deploy/$ID/status.json" "$TMP/ready.json"
+sleep 30 & other=$!
+bash -c 'exec -a omarchy-local-ai-worker sleep 30' & ours=$!
+[[ $(st 2000-01-01T00:00:00Z "$other") == "error the machine restarted while it was starting" ]] || fail "restart" "$(st 2000-01-01T00:00:00Z "$other")"
+[[ $(st "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$other") == "error stopped unexpectedly" ]] || fail "reused pid" "$(st "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$other")"
+[[ $(st "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ours") == "starting " ]] || fail "live worker" "$(st "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$ours")"
+kill "$other" "$ours" 2>/dev/null || true
+cp "$TMP/ready.json" "$STATE/deploy/$ID/status.json"
+pass "a load cut by a restart says so, a pid that is not ours reads as stopped, and a live worker keeps loading"
+
 "$CLI" stop "$ID"
 "$CLI" remove
 [[ ! -d $STATE && -z $(ls "$SHIM/containers") ]] || fail "remove" "$(ls "$SHIM/containers")"
