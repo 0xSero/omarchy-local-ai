@@ -1015,10 +1015,10 @@ cmd_snapshot() {
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
     ($agents | split("\n") | map(select(length > 0))) as $agents
     # a running model with its session, in error when its worker or engine is gone; a second copy of a recipe runs
-    # as <recipe>--2: its recipe is the one before the last "--"
+    # as <recipe>--2: its recipe is the one before the last "--", and its name when recipes.json no longer has it
     | ([$deps[] | .d + {session: .u} + (if .why != "" then {state: "error", error: .why} else {} end)
       | (.id | if test("--") then .[:rindex("--")] else . end) as $rid
-      | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
+      | {name: $rid} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, setupError: $setupError, setupNeeded: $setup, relogin: ($relogin and ($setup | not)), host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,

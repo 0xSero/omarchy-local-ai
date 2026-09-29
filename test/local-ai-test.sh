@@ -185,6 +185,19 @@ if command -v node >/dev/null; then
     v.mark + " " + v.rows.filter(r => r.type === "run").map(r => r.sub + " " + r.primary.action)') == "busy pulling image stop|m" ]] ||
     fail "an unknown state" "$(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling"}]; c.build(s, ui())')"
   pass "a crashed model no GPU row shows can be dismissed from home, and a state the panel does not know shows as working"
+  [[ $(js '[c.k(999950), c.k(950000), c.k(999), c.gb(0.004), c.gb(13.84)].join(" ")') == "1M 950K 999 <0.1 GB 14 GB" ]] || fail "rounding" "$(js '[c.k(999950), c.gb(0.004)]')"
+  # the weeks after daylight saving ends (Sydney, April 5 2026) are an hour longer: June still starts at its first week
+  [[ $(TZ=Australia/Sydney js 's.total = 1; s.life = {requests: 1, since: "Feb 3", start: Date.parse("2026-02-02T00:00:00+11:00") / 1000, today: 138,
+    days: Array(140).fill(1)}; c.build(s, ui()).rows[0].months.map(m => m.label + m.col).join(" ")') == "Feb0 Mar4 Apr9 May13 Jun17" ]] || fail "months after a DST end"
+  # a model whose recipe is gone and whose config has no start: no empty chip, no NaN; one stopping has no Stop
+  [[ $(js 's.deployments = [{id: "gone--2", name: "gone", keys: ["nvidia:0"], state: "ready", port: 1, agent: "pi"}];
+    var v = c.build(s, ui({view: "run", id: "gone--2"})); v.hero.chips.map(x => x.text).join(",") + " " + v.rows[0].cells[5].v') == "1 × RTX 4090 –" ]] ||
+    fail "a model with no recipe or start" "$(js 's.deployments = [{id: "gone--2", keys: ["nvidia:0"], state: "ready"}]; c.build(s, ui({view: "run", id: "gone--2"}))')"
+  [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "stopping"}];
+    [c.build(s, ui()).rows.find(r => r.type === "run").primary.action, c.build(s, ui({view: "run", id: "m"})).rows.pop().items.pop().action,
+      c.build(s, ui({view: "gpus", open: "gpu:nvidia:0"})).rows.find(r => r.type === "links").items.pop().action].join(",")') == ",," ]] ||
+    fail "Stop while stopping"
+  pass "the view model rounds before picking a unit, keeps months on their weeks across DST, and shows a model with no recipe or start"
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
 fi
@@ -246,6 +259,11 @@ pass "a card that is running a model cannot be claimed twice"
 wait_for ready "$ID--2"
 grep -q -- "--name omarchy-local-ai-$ID--2-engine .*--gpus \"device=2\"" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
   fail "second copy" "$(grep -- "$ID--2-engine" "$SHIM/docker.log")"
+# a copy whose recipe recipes.json no longer has is named after that recipe, not <recipe>--2
+jq -c '.hardware["rtx-4090-24gb"].recipes[0].id = "renamed"' "$TMP/plugin/recipes.json" >"$TMP/r2" && mv "$TMP/r2" "$TMP/plugin/recipes.json"
+"$CLI" snapshot >"$TMP/snap-gone.json"
+[[ $(jq -r --arg id "$ID--2" '.deployments[] | select(.id == $id) | .name' "$TMP/snap-gone.json") == "$ID" ]] || fail "name of a gone recipe" "$(jq -c .deployments "$TMP/snap-gone.json")"
+recipes "$PIN"
 "$CLI" stop "$ID--2"
 pass "the same model runs a second copy on a second card of the same kind, on its own port"
 
