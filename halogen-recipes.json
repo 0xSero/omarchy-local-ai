@@ -4,7 +4,9 @@
       "backend": "amd-rocm",
       "name": "AMD Radeon 8050S",
       "names": [
+        "8050s",
         "8050sgraphics",
+        "8060s",
         "8060sgraphics"
       ],
       "unifiedMemory": true

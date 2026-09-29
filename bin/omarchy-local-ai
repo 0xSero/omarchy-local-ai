@@ -368,12 +368,12 @@ phase_start() {
   else
     # by GID, not name: the engine image need not share the host's group names.
     [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd \
-      --group-add "$(getent group video | cut -d: -f3)" \
-      --group-add "$(stat -c %g /dev/dri/renderD128)")
+      --group-add "$(getent group video | cut -d: -f3)")
     # oneCCL opens every by-path link it finds, so the engine sees only its own cards'
     for k in "$@"; do
       v=$(readlink -f "$(jq -r --arg k "$k" '.[] | select(.key == $k) | .node' <<<"$g")")
       [[ $v =~ ^/dev/dri/renderD[0-9]+$ ]] || die "no render node for $k"
+      [[ $backend == "amd-rocm" ]] && a+=(--group-add "$(stat -c %g "$v")")
       for w in /dev/dri/by-path/*-render; do
         [[ $(readlink -f "$w") == "$v" ]] && ln -s "../${v##*/}" "$run/by-path/${w##*/}"
       done

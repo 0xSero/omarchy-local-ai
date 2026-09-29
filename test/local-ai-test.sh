@@ -128,11 +128,16 @@ cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
   fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"
 jq -e '[.kinds[] | select(.hw == "rx-7600-xt-16gb") | .free[0], (.models | length > 0)] == ["amd-rocm:0", true]' "$TMP/snap-amd.json" >/dev/null ||
   fail "the RX 7600 XT kind" "$(jq -c .kinds "$TMP/snap-amd.json")"
+# Deterministic host RAM, including on ordinary CI runners with less than 120 GiB.
+export SHIM_RAM_MIB=125952
+shim awk 'if [[ ${@: -1} == /proc/meminfo ]]; then
+  if [[ $1 == *1048576* ]]; then echo $((SHIM_RAM_MIB / 1024)); else echo "$SHIM_RAM_MIB"; fi
+else /usr/bin/awk "$@"; fi'
 # Strix Halo's reported VRAM is the BIOS carve-out, not the shared RAM.
 # It must match on its GPU name and host RAM, without treating 512 MiB as the model capacity.
 shim amd-smi 'case $1 in
-static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon 8050S\"},\"vram\":{\"size\":{\"value\":512}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
-metric) echo "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210}}]}" ;;
+static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon 8050S\"},\"vram\":{\"size\":{\"value\":512}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) printf "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210}}}]}" ;;
 esac'
 "$CLI" snapshot >"$TMP/snap-strix.json"
 host_mib=$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)
@@ -141,13 +146,16 @@ host_mib=$(awk '/^MemTotal:/ {print int($2 / 1024)}' /proc/meminfo)
 if ((host_mib >= 120 * 1024)); then
   [[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == ryzen-ai-max-365-128gb ]] ||
     fail "Strix Halo match" "$(jq -c .gpus "$TMP/snap-strix.json")"
-  [[ $(jq -r '.kinds[0].models | map(.id) | join(" ")' "$TMP/snap-strix.json") ==
+  [[ $(jq -r '.kinds[0].models | map(.id) | join(" ")' "$TMP/snap-strix.json") == \
     'halogen-qwen38-27b-strix-halo halogen-flash-next-strix-halo' ]] ||
     fail "Halogen models in snapshot" "$(jq -c .kinds "$TMP/snap-strix.json")"
 else
   [[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == '' ]] ||
     fail "insufficient RAM" "$(jq -c .gpus "$TMP/snap-strix.json")"
 fi
+SHIM_RAM_MIB=65536 "$CLI" snapshot >"$TMP/snap-small-strix.json"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-small-strix.json") == '' ]] || fail "64 GiB Strix Halo must not match"
+rm -f "$TMP/bin/awk"
 rm -f "$TMP/bin/amd-smi"
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"
@@ -288,19 +296,21 @@ jq '.hardware["rx-7600-xt-16gb"] = (.hardware["rtx-4090-24gb"]
   | del(.hardware["rtx-4090-24gb"])' "$TMP/plugin/recipes.json" >"$TMP/r2"
 mv "$TMP/r2" "$TMP/plugin/recipes.json"
 shim amd-smi 'case $1 in
-static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 7600 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
-metric) echo "{\"gpu_data\":[]}" ;;
+static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 7600 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) printf "{\"gpu_data\":[]}" ;;
 esac'
-shim readlink 'if [[ $1 == -f && $2 == /dev/dri/by-path/* ]]; then echo /dev/dri/renderD128; else /usr/bin/readlink "$@"; fi'
+shim readlink 'if [[ $1 == -f && $2 == /dev/dri/by-path/* ]]; then echo /dev/dri/renderD129; else /usr/bin/readlink "$@"; fi'
 shim nvidia-smi 'exit 9'
+shim getent 'if [[ $* == "group video" ]]; then echo "video:x:44:"; else /usr/bin/getent "$@"; fi'
+shim stat 'if [[ $* == "-c %g /dev/dri/renderD129" ]]; then echo 109; else /usr/bin/stat "$@"; fi'
 "$CLI" run "$ID" amd-rocm:0
 wait_for ready
 engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *'--security-opt seccomp=unconfined --ipc host --ulimit memlock=-1:-1'* &&
-  $engine == *'--device /dev/kfd --group-add video --group-add render'* &&
+  $engine == *'--device /dev/kfd --group-add 44 --group-add 109'* &&
   $engine == *'--device /dev/dri'* && $engine != *'--publish'* ]] || fail "halogen engine argv" "$engine"
 "$CLI" stop "$ID"
-rm -f "$TMP/bin/readlink" "$TMP/bin/amd-smi"
+rm -f "$TMP/bin/readlink" "$TMP/bin/amd-smi" "$TMP/bin/getent" "$TMP/bin/stat"
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"
 pass "a halogen recipe receives the required runtime flags without publishing its engine"
