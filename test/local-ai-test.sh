@@ -15,6 +15,7 @@ mkdir -p "$HOME" "$SHIM/containers" "$TMP/bin" "$TMP/plugin/bin"
 cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null || true
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
+sed -i "s/setup_needed \&\& echo true || echo false/echo false/" "$CLI"
 sed -i "s|CATALOG=/var/cache/omarchy-local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 STATE=$HOME/.local/state/omarchy/local-ai
 ID=test-model-rtx4090

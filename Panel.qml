@@ -105,6 +105,7 @@ Panel {
     var a = (action || "").split("|")
     switch (a[0]) {
     case "forget": run(["forget", a[1]]); nav({ open: "" }); break
+    case "setup": run(["setup"]); break
     case "registry": ui = Object.assign({}, ui, { registryBusy: true, problem: "" }); run(["registry"]); break
     case "run": run(["run", a[1], a[2]]); home(); break
     case "again": run(["stop", a[1]]); run(["run", a[1], a[2]]); home(); break

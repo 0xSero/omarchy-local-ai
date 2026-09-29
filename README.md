@@ -36,7 +36,7 @@ Home: your tokens and requests over the last 20 weeks, running models as cards, 
 omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 ```
 
-Then run `bin/omarchy-install-ai-local` from the plugin's folder once. It asks for your password to tell polkit what Local AI's password prompts are for, so they read "Local AI needs your password to start a model on your GPU" instead of showing a command line, and on an NVIDIA machine it adds the NVIDIA container runtime, which Omarchy does not ship. Docker itself is part of Omarchy.
+Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, installs the descriptive password prompts, and configures NVIDIA container support when needed. Return to the panel when setup finishes. No script path or separate manual command is needed. Setup refuses to restart Docker while containers are running.
 
 Omarchy keeps you out of the docker group, so every start and stop asks for your password once. With sudoless Docker (_Setup > Security_) it doesn't ask.
 
