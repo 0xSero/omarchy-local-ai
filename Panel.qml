@@ -694,7 +694,7 @@ Panel {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: Style.space(8)
                     Label { width: Style.space(12); text: r.on ? root.glyph("check") : ""; color: root.ink }
-                    Label { text: r.label; color: r.on ? root.ink : root.valueTone }
+                    Label { text: r.label; color: r.on ? root.ink : r.off ? root.labelTone : root.valueTone }
                   }
                   Right { visible: !!r.value; margin: root.gutter; text: r.value || ""; color: root.labelTone }
                   Click { action: r.action }
