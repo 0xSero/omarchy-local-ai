@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # omarchy:summary=Remove Local AI's models, containers, engine images, weights and settings
-# omarchy:requires-sudo=true
 
 set -e
 
@@ -9,6 +8,4 @@ HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 
 echo "Removing Local AI's models, containers, engine images and weights..."
 "$HERE/omarchy-local-ai" remove
-sudo rm -f "/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy" "/etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules"
-sudo systemctl reload polkit
-echo "Done. To remove the plugin itself: omarchy plugin remove sero.local-ai"
+echo "Done. Sudoless Docker stays on; turn it off in Setup > Security. To remove the plugin itself: omarchy plugin remove sero.local-ai"

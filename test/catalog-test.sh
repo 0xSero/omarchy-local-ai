@@ -9,7 +9,7 @@ PANEL=$TMP/plugin
 mkdir -p "$PANEL" "$TMP/cache"
 echo bundled >"$PANEL/recipes.json"
 pick() {
-  eval "$(grep -E '^(CATALOG|RECIPES)=|^\[\[ .*CATALOG' "$ROOT/bin/omarchy-local-ai" | sed "s|/var/cache/omarchy-local-ai|$TMP/cache|")"
+  eval "$(grep -E '^(CATALOG|RECIPES)=|^\[\[ .*CATALOG' "$ROOT/bin/omarchy-local-ai" | sed "s|\$HOME/.cache/omarchy/local-ai|$TMP/cache|")"
   cat "$RECIPES"
 }
 [[ $(pick) == bundled ]] || { echo "not ok - no catalog"; exit 1; }

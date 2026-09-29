@@ -173,7 +173,7 @@ function homeView(s, ui) {
   if (s.setupNeeded) return { title: "LOCAL AI", version: s.version, rows:
     (ui.problem ? [{ type: "error", label: ui.problem }] : []).concat([
       { type: "sec", label: "SETUP" },
-      { type: "links", note: "Set up password prompts and GPU support. Opens a terminal for your password and installation progress.", items: [] },
+      { type: "links", note: "One-time setup: Docker without a password prompt (Omarchy's Sudoless Docker) and GPU support. Opens a terminal for your password; updates never ask again.", items: [] },
       { type: "acts", items: [{ label: "Set up Local AI", action: "setup", primary: true }] }]) }
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s)
   var rows = ui.problem ? [{ type: "error", label: ui.problem }] : [], life = s.life || {}

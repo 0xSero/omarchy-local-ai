@@ -1,9 +1,0 @@
-// Local AI: the account that ran its setup starts and stops models without a password while it sits at the machine
-// (an active local session). Those phases run only the catalog's recipes on their pinned engine images; sharing on
-// the tailnet, removing everything and updating the catalog still ask. Setup fills in the account and action ids.
-polkit.addRule(function(action, subject) {
-  if ((action.id == "org.omarchy.local-ai.start" || action.id == "org.omarchy.local-ai.stop") &&
-      subject.user == "LOCAL_AI_USER" && subject.local && subject.active) {
-    return polkit.Result.YES;
-  }
-});

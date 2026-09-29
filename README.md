@@ -36,9 +36,9 @@ Home: your tokens and requests over the last 20 weeks, running models as cards, 
 omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 ```
 
-Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, installs the descriptive password prompts and the rule that lets you start and stop models without a password, and configures NVIDIA container support when needed. Return to the panel when setup finishes. No script path or separate manual command is needed. Setup refuses to restart Docker while containers are running.
+Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, turns on Omarchy's Sudoless Docker (it explains what that means and asks first), makes you the tailnet's operator so a model can be shared, and configures NVIDIA container support when needed. Return to the panel when setup finishes; no logout or reboot is needed. Setup refuses to restart Docker while containers are running.
 
-Setup is the only time you type your password to run models: it lets your account start and stop them without asking again while you sit at the machine (a polkit rule for Local AI's start and stop only). Sharing on the tailnet, removing everything and updating the catalog still ask, each prompt saying what it is for. Before setup, Local AI asks for no password at all.
+Setup is the only password Local AI asks for, once per machine: starting, stopping, sharing, refreshing and removing never ask, and plugin updates never ask for setup again. Sudoless Docker is root-equivalent, as Omarchy's own warning says; turn it off in Setup > Security.
 
 ## What it does
 
@@ -97,8 +97,8 @@ connections.
 ### Refresh and remove models
 
 Use **Refresh models** at the bottom of Local AI to fetch the latest published
-registry for your GPUs without reinstalling the plugin. One password prompt
-updates a shared, root-owned catalog. Downloads are pinned to a registry commit,
+registry for your GPUs without reinstalling the plugin; the catalog lives in your
+cache (`~/.cache/omarchy/local-ai`). Downloads are pinned to a registry commit,
 validated before an atomic replacement, and failures keep the previous catalog.
 Refreshing does not stop running models or download model weights. Offload
 recipes are offered only when their RAM, disk and storage requirements fit.
