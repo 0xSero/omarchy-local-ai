@@ -2,6 +2,16 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.7.0] - 2026-09-29
+
+### Fixed
+- "Log out and back in once to finish setting up" is gone, and so is the dead end behind it: the panel showed that note with no button while the account was already in the docker group but the login was older than setup. A login carries the groups it began with, so it could not reach Docker until the next one. The verbs that use Docker now run under `newgrp docker` when that is the case: no root, no password, no logout, and the Docker socket keeps its own permissions (setup no longer sets a socket ACL).
+- Whether a model can start is decided in one place (`lib/access.sh`) for the panel, a start and setup alike. Before, three checks disagreed about the NVIDIA runtime, so an NVIDIA machine with the toolkit installed but Docker not configured for it showed no Set up button and refused every start. That state now offers Set up Local AI.
+- With Docker stopped, the panel says so and checks again by itself, instead of failing to read GPU use; a failed setup shows its button even while Docker is down.
+
+### Changed
+- The snapshot reports `readiness: {state, message}` (`ready`, `needs-setup`, `docker-down` or `unsupported`) in place of `setupNeeded` and `relogin`; `omarchy-local-ai readiness` prints it. Every state has a panel page with a button or one that says it clears by itself, and a test keeps it so.
+
 ## [6.6.0] - 2026-09-29
 
 From an independent audit (Codex, gpt-6-astra) and a click-through of every panel path with cua on a real Omarchy desktop, including a fresh account's setup.

@@ -3,6 +3,9 @@
 # omarchy:summary=Set up Local AI once: Docker without a password prompt, and GPU support
 # omarchy:requires-sudo=true
 set -euo pipefail
+HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+# shellcheck source=../lib/access.sh
+. "$HERE/../lib/access.sh"
 POLICY=/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy
 RULES=/etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules
 ERROR=$HOME/.local/state/omarchy/local-ai/setup-error
@@ -27,23 +30,21 @@ rm -f "$ERROR"
 sudo -v
 if omarchy-hw-nvidia; then
   info=$(sudo docker info --format '{{json .Runtimes}}')
-  if ! jq -e 'has("nvidia")' <<<"$info" >/dev/null; then
+  if ! runtimes_have_nvidia <<<"$info"; then
     [[ -z $(sudo docker ps -q) ]] || { echo "Stop your running Docker containers before setting up NVIDIA support. Nothing was changed."; exit 1; }
     echo "Installing NVIDIA container support..."
     omarchy-pkg-add nvidia-container-toolkit
     sudo nvidia-ctk runtime configure --runtime=docker
     sudo systemctl restart docker
-    sudo docker info --format '{{json .Runtimes}}' | jq -e 'has("nvidia")' >/dev/null
+    sudo docker info --format '{{json .Runtimes}}' | runtimes_have_nvidia
   fi
 fi
 
 # Local AI starts its containers as you, so it needs Docker without a prompt: Omarchy's own Sudoless Docker, which
-# explains what that means and asks. Local AI uses it at once; the reboot it mentions is not needed for Local AI.
+# explains what that means and asks. Local AI works at once: this login gets the docker group when Local AI next asks
+# Docker (lib/access.sh), so neither a logout nor the reboot Omarchy mentions is needed.
 OMARCHY_DEFER_REBOOT=1 omarchy-setup-security-sudoless-docker
-omarchy-sudo-docker --configured && { echo "Local AI needs Sudoless Docker to start models. Nothing else was changed."; exit 1; }
-# the group applies from the next login; until then let this account reach the daemon, so Local AI works now
-sock=${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock}
-[[ -w $sock ]] || sudo setfacl -m "u:$USER:rw" "$sock"
+sudoless_docker_on || { echo "Local AI needs Sudoless Docker to start models. Nothing else was changed."; exit 1; }
 
 # sharing a model on your tailnet without a prompt
 if command -v tailscale >/dev/null; then

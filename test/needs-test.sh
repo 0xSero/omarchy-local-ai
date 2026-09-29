@@ -11,11 +11,11 @@ fail() { printf '%s\n' "${2:-}" >&2; printf 'not ok - %s\n' "$1" >&2; exit 1; }
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 export HOME=$TMP/home XDG_RUNTIME_DIR=$TMP/run MEMINFO=$TMP/meminfo
-mkdir -p "$HOME" "$TMP/bin" "$TMP/plugin/bin"
+mkdir -p "$HOME" "$TMP/bin" "$TMP/plugin/bin" "$TMP/plugin/lib"
 cp "$ROOT/bin/omarchy-local-ai" "$TMP/plugin/bin/"
+cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/manifest.json" "$TMP/plugin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
-sed -i "s/setup_needed \&\& echo true || echo false/echo false/" "$CLI"
 sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
@@ -55,7 +55,7 @@ shim omarchy-cmd-present 'command -v "$1" >/dev/null'
 shim omarchy-sudo-docker 'exit 1'
 shim lspci 'exit 0'
 shim ss 'exit 0'
-shim docker '[[ $1 == ps ]]'
+shim docker 'case $1 in ps) ;; info) echo "{\"nvidia\":{}}" ;; *) exit 1 ;; esac'
 ! command -v node >/dev/null || ln -s "$(command -v node)" "$TMP/bin/node"
 export PATH=$TMP/bin:/usr/bin:/bin
 recipes

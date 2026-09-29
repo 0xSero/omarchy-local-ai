@@ -5,8 +5,9 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/plugin/bin" "$TMP/bin" "$TMP/home" "$TMP/etc"
+mkdir -p "$TMP/plugin/bin" "$TMP/plugin/lib" "$TMP/bin" "$TMP/home" "$TMP/etc"
 cp "${INSTALLER:-$ROOT/bin/omarchy-install-ai-local}" "$TMP/plugin/bin/omarchy-install-ai-local"
+cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 export HOME=$TMP/home SETUP_TEST=$TMP
 # the earlier polkit files live in a test folder
 sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|" "$TMP/plugin/bin/omarchy-install-ai-local"
@@ -23,7 +24,6 @@ docker)
   else echo '{}'; fi ;;
 nvidia-ctk) touch "$SETUP_TEST/configured" ;;
 test | rm) "$@" ;;
-setfacl) [[ ${FAIL_ACL:-0} == 0 ]] || exit 1; printf '%s\n' "$*" >>"$SETUP_TEST/acl" ;;
 *) exit 1 ;;
 esac
 SH
@@ -52,9 +52,6 @@ jq -nc --arg user "${TEST_OPERATOR:-}" '{OperatorUser:$user}'
 SH
 chmod +x "$TMP/bin/"*
 export PATH=$TMP/bin:$PATH
-# the daemon's socket, not reachable by this login until setup
-export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
-: >"$OMARCHY_DOCKER_SOCKET"; chmod 000 "$OMARCHY_DOCKER_SOCKET"
 setup() { bash "$TMP/plugin/bin/omarchy-install-ai-local" >"$TMP/out" 2>&1; }
 
 if BUSY=1 setup; then exit 1; fi
@@ -73,10 +70,10 @@ setup
 grep -qx 'sudoless 1' "$TMP/calls"
 [[ -f $TMP/group ]]
 grep -qx "tailscale set --operator=$USER" "$TMP/calls"
-grep -qx "setfacl -m u:$USER:rw $OMARCHY_DOCKER_SOCKET" "$TMP/acl"
+if grep -q setfacl "$TMP/calls"; then exit 1; fi
 [[ -z $(ls "$TMP/etc") ]]
 grep -qx 'systemctl reload polkit' "$TMP/calls"
-echo 'ok - setup turns on Sudoless Docker, lets this login reach the daemon now, makes you the tailnet operator, and removes the old polkit files'
+echo 'ok - setup turns on Sudoless Docker, gives the socket no permission of its own, makes you the tailnet operator, and removes the old polkit files'
 
 : >"$TMP/calls"
 READY=1 BUSY=1 setup
@@ -90,10 +87,9 @@ NVIDIA=0 setup
 if grep -q '^docker\|^nvidia-ctk\|restart docker' "$TMP/calls"; then exit 1; fi
 echo 'ok - a non-NVIDIA machine needs no NVIDIA installation or daemon restart'
 if FAIL_SUDO=1 setup; then exit 1; fi
-if FAIL_ACL=1 setup; then exit 1; fi
 if grep -q 'Local AI is ready' "$TMP/out"; then exit 1; fi
 grep -qx 'Setup did not finish; choose Set up Local AI to try again.' "$HOME/.local/state/omarchy/local-ai/setup-error"
-echo 'ok - denied sudo or socket ACL failure never reports success and leaves a panel error'
+echo 'ok - denied sudo never reports success and leaves a panel error'
 FAIL_TAILNET=1 setup
 [[ ! -f $HOME/.local/state/omarchy/local-ai/setup-error ]]
 grep -q 'Tailscale is not running' "$TMP/out"
@@ -114,7 +110,7 @@ echo 'ok - unreadable Tailscale preferences never change the operator'
 node - "$ROOT/Model.js" <<'JS'
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const c = {module:{exports:{}}}; vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'),c);
-const v=c.module.exports.build({gpus:[],kinds:[],setupNeeded:true}, {view:'home'});
+const v=c.module.exports.build({gpus:[],kinds:[],readiness:{state:'needs-setup'}}, {view:'home'});
 assert.deepEqual(Array.from(v.rows.flatMap(r => (r.items||[]).map(b => b.action))), ['setup']);
 console.log('ok - fresh installs offer setup directly in the panel');
 JS

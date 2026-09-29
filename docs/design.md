@@ -1,10 +1,11 @@
 # Local AI
 
-A bar widget that runs the one model validated for each GPU in the machine and opens a coding agent on it. The plugin has four main parts:
+A bar widget that runs the one model validated for each GPU in the machine and opens a coding agent on it. The plugin has five main parts:
 
 | File | Role |
 |---|---|
 | `bin/omarchy-local-ai` | The backend: detect GPUs, download and check weights, start and stop containers, open agents, print a snapshot |
+| `lib/access.sh` | Whether a model can start (`readiness`), and the re-run under the docker group for a login older than setup; sourced by the backend and the installer |
 | `Model.js` | Pure functions: snapshot and ui state in, a view (rows and actions) out |
 | `Panel.qml` | Draws the view; turns an action (`verb\|arg\|arg`) into a backend verb |
 | `recipes.json` | The vendored recipes, one card kind per line: from [local-ai-registry](https://github.com/0xSero/local-ai-registry)'s `plugin/v2/recipes.json`, every recipe of each kind, best first: the first on one card is the kind's recommended model, and the rest are what a card's Config offers, on one card or across several (a group) |
@@ -25,7 +26,9 @@ The gateway (`ghcr.io/0xsero/gateway`, pinned by digest) listens on `127.0.0.1` 
 
 Setup opens one terminal and validates sudo once. It turns on Omarchy's Sudoless Docker, sets the tailnet operator only when unset or already this user and adds the NVIDIA runtime when needed, refusing to restart Docker while containers are running. It removes the old per-user authorization files. Every later backend operation runs as the user.
 
-A session carries the groups it logged in with, so setup grants the account read-write access to the Docker socket through an ACL; the docker group covers later logins. If Docker recreates the socket before the next login, the snapshot says `relogin` and the panel asks the user to log out and back in once. Setup is judged from machine state (`omarchy-sudo-docker --configured` and NVIDIA toolkit availability), never a plugin version marker.
+A session carries the groups it logged in with, so a login older than setup has the docker group only in `/etc/group`. The backend then runs the verbs that use Docker (`snapshot`, `run`, `stop`, `remove`, `readiness`) again under `newgrp docker`, once (`LOCAL_AI_REEXEC` stops a second try): no root, no password, no logout, and the Docker socket keeps its own permissions.
+
+Whether a model can start is decided in one place, `lib/access.sh`, from machine state and never a plugin version marker. `readiness` prints one of `ready`, `needs-setup` (Sudoless Docker off, the account outside the docker group, no NVIDIA runtime in `docker info`, or a setup that did not finish), `docker-down` (Docker is not running or not answering) or `unsupported` (no Sudoless Docker helper). The snapshot carries it as `readiness: {state, message}`; the panel, a start and setup all read the same answer, and `Model.js` has a page for every state: a Set up Local AI button, or a note that it clears by itself.
 
 The backend validates recipe arguments before starting, mounts paths owned by the user without symbolic links, and labels containers with the user's uid. Stop and remove retain deployment state if Docker cannot remove a container. Legacy 5.x containers without a uid are still adopted. Docker operations and panel polls have time limits; downloads fail on stalled transfers and keep partial files for resumption. Action and poll failures appear on the current page, including Config and unsupported-GPU pages.
 
@@ -42,6 +45,6 @@ The backend validates recipe arguments before starting, mounts paths owned by th
 
 - AMD cards are found through `amd-smi`, which comes with ROCm; without it they show Coming soon.
 - A model has up to 30 minutes to become ready; repeated engine restarts fail sooner. Stop cancels the download or startup worker.
-- A socket ACL lasts until Docker recreates the socket; an old login then needs to log out and back in once.
+- `newgrp` is how an old login gets the docker group; if it grants nothing (the socket is unreachable for another reason), the state is `docker-down` with the reason, not a request to log in again.
 - Tailscale must be running and logged in for sharing; setup preserves another account’s operator. Failed unsharing is logged but never prevents stopping a model.
 - `bin/omarchy-remove-ai-local` deletes models, containers, engine images, weights and settings; `omarchy plugin remove sero.local-ai` removes the plugin.

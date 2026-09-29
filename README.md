@@ -36,7 +36,7 @@ Home: your tokens and requests over the last 20 weeks, running models as cards, 
 omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 ```
 
-Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, turns on Omarchy's Sudoless Docker (it explains what that means and asks first), makes you the tailnet's operator when none is set so a model can be shared, and configures NVIDIA container support when needed. Return to the panel when setup finishes; the current login gets a temporary Docker socket ACL, so no logout or reboot is needed. If Docker recreates its socket before your next login, the panel asks you to log out and back in once. Setup refuses to restart Docker while containers are running.
+Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, turns on Omarchy's Sudoless Docker (it explains what that means and asks first), makes you the tailnet's operator when none is set so a model can be shared, and configures NVIDIA container support when needed. Return to the panel when setup finishes; a login from before setup picks up the new docker group by itself, so no logout or reboot is needed. Setup refuses to restart Docker while containers are running.
 
 Setup is the only password Local AI asks for, once per machine: starting, stopping, sharing, refreshing and removing never ask, and plugin updates never ask for setup again. Sudoless Docker is root-equivalent, as Omarchy's own warning says; turn it off in Setup > Security.
 
