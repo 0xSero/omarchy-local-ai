@@ -75,6 +75,16 @@ function mark(s) {
 
 // a recipe's facts as chips (an icon name and a short text): its format, context and download size
 function fmt(f) { return (f || "").replace(/ · /g, " ") }
+// a format as short as a list row needs it: an EXL3 model's bits per weight, any other model's quant
+function quant(f) {
+  var b = /(\d+(?:\.\d+)?) ?bpw/.exec(f || ""), p = (f || "").split(" · ")
+  return b ? Number(b[1]) + " bpw" : p[p.length - 1].split(/[ ,(]/)[0]
+}
+// whether a recipe fits this machine: on the card alone, with part of it in RAM, or what it lacks
+function room(r) {
+  if (r.unfit) return r.unfit.split("; ")[0].replace(/, you have \d+$/, "").replace("the models folder on ", "")
+  return r.needs && r.needs.host_ram_gb ? "+" + Math.ceil(r.needs.host_ram_gb) + " GB RAM" : "fits"
+}
 function spec(r) {
   return [{ text: fmt(r.format) }, r.ctx ? { icon: "context", text: ctx(r.ctx) } : null, r.sizeGb ? { icon: "weights", text: gb(r.sizeGb) } : null].filter(Boolean)
 }
@@ -258,12 +268,15 @@ function page(s, ui, m) {
       { v: k(s.week), u: "", k: "week" },
       { v: dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
   }
-  // a card's Config: every model validated for it, the chosen one checked; one this machine cannot run says why
-  // and cannot be chosen. A format's detail in parentheses stays on the model's own page, not in its row
+  // a card's Config: every model validated for it, the chosen one checked, each with its quant, context and whether
+  // it fits, in columns (the panel's font is monospaced); one this machine cannot run says what it lacks and cannot
+  // be chosen
   if ((m.models || []).length > 1) {
     v.rows.push({ type: "sec", label: "MODEL" })
-    m.models.forEach(function(x) {
-      v.rows.push({ type: "opt", label: x.name, value: x.unfit ? x.unfit.split("; ")[0] : [fmt(x.format).replace(/ \(.*\)$/, ""), x.ctx ? ctx(x.ctx) : ""].filter(Boolean).join("  "),
+    var cols = m.models.map(function(x) { return [quant(x.format), x.ctx ? ctx(x.ctx) : "", room(x)] })
+    var w = [0, 1, 2].map(function(i) { return Math.max.apply(null, cols.map(function(c) { return c[i].length })) })
+    m.models.forEach(function(x, i) {
+      v.rows.push({ type: "opt", label: x.name, value: cols[i].map(function(c, j) { return " ".repeat(w[j] - c.length) + c }).join("  "),
         on: x.id === m.id, off: !fits(x), action: fits(x) ? "model|" + x.id : "" })
     })
   }
