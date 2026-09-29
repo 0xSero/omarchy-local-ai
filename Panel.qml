@@ -15,7 +15,8 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  readonly property string cli: String(Qt.resolvedUrl("bin/omarchy-local-ai")).replace(/^file:\/\//, "")
+  // the URL keeps a "%", "#" or "?" in the plugin's path encoded
+  readonly property string cli: decodeURIComponent(String(Qt.resolvedUrl("bin/omarchy-local-ai")).replace(/^file:\/\//, ""))
   readonly property color theme: bar ? bar.foreground : Color.foreground
   readonly property color bg: Color.popups.background
   readonly property color surface: Util.alpha(theme, 0.06)
@@ -66,6 +67,8 @@ Panel {
   property bool copied: false
   property bool revealed: false
   property var queue: []
+  // a refresh asked for while a snapshot runs
+  property bool again: false
   // A snapshot the view cannot read says so, rather than looking like a machine with no GPU
   readonly property var view: {
     try {
@@ -91,7 +94,8 @@ Panel {
     verb.command = (args[0] === "setup" ? [cli] : ["timeout", "--kill-after=5", "120", cli]).concat(args)
     verb.running = true
   }
-  function refresh() { if (!poll.running) poll.running = true }
+  // a refresh while a snapshot runs (the one after a verb) runs once that ends, so the verb's result shows at once
+  function refresh() { if (poll.running) again = true; else poll.running = true }
 
   // The space above row i: a group opens a gap, a surface follows a surface closely, rows in a group touch
   function gapBefore(i) {
@@ -139,7 +143,7 @@ Panel {
     id: poll
     command: ["timeout", "--kill-after=5", "90", root.cli, "snapshot"]
     stdout: StdioCollector { id: pollOut; waitForEnd: true }
-    onExited: function(code) { root.polled(code, pollOut.text) }
+    onExited: function(code) { root.polled(code, pollOut.text); if (root.again) { root.again = false; Qt.callLater(root.refresh) } }
   }
   // A verb that fails says why on its last "local-ai:" line; the panel opens to show it.
   function finished(code, operation, output, error) {
