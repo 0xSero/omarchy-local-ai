@@ -147,7 +147,7 @@ MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | sp
     + $am;
   def norm: ascii_downcase | gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]"; "");
   def match($r): [.[] | . as $x
-    | ([$r.hardware | to_entries[] | select(.value.match.backend == $x.backend
+    | ([$r.hardware | to_entries[] | select((.value.match.backend | sub("amd-vulkan"; "amd-rocm")) == $x.backend
         and (.value.match.names | index($x.product | norm)) != null
         and (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024) | .key][0] // "") as $hw
     | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw, vramGb: (($x.totalMiB / 1024) | round),
@@ -321,7 +321,7 @@ phase_start() {
     jq -e --arg k "$k" --arg h "$(jq -r .hw <<<"$r")" 'any(.[]; .key == $k and .hw == $h)' <<<"$g" >/dev/null ||
       die "$k is not a card this recipe runs on"
   done
-  backend=${1%%:*}
+  backend=$(jq -r --arg h "$(jq -r .hw <<<"$r")" '.hardware[$h].match.backend' "$RECIPES")
   if [[ $backend == "nvidia" ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
     die "the NVIDIA container toolkit is not set up: run $PANEL/bin/omarchy-install-ai-local"
   fi
