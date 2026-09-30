@@ -163,10 +163,56 @@ view() {
     const s = JSON.parse(fs.readFileSync(process.argv[2], "utf8")), v = c.build(s, {view: process.argv[3], id: process.argv[4] || "", open: "", key: "", problem: ""})
     console.log(v.mark + " " + v.rows.map(r => r.type).join(","))' "$ROOT/Model.js" "$TMP/snap.json" "$@"
 }
+# js <expression>: its value, with the view model's functions under c, the snapshot as s and ui(patch) a ui state
+js() {
+  node -e 'const fs = require("fs"), vm = require("vm"), c = {}; vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), c)
+    const s = JSON.parse(fs.readFileSync(process.argv[2], "utf8")), ui = p => Object.assign({view: "home", id: "", open: "", key: "", problem: ""}, p)
+    const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
+}
 if command -v node >/dev/null; then
   [[ $(view home) == " sec,slot,slot,field,acts" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
+  # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
+  # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
+  [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,acts" &&
+    $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
+    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,acts:Refresh models" &&
+    $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
+    fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
+  [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
+    v.mark + " " + v.rows.filter(r => r.type === "run").map(r => r.sub + " " + r.primary.action)') == "busy pulling image stop|m" ]] ||
+    fail "an unknown state" "$(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling"}]; c.build(s, ui())')"
+  pass "a crashed model no GPU row shows can be dismissed from home, and a state the panel does not know shows as working"
+  [[ $(js '[c.k(999950), c.k(950000), c.k(999), c.gb(0.004), c.gb(13.84)].join(" ")') == "1M 950K 999 <0.1 GB 14 GB" ]] || fail "rounding" "$(js '[c.k(999950), c.gb(0.004)]')"
+  # the weeks after daylight saving ends (Sydney, April 5 2026) are an hour longer: June still starts at its first week
+  [[ $(TZ=Australia/Sydney js 's.total = 1; s.life = {requests: 1, since: "Feb 3", start: Date.parse("2026-02-02T00:00:00+11:00") / 1000, today: 138,
+    days: Array(140).fill(1)}; c.build(s, ui()).rows[0].months.map(m => m.label + m.col).join(" ")') == "Feb0 Mar4 Apr9 May13 Jun17" ]] || fail "months after a DST end"
+  # a model whose recipe is gone and whose config has no start: no empty chip, no NaN; one stopping has no Stop
+  [[ $(js 's.deployments = [{id: "gone--2", name: "gone", keys: ["nvidia:0"], state: "ready", port: 1, agent: "pi"}];
+    var v = c.build(s, ui({view: "run", id: "gone--2"})); v.hero.chips.map(x => x.text).join(",") + " " + v.rows[0].cells[5].v') == "1 × RTX 4090 –" ]] ||
+    fail "a model with no recipe or start" "$(js 's.deployments = [{id: "gone--2", keys: ["nvidia:0"], state: "ready"}]; c.build(s, ui({view: "run", id: "gone--2"}))')"
+  [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "stopping"}];
+    [c.build(s, ui()).rows.find(r => r.type === "run").primary.action, c.build(s, ui({view: "run", id: "m"})).rows.pop().items.pop().action,
+      c.build(s, ui({view: "gpus", open: "gpu:nvidia:0"})).rows.find(r => r.type === "links").items.pop().action].join(",")') == ",," ]] ||
+    fail "Stop while stopping"
+  pass "the view model rounds before picking a unit, keeps months on their weeks across DST, and shows a model with no recipe or start"
+  # Panel.qml: a refresh asked for while a snapshot runs (the one after a verb) runs once that one ends
+  [[ $(js 'var q = fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8"), p = {Model: c, snap: {}, ui: {}, poll: {running: true},
+    pollOut: {text: fs.readFileSync(process.argv[2], "utf8")}, Qt: {callLater: f => f()}}; p.root = p; vm.createContext(p)
+    ;[q.match(/function refresh\(\) \{.*\}/)[0], q.match(/function polled\([^]*?\n  \}/)[0], "var exited = " + q.match(/id: poll\n[^]*?onExited: (function\(code\) \{.*\})/)[1]].forEach(f => vm.runInContext(f, p))
+    p.refresh(); p.poll.running = false; p.exited(0); p.poll.running + " " + p.snap.gpus.length') == "true 3" ]] || fail "a refresh while a snapshot runs"
+  # the plugin's path as Qt's URL gives it, for a folder named a%25b#c: its "%" and "#" stay encoded
+  [[ $(js 'vm.runInNewContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/property string cli: (.*)/)[1],
+    {Qt: {resolvedUrl: u => "file:///home/a%2525b%23c/" + u}})') == "/home/a%25b#c/bin/omarchy-local-ai" ]] || fail "the backend's path"
+  pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
+  # a folder choice goes from Model.js's action through Panel.qml's activate to the backend's set as one argument
+  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw, open: "folder"})).rows.find(r => r.on && r.type === "opt").action
+    var p = {ui: {}, nav() {}, run(x) { p.args = x }}; vm.createContext(p)
+    vm.runInContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/function activate\([^]*?\n  \}/)[0], p); p.activate(a); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b" ]] ||
+    fail "a folder with a | in it"
+  pass "a folder with a | in its path is one argument of its action"
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
 fi
@@ -231,6 +277,11 @@ pass "a card that is running a model cannot be claimed twice"
 wait_for ready "$ID--2"
 grep -q -- "--name omarchy-local-ai-$ID--2-engine .*--gpus \"device=2\"" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
   fail "second copy" "$(grep -- "$ID--2-engine" "$SHIM/docker.log")"
+# a copy whose recipe recipes.json no longer has is named after that recipe, not <recipe>--2
+jq -c '.hardware["rtx-4090-24gb"].recipes[0].id = "renamed"' "$TMP/plugin/recipes.json" >"$TMP/r2" && mv "$TMP/r2" "$TMP/plugin/recipes.json"
+"$CLI" snapshot >"$TMP/snap-gone.json"
+[[ $(jq -r --arg id "$ID--2" '.deployments[] | select(.id == $id) | .name' "$TMP/snap-gone.json") == "$ID" ]] || fail "name of a gone recipe" "$(jq -c .deployments "$TMP/snap-gone.json")"
+recipes "$PIN"
 "$CLI" stop "$ID--2"
 pass "the same model runs a second copy on a second card of the same kind, on its own port"
 
@@ -250,6 +301,18 @@ recipes "$PIN"
 "$CLI" run "$ID" nvidia:0
 wait_for ready
 pass "a group runs one model across two cards of a kind, refuses the wrong number of cards, and is in the snapshot"
+
+# a model's week is its own: another copy's tokens count in the machine's week, not on this model's page
+usage() { mkdir -p "$STATE/usage/$1"; printf '{"t":%d,"prompt":%d,"completion":10,"ms":500,"ttft_ms":50}\n' "$EPOCHSECONDS" "$2" >"$STATE/usage/$1/usage.jsonl"; }
+usage "$ID" 990
+usage "$ID--2" 49990
+"$CLI" snapshot >"$TMP/snap.json"
+[[ $(jq -r '"\(.week) \(.deployments[0].session.week)"' "$TMP/snap.json") == "51000 1000" ]] || fail "week per model" "$(jq -c '{week, d: .deployments}' "$TMP/snap.json")"
+if command -v node >/dev/null; then
+  [[ $(js 'c.build(s, ui({view: "run", id: s.deployments[0].id})).rows[0].cells[4].v') == 1K ]] || fail "week on the model's page" "$(js 'c.build(s, ui({view: "run", id: s.deployments[0].id})).rows[0]')"
+fi
+rm -rf "$STATE/usage/$ID--2"
+pass "a model's page counts its own week, not every model's on the machine"
 
 "$CLI" set agent pi "$ID"
 "$CLI" open "$ID"

@@ -1,11 +1,13 @@
 // What the Local AI widget shows, as data: the backend's snapshot and the widget's ui state in, a view out.
 // Panel.qml draws the view and turns its actions ("verb|arg|arg") into backend verbs. No Qt, no side effects.
 
+// rounded before the unit is picked, so 999,950 is 1M, not 1000K, and a few MB are <0.1 GB, not 0 GB
 function k(n) {
   n = n || 0
-  return n >= 1e6 ? Math.round(n / 1e5) / 10 + "M" : n >= 1e3 ? Math.round(n / 100) / 10 + "K" : String(n)
+  var t = Math.round(n / 100) / 10
+  return t >= 1000 ? Math.round(n / 1e5) / 10 + "M" : n >= 1e3 ? t + "K" : String(n)
 }
-function gb(n) { return (n >= 10 ? Math.round(n) : Math.round(n * 10) / 10) + " GB" }
+function gb(n) { return (n >= 9.95 ? Math.round(n) : n > 0 && n < 0.05 ? "<0.1" : Math.round(n * 10) / 10) + " GB" }
 function ctx(n) { return n >= 1024 ? Math.round(n / 1024) + "K" : String(n || 0) }
 function dur(s) {
   s = Math.max(0, Math.round(s))
@@ -22,7 +24,10 @@ function find(list, key, v) { return (list || []).filter(function(x) { return x[
 // list is the first of those, the registry's order otherwise kept
 function fits(r) { return !r.unfit }
 function best(list) { return (list || []).filter(fits)[0] || null }
-function working(d) { return d.state === "download" || d.state === "starting" || d.state === "stopping" }
+// downloading, starting, stopping, or a state this panel does not know yet: not settled either way
+function working(d) { return d.state !== "ready" && d.state !== "error" }
+// Stop, but nothing while it is already stopping
+function stop(d) { return d.state === "stopping" ? "" : "stop|" + d.id }
 
 function parse(text) { try { return JSON.parse(text) } catch (e) { return null } }
 
@@ -78,7 +83,7 @@ function mark(s) {
 function fmt(f) { return (f || "").replace(/ · /g, " ").replace(/ \(.*\)$/, "") }
 function ram(r) { return r.needs && r.needs.host_ram_gb ? Math.ceil(r.needs.host_ram_gb) + " GB RAM" : "" }
 function spec(r) {
-  return [{ text: fmt(r.format) }, r.ctx ? { icon: "context", text: ctx(r.ctx) } : null, r.sizeGb ? { icon: "weights", text: gb(r.sizeGb) } : null,
+  return [r.format ? { text: fmt(r.format) } : null, r.ctx ? { icon: "context", text: ctx(r.ctx) } : null, r.sizeGb ? { icon: "weights", text: gb(r.sizeGb) } : null,
     ram(r) ? { icon: "memory", text: ram(r) } : null].filter(Boolean)
 }
 // whether a recipe fits this machine: on the card alone, with part of it in RAM, or what it lacks
@@ -118,7 +123,7 @@ function slot(s, ui, g, at) {
     row.rank = 1
     row.note = (d.state === "ready" ? "running " : d.state === "stopping" ? "stopping " : "starting ") + d.name
     items = (d.state === "ready" ? [{ label: "Open " + d.agent + " ›", action: "open|" + d.id, primary: true }] : [])
-      .concat([config, { label: "Stop model", action: "stop|" + d.id, danger: true }])
+      .concat([config, { label: "Stop model", action: stop(d), danger: true }])
   } else if (kd.taken.indexOf(g.key) >= 0) {
     row.rank = 3
     row.warn = true
@@ -162,15 +167,29 @@ function groups(s, ui) {
   })
   return out
 }
+// A crashed model no GPU row shows (its card is gone from the list, has no kind, or it never had one): a row of its
+// own, with its reason and dismiss, so the failed mark it raises can always be cleared
+function lost(s, ui) {
+  return (s.deployments || []).filter(function(d) {
+    return d.state === "error" && !(s.gpus || []).some(function(g) { return d.keys.indexOf(g.key) >= 0 && find(s.kinds, "hw", g.hw) })
+  }).map(function(d, at) {
+    var row = { type: "slot", label: d.name, toggle: "pick|lost:" + d.id, open: ui.open === "lost:" + d.id, crashed: true, hint: "stopped",
+      dismiss: "stop|" + d.id }
+    var rows = [row, { type: "error", label: d.error || "stopped" }]
+    if (row.open) rows.push({ type: "links", note: "", items: [{ label: "View logs", action: "log" }, { label: "Config", action: "more|" + d.id }] })
+    return { rank: 2, at: 1000 + at, lost: true, rows: rows }
+  })
+}
 function slots(s, ui, keep) {
-  return (s.gpus || []).map(function(g, at) { return slot(s, ui, g, at) }).concat(groups(s, ui)).filter(function(x) { return keep(x.rank) })
+  return (s.gpus || []).map(function(g, at) { return slot(s, ui, g, at) }).concat(groups(s, ui), lost(s, ui)).filter(function(x) { return keep(x.rank) })
     .sort(function(a, b) { return a.rank - b.rank || a.at - b.at })
 }
 function flat(list) { return [].concat.apply([], list.map(function(x) { return x.rows })) }
 
 // home: your lifetime (once there is one), running models as cards (ready, then starting or stopping), then the
-// available GPUs as rows: free ones, then groups of free cards, then crashed ones to run again or dismiss. A GPU
-// already running a model is not listed again; the rest are one "all GPUs" away.
+// available GPUs as rows: free ones, then groups of free cards, then crashed ones to run again or dismiss (a crash on
+// a card no row shows is a row of its own). A GPU already running a model is not listed again; the rest are one
+// "all GPUs" away.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: [] }
   if (s.relogin && !s.setupError) return { title: "LOCAL AI", version: s.version, rows: [{ type: "sec", label: "SETUP" },
@@ -186,7 +205,7 @@ function homeView(s, ui) {
     .concat((s.deployments || []).filter(function(d) { return working(d) })).forEach(function(d) { rows.push(card(s, d)) })
   var free = slots(s, ui, function(r) { return r < 1 || r === 2 })
   if (free.length) rows = rows.concat([{ type: "sec", label: "AVAILABLE" }], flat(free))
-  if (s.gpus.length > free.filter(function(x) { return !x.group }).length)
+  if (s.gpus.length > free.filter(function(x) { return !x.group && !x.lost }).length)
     rows.push({ type: "field", icon: "gpu", label: "all GPUs", value: String(s.gpus.length), action: "gpus" })
   rows.push({ type: "acts", items: [{ label: ui.registryBusy ? "Refreshing models…" : "Refresh models", action: ui.registryBusy ? "" : "registry" }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
@@ -198,8 +217,11 @@ var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 function activity(s) {
   var life = s.life, days = (life.days || []).slice(0, Math.max(0, life.today + 1)), top = Math.max.apply(null, days.concat([1])), months = [], last = -1
+  // a week on the calendar, not 7 × 86400 s: the week a daylight-saving change ends is an hour longer
   for (var c = 0; c * 7 < days.length; c++) {
-    var m = new Date((life.start + c * 7 * 86400) * 1000).getMonth()
+    var w = new Date(life.start * 1000)
+    w.setDate(w.getDate() + c * 7)
+    var m = w.getMonth()
     if (m !== last) months.push({ col: c, label: MONTHS[m] })
     last = m
   }
@@ -233,7 +255,7 @@ function card(s, d) {
   } else {
     r.progress = d.percent > 0 && d.state !== "stopping" ? d.percent : -1
     r.sub = (d.detail || d.state) + (r.progress >= 0 && d.state !== "download" ? " · " + d.percent + "%" : "")
-    r.primary = { label: "Stop model", action: "stop|" + d.id, quiet: true }
+    r.primary = { label: "Stop model", action: stop(d), quiet: true }
   }
   return r
 }
@@ -257,7 +279,7 @@ function soonView(s, ui) {
 function page(s, ui, m) {
   var run = m.d, failed = run && run.state === "error", u = run ? run.session || {} : {}, all = u.all || {}, line = all.line || [], top = line.length ? line[line.length - 1] : 0
   var facts = spec(run ? Object.assign({}, m, { sizeGb: 0 }) : m)
-  facts.splice(1, 0, { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") })
+  facts.splice(m.format ? 1 : 0, 0, { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") })
   if ((m.caps || {}).vision) facts.push({ icon: "vision", text: "" })
   var v = { back: true, rows: [], hero: { name: m.name, family: m.family, chips: facts } }
   if (run && !failed) {
@@ -267,8 +289,8 @@ function page(s, ui, m) {
       { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
       { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
       { v: k(u.tokens), u: "", k: "session" },
-      { v: k(s.week), u: "", k: "week" },
-      { v: dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
+      { v: k(u.week), u: "", k: "week" },
+      { v: isNaN(Date.parse(run.startedAt)) ? "–" : dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
   }
   // a card's Config: every model validated for it, the chosen one checked, each saying whether it fits (its format
   // and context are on the page once chosen); one this machine cannot run says what it lacks and cannot be chosen
@@ -295,7 +317,7 @@ function page(s, ui, m) {
       : { type: "field", icon: "tailnet", label: "tailnet", value: "share", action: "share|" + run.id })
     if (run.error) v.rows.push({ type: "error", label: run.error })
     v.rows.push({ type: "acts", items: (run.shared ? [{ label: "Stop sharing", action: "share|" + run.id + "|off" }] : [])
-      .concat([{ label: "View logs", action: "log" }, { label: "Stop model", action: "stop|" + run.id, danger: true }]) })
+      .concat([{ label: "View logs", action: "log" }, { label: "Stop model", action: stop(run), danger: true }]) })
   } else if (m.unfit) {
     v.rows.push({ type: "error", label: m.unfit })
   } else {
@@ -347,16 +369,17 @@ function weights(rows, list) {
   })
 }
 
-// the agent and folder rows, and their choices when open; a choice on a running model also becomes the default
+// the agent and folder rows, and their choices when open; a choice on a running model also becomes the default.
+// The value is URI-encoded in its action (Panel.qml decodes it), so a folder with a "|" in it stays one argument
 function pickers(s, rows, ui, agent, folder, id) {
   rows.push({ type: "field", icon: "agent", label: "agent", value: agent, action: "pick|agent", drop: true, open: ui.open === "agent" })
   if (ui.open === "agent") (s.agents || []).forEach(function(a) {
-    rows.push({ type: "opt", label: a, on: a === agent, action: "set|agent|" + a + "|" + id })
+    rows.push({ type: "opt", label: a, on: a === agent, action: "set|agent|" + encodeURIComponent(a) + "|" + id })
   })
   rows.push({ type: "field", icon: "folder", label: "folder", value: home(folder), action: "pick|folder", drop: true, open: ui.open === "folder" })
   if (ui.open === "folder") {
     ;[folder].concat(s.folders || []).filter(function(f, i, a) { return f && a.indexOf(f) === i }).forEach(function(f) {
-      rows.push({ type: "opt", label: home(f), on: f === folder, action: "set|folder|" + f + "|" + id })
+      rows.push({ type: "opt", label: home(f), on: f === folder, action: "set|folder|" + encodeURIComponent(f) + "|" + id })
     })
     rows.push({ type: "path", id: id })
   }

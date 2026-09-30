@@ -944,21 +944,22 @@ tokens() {
     2>/dev/null || echo '{"week":0,"total":0,"life":{"requests":0,"days":[]}}'
 }
 
-# session <id> <since>: tokens since this start (to the hour), and over every run of this model: averages, the median
-# first token, and a 24-point line from the first answer to the last, so the latest growth sits at the right edge
+# session <id> <since>: tokens since this start (to the hour) and in the last seven days (from the midnight tokens
+# counts its week from), and over every run of this model: averages, the median first token, and a 24-point line
+# from the first answer to the last, so the latest growth sits at the right edge
 session() {
-  summary "$STATE/usage/$1" | jq -c --argjson s "$2" --argjson now "$EPOCHSECONDS" '
+  summary "$STATE/usage/$1" | jq -c --argjson s "$2" --argjson now "$EPOCHSECONDS" --argjson d0 "$(date -d '6 days ago 00:00' +%s)" '
     def avg(x): if (x.n // 0) > 0 then x.sum / x.n | round else null end;
     [(.hours // {}) | to_entries[] | {t: (.key | tonumber * 3600), v: .value}] as $h
     | (.first // $s) as $from | (.last // $now) as $last | (($last - $from) / 24 + 1) as $step
     | (.ttftn // 0) as $tn
-    | {tokens: ([$h[] | select(.t + 3600 > $s) | .v] | add // 0),
+    | {tokens: ([$h[] | select(.t + 3600 > $s) | .v] | add // 0), week: ([$h[] | select(.t >= $d0) | .v] | add // 0),
        all: {since: ($from | strflocaltime("%b %-d")), last: $last, tokens: (.total // 0), decode: avg(.decode), prefill: avg(.prefill),
          ttft: (if $tn > 0 then [.ttft | to_entries[] | {b: (.key | tonumber), c: .value}] | sort_by(.b)
            | reduce .[] as $x ({s: 0, m: null}; (if .m == null and .s + $x.c > $tn / 2 then .m = $x.b * 50 + 25 else . end) | .s += $x.c) | .m
            else null end),
          line: [range(1; 25) as $i | [$h[] | select(.t < $from + $i * $step) | .v] | add // 0]}}' 2>/dev/null ||
-    echo '{"tokens":0,"all":{"tokens":0,"line":[]}}'
+    echo '{"tokens":0,"week":0,"all":{"tokens":0,"line":[]}}'
 }
 
 
@@ -1028,10 +1029,10 @@ cmd_snapshot() {
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
     ($agents | split("\n") | map(select(length > 0))) as $agents
     # a running model with its session, in error when its worker or engine is gone; a second copy of a recipe runs
-    # as <recipe>--2: its recipe is the one before the last "--"
+    # as <recipe>--2: its recipe is the one before the last "--", and its name when recipes.json no longer has it
     | ([$deps[] | .d + {session: .u} + (if .why != "" then {state: "error", error: .why} else {} end)
       | (.id | if test("--") then .[:rindex("--")] else . end) as $rid
-      | {name: .id} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
+      | {name: $rid} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, setupError: $setupError, setupNeeded: $setup, relogin: ($relogin and ($setup | not)), host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
