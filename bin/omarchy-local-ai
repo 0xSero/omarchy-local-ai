@@ -596,7 +596,8 @@ worker_run() {
     -d "$(jq -nc --arg m "$served" '{model: $m, max_tokens: 200, messages: [{role: "user", content: "Count from 1 to 60. Nothing else."}]}')") ||
     fail "the model did not answer"
   # A cold first request can include compilation or queueing, so its wall time is not GPU decode speed.
-  jq -e '.choices[0].message | any(.content, .reasoning_content; type == "string" and length > 0)' <<<"$reply" >/dev/null ||
+  # vLLM puts thinking in `reasoning`, older engines in `reasoning_content`; 200 tokens can all be thinking
+  jq -e '.choices[0].message | any(.content, .reasoning, .reasoning_content; type == "string" and length > 0)' <<<"$reply" >/dev/null ||
     fail "the model returned no answer"
   echo $((SECONDS - t0)) >"$took"
   status "$WID" ready "" 100
