@@ -94,8 +94,8 @@ http://127.0.0.1:*)
   ls "$SHIM/containers" | grep -q gateway || exit 7
   [[ $key == "$(cat "$HOME/.local/state/omarchy/local-ai/gateway.key")" ]] || { [[ $* == *http_code* ]] && printf 401; exit 22; }
   if [[ $url == */v1/models ]]; then
-    printf "{\"data\":[{\"id\":\"served\"}]}" >"$out"
-    [[ $* == *http_code* ]] && printf 200
+    printf "{\"data\":[{\"id\":\"served\",\"max_model_len\":98304}]}" >"$out"
+    if [[ $* == *http_code* ]]; then printf 200; fi
   else
     if [[ -n ${SHIM_EMPTY:-} ]]; then echo "{}"; else
       echo "{\"choices\":[{\"message\":{\"content\":\"1, 2, 3\"}}],\"usage\":{\"completion_tokens\":200}}"
@@ -263,6 +263,25 @@ sleep 0.5
 grep -q -- "CUSTOM_BASE_URL=http://127.0.0.1:12434/v1 OPENAI_BASE_URL=http://127.0.0.1:12434/v1 .*hermes chat --provider custom --model Test Model" "$SHIM/tui.log" &&
   ! grep -q "$key" "$SHIM/tui.log" || fail "hermes argv" "$(tail -1 "$SHIM/tui.log")"
 pass "Hermes opens on the gateway through --provider custom, without its own config.yaml, the key only in the environment"
+
+# a registry update that renames a running model's recipe leaves its Open as it was; one started before its config
+# kept what Open needs, whose recipe is gone since, still opens, under its id
+"$CLI" set agent pi "$ID"
+cp "$TMP/plugin/recipes.json" "$TMP/recipes.keep"
+cp "$STATE/deploy/$ID/config.json" "$TMP/config.keep"
+jq -c --arg id "$ID" '(.hardware[].recipes[] | select(.id == $id) | .id) |= . + "-renamed"' "$TMP/recipes.keep" >"$TMP/plugin/recipes.json"
+"$CLI" open "$ID" || fail "open after a rename"
+sleep 0.5
+tail -1 "$SHIM/tui.log" | grep -q -- "--provider omarchy-local --model Test Model" || fail "open after a rename" "$(tail -1 "$SHIM/tui.log")"
+jq -c 'del(.serve)' "$TMP/config.keep" >"$STATE/deploy/$ID/config.json"
+"$CLI" open "$ID" || fail "open with no recipe"
+sleep 0.5
+tail -1 "$SHIM/tui.log" | grep -q -- "--provider omarchy-local --model $ID " || fail "open with no recipe" "$(tail -1 "$SHIM/tui.log")"
+[[ $(jq '.providers["omarchy-local"].models[0].contextWindow' "$STATE/agents/pi/models.json") == 98304 ]] ||
+  fail "open with no recipe takes the engine's context" "$(jq -c '.providers[].models[0]' "$STATE/agents/pi/models.json")"
+cp "$TMP/recipes.keep" "$TMP/plugin/recipes.json"
+cp "$TMP/config.keep" "$STATE/deploy/$ID/config.json"
+pass "open keeps working when the registry renames or drops a running model's recipe, with the engine's own context"
 
 # All supported agent adapters stay in private config or keyed environments, never a gateway key in argv.
 for agent in pi claude codex opencode omp crush grok copilot hermes; do
