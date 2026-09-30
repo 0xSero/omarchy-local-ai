@@ -67,7 +67,7 @@ c=$SHIM/containers
 case $1 in
 info) echo "Runtimes: nvidia runc" ;;
 image) exit 1 ;;
-pull) : ;;
+pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 network) : ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
@@ -193,6 +193,9 @@ if command -v node >/dev/null; then
   pass "the view model builds home and the model's page for a running model"
 fi
 pass "run downloads the weights, starts the engine and the gateway, and waits until the model answers"
+[[ $(grep -o "starting .*" "$STATE/log" | paste -sd'|') == *"|starting downloading the engine (first start only)|starting downloading the engine: 1 of 2 layers|starting downloading the engine: 2 of 2 layers|starting downloading the gateway (first start only)|starting downloading the gateway: 1 of 2 layers|starting downloading the gateway: 2 of 2 layers|starting starting the engine|"* ]] ||
+  fail "start steps" "$(cat "$STATE/log")"
+pass "the start reports each image's download, a line as each layer lands (once each), then the engine's start"
 [[ $(SHIM_STOPPED=1 "$CLI" snapshot | jq -r '.deployments[0].error') == 'the engine stopped' ]] || fail "stopped engine message"
 pass "a stopped engine has one concise recovery message"
 
