@@ -81,7 +81,8 @@ pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer
 network) : ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
-logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || printf "loading shards\nRuntimeError: XPU out of memory. Tried to allocate 2.00 GiB\n" ;;
+logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || printf "loading shards\nRuntimeError: XPU out of memory. Tried to allocate 2.00 GiB\n"
+  [[ -z ${SHIM_LOAD_LOG:-} ]] || cat "$SHIM_LOAD_LOG" ;;
 rm) rm -f "$c/${@: -1}" ;;
 ps) ls "$c" ;;
 esac'
@@ -104,6 +105,8 @@ http://127.0.0.1:*)
   ls "$SHIM/containers" | grep -q gateway || exit 7
   [[ $key == "$(cat "$HOME/.local/state/omarchy/local-ai/gateway.key")" ]] || { [[ $* == *http_code* ]] && printf 401; exit 22; }
   if [[ $url == */v1/models ]]; then
+    # SHIM_LOADING: the engine is still loading while this file exists
+    if [[ -n ${SHIM_LOADING:-} && -e $SHIM_LOADING ]]; then [[ $* == *http_code* ]] && printf 503; exit 0; fi
     printf "{\"data\":[{\"id\":\"served\",\"max_model_len\":98304}]}" >"$out"
     if [[ $* == *http_code* ]]; then printf 200; fi
   else
@@ -462,9 +465,33 @@ wait_for ready
 engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *'--device /dev/dri/renderD129'* && $engine != *'/dev/kfd'* && $engine != *'--gpus'* ]] || fail "Vulkan devices" "$engine"
 "$CLI" stop "$ID"
+pass "a Vulkan recipe receives its render node without ROCm or NVIDIA devices"
+
+# the bar follows the engine's own log, and a card its driver resets mid-load ends the start at once, not after 30 minutes
+export LOCAL_AI_SYSFS=$TMP/sys
+mkdir -p "$LOCAL_AI_SYSFS/class/drm/renderD129/device"
+printf '%s\n' "INFO Starting to load model /models..." \
+  "Loading safetensors checkpoint shards:  50% Completed | 1/2 [00:51<00:51, 51.39s/it]" >"$TMP/engine.log"
+: >"$TMP/loading"
+SHIM_LOAD_LOG=$TMP/engine.log SHIM_LOADING=$TMP/loading "$CLI" run "$ID" amd-rocm:0
+for ((i = 0; i < 50; i++)); do
+  [[ $(jq -r '"\(.detail) \(.percent)"' "$STATE/deploy/$ID/status.json" 2>/dev/null) == "reading the weights: 1 of 2 files 35" ]] && break
+  sleep 0.2
+done
+[[ $(jq -r '"\(.detail) \(.percent)"' "$STATE/deploy/$ID/status.json") == "reading the weights: 1 of 2 files 35" ]] ||
+  fail "load step" "$(cat "$STATE/deploy/$ID/status.json")"
+ln -s ../../../virtual/devcoredump/devcd1 "$LOCAL_AI_SYSFS/class/drm/renderD129/device/devcoredump"
+wait_for error
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the GPU driver reset the card while the model loaded (kernel lines in the log)" ]] ||
+  fail "reset reason" "$(cat "$STATE/deploy/$ID/status.json")"
+! compgen -G "$SHIM/containers/*engine" >/dev/null || fail "hung engine left running" "$(ls "$SHIM/containers")"
+grep -q "starting reading the weights: 1 of 2 files" "$STATE/log" || fail "load step logged" "$(tail -5 "$STATE/log")"
+pass "loading shows the engine's own step and percent, and a GPU reset mid-load fails the start at once"
+"$CLI" stop "$ID"
+rm -f "$TMP/loading" "$LOCAL_AI_SYSFS/class/drm/renderD129/device/devcoredump"
+unset LOCAL_AI_SYSFS
 rm -f "$TMP/bin/amd-smi" "$TMP/bin/readlink"
 recipes "$PIN"
-pass "a Vulkan recipe receives its render node without ROCm or NVIDIA devices"
 
 rm -rf "$HOME/.cache/omarchy"
 SHIM_CORRUPT=1 "$CLI" run "$ID" nvidia:0
