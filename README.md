@@ -4,6 +4,14 @@ Run the model validated for your GPU and open a coding agent on it.
 
 ![Local AI](preview.png)
 
+## Start
+
+```bash
+omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
+```
+
+Then open Local AI in the bar and click **Set up Local AI** (one password prompt, once per machine), choose a model on your card and **Run**, and pick a coding agent to open on it. [Install](#install) says what setup does, [Requirements](#requirements) what it needs, and [Remove](#remove) how to take it all back out.
+
 ## Screens
 
 Every picture is the real panel, rendered headless from the snapshot of a machine with 2× RTX 3090 and 2× Arc Pro B70 (the 3090's model as it ran earlier that day). To show states that machine was not in, some screens change that snapshot: a first run, downloading, loading, a crash, a tailnet share, both or four 3090s free, and a card with no tested model.

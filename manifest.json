@@ -5,7 +5,7 @@
   "version": "6.6.1",
   "author": "0xSero",
   "license": "MIT",
-  "description": "Run the model validated for your GPU from the Omarchy bar, then open a coding agent on it. Tested recipes for NVIDIA, Intel Arc Pro and AMD cards; weights are checked against the Hub and the engine runs in a container behind a keyed gateway on 127.0.0.1. Works with pi, Claude Code, Codex, OpenCode and more without touching their config. Shows GPU memory, temperature and speed.",
+  "description": "Run the model validated for your GPU from the Omarchy bar, then open a coding agent on it. Tested recipes for NVIDIA, Intel Arc Pro and AMD cards; weights are checked against the Hub and the engine runs in a container behind a keyed gateway on 127.0.0.1. Works with pi, Claude Code, Codex, OpenCode and more without touching their config. Start: omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable, then click Set up Local AI in the bar.",
   "kinds": [
     "bar-widget"
   ],

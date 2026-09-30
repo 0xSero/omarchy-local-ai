@@ -19,6 +19,13 @@ description=$(jq -r .description "$M")
 ((${#description} >= 1 && ${#description} <= 500)) || fail "description must be 1-500 characters, is ${#description}"
 echo "ok - name (${#name}) and description (${#description} of 500 characters) are within the marketplace limits"
 
+# A listing with a manual-setup override shows its description but no install command, so the description
+# carries the start command; the README shows it at the top.
+START='omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable'
+[[ $description == *"$START"* ]] || fail "the description does not carry the start command: $START"
+head -n 15 "$ROOT/README.md" | grep -qF -- "$START" || fail "README.md does not show the start command in its first 15 lines"
+echo "ok - the start command is in the description and at the top of the README"
+
 grep -q "^## \[$version\]" "$ROOT/CHANGELOG.md" || fail "CHANGELOG.md has no '## [$version]' section"
 echo "ok - CHANGELOG.md has a section for $version"
 
