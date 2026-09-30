@@ -475,17 +475,17 @@ printf '%s\n' "INFO Starting to load model /models..." \
 : >"$TMP/loading"
 SHIM_LOAD_LOG=$TMP/engine.log SHIM_LOADING=$TMP/loading "$CLI" run "$ID" amd-rocm:0
 for ((i = 0; i < 50; i++)); do
-  [[ $(jq -r '"\(.detail) \(.percent)"' "$STATE/deploy/$ID/status.json" 2>/dev/null) == "reading the weights: 1 of 2 files 35" ]] && break
+  [[ $(jq -r '"\(.detail) \(.percent)"' "$STATE/deploy/$ID/status.json" 2>/dev/null) == "reading the weights: file 2 of 2 35" ]] && break
   sleep 0.2
 done
-[[ $(jq -r '"\(.detail) \(.percent)"' "$STATE/deploy/$ID/status.json") == "reading the weights: 1 of 2 files 35" ]] ||
+[[ $(jq -r '"\(.detail) \(.percent)"' "$STATE/deploy/$ID/status.json") == "reading the weights: file 2 of 2 35" ]] ||
   fail "load step" "$(cat "$STATE/deploy/$ID/status.json")"
 ln -s ../../../virtual/devcoredump/devcd1 "$LOCAL_AI_SYSFS/class/drm/renderD129/device/devcoredump"
 wait_for error
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the GPU driver reset the card while the model loaded (kernel lines in the log)" ]] ||
   fail "reset reason" "$(cat "$STATE/deploy/$ID/status.json")"
 ! compgen -G "$SHIM/containers/*engine" >/dev/null || fail "hung engine left running" "$(ls "$SHIM/containers")"
-grep -q "starting reading the weights: 1 of 2 files" "$STATE/log" || fail "load step logged" "$(tail -5 "$STATE/log")"
+grep -q "starting reading the weights: file 2 of 2" "$STATE/log" || fail "load step logged" "$(tail -5 "$STATE/log")"
 pass "loading shows the engine's own step and percent, and a GPU reset mid-load fails the start at once"
 "$CLI" stop "$ID"
 rm -f "$TMP/loading" "$LOCAL_AI_SYSFS/class/drm/renderD129/device/devcoredump"

@@ -378,20 +378,23 @@ ours() {
 
 # loadstep <id>: where the engine is in its start, by its own log: "<step>\t<percent>\t<its last line>". The step and
 # percent move only on lines vLLM, SGLang and llama.cpp print themselves; an engine that has printed none of them yet
-# is "loading" at 1%. The last line changes whenever the engine prints anything, so its silence can be timed.
+# is "loading" at 1%. The last line changes whenever the engine prints anything, so its silence can be timed. vLLM reads
+# the checkpoint again for a draft model (MTP), after "Loading drafter model".
 loadstep() {
   docker logs --tail 400 "$(engine "$1")" 2>&1 | tr '\r' '\n' | awk '
     function set(s, p) { step = s; pct = p }
     NF { last = $0 }
     /[Ll]oading safetensors checkpoint shards: +[0-9]+% Completed \| [0-9]+\/[0-9]+/ {
       match($0, /\| [0-9]+\/[0-9]+/); split(substr($0, RSTART + 2, RLENGTH - 2), f, "/")
-      if (f[2] > 0) set("reading the weights: " f[1] " of " f[2] " files", 5 + int(60 * f[1] / f[2])); next }
+      if (f[2] > 0) set((f[1] < f[2] ? "reading the " (draft ? "draft model " : "") "weights: file " f[1] + 1 " of " f[2] : "weights read"),
+        5 + int(60 * f[1] / f[2])); next }
+    /Loading drafter model/ { draft = 1; set("reading the draft model weights", 5); next }
     /Starting to load model|Load weight begin|load_tensors: loading model tensors|Loading model modules/ { set("reading the weights", 5); next }
     /Loading weights took|Model loading took|Load weight end|load_tensors: +[A-Za-z0-9_]+ model buffer size/ { set("weights loaded", 65); next }
     /Dynamo bytecode transform|Compiling a graph|torch\.compile takes/ { set("compiling", 70); next }
     /Available KV cache memory|GPU KV cache size|Memory pool end|llama_kv_cache/ { set("reserving the cache", 80); next }
     /Capturing (CUDA |cuda |XPU )?graphs|Capture cuda graph begin|Graph capturing/ { set("capturing graphs", 85); next }
-    /init engine \(profile|Starting vLLM API server|Application startup complete|Uvicorn running|fired up and ready|server is listening|main: model loaded/ {
+    /init engine \(profile|Starting vLLM (API )?server|Application startup complete|Uvicorn running|fired up and ready|server is listening|main: model loaded/ {
       set("starting the server", 95); next }
     END { gsub(/\t/, " ", last); printf "%s\t%d\t%s\n", (step == "" ? "loading" : step), (step == "" ? 1 : pct), last }'
 }
@@ -490,9 +493,9 @@ phase_start() {
       a+=(--device "$v")
     done
     a+=(--volume "$run/by-path:/dev/dri/by-path:ro")
-    # Intel's runtime lets the copy engine read ordinary memory in place, the engine's memory-mapped weights included. With
-    # less RAM than weights the kernel evicts pages mid-load, the card cannot fault them back in, its copy engine resets and
-    # the load hangs for good (seen on one Arc Pro B70 with 14 GB of RAM). Copies through its own staging buffers do not.
+    # Intel's runtime lets the copy engine read ordinary host memory in place while the weights load. On a B70 it has
+    # reached an address no longer mapped (xe: "Fault response: Unsuccessful -ENOENT", copy engine reset) and vLLM then
+    # waits on that copy forever. With this off, the runtime copies through its own staging buffers.
     if [[ $backend == "intel-xpu" ]]; then a+=(--env NEOReadDebugKeys=1 --env TreatNonUsmForTransfersAsSharedSystem=0); fi
   fi
   while IFS='|' read -r _ _ _ _ v w _; do
@@ -575,7 +578,7 @@ fail() {
 
 # __worker <id> <key>: download, start, wait for the model, check it answers; status.json tells the widget each step
 worker_run() {
-  local r t0 w reply served="" code nodes seen quiet last step pct line
+  local r t0 w reply served="" code nodes seen quiet last top step pct line
   WID=$1
   shift
   r=$(recipe "$WID")
@@ -613,7 +616,7 @@ worker_run() {
     [[ $w == nvidia:* ]] || nodes+=("$(readlink -f "$(gpus none | jq -r --arg k "$w" '.[] | select(.key == $k) | .node // empty')" || true)")
   done
   seen=$(resets ${nodes[@]+"${nodes[@]}"})
-  quiet=$SECONDS last=""
+  quiet=$SECONDS last="" top=1
   while :; do
     code=$(curl -s -m 5 -o "$WD/models.json" -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$PORTNUM/v1/models" || true)
     served=$(jq -r '.data[0].id // empty' "$WD/models.json" 2>/dev/null || true)
@@ -631,7 +634,9 @@ worker_run() {
     w=${step:-loading}
     ((SECONDS - t0 < 60)) || w+=" · $(((SECONDS - t0) / 60)) min"
     ((SECONDS - quiet < 120)) || w+=", quiet for $(((SECONDS - quiet) / 60)) min"
-    status "$WID" starting "$w" "${pct:-1}"
+    # the bar never goes back, though the draft model weights start their files again
+    ((${pct:-1} <= top)) || top=$pct
+    status "$WID" starting "$w" "$top"
     sleep 3
   done
   rm -f "$WD/models.json"
