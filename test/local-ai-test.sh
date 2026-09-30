@@ -47,12 +47,12 @@ wait_for() {
 }
 shim() { printf '#!/bin/bash\n%s\n' "$2" >"$TMP/bin/$1"; chmod +x "$TMP/bin/$1"; }
 
-shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
-# SHIM_NOGROUP: the account is not in the docker group (setup not run)
-shim omarchy-sudo-docker '[[ -n ${SHIM_NOGROUP:-} ]]'
-# the account is listed in the docker group; newgrp starts the shell it is given and grants nothing, as when a login is
-# still out of reach of the socket
-shim getent '[[ $1 == group ]] && echo "docker:x:998:$(id -un)" || echo "$2:x:1000:1000::/home/$2:/bin/bash"'
+shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
+printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
+shim omarchy-setup-security-sudoless-docker 'exit 0'
+# the account is listed in the docker group unless SHIM_NOGROUP (setup not run); newgrp starts the shell it is given and
+# grants nothing, as when a login is still out of reach of the socket
+shim getent '[[ $1 == group ]] && echo "docker:x:998:$([[ -n ${SHIM_NOGROUP:-} ]] || id -un)" || echo "$2:x:1000:1000::/home/$2:/bin/bash"'
 shim newgrp 'printf "%s\n" "$*" >>"$SHIM/newgrp.log"; exec "$SHELL"'
 shim omarchy-cmd-present 'command -v "$1" >/dev/null'
 shim omarchy-cmd-missing '! command -v "$1" >/dev/null'
@@ -69,7 +69,13 @@ shim docker '
 printf "%s\n" "$*" >>"$SHIM/docker.log"
 c=$SHIM/containers
 case $1 in
-info) echo "{\"nvidia\":{\"path\":\"nvidia-container-runtime\"},\"runc\":{\"path\":\"runc\"}}" ;;
+info)
+  # SHIM_CDI: the toolkit CDI list and no nvidia runtime, as after a fresh setup
+  if [[ -n ${SHIM_CDI:-} ]]; then
+    [[ $* == *DiscoveredDevices* ]] && printf "%s" "[{\"Source\":\"cdi\",\"ID\":\"nvidia.com/gpu=0\"}]"
+    [[ $* == *Runtimes* ]] && printf "|%s" "{\"runc\":{}}"
+    echo
+  else echo "{\"nvidia\":{\"path\":\"nvidia-container-runtime\"},\"runc\":{\"path\":\"runc\"}}"; fi ;;
 image) exit 1 ;;
 pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 network) : ;;
@@ -130,7 +136,8 @@ shim amd-smi 'printf "Unhandled import error: No module named '\''amdsmi'\''\n"'
 "$CLI" snapshot >"$TMP/snap-nosmi.json" || fail "a failed amd-smi broke the snapshot"
 [[ $(jq -r '.gpus | length' "$TMP/snap-nosmi.json") == 0 ]] || fail "a failed amd-smi is no AMD cards" "$(jq -c . "$TMP/snap-nosmi.json")"
 rm -f "$TMP/bin/amd-smi"
-shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
+shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
+printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 pass "a probe that fails (nvidia-smi's and amd-smi's own error text) reads as no cards, not as a broken snapshot"
 
 # AMD cards come from amd-smi 7.2 (ROCm 7.2, what Arch ships), which wraps both listings in gpu_data. Against
@@ -156,7 +163,8 @@ esac'
 [[ $(jq -r '.gpus[0].hw' "$TMP/snap-vulkan.json") == rx-9070-xt-16gb ]] || fail "AMD Vulkan card match"
 pass "AMD discovery matches the RX 9070 XT Vulkan recipes"
 rm -f "$TMP/bin/amd-smi"
-shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
+shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
+printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"
 pass "amd-smi 7.2's cards: an RX 7600 XT runs its recipes, an 8 GB RX 7600 is listed as a card with none"
 
@@ -230,7 +238,7 @@ wait_for error
   fail "stale CDI reason" "$(cat "$STATE/deploy/$ID/status.json")"
 ! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-engine' "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
 cdi 1
-grep -q "sudo nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" "$STATE/log" || fail "CDI repair log"
+grep -q "regenerate it as root: nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" "$STATE/log" || fail "CDI repair log"
 pass "a stale NVIDIA CDI spec stops before the engine, with the repair command in the log"
 "$CLI" stop "$ID"
 
@@ -305,6 +313,18 @@ recipes "$PIN"
 "$CLI" run "$ID" nvidia:0
 wait_for ready
 pass "a group runs one model across two cards of a kind, refuses the wrong number of cards, and is in the snapshot"
+
+# after a fresh setup Docker knows the cards only through the toolkit's CDI list: each goes by its UUID
+"$CLI" stop "$ID"
+SHIM_CDI=1 "$CLI" run "$ID" nvidia:2
+wait_for ready
+engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+[[ $engine == *"--device nvidia.com/gpu=GPU-test-2"* && $engine != *--gpus* ]] || fail "CDI device by UUID" "$engine"
+[[ $(SHIM_CDI=1 "$CLI" snapshot | jq -r .readiness.state) == ready ]] || fail "a CDI list is ready"
+"$CLI" stop "$ID"
+"$CLI" run "$ID" nvidia:0
+wait_for ready
+pass "with only the toolkit's CDI list, a card goes to Docker by its UUID and the machine is ready"
 
 # a model's week is its own: another copy's tokens count in the machine's week, not on this model's page
 usage() { mkdir -p "$STATE/usage/$1"; printf '{"t":%d,"prompt":%d,"completion":10,"ms":500,"ttft_ms":50}\n' "$EPOCHSECONDS" "$2" >"$STATE/usage/$1/usage.jsonl"; }

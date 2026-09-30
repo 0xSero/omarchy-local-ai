@@ -85,9 +85,11 @@ grep -qx 'local-ai: that folder does not exist' "$TMP/out" || { echo 'not ok - m
 docker() { return 1; }
 check 'purge refuses an unavailable daemon' 1 phase_purge
 # Bounds are tested through the actual Docker wrapper, with timeout recording its argv.
-eval "$(sed -n '/^docker() {/p' "${BACKEND:-$ROOT/bin/omarchy-local-ai}")"
+eval "$(sed -n '/^docker() {/,/^}/p' "${BACKEND:-$ROOT/bin/omarchy-local-ai}")"
 timeout() { printf '%s\n' "$*"; }
-[[ $(docker inspect test) == '--kill-after=5 30 docker inspect test' && $(docker pull test) == '--kill-after=5 1800 docker pull test' ]] || {
+[[ $(docker inspect test) == '--foreground --kill-after=5 30 docker inspect test' &&
+  $(docker pull test) == '--foreground --kill-after=5 7200 docker pull test' &&
+  $(docker run test) == '--foreground --kill-after=5 120 docker run test' ]] || {
   echo 'not ok - Docker operations lack their time bounds'; failed=$((failed + 1));
 }
 # Locks fail visibly instead of waiting without a bound.

@@ -52,7 +52,8 @@ view() {
 
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 3090, 24576, 300, 41\n1, NVIDIA GeForce RTX 3090, 24576, 300, 38\n"'
 shim omarchy-cmd-present 'command -v "$1" >/dev/null'
-shim omarchy-sudo-docker 'exit 1'
+shim omarchy-setup-security-sudoless-docker 'exit 0'
+shim getent '[[ $1 == group ]] && echo "docker:x:998:$(id -un)" || echo "$2:x:1000:1000::/home/$2:/bin/bash"'
 shim lspci 'exit 0'
 shim ss 'exit 0'
 shim docker 'case $1 in ps) ;; info) echo "{\"nvidia\":{}}" ;; *) exit 1 ;; esac'

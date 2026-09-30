@@ -19,6 +19,14 @@ for (const view of ['home','run','kind','gpus']) test('action errors are visible
 for (const state of [{gpus:[],kinds:[]},{...s,readiness:{state:'needs-setup'}},{...s,readiness:{state:'docker-down',message:'Docker is not running'}},{...s,readiness:{state:'unsupported'}}]) test('setup, docker-down and unsupported pages retain errors', () => {
   assert(m.build(state,{view:'home',problem:'refresh failed'}).rows.some(r=>r.label==='refresh failed'));
 });
+test('a card kind with only multi-card models renders instead of breaking the panel', () => {
+  const v=m.build({...s,deployments:[],kinds:[{...s.kinds[0],models:[]}]},{view:'home'});
+  assert(!v.rows.some(r=>r.type==='error'));
+});
+test('a model running while setup is needed stays on the setup page', () => {
+  const v=m.build({...s,readiness:{state:'needs-setup'}},{view:'home'});
+  assert(v.rows.some(r=>r.type==='run'&&r.name==='Test model'));
+});
 test('setup terminal failures remain visible after the terminal closes', () => {
   const v=m.build({...s,setupError:'Setup did not finish',readiness:{state:'needs-setup'}},{view:'home'});
   assert(v.rows.some(r=>r.type==='error'&&r.label==='Setup did not finish')); assert.equal(v.mark,'failed');

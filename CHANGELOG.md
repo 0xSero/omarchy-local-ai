@@ -2,6 +2,20 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.8.0] - 2026-09-30
+
+### Changed
+- Setup runs nothing as root itself. It runs Omarchy's Sudoless Docker first (declining it installs nothing), then on NVIDIA `omarchy-pkg-add nvidia-container-toolkit`, and each password prompt names what it is for: "Password for sero to turn on Sudoless Docker for Local AI", "... to install NVIDIA container support for Local AI". Setup no longer edits Docker's configuration, restarts Docker, refuses because other containers are running, sets the Tailscale operator or deletes polkit files: it names the last two when they need doing.
+- NVIDIA engines get their cards through the toolkit's CDI list, by UUID (`--device nvidia.com/gpu=GPU-...`), which Docker reads without a restart. An install that already has the `nvidia` runtime and no CDI list keeps `--gpus`.
+- The listing: a description and README opening that say what Local AI does in their first line; screenshots, the preview generator and an unused logo are gone from the repository.
+
+### Fixed
+- Stop during a start could leave the engine running: `timeout` put the `docker run` it was waiting on in another process group, out of Stop's reach, and the engine came up afterwards with a restart policy. Docker calls now stay in the worker's group.
+- The panel no longer breaks on a card kind whose models all need several cards; a model running while setup is needed keeps its card; an action's error clears on the next action or when the panel closes; Refresh models stays disabled until the refresh ends; the panel polls every 5 s, not 1.5 s, while closed during a download; the bar dots use the bar's own foreground; View logs opens at once; long row notes are cut short.
+- A `~/.cache` or `~/.local/state` that is a symlink to another disk no longer refuses every start.
+- Remove deletes the cache and the images its containers ran, and removes every folder it can before naming any that Docker created as root. A failed stop records why.
+- Concurrent writers no longer share temp file names; image pulls may take 2 hours and a start 120 s.
+
 ## [6.7.1] - 2026-09-30
 
 ### Fixed

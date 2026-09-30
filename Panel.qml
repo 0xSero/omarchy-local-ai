@@ -18,6 +18,8 @@ Panel {
   // the URL keeps a "%", "#" or "?" in the plugin's path encoded
   readonly property string cli: decodeURIComponent(String(Qt.resolvedUrl("bin/omarchy-local-ai")).replace(/^file:\/\//, ""))
   readonly property color theme: bar ? bar.foreground : Color.foreground
+  // the dots sit on the bar, which may be transparent: they take the bar's own foreground, as Omarchy's buttons do
+  readonly property color dotTone: bar && bar.barForeground !== undefined ? bar.barForeground : theme
   readonly property color bg: Color.popups.background
   readonly property color surface: Util.alpha(theme, 0.06)
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -81,7 +83,7 @@ Panel {
   // a new view starts at its top with nothing chosen; within a view, a chosen model stays chosen
   function nav(patch) {
     var moved = patch.view !== undefined || patch.id !== undefined
-    ui = Object.assign({ view: ui.view, id: ui.id, open: "", key: ui.key, problem: "", pollProblem: ui.pollProblem || "", model: moved ? "" : ui.model || "" }, patch)
+    ui = Object.assign({ view: ui.view, id: ui.id, open: "", key: ui.key, problem: "", pollProblem: ui.pollProblem || "", registryBusy: ui.registryBusy || false, notice: ui.notice || "", model: moved ? "" : ui.model || "" }, patch)
     revealed = false
     if (moved) flick.contentY = 0
   }
@@ -108,7 +110,7 @@ Panel {
 
   // An action is "verb|arg|arg", from Model.js
   function activate(action) {
-    ui = Object.assign({}, ui, { notice: "" })
+    ui = Object.assign({}, ui, { notice: "", problem: "" })
     var a = (action || "").split("|")
     switch (a[0]) {
     case "forget": run(["forget", a[1]]); nav({ open: "" }); break
@@ -128,7 +130,7 @@ Panel {
     case "gpus": nav({ view: "gpus", id: "" }); break
     case "pick": nav({ open: ui.open === a[1] ? "" : a[1] }); break
     case "home": home(); break
-    case "log": run(["log"]); root.close(); break
+    case "log": Quickshell.execDetached([cli, "log"]); root.close(); break
     case "url": Quickshell.execDetached(["omarchy-launch-browser", a[1]]); root.close(); break
     case "copy": copy.command = ["wl-copy", a[1]]; copy.running = true; copied = true; copiedTimer.restart(); break
     }
@@ -171,11 +173,12 @@ Panel {
   Process { id: copy }
   Timer { id: copiedTimer; interval: 1500; onTriggered: root.copied = false }
   Timer {
-    interval: root.view.mark === "busy" ? 1500 : root.opened ? 5000 : 30000
+    interval: root.view.mark === "busy" ? (root.opened ? 1500 : 5000) : root.opened ? 5000 : 30000
     running: true; repeat: true; triggeredOnStart: true
     onTriggered: root.refresh()
   }
-  onOpenedChanged: if (opened) { refresh(); if (!ui.problem) home() }
+  // a failure stays until it is read: closing the panel clears it, and the dots with it
+  onOpenedChanged: if (opened) { refresh(); if (!ui.problem) home() } else if (ui.problem) ui = Object.assign({}, ui, { problem: "" })
 
   // Nine dots: faint when idle, lit when a model is ready, urgent when one failed, a diagonal ripple while working
   property int ripple: 0
@@ -201,7 +204,7 @@ Panel {
               width: Style.space(3)
               height: width
               radius: width / 2
-              color: root.view.mark === "failed" ? root.urgent : on ? root.theme : Util.alpha(root.theme, 0.3)
+              color: root.view.mark === "failed" ? root.urgent : on ? root.dotTone : Util.alpha(root.dotTone, 0.3)
             }
           }
         }
@@ -500,6 +503,8 @@ Panel {
                   Right {
                     visible: !r.run
                     margin: root.gutter
+                    width: Math.min(implicitWidth, parent.width * 0.6)
+                    elide: Text.ElideRight
                     text: r.note || ""
                     color: r.warn ? root.alertTone : root.labelTone
                   }
@@ -832,7 +837,7 @@ Panel {
     width: Style.space(size)
     height: width
     // only the logos shipped beside this file; any other family shows none and takes no space
-    readonly property bool shipped: ["qwen", "lfm", "hf"].indexOf(family) >= 0
+    readonly property bool shipped: ["qwen", "hf"].indexOf(family) >= 0
     visible: shipped && status === Image.Ready
     source: shipped ? Qt.resolvedUrl(family + ".svg") : ""
     sourceSize: Qt.size(Style.space(32), Style.space(32))

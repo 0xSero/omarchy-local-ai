@@ -20,8 +20,6 @@ READINESS_STATES=(ready needs-setup docker-down unsupported)
 
 docker_socket() { printf '%s' "${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock}"; }
 
-# Omarchy's flag reads backwards: --configured is true while Docker still needs sudo.
-sudoless_docker_on() { ! omarchy-sudo-docker --configured; }
 
 # this process can write the daemon's socket
 docker_reachable() { [[ -w $(docker_socket) ]]; }
@@ -35,9 +33,22 @@ in_docker_group() {
   [[ ,$(cut -d: -f4 <<<"$line"), == *,"$user",* ]] || [[ $(getent passwd "$user" | cut -d: -f4) == "$gid" ]]
 }
 
-# runtimes_have_nvidia: `docker info --format '{{json .Runtimes}}'` on stdin. The one definition of "the NVIDIA
-# container runtime is there" for setup, run and the panel alike; the toolkit also registers nvidia-cdi and nvidia-legacy.
-runtimes_have_nvidia() { jq -e 'keys | any(test("nvidia"))' >/dev/null 2>&1; }
+# docker_access_configured: Omarchy's Sudoless Docker is on for this account (it is the docker group), whether or not
+# this login has the group yet
+docker_access_configured() { in_docker_group; }
+
+# nvidia_devices: `docker info --format '{{json .DiscoveredDevices}}'` on stdin. The one definition of "Docker can hand
+# NVIDIA GPUs to a container" for setup, run and the panel alike: nvidia-container-toolkit's package hook describes them
+# in /etc/cdi/nvidia.yaml, and Docker lists them as nvidia.com/gpu=<index> without a restart.
+nvidia_devices() { jq -e 'any(.[]?; .ID | startswith("nvidia.com/gpu="))' >/dev/null 2>&1; }
+
+# nvidia_ready: Docker can hand this machine's NVIDIA GPUs to a container, through the toolkit's CDI list or, on an
+# install that configured it earlier, the nvidia runtime
+nvidia_ready() {
+  local info
+  info=$(docker info --format '{{json .DiscoveredDevices}}|{{json .Runtimes}}' 2>/dev/null) || return 1
+  nvidia_devices <<<"${info%%|*}" || jq -e 'keys | any(test("nvidia"))' >/dev/null 2>&1 <<<"${info#*|}"
+}
 
 # readiness_line <state> [message]
 readiness_line() { printf '%s\t%s\n' "$1" "${2:-}"; }
@@ -45,8 +56,8 @@ readiness_line() { printf '%s\t%s\n' "$1" "${2:-}"; }
 readiness() {
   local sock info
   sock=$(docker_socket)
-  command -v omarchy-sudo-docker >/dev/null || { readiness_line unsupported "This Omarchy has no Sudoless Docker helper; update Omarchy"; return; }
-  sudoless_docker_on || { readiness_line needs-setup; return; }
+  command -v omarchy-setup-security-sudoless-docker >/dev/null || { readiness_line unsupported "This Omarchy has no Sudoless Docker; update Omarchy"; return; }
+  docker_access_configured || { readiness_line needs-setup; return; }
   # a setup that did not finish is not done until it does; the panel shows its error beside the button
   [[ ! -s ${STATE:-/nonexistent}/setup-error ]] || { readiness_line needs-setup; return; }
   if ! docker_reachable; then
@@ -58,8 +69,11 @@ readiness() {
     fi
     return
   fi
-  info=$(docker info --format '{{json .Runtimes}}' 2>/dev/null) || { readiness_line docker-down "Docker is not answering"; return; }
-  if omarchy-hw-nvidia && ! runtimes_have_nvidia <<<"$info"; then readiness_line needs-setup; return; fi
+  docker info >/dev/null 2>&1 || { readiness_line docker-down "Docker is not answering"; return; }
+  if omarchy-hw-nvidia && ! nvidia_ready; then
+    readiness_line needs-setup "Docker lists no NVIDIA GPU: set up Local AI, and check that nvidia-smi works"
+    return
+  fi
   readiness_line ready
 }
 

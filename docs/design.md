@@ -24,7 +24,7 @@ The gateway (`ghcr.io/0xsero/gateway`, pinned by digest) listens on `127.0.0.1` 
 
 ## Privilege
 
-Setup opens one terminal and validates sudo once. It turns on Omarchy's Sudoless Docker, sets the tailnet operator only when unset or already this user and adds the NVIDIA runtime when needed, refusing to restart Docker while containers are running. It removes the old per-user authorization files. Every later backend operation runs as the user.
+Setup opens one terminal and runs nothing as root itself: Omarchy's Sudoless Docker, then on NVIDIA `omarchy-pkg-add nvidia-container-toolkit`, each with a password prompt that names it (`SUDO_PROMPT`). The toolkit's package hook writes `/etc/cdi/nvidia.yaml`; Docker reads CDI specs on every start, so it needs no configuration change or restart, and an engine gets its cards as `--device nvidia.com/gpu=<uuid>` (an older install with the `nvidia` runtime and no CDI list keeps `--gpus`). Setup ends with the readiness verdict and names, without changing, a Tailscale operator that is not this user and polkit files left by 6.0-6.4. Every later backend operation runs as the user.
 
 A session carries the groups it logged in with, so a login older than setup has the docker group only in `/etc/group`. The backend then runs the verbs that use Docker (`snapshot`, `run`, `stop`, `remove`, `readiness`) again under `newgrp docker`, once (`LOCAL_AI_REEXEC` stops a second try): no root, no password, no logout, and the Docker socket keeps its own permissions.
 
@@ -35,7 +35,7 @@ The backend validates recipe arguments before starting, mounts paths owned by th
 
 ## Why it is shaped this way
 
-- **Validated models, vendored.** Every recipe was accepted on its exact card, or cards: download, load, a correctness check, speed at several context lengths. Recipes arrive through plugin updates or an explicit **Refresh models**. Refresh resolves a registry commit, validates its catalog and replaces the cache atomically; failures retain the previous catalog. The backend checks recipe arguments again before a start. A card without an accepted recipe shows Coming soon and links the list in `supported/`.
+- **Validated models, vendored.** Every recipe was accepted on its exact card, or cards: download, load, a correctness check, speed at several context lengths. Recipes arrive through plugin updates or an explicit **Refresh models**. Refresh resolves a registry commit, validates its catalog and replaces the cache atomically; failures retain the previous catalog. The backend checks recipe arguments again before a start. A card without an accepted recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
 - **EXL3 first, engines that serve it in-process.** The registry recommends, per card, EXL3 weights on SGLang or vLLM ahead of TabbyAPI and llama.cpp, then vision, context and measured decode. On a 3090 that is Qwen3.8-27B on SGLang at 200K context and about 90 tok/s.
 - **Containers, not packages.** Engines need exact CUDA, ROCm or oneAPI stacks; an image pinned by digest is the smallest thing that reproduces the accepted run.
 - **A gateway in front.** Engines differ in API and none checks a key; the gateway gives every engine the same keyed endpoint and the same usage accounting.

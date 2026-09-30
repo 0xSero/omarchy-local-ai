@@ -20,7 +20,6 @@ intel() { printf 'null\t/dev/dri/renderD128\nnull\t/dev/dri/renderD129\n'; }
 amd() { echo '[]'; }
 docker_reachable() { return 0; }
 readiness() { printf 'ready\t\n'; }
-omarchy-sudo-docker() { return 1; }
 omarchy-cmd-present() { return 1; }
 adopt() { :; }
 host() { echo '{"have":[],"got":{},"freeRamGb":1024,"diskFreeGb":1024}'; }

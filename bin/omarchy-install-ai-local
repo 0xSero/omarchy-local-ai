@@ -1,14 +1,12 @@
 #!/bin/bash
 
-# omarchy:summary=Set up Local AI once: Docker without a password prompt, and GPU support
-# omarchy:requires-sudo=true
+# omarchy:summary=Set up Local AI once: Docker access for your account, and NVIDIA container support
 set -euo pipefail
 HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 # shellcheck source=../lib/access.sh
 . "$HERE/../lib/access.sh"
-POLICY=/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy
-RULES=/etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules
-ERROR=$HOME/.local/state/omarchy/local-ai/setup-error
+STATE=$HOME/.local/state/omarchy/local-ai
+ERROR=$STATE/setup-error
 # Keep a failed setup visible in the terminal opened by the panel.
 finish() {
   local rc=$?
@@ -17,56 +15,54 @@ finish() {
   else
     rm -f "$ERROR"
   fi
-  [[ -z ${KEEPALIVE:-} ]] || kill "$KEEPALIVE" 2>/dev/null || true
   if [[ -t 0 ]]; then
     ((rc == 0)) || echo "Setup did not finish. Resolve the error above, then click Set up Local AI again."
     read -r -p "Press Enter to close. " _ || true
   fi
 }
-mkdir -p "$HOME/.local/state/omarchy/local-ai"
-exec 9>"$HOME/.local/state/omarchy/local-ai/setup.lock"
+mkdir -p "$STATE"
+exec 9>"$STATE/setup.lock"
 flock -n 9 || { echo "Local AI setup is already open."; exit 1; }
 trap finish EXIT
 rm -f "$ERROR"
-# one password prompt that says whose it is and what it is for; kept alive so a slow download does not ask again
-echo "Local AI setup turns on Docker access for your account (Omarchy's Sudoless Docker) and GPU support."
-sudo -p "Password for %u to set up Local AI: " -v
-while sudo -n true; do sleep 60; done 2>/dev/null &
-KEEPALIVE=$!
+
+# Local AI changes nothing as root itself. It runs two of Omarchy's commands, and names the password each may ask for.
+echo "Local AI setup: Docker access for your account (Omarchy's Sudoless Docker) and, on NVIDIA, the container toolkit."
+
+# Local AI starts its containers as you: Omarchy's Sudoless Docker explains what that means and asks first. This login
+# reaches Docker at once through the group (lib/access.sh), so the reboot Omarchy mentions is not needed for Local AI.
+if ! docker_access_configured; then
+  SUDO_PROMPT="Password for %u to turn on Sudoless Docker for Local AI: " OMARCHY_DEFER_REBOOT=1 \
+    omarchy-setup-security-sudoless-docker
+  docker_access_configured || { echo "Local AI needs Sudoless Docker to start models. Nothing else was changed."; exit 1; }
+fi
+
+# NVIDIA: installing the toolkit is all it takes. Its package hook writes /etc/cdi/nvidia.yaml, and Docker reads that
+# file when a model starts: no daemon configuration, no Docker restart, no reboot. Already installed, this asks nothing.
 if omarchy-hw-nvidia; then
-  info=$(sudo docker info --format '{{json .Runtimes}}')
-  if ! runtimes_have_nvidia <<<"$info"; then
-    [[ -z $(sudo docker ps -q) ]] || { echo "Stop your running Docker containers before setting up NVIDIA support. Nothing was changed."; exit 1; }
-    echo "Installing NVIDIA container support..."
+  SUDO_PROMPT="Password for %u to install NVIDIA container support for Local AI: " \
     omarchy-pkg-add nvidia-container-toolkit
-    sudo nvidia-ctk runtime configure --runtime=docker
-    sudo systemctl restart docker
-    sudo docker info --format '{{json .Runtimes}}' | runtimes_have_nvidia
-  fi
 fi
 
-# Local AI starts its containers as you, so it needs Docker without a prompt: Omarchy's own Sudoless Docker, which
-# explains what that means and asks. Local AI works at once: this login gets the docker group when Local AI next asks
-# Docker (lib/access.sh), so neither a logout nor the reboot Omarchy mentions is needed.
-OMARCHY_DEFER_REBOOT=1 omarchy-setup-security-sudoless-docker
-sudoless_docker_on || { echo "Local AI needs Sudoless Docker to start models. Nothing else was changed."; exit 1; }
+# the verdict the panel will show, asked the way a start asks it (under the docker group)
+IFS=$'\t' read -r state msg < <("$HERE/omarchy-local-ai" readiness) || true
+case $state in
+ready) ;;
+docker-down) echo "Setup is done, but ${msg:-Docker is not answering}. The panel clears this by itself once Docker answers." ;;
+*) echo "${msg:-Local AI is still not ready.}"; exit 1 ;;
+esac
 
-# sharing a model on your tailnet without a prompt
-if command -v tailscale >/dev/null; then
-  if operator=$(timeout 10 tailscale debug prefs 2>/dev/null | jq -er '.OperatorUser // "" | select(type == "string")'); then
-    if [[ -z $operator || $operator == "$USER" ]]; then
-      timeout 20 sudo tailscale set --operator="$USER" || echo "Tailscale is not running; sharing on your tailnet will work once it is and you run setup again."
-    else
-      echo "Tailscale is managed by another account; ask that account to share your models."
-    fi
-  else
-    echo "Could not read Tailscale preferences; its operator was left unchanged."
-  fi
+# Sharing on your tailnet needs you as Tailscale's operator. Omarchy's Tailscale install sets it; Local AI never does.
+if command -v tailscale >/dev/null &&
+  operator=$(timeout 10 tailscale debug prefs 2>/dev/null | jq -er '.OperatorUser // ""') && [[ $operator != "$USER" ]]; then
+  echo "To share a model on your tailnet, Tailscale's operator must be $USER (it is '${operator:-nobody}')."
+  echo "Omarchy sets this when it installs Tailscale; otherwise run as root: tailscale set --operator=$USER"
 fi
 
-# earlier versions asked for a password through polkit; nothing uses these any more
-if sudo test -e "$POLICY" -o -e "$RULES"; then
-  sudo rm -f "$POLICY" "$RULES"
-  sudo systemctl reload polkit
+# Local AI 6.0-6.4 wrote polkit files for this account. Only root can delete them, so setup names them.
+if [[ -e /etc/polkit-1/actions/sero.local-ai.u$UID.policy || -e /etc/polkit-1/rules.d/49-sero.local-ai.u$UID.rules ]]; then
+  echo "An earlier Local AI left polkit files for your account. Delete them as root:"
+  echo "  /etc/polkit-1/actions/sero.local-ai.u$UID.policy"
+  echo "  /etc/polkit-1/rules.d/49-sero.local-ai.u$UID.rules"
 fi
 echo "Local AI is ready. Return to the panel to choose a model."
