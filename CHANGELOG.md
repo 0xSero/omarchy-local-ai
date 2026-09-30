@@ -2,6 +2,20 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.7.0] - 2026-09-29
+
+### Fixed
+- "Log out and back in once to finish setting up" is gone, and so is the dead end behind it: the panel showed that note with no button while the account was already in the docker group but the login was older than setup. A login carries the groups it began with, so it could not reach Docker until the next one. The verbs that use Docker now run under `newgrp docker` when that is the case: no root, no password, no logout, and the Docker socket keeps its own permissions (setup no longer sets a socket ACL).
+- Whether a model can start is decided in one place (`lib/access.sh`) for the panel, a start and setup alike. Before, three checks disagreed about the NVIDIA runtime, so an NVIDIA machine with the toolkit installed but Docker not configured for it showed no Set up button and refused every start. That state now offers Set up Local AI.
+- With Docker stopped, the panel says so and checks again by itself, instead of failing to read GPU use; a failed setup shows its button even while Docker is down.
+- A first start shows the engine's download layer by layer ("downloading the engine: 12 of 77 layers"), then "starting the engine", instead of one still line for a pull that can take many minutes (#41, @maralcbr).
+- Models survive a reboot: what the engine mounts (a recipe's config file, the by-path links of an Intel or AMD card) now lives in `~/.local/state/omarchy/local-ai/run/`, not in `$XDG_RUNTIME_DIR`, which is emptied at every reboot and logout, so an engine that Docker restarted no longer crash-loops on an empty directory (#42, @maralcbr). A model that is running when you update picks up the new path after one stop and start.
+- Panel: a model's page counts its own week, not the machine's; a crashed model on a card no row shows gets a row with its reason and dismiss; numbers round before the unit (1M, not 1000K; <0.1 GB, not 0 GB); months stay on their weeks across a daylight-saving change; no `NaN` uptime and no empty format chip for a model whose recipe is gone; Stop does nothing while the model is already stopping; the panel refreshes right after an action; a folder with `|`, `%`, `#` or `?` in its path works (#43, @maralcbr).
+- Open keeps working when a registry update renames a running model's recipe: a start keeps the served name, context and vision flag in the model's own config, and a refused Open shows its reason in the panel instead of the panel closing first (#45, @maralcbr).
+
+### Changed
+- The snapshot reports `readiness: {state, message}` (`ready`, `needs-setup`, `docker-down` or `unsupported`) in place of `setupNeeded` and `relogin`; `omarchy-local-ai readiness` prints it. Every state has a panel page with a button or one that says it clears by itself, and a test keeps it so.
+
 ## [6.6.1] - 2026-09-29
 
 The marketplace listing only; the panel and the backend are unchanged.

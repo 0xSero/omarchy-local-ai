@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=setup | registry | forget <recipe> | snapshot | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
+# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -10,7 +10,8 @@
 #
 # `run` downloads the weights as you and checks every file against the Hub, then starts the engine on
 # a private network and a keyed gateway on 127.0.0.1, as you: setup puts you in the docker group once
-# (Omarchy's Sudoless Docker) and lets this login reach the socket until the group applies at the next one.
+# (Omarchy's Sudoless Docker), and a login that began before that runs the verbs that use Docker under the group
+# (lib/access.sh), so nothing waits for the next login.
 # Nothing here runs as root, so there is no password prompt after setup and none after an update.
 
 # jq programs and child shell programs deliberately keep their own dollar expansions.
@@ -116,18 +117,9 @@ cmd_registry() (
   printf 'models up to date · %.8s\n' "$sha"
 )
 
-# Setup is offered inside the plugin; the terminal handles package progress and sudo. It is needed while the account
-# is not in the docker group or an NVIDIA card has no container runtime: what the machine is, never which plugin
-# version set it up, so an update never asks for it again.
-# docker_ok: this process can reach the daemon (the docker group from login, or the socket permission setup gives the
-# login it ran in)
-docker_ok() { [[ -w ${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock} ]]; }
-setup_needed() {
-  command -v omarchy-sudo-docker >/dev/null || return 0
-  omarchy-sudo-docker --configured && return 0
-  omarchy-hw-nvidia && ! command -v nvidia-ctk >/dev/null && return 0
-  return 1
-}
+# Setup is offered inside the plugin; the terminal handles package progress and sudo. Whether it is needed is what the
+# machine is (lib/access.sh), never which plugin version set it up, so an update never asks for it again.
+cmd_readiness() { readiness; }
 
 cmd_setup() { omarchy-launch-tui --app-id=org.omarchy.local-ai-setup "$PANEL/bin/omarchy-install-ai-local"; }
 
@@ -203,9 +195,10 @@ MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | sp
 
 # Every GPU, matched and reserved by any running container, regardless of account or labels.
 # Unknown NVIDIA UUID/count requests reserve all NVIDIA cards; memory alone cannot detect idle allocations.
+# `gpus none` skips the Docker check, for a snapshot taken while Docker cannot be asked.
 gpus() {
   local ids claims='[]' p
-  if docker_ok; then
+  if [[ ${1:-} != none ]] && docker_reachable; then
     ids=$(docker ps -q) || die "could not check Docker GPU allocations; try again"
     if [[ -n $ids ]]; then
       # Read only allocation fields, never container environments or credentials.
@@ -409,7 +402,7 @@ phase_start() {
       die "$k is not a card this recipe runs on"
   done
   backend=$(jq -r --arg h "$(jq -r .hw <<<"$r")" '.hardware[$h].match.backend' "$RECIPES")
-  if [[ $backend == "nvidia" ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
+  if [[ $backend == "nvidia" ]] && ! docker info --format '{{json .Runtimes}}' 2>/dev/null | runtimes_have_nvidia; then
     die "NVIDIA container support is not ready: choose Set up Local AI"
   fi
   if [[ $backend == "nvidia" ]] && v=$(cdi_stale) && [[ -n $v ]]; then
@@ -589,8 +582,7 @@ worker_run() {
 
 cmd_run() {
   valid_id "${1:-}" && [[ -n ${2:-} ]] || die "run <recipe> <gpu>[,<gpu>...]"
-  ! omarchy-sudo-docker --configured || die "Local AI is not set up yet: choose Set up Local AI"
-  docker_ok || die "log out and back in once to finish setting up Local AI"
+  require_ready
   local id=${1%--*} keys=() k r d g port busy n=1
   IFS=, read -ra keys <<<"$2"
   r=$(recipe "$id") || die "no recipe $id"
@@ -994,9 +986,12 @@ SUMMARY='def summary($h): {id, name, family, cards: (.cards // 1), format, sizeG
   needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h)};'
 
 cmd_snapshot() {
-  local deps=() d id port at st pid sat boot obj why rc code ts="" sa="" sf="" sfs="" v="" a
+  local deps=() d id port at st pid sat boot obj why rc code ts="" sa="" sf="" sfs="" v="" a rstate="" rmsg=""
   mkdir -p "$STATE/deploy"
   adopt
+  # whether a model can start, and if not what the panel offers (lib/access.sh); Docker is asked only when it can answer
+  IFS=$'\t' read -r rstate rmsg < <(readiness) || true
+  [[ -n $rstate ]] || { rstate=docker-down; rmsg="could not check whether Docker is ready"; }
   omarchy-cmd-present tailscale && ts=$(timeout 3 tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "" | rtrimstr(".")' || true)
   # each running model: its config and status in one read, then whether its worker or engine is gone; the final
   # step joins its recipe
@@ -1032,8 +1027,8 @@ cmd_snapshot() {
   { IFS= read -r -d '' sa && IFS= read -r -d '' sf && IFS= read -r -d '' sfs; } < <(jq -j '.agent // "", "\u0000",
     .folder // "", "\u0000", (.folders // [] | tojson), "\u0000"' "$STATE/settings.json" 2>/dev/null) || true
   [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
-  jq -nc --argjson g "$(gpus)" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
-    --argjson setup "$(setup_needed && echo true || echo false)" --argjson relogin "$(docker_ok && echo false || echo true)" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
+  jq -nc --argjson g "$(gpus "$([[ $rstate == ready ]] || echo none)")" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
+    --arg rstate "$rstate" --arg rmsg "$rmsg" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg setupError "$(cat "$STATE/setup-error" 2>/dev/null || true)" --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --argjson folders "${sfs:-[]}" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
@@ -1045,7 +1040,7 @@ cmd_snapshot() {
       | {name: $rid} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, setupError: $setupError, setupNeeded: $setup, relogin: ($relogin and ($setup | not)), host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
+    | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
@@ -1057,9 +1052,14 @@ cmd_snapshot() {
 }
 
 paths "$HOME"
+# Access is loaded here: the tests load every definition above this line and stub readiness.
+# shellcheck source=../lib/access.sh
+. "$PANEL/lib/access.sh"
 mkdir -p "$STATE"
+# the verbs that use Docker run under the docker group, whatever groups this login began with
+case ${1:-} in snapshot | run | stop | remove | readiness) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
-setup | registry | forget | snapshot | run | stop | open | set | share) "cmd_$1" "${@:2}" ;;
+setup | registry | forget | snapshot | readiness | run | stop | open | set | share) "cmd_$1" "${@:2}" ;;
 log) exec omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G "$LOG" ;;
 remove)
   for d in "$STATE"/deploy/*/; do

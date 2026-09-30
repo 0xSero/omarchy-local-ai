@@ -18,7 +18,7 @@ jobs:
       - name: The backend against shims, the view model against its snapshots, and the recipes.json checks
         run: make -C plugin check REGISTRY="$GITHUB_WORKSPACE/registry"
       - name: Every script parses
-        run: for f in plugin/bin/* plugin/test/*; do bash -n "$f"; done
+        run: for f in plugin/bin/* plugin/lib/* plugin/test/*; do bash -n "$f"; done
   secrets:
     runs-on: ubuntu-latest
     steps:

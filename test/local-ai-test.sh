@@ -11,12 +11,12 @@ fail() { printf '%s\n' "${2:-}" >&2; printf 'not ok - %s\n' "$1" >&2; exit 1; }
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 export HOME=$TMP/home SHIM=$TMP/shim XDG_RUNTIME_DIR=$TMP/run
-mkdir -p "$HOME" "$SHIM/containers" "$TMP/bin" "$TMP/plugin/bin"
+mkdir -p "$HOME" "$SHIM/containers" "$TMP/bin" "$TMP/plugin/bin" "$TMP/plugin/lib"
 cp "$ROOT/bin/omarchy-remove-ai-local" "$TMP/plugin/bin/"
+cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null || true
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
-sed -i "s/setup_needed \&\& echo true || echo false/echo false/" "$CLI"
 sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
@@ -50,6 +50,10 @@ shim() { printf '#!/bin/bash\n%s\n' "$2" >"$TMP/bin/$1"; chmod +x "$TMP/bin/$1";
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 # SHIM_NOGROUP: the account is not in the docker group (setup not run)
 shim omarchy-sudo-docker '[[ -n ${SHIM_NOGROUP:-} ]]'
+# the account is listed in the docker group; newgrp starts the shell it is given and grants nothing, as when a login is
+# still out of reach of the socket
+shim getent '[[ $1 == group ]] && echo "docker:x:998:$(id -un)" || echo "$2:x:1000:1000::/home/$2:/bin/bash"'
+shim newgrp 'printf "%s\n" "$*" >>"$SHIM/newgrp.log"; exec "$SHELL"'
 shim omarchy-cmd-present 'command -v "$1" >/dev/null'
 shim omarchy-cmd-missing '! command -v "$1" >/dev/null'
 shim omarchy-notification-send 'echo 7'
@@ -65,7 +69,7 @@ shim docker '
 printf "%s\n" "$*" >>"$SHIM/docker.log"
 c=$SHIM/containers
 case $1 in
-info) echo "Runtimes: nvidia runc" ;;
+info) echo "{\"nvidia\":{\"path\":\"nvidia-container-runtime\"},\"runc\":{\"path\":\"runc\"}}" ;;
 image) exit 1 ;;
 pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 network) : ;;
@@ -447,12 +451,15 @@ grep -q "not set up yet: choose Set up Local AI" "$TMP/nogroup.err" || fail "set
 [[ ! -d $STATE/deploy/$ID ]] || fail "a deployment before setup"
 pass "before setup a start asks for no password and says to set up Local AI"
 
-# after setup the account is in the docker group, but a login from before it cannot reach the daemon unless setup
-# gave it the socket: the panel says to log in again, and a start says the same instead of failing inside docker
-[[ $(OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$CLI" snapshot | jq -c '[.setupNeeded, .relogin]') == "[false,true]" ]] || fail "relogin"
-if OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$CLI" run "$ID" nvidia:0 2>"$TMP/relogin.err"; then fail "started without docker"; fi
-grep -q "log out and back in once" "$TMP/relogin.err" || fail "relogin reason" "$(cat "$TMP/relogin.err")"
-pass "set up but unreachable from this login: the panel and a start both say to log in again"
+# set up, but Docker is not running (no socket): the panel and a start both say so, no group is tried, and nobody is
+# asked to log in again
+: >"$SHIM/newgrp.log"
+[[ $(OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$CLI" snapshot | jq -r .readiness.state) == docker-down ]] || fail "docker down"
+[[ ! -s $SHIM/newgrp.log ]] || fail "newgrp has nothing to fix without a socket" "$(cat "$SHIM/newgrp.log")"
+if OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$CLI" run "$ID" nvidia:0 2>"$TMP/down.err"; then fail "started without docker"; fi
+grep -q "Docker is not running" "$TMP/down.err" || fail "docker down reason" "$(cat "$TMP/down.err")"
+! grep -qi "log out" "$TMP/down.err" || fail "asked for a new login"
+pass "set up but Docker unreachable: the panel and a start both say so, and nobody is asked to log in again"
 
 recipes "$PIN"
 mkdir -p "$STATE/deploy" "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" "$HOME/.cache/huggingface"
@@ -475,18 +482,20 @@ pass "forget refuses a symlink outside the managed download"
 shim omarchy-hw-nvidia 'exit 1'
 shim tailscale 'printf "%s\n" "$*" >>"$SHIM/tailscale.log"'
 fresh=$TMP/fresh/bin/omarchy-local-ai
-mkdir -p "${fresh%/*}"
+mkdir -p "${fresh%/*}" "$TMP/fresh/lib"
 cp "$ROOT/bin/omarchy-local-ai" "$fresh"
+cp "$ROOT/lib/access.sh" "$TMP/fresh/lib/"
 cp "$TMP/plugin/recipes.json" "$TMP/plugin/manifest.json" "$TMP/fresh/"
 sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
-[[ $(SHIM_NOGROUP=1 "$fresh" snapshot | jq .setupNeeded) == true ]] || fail "setup before setup"
-[[ $(SHIM_NOGROUP=1 OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$fresh" snapshot | jq -c '[.setupNeeded, .relogin]') == "[true,false]" ]] || fail "setup before relogin"
-[[ $("$fresh" snapshot | jq .setupNeeded) == false ]] || fail "setup after setup"
+[[ $(SHIM_NOGROUP=1 "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup"
+[[ $(SHIM_NOGROUP=1 OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup, socket out of reach"
+[[ $("$fresh" snapshot | jq -r .readiness.state) == ready ]] || fail "setup after setup"
 printf '\n# an update\n' >>"$fresh"
-[[ $("$fresh" snapshot | jq .setupNeeded) == false ]] || fail "setup asked again after an update"
+[[ $("$fresh" snapshot | jq -r .readiness.state) == ready ]] || fail "setup asked again after an update"
 pass "setup is needed before it runs, and neither after it nor after an update"
 echo 'Setup did not finish' >"$STATE/setup-error"
 [[ $("$fresh" snapshot | jq -r .setupError) == 'Setup did not finish' ]] || fail "setup error missing from snapshot"
+[[ $("$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "a failed setup is not ready"
 rm "$STATE/setup-error"
 pass "a failed setup terminal leaves its reason in the next snapshot"
 

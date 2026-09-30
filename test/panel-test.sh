@@ -65,7 +65,7 @@ ShellRoot {
     onTriggered: {
       var p=ld.item, mode=runner.modes[runner.at]
       if(!p.snap.gpus){step.start();return}
-      p.snap=Object.assign({},p.snap,{setupNeeded:mode==="setup"})
+      p.snap=Object.assign({},p.snap,{readiness:{state:mode==="setup"?"needs-setup":"ready"}})
       if(mode==="crash" || mode==="stopped")p.snap=Object.assign({},p.snap,{deployments:p.snap.deployments.map(function(d){return Object.assign({},d,{state:"error",error:"the engine stopped"})})})
       p.ui={view:mode==="crash"?"home":mode==="setup"?"home":mode==="kind"?"kind":"run",id:"test",problem:mode==="error"?"Could not open the agent terminal; try again.":""}
       if(mode==="refreshed"){p.ui={view:"home"};p.activate("registry")}

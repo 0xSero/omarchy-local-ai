@@ -186,18 +186,29 @@ function slots(s, ui, keep) {
 }
 function flat(list) { return [].concat.apply([], list.map(function(x) { return x.rows })) }
 
+// What the panel says and offers for each readiness state the backend reports (lib/access.sh). A state with no button
+// clears by itself and says so; a state this table has never heard of does the same, so none is a dead end.
+var READINESS = {
+  "needs-setup": { note: "Once per machine: Docker access (Omarchy's Sudoless Docker) and GPU support. A terminal opens for your password.",
+    action: "setup" },
+  "docker-down": { note: "Docker is not ready. Local AI checks again by itself." },
+  unsupported: { note: "This Omarchy is too old for Local AI. It checks again by itself once Omarchy is updated." }
+}
+function notReadyView(s) {
+  var r = s.readiness, t = READINESS[r.state] || { note: "Local AI is not ready. It checks again by itself." }
+  var rows = [{ type: "sec", label: "SETUP" }, { type: "links", note: t.note, items: [] }]
+  if (r.message) rows.push({ type: "links", note: r.message, items: [] })
+  if (t.action) rows.push({ type: "acts", items: [{ label: "Set up Local AI", action: t.action, primary: true }] })
+  return { title: "LOCAL AI", version: s.version, rows: rows }
+}
+
 // home: your lifetime (once there is one), running models as cards (ready, then starting or stopping), then the
 // available GPUs as rows: free ones, then groups of free cards, then crashed ones to run again or dismiss (a crash on
 // a card no row shows is a row of its own). A GPU already running a model is not listed again; the rest are one
 // "all GPUs" away.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: [] }
-  if (s.relogin && !s.setupError) return { title: "LOCAL AI", version: s.version, rows: [{ type: "sec", label: "SETUP" },
-    { type: "links", note: "Log out and back in once to finish setting up: Docker access applies to new logins.", items: [] }] }
-  if (s.setupNeeded || s.setupError) return { title: "LOCAL AI", version: s.version, rows: [
-      { type: "sec", label: "SETUP" },
-      { type: "links", note: "Once per machine: Docker access (Omarchy's Sudoless Docker) and GPU support. A terminal opens for your password.", items: [] },
-      { type: "acts", items: [{ label: "Set up Local AI", action: "setup", primary: true }] }] }
+  if (((s.readiness || {}).state || "ready") !== "ready") return notReadyView(s)
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s, ui)
   var rows = [], life = s.life || {}
   if (life.requests > 0) rows.push(activity(s))

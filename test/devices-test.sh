@@ -6,6 +6,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 sed '/^paths "\$HOME"$/,$d' "${BACKEND:-$ROOT/bin/omarchy-local-ai}" >"$TMP/functions"
 source "$TMP/functions"
+source "$ROOT/lib/access.sh"
 export PANEL=$ROOT
 RECIPES=$TMP/recipes.json
 paths "$TMP/home"
@@ -17,8 +18,8 @@ jq -n '{hardware:{
 nvidia() { printf '%s\n' '0, NVIDIA GeForce RTX 4090, 24576, 20, 35' '1, NVIDIA GeForce RTX 4090, 24576, 20, 35'; }
 intel() { printf 'null\t/dev/dri/renderD128\nnull\t/dev/dri/renderD129\n'; }
 amd() { echo '[]'; }
-docker_ok() { return 0; }
-setup_needed() { return 1; }
+docker_reachable() { return 0; }
+readiness() { printf 'ready\t\n'; }
 omarchy-sudo-docker() { return 1; }
 omarchy-cmd-present() { return 1; }
 adopt() { :; }
