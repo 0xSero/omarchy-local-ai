@@ -13,6 +13,10 @@ export HOME=$TMP/home SETUP_TEST=$TMP
 sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|" "$TMP/plugin/bin/omarchy-install-ai-local"
 cat >"$TMP/bin/sudo" <<'SH'
 #!/bin/bash
+if [[ $1 == -p ]]; then
+  printf 'prompt %s\n' "$2" >>"$SETUP_TEST/calls"
+  shift 2
+fi
 printf '%s\n' "$*" >>"$SETUP_TEST/calls"
 case $1 in
 -v) exit "${FAIL_SUDO:-0}" ;;
@@ -81,7 +85,8 @@ if grep -q 'restart docker' "$TMP/calls"; then exit 1; fi
 if grep -q 'reload polkit' "$TMP/calls"; then exit 1; fi
 echo 'ok - run again, setup restarts nothing'
 [[ $(grep -cx -- '-v' "$TMP/calls") == 1 ]]
-echo 'ok - setup validates sudo once per terminal'
+grep -qx 'prompt Password for %u to set up Local AI: ' "$TMP/calls"
+echo 'ok - setup validates sudo once per terminal, with a prompt that names Local AI'
 : >"$TMP/calls"
 NVIDIA=0 setup
 if grep -q '^docker\|^nvidia-ctk\|restart docker' "$TMP/calls"; then exit 1; fi

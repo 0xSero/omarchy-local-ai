@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.7.1] - 2026-09-30
+
+### Fixed
+- Setup's password prompt says what it is for: "Password for sero to set up Local AI", after a line naming what setup turns on, instead of sudo's bare "[sudo] password for sero". It is the only prompt: setup keeps the password alive while it runs, so a slow NVIDIA package download does not ask a second time.
+
 ## [6.7.0] - 2026-09-29
 
 ### Fixed
