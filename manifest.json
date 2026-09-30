@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "6.8.2",
+  "version": "6.8.3",
   "author": "0xSero",
   "license": "MIT",
   "description": "Run a local model on your own GPU and open a coding agent on it. Local AI picks a model tested on your card (NVIDIA, Intel Arc Pro, AMD), checks its weights against Hugging Face and serves it in Docker behind a keyed, OpenAI-compatible gateway on 127.0.0.1. Opens pi, Claude Code, Codex, OpenCode and five more agents without touching their config. Start: omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable",

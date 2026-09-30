@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.8.3] - 2026-09-30
+
+### Fixed
+- 6.8.2 was not enough for a cold start. On the 13 GB Arc Pro B70 machine, Qwen3.8-27B still faulted the copy engine during shard 2 of 2 (`xe … Fault response: Unsuccessful -ENOENT`, `Engine memory CAT error … class=bcs`, engine reset) with `TreatNonUsmForTransfersAsSharedSystem=0` set: the runtime kept treating the mapped checkpoint as shared-system memory. Intel engines now also start with `EnableSharedSystemUsmSupport=0`. With that set, a cold copy of the whole 15.70 GiB checkpoint onto the card finished with no driver fault.
+
 ## [6.8.2] - 2026-09-30
 
 ### Fixed

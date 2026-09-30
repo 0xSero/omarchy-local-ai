@@ -493,10 +493,13 @@ phase_start() {
       a+=(--device "$v")
     done
     a+=(--volume "$run/by-path:/dev/dri/by-path:ro")
-    # Intel's runtime lets the copy engine read ordinary host memory in place while the weights load. On a B70 it has
-    # reached an address no longer mapped (xe: "Fault response: Unsuccessful -ENOENT", copy engine reset) and vLLM then
-    # waits on that copy forever. With this off, the runtime copies through its own staging buffers.
-    if [[ $backend == "intel-xpu" ]]; then a+=(--env NEOReadDebugKeys=1 --env TreatNonUsmForTransfersAsSharedSystem=0); fi
+    # Intel's runtime lets the copy engine read ordinary host memory in place while the weights load. On a B70 with
+    # less RAM than the checkpoint that range is unmapped mid-transfer (xe: "Fault response: Unsuccessful -ENOENT",
+    # copy engine reset) and vLLM waits on the lost copy. Staging through the runtime's own buffers is not enough:
+    # the engine still registers the mapped file as shared-system memory, so shared-system USM is off as well.
+    if [[ $backend == "intel-xpu" ]]; then
+      a+=(--env NEOReadDebugKeys=1 --env TreatNonUsmForTransfersAsSharedSystem=0 --env EnableSharedSystemUsmSupport=0)
+    fi
   fi
   while IFS='|' read -r _ _ _ _ v w _; do
     owned "$w"
