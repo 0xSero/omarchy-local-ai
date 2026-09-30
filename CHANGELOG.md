@@ -2,6 +2,15 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.8.2] - 2026-09-30
+
+### Fixed
+- On an Arc Pro B70 a start could hang for good halfway through reading the weights (two of three loads of Qwen3.8-27B on a machine with 14 GB of RAM). Intel's runtime let the card's copy engine read host memory in place; it reached an address that was no longer mapped (`xe … Fault response: Unsuccessful -ENOENT`, `Engine memory CAT error … class=bcs`, engine reset) and vLLM waited on the lost copy forever. Intel engines now start with `TreatNonUsmForTransfersAsSharedSystem=0`, so those copies go through the runtime's own staging buffers.
+
+### Changed
+- The loading bar is the engine's own progress, not a clock. It used to count from the weights' size (6 s per GB, or the last load's time) and stop at 95%, where a start that had hung stayed for up to 30 minutes. It now shows the step the engine's log reports (reading the weights, file by file; compiling; reserving the cache; capturing graphs; starting the server), the minutes spent, and how long the engine has been quiet.
+- A start ends as soon as the GPU driver resets the card under the engine, with the kernel's lines in the log, and after 15 minutes without a line from the engine; before, both waited out the 30-minute limit.
+
 ## [6.8.1] - 2026-09-30
 
 ### Fixed

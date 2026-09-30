@@ -12,7 +12,7 @@ A bar widget that runs the one model validated for each GPU in the machine and o
 
 ## Flow
 
-The widget polls `bin/omarchy-local-ai snapshot` (every 1.5 s while something starts, 5 s while open, 30 s closed). The snapshot joins the GPUs (`nvidia-smi`, the Arc Pro B70's PCI id and hwmon, `amd-smi`), the recipes and one folder per running model, `~/.local/state/omarchy/local-ai/deploy/<recipe>/` with `config.json` (cards, port, agent, folder) and `status.json` (step, detail, percent, error). `Model.build()` turns that into the page; nothing in the view model has side effects.
+The widget polls `bin/omarchy-local-ai snapshot` (every 1.5 s while something starts, 5 s while open, 30 s closed). The snapshot joins the GPUs (`nvidia-smi`, the Arc Pro B70's PCI id and hwmon, `amd-smi`), the recipes and one folder per running model, `~/.local/state/omarchy/local-ai/deploy/<recipe>/` with `config.json` (cards, port, agent, folder) and `status.json` (step, detail, percent, error). While a model loads, detail and percent come from the engine's own log lines (`loadstep`), never from a clock, and the worker ends a start whose card the driver resets (a new devcoredump) or whose engine prints nothing for 15 minutes. `Model.build()` turns that into the page; nothing in the view model has side effects.
 
 A recipe may carry `needs` (`host_ram_gb`, `disk_gb`, `fast_storage: "nvme"`) when it offloads to the host. The snapshot measures the host once (MemAvailable, free space under the models folder, and `lsblk -s` from that folder's filesystem down through dm-crypt or LVM to its drives) and gives each recipe an `unfit` reason, empty when it fits; `Model.js` picks the first recipe that fits and shows the others disabled with the reason, and `run` refuses an unfit one.
 

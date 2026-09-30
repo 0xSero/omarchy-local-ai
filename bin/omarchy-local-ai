@@ -27,6 +27,7 @@ RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
 LABEL=io.omarchy.local-ai
+SYS=${LOCAL_AI_SYSFS:-/sys}
 AGENTS=(pi claude codex opencode omp crush grok copilot hermes)
 umask 077
 
@@ -375,6 +376,38 @@ ours() {
   [[ $l == "1|$(id -u)" || $l == "1|" ]]
 }
 
+# loadstep <id>: where the engine is in its start, by its own log: "<step>\t<percent>\t<its last line>". The step and
+# percent move only on lines vLLM, SGLang and llama.cpp print themselves; an engine that has printed none of them yet
+# is "loading" at 1%. The last line changes whenever the engine prints anything, so its silence can be timed. vLLM reads
+# the checkpoint again for a draft model (MTP), after "Loading drafter model".
+loadstep() {
+  docker logs --tail 400 "$(engine "$1")" 2>&1 | tr '\r' '\n' | awk '
+    function set(s, p) { step = s; pct = p }
+    NF { last = $0 }
+    /[Ll]oading safetensors checkpoint shards: +[0-9]+% Completed \| [0-9]+\/[0-9]+/ {
+      match($0, /\| [0-9]+\/[0-9]+/); split(substr($0, RSTART + 2, RLENGTH - 2), f, "/")
+      if (f[2] > 0) set((f[1] < f[2] ? "reading the " (draft ? "draft model " : "") "weights: file " f[1] + 1 " of " f[2] : "weights read"),
+        5 + int(60 * f[1] / f[2])); next }
+    /Loading drafter model/ { draft = 1; set("reading the draft model weights", 5); next }
+    /Starting to load model|Load weight begin|load_tensors: loading model tensors|Loading model modules/ { set("reading the weights", 5); next }
+    /Loading weights took|Model loading took|Load weight end|load_tensors: +[A-Za-z0-9_]+ model buffer size/ { set("weights loaded", 65); next }
+    /Dynamo bytecode transform|Compiling a graph|torch\.compile takes/ { set("compiling", 70); next }
+    /Available KV cache memory|GPU KV cache size|Memory pool end|llama_kv_cache/ { set("reserving the cache", 80); next }
+    /Capturing (CUDA |cuda |XPU )?graphs|Capture cuda graph begin|Graph capturing/ { set("capturing graphs", 85); next }
+    /init engine \(profile|Starting vLLM (API )?server|Application startup complete|Uvicorn running|fired up and ready|server is listening|main: model loaded/ {
+      set("starting the server", 95); next }
+    END { gsub(/\t/, " ", last); printf "%s\t%d\t%s\n", (step == "" ? "loading" : step), (step == "" ? 1 : pct), last }'
+}
+
+# resets <node>...: the kernel keeps a crash record (devcoredump) of a card its driver has just reset; one that was not
+# there when the start began means the card was reset under the engine, which then waits on it forever
+resets() {
+  local n
+  for n in "$@"; do
+    readlink "$SYS/class/drm/${n##*/}/device/devcoredump" 2>/dev/null || true
+  done
+}
+
 # rundir <id>: what the start writes for the engine (the config asset, its GPUs' by-path links). The engine restarts
 # with the machine, so this is in the user's state, never /run or XDG_RUNTIME_DIR: a mount source gone after a reboot
 # or a logout comes back as an empty directory and the engine crash-loops
@@ -460,6 +493,10 @@ phase_start() {
       a+=(--device "$v")
     done
     a+=(--volume "$run/by-path:/dev/dri/by-path:ro")
+    # Intel's runtime lets the copy engine read ordinary host memory in place while the weights load. On a B70 it has
+    # reached an address no longer mapped (xe: "Fault response: Unsuccessful -ENOENT", copy engine reset) and vLLM then
+    # waits on that copy forever. With this off, the runtime copies through its own staging buffers.
+    if [[ $backend == "intel-xpu" ]]; then a+=(--env NEOReadDebugKeys=1 --env TreatNonUsmForTransfersAsSharedSystem=0); fi
   fi
   while IFS='|' read -r _ _ _ _ v w _; do
     owned "$w"
@@ -541,7 +578,7 @@ fail() {
 
 # __worker <id> <key>: download, start, wait for the model, check it answers; status.json tells the widget each step
 worker_run() {
-  local r t0 w reply served="" took expect code
+  local r t0 w reply served="" code nodes seen quiet last top step pct line
   WID=$1
   shift
   r=$(recipe "$WID")
@@ -571,11 +608,15 @@ worker_run() {
   NID=$(notify -p "Starting $WNAME" "Loading it on $(gpus | jq -r --arg k "$1" --argjson n $# '[.[] | select(.key == $k) | .name][0] | if $n > 1 then "\($n) × \(.)" else . end'). This takes a few minutes.")
   phase_start "$WID" "$PORTNUM" "$@" | while IFS= read -r w; do status "$WID" starting "$w" 0; done
 
-  # the last load of this recipe, on any card, sets the pace of the percentage; before one, 6 s per GB
+  # The bar follows the engine's own log (loadstep), never a clock. A card reset under the engine, or 15 minutes without
+  # a line from it, ends the start there instead of at the 30-minute limit.
   t0=$SECONDS
-  took=$STATE/usage/${WID%--*}/load-seconds
-  mkdir -p "${took%/*}"
-  expect=$(cat "$took" 2>/dev/null || jq -r '(.sizeGb // 10) * 6 | floor' <<<"$r")
+  nodes=()
+  for w in "$@"; do
+    [[ $w == nvidia:* ]] || nodes+=("$(readlink -f "$(gpus none | jq -r --arg k "$w" '.[] | select(.key == $k) | .node // empty')" || true)")
+  done
+  seen=$(resets ${nodes[@]+"${nodes[@]}"})
+  quiet=$SECONDS last="" top=1
   while :; do
     code=$(curl -s -m 5 -o "$WD/models.json" -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$PORTNUM/v1/models" || true)
     served=$(jq -r '.data[0].id // empty' "$WD/models.json" 2>/dev/null || true)
@@ -583,7 +624,19 @@ worker_run() {
     [[ $code == "401" ]] && fail "the gateway refuses this install's key"
     ((SECONDS - t0 < 1800)) || fail "the engine did not answer within 30 minutes"
     (($(docker inspect -f '{{.RestartCount}}' "$(engine "$WID")" 2>/dev/null || echo 0) < 2)) || fail "the engine keeps crashing"
-    status "$WID" starting "loading" $(((SECONDS - t0) * 100 / (expect + 1) > 95 ? 95 : (SECONDS - t0) * 100 / (expect + 1) + 1))
+    if [[ $(resets ${nodes[@]+"${nodes[@]}"}) != "$seen" ]]; then
+      journalctl -k --since "-$((SECONDS - t0 + 60))s" --no-pager 2>/dev/null | grep -E ' (xe|i915|amdgpu) ' | tail -20 >>"$WD/err" || true
+      fail "the GPU driver reset the card while the model loaded (kernel lines in the log)"
+    fi
+    IFS=$'\t' read -r step pct line < <(loadstep "$WID") || true
+    [[ $line == "$last" ]] || { last=$line quiet=$SECONDS; }
+    ((SECONDS - quiet < 900)) || fail "the engine printed nothing for 15 minutes while ${step:-loading}"
+    w=${step:-loading}
+    ((SECONDS - t0 < 60)) || w+=" · $(((SECONDS - t0) / 60)) min"
+    ((SECONDS - quiet < 120)) || w+=", quiet for $(((SECONDS - quiet) / 60)) min"
+    # the bar never goes back, though the draft model weights start their files again
+    ((${pct:-1} <= top)) || top=$pct
+    status "$WID" starting "$w" "$top"
     sleep 3
   done
   rm -f "$WD/models.json"
@@ -599,7 +652,6 @@ worker_run() {
   # vLLM puts thinking in `reasoning`, older engines in `reasoning_content`; 200 tokens can all be thinking
   jq -e '.choices[0].message | any(.content, .reasoning, .reasoning_content; type == "string" and length > 0)' <<<"$reply" >/dev/null ||
     fail "the model returned no answer"
-  echo $((SECONDS - t0)) >"$took"
   status "$WID" ready "" 100
   trap - EXIT
   notify -r "$NID" "$WNAME is ready" "Open your agent on it from Local AI." >/dev/null
