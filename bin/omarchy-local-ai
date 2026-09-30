@@ -34,6 +34,11 @@ paths() {
   HOME_DIR=$1
   STATE=$HOME_DIR/.local/state/omarchy/local-ai
   MODELS=$HOME_DIR/.cache/omarchy/local-ai/models
+  # a cache or state folder moved to another disk behind a symlink is still the user's own
+  if command -v realpath >/dev/null; then
+    STATE=$(realpath -m -- "$STATE")
+    MODELS=$(realpath -m -- "$MODELS")
+  fi
   KEY=$STATE/gateway.key
   AUTH=$STATE/gateway.auth
   LOG=$STATE/log
@@ -42,8 +47,13 @@ paths() {
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 say() { printf '%s %s\n' "$(now)" "$*" >>"$LOG"; }
 die() { printf 'local-ai: %s\n' "$*" >&2; exit 1; }
-# Bound daemon calls; image pulls get time to transfer, ordinary operations do not.
-docker() { timeout --kill-after=5 "$( [[ ${1:-} == pull ]] && echo 1800 || echo 30 )" docker "$@"; }
+# Bound daemon calls; image pulls get time to transfer, a start time for the GPU hooks, ordinary operations do not.
+# --foreground keeps the call in the worker's process group, so a Stop that kills the group ends it too.
+docker() {
+  local t=30
+  case ${1:-} in pull) t=7200 ;; run) t=120 ;; esac
+  timeout --foreground --kill-after=5 "$t" docker "$@"
+}
 notify() { omarchy-notification-send --app-name "Local AI" "$@" 2>/dev/null || echo 0; }
 valid_id() { [[ $1 =~ ^[a-z0-9][a-z0-9.-]{0,63}$ ]]; }
 valid_key() { [[ $1 =~ ^(nvidia|intel-xpu|amd-rocm):[0-9]{1,2}$ ]]; }
@@ -56,8 +66,8 @@ status() {
   mkdir -p "$d"
   was=$(jq -r '"\(.state) \(.detail)"' "$d/status.json" 2>/dev/null || true)
   jq -nc --arg s "$2" --arg d "${3:-}" --argjson p "${4:-0}" --arg e "${5:-}" --arg t "$(now)" --argjson pid "$$" \
-    '{state: $s, detail: $d, percent: $p, error: $e, pid: $pid, at: $t}' >"$d/status.json.tmp"
-  mv -f "$d/status.json.tmp" "$d/status.json"
+    '{state: $s, detail: $d, percent: $p, error: $e, pid: $pid, at: $t}' >"$d/status.json.$$"
+  mv -f "$d/status.json.$$" "$d/status.json"
   [[ $was == "$2 ${3:-}" ]] || say "$1 $2 ${3:-}${5:+ error: $5}"
 }
 
@@ -376,7 +386,7 @@ remove() {
     if ours "$c"; then docker rm -f "$c" >/dev/null 2>&1 || return 1; fi
   done
   docker network rm "omarchy-local-ai-$1" >/dev/null 2>&1 || true
-  rm -rf -- "$(rundir "$1")"
+  rm -rf -- "$(rundir "$1")" 2>/dev/null || say "$1: $(rundir "$1") holds files Docker created as root; delete it as root"
 }
 
 # pull <image> <what>: a line each time a layer lands, from the per-layer lines docker prints when it has no terminal;
@@ -474,9 +484,10 @@ phase_start() {
   fi
 }
 
+# phase_stop <id>: returns non-zero instead of exiting, so the caller records why the stop failed
 phase_stop() {
-  valid_id "$1" || die "invalid request"
-  docker info >/dev/null 2>&1 || die "Docker is not responding; try again when it is running"
+  valid_id "$1" || return 1
+  docker info >/dev/null 2>&1 || { say "Docker is not responding; $1 was not stopped"; return 1; }
   remove "$1"
 }
 
@@ -489,17 +500,20 @@ serve() {
   fi
 }
 
-# This user's containers, networks and engine mounts, and the engine images the recipes name (Docker keeps any another container uses)
+# This user's containers, networks and engine mounts, and the engine images they ran or any catalog names (Docker
+# keeps an image another container uses)
 phase_purge() {
-  local c
-  local containers
+  local c containers images=""
   containers=$(docker ps -aq --filter "label=$LABEL=1") || die "Docker is not responding; nothing was removed"
   for c in $containers; do
-    if ours "$c"; then docker rm -f "$c" >/dev/null || die "could not remove a model container; try again"; fi
+    if ours "$c"; then
+      images+=$(docker inspect -f '{{.Image}}' "$c" 2>/dev/null || true)$'\n'
+      docker rm -f "$c" >/dev/null || die "could not remove a model container; try again"
+    fi
   done
   docker network ls -q --filter "label=$LABEL=1" | xargs -r timeout --kill-after=5 30 docker network rm >/dev/null 2>&1 || true
-  jq -r '.gateway.image, .hardware[].recipes[].image' "$RECIPES" | sort -u | xargs -r timeout --kill-after=5 30 docker rmi >/dev/null 2>&1 || true
-  rm -rf -- "$STATE/run"
+  { printf '%s' "$images"; jq -r '.gateway.image, .hardware[].recipes[].image' "$PANEL/recipes.json" "$CATALOG" 2>/dev/null; } |
+    grep . | sort -u | xargs -r timeout --kill-after=5 30 docker rmi >/dev/null 2>&1 || true
 }
 
 # fail <message>: keep the engine's last lines in the log (taking the containers down deletes them), name its first
@@ -594,7 +608,7 @@ cmd_run() {
 
   # the log keeps its last 5,000 lines once it passes 1 MB
   if [[ -f $LOG ]] && (($(wc -c <"$LOG") > 1048576)); then
-    tail -n 5000 "$LOG" >"$LOG.tmp" && mv -f "$LOG.tmp" "$LOG"
+    tail -n 5000 "$LOG" >"$LOG.$$" && mv -f "$LOG.$$" "$LOG"
   fi
   exec 9>"$STATE/claim.lock"
   flock -w 10 9 || die "another model operation is running; try again"
@@ -623,12 +637,13 @@ cmd_run() {
   jq -nc --arg id "$id" --argjson p "$port" --arg a "$(get agent)" --arg f "$(get folder)" --arg t "$(now)" --argjson r "$r" \
     '{id: $id, keys: $ARGS.positional, port: $p, agent: $a, folder: $f, startedAt: $t,
       serve: {name: $r.name, ctx: ($r.serving.ctxTokens // 32768), vision: ($r.capabilities.vision // false)}}' \
-    --args "${keys[@]}" >"$d/config.json.tmp"
-  mv -f "$d/config.json.tmp" "$d/config.json"
+    --args "${keys[@]}" >"$d/config.json.$$"
+  mv -f "$d/config.json.$$" "$d/config.json"
   flock -u 9
 
   setsid "$0" __worker "$id" "${keys[@]}" </dev/null >/dev/null 2>&1 &
-  jq -nc --argjson p "$!" --arg t "$(now)" '{state: "download", detail: "starting", percent: 0, error: "", pid: $p, at: $t}' >"$d/status.json"
+  jq -nc --argjson p "$!" --arg t "$(now)" '{state: "download", detail: "starting", percent: 0, error: "", pid: $p, at: $t}' >"$d/status.json.$$"
+  mv -f "$d/status.json.$$" "$d/status.json"
   disown
 }
 
@@ -730,8 +745,8 @@ cmd_set() {
   fi
   for f in "${files[@]}"; do
     { cat "$f" 2>/dev/null || echo '{}'; } | jq --arg k "$k" --arg v "$v" \
-      '.[$k] = $v | if $k == "folder" then .folders = ([$v] + ((.folders // []) - [$v]))[:6] else . end' >"$f.tmp"
-    mv -f "$f.tmp" "$f"
+      '.[$k] = $v | if $k == "folder" then .folders = ([$v] + ((.folders // []) - [$v]))[:6] else . end' >"$f.$$"
+    mv -f "$f.$$" "$f"
   done
 }
 
@@ -868,8 +883,8 @@ cmd_share() {
     [[ -z $operator || $operator == "$USER" ]] || die "another account manages Tailscale; ask that account to change the share"
     die "Tailscale could not change the share; check that it is running and ask its operator for access"
   fi
-  jq --argjson s "$([[ $on == "on" ]] && echo true || echo false)" '.shared = $s' "$f" >"$f.tmp"
-  mv -f "$f.tmp" "$f"
+  jq --argjson s "$([[ $on == "on" ]] && echo true || echo false)" '.shared = $s' "$f" >"$f.$$"
+  mv -f "$f.$$" "$f"
 }
 
 # summary <usage dir>: one model's usage so far, kept in summary.json beside its log and brought up to date by reading
@@ -1066,7 +1081,10 @@ remove)
     cmd_stop "$(basename "$d")" || die "could not stop every model; files were kept"
   done
   phase_purge
-  rm -rf -- "$MODELS" "$STATE"
+  # everything else goes even when one folder cannot: Docker creates a missing mount source as root
+  left=()
+  for p in "$MODELS" "${CATALOG%/*}" "$STATE"; do rm -rf -- "$p" 2>/dev/null || left+=("$p"); done
+  ((${#left[@]} == 0)) || die "everything else was removed; these hold files Docker created as root, delete them as root: ${left[*]}"
   ;;
 __worker) worker_run "${@:2}" ;;
 *)
