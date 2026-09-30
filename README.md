@@ -1,6 +1,6 @@
 # Local AI for Omarchy
 
-Run the model validated for your GPU and open a coding agent on it.
+Run a local model on your own GPU and open a coding agent on it. Local AI picks a model that was tested on your card (NVIDIA, Intel Arc Pro, AMD), downloads the weights from a pinned Hugging Face revision and checks them, and serves the model in Docker behind a keyed, OpenAI-compatible gateway on 127.0.0.1. From the bar you open pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it in a folder you choose, without editing their config. The panel shows GPU temperature, VRAM and token use, and can share a running model on your tailnet.
 
 ![Local AI](preview.png)
 
@@ -44,7 +44,7 @@ Setup is the only password Local AI asks for, once per machine: starting, stoppi
 
 - **Validated models per card, or one across several.** `recipes.json` holds, for each of 40 card kinds, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
 - **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them, and Config says what is missing.
-- **Weights** are downloaded as you, from the pinned revision, and every file's size and sha256 is checked against the Hub before it is used. A matching copy in your Hugging Face cache is reused.
+- **Weights** are downloaded as you, from the pinned revision, and every file's size is checked against Hugging Face, and the SHA-256 of every large (LFS) file, before it is used. A matching copy in your Hugging Face cache is reused.
 - **Containers.** The engine runs on a private network with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
 - **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. The last agent and folder you picked become the default.
 - **Share** a running model on your tailnet with `tailscale serve` (tailnet only, still keyed). **Stop sharing** on its page removes that share. Tailscale must be running and logged in. Setup preserves another account’s operator; ask that account to manage sharing. A failed unshare is logged and does not prevent stopping the model.
