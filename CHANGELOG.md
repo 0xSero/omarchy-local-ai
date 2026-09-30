@@ -2,6 +2,20 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.6.1] - 2026-09-29
+
+The marketplace listing only; the panel and the backend are unchanged.
+
+### Changed
+- The listing's preview is now a 16:9 picture that reads at card size: Local AI and its keyed gateway on 127.0.0.1 in the middle, the logo of every coding agent it opens scattered around it, and the NVIDIA, Intel and AMD logos, each in a circle with an orange line to Local AI. The old one was three panels shrunk into a thumbnail.
+- The manifest description is shorter and no longer carries a card count that goes stale with every registry sync. It ends with the start command, `omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable`, then Set up Local AI in the bar: a listing with a manual-setup override shows its description but no install command of its own.
+- The README opens with a Start section: that command and the three steps after it, linking to Install, Requirements and Remove.
+- The README now has a Requirements section (Omarchy commands, Docker and the other tools, GPU drivers, optional Tailscale and Hugging Face token, the hosts it reaches), lists exactly what setup runs as root, and states the license. The marketplace asks submitters to document all three, and its security baseline flags the installer, `sudo` and `systemctl` in setup for a maintainer to review against that documentation.
+
+### Added
+- `make preview` renders that picture from the agent list in `bin/omarchy-local-ai` and the logos in `docs/preview/logos/` (sources and licences in its README), and checks its own layout (no circle touching another, no line through a circle, every logo drawn and visible); it stops until a new agent has a name, a logo and a spot.
+- `test/listing-test.sh` checks the manifest (schema, id, kinds and entry points) and preview against the limits the marketplace enforces, that the README has install, removal, requirements and license sections, and that the start command is in the description and at the top of the README.
+
 ## [6.6.0] - 2026-09-29
 
 From an independent audit (Codex, gpt-6-astra) and a click-through of every panel path with cua on a real Omarchy desktop, including a fresh account's setup.

@@ -67,7 +67,7 @@ c=$SHIM/containers
 case $1 in
 info) echo "Runtimes: nvidia runc" ;;
 image) exit 1 ;;
-pull) : ;;
+pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 network) : ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
@@ -239,6 +239,9 @@ if command -v node >/dev/null; then
   pass "the view model builds home and the model's page for a running model"
 fi
 pass "run downloads the weights, starts the engine and the gateway, and waits until the model answers"
+[[ $(grep -o "starting .*" "$STATE/log" | paste -sd'|') == *"|starting downloading the engine (first start only)|starting downloading the engine: 1 of 2 layers|starting downloading the engine: 2 of 2 layers|starting downloading the gateway (first start only)|starting downloading the gateway: 1 of 2 layers|starting downloading the gateway: 2 of 2 layers|starting starting the engine|"* ]] ||
+  fail "start steps" "$(cat "$STATE/log")"
+pass "the start reports each image's download, a line as each layer lands (once each), then the engine's start"
 [[ $(SHIM_STOPPED=1 "$CLI" snapshot | jq -r '.deployments[0].error') == 'the engine stopped' ]] || fail "stopped engine message"
 pass "a stopped engine has one concise recovery message"
 
@@ -353,6 +356,22 @@ pass "folder changes update both the running model and recent defaults without a
 "$CLI" stop "$ID"
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"
 pass "stop removes both containers and the model's folder"
+
+# the engine restarts with the machine, so what it mounts (a config asset, by-path links) must outlive a reboot:
+# a source in /run or XDG_RUNTIME_DIR is gone after one, and Docker mounts an empty directory in its place
+jq -c '.hardware["rtx-4090-24gb"].recipes[0].asset = {name: "config.yml", mountPath: "/app/config.yml", text: "model: x"}' \
+  "$TMP/plugin/recipes.json" >"$TMP/r2" && mv "$TMP/r2" "$TMP/plugin/recipes.json"
+: >"$SHIM/docker.log"
+"$CLI" run "$ID" nvidia:0
+wait_for ready
+engine=$(grep -- '--name omarchy-local-ai-.*-engine' "$SHIM/docker.log")
+src=$(grep -o -- '--volume [^ ]*:/app/config.yml:ro' <<<"$engine" | cut -d' ' -f2 | cut -d: -f1)
+[[ -n $src && $(cat "$src") == "model: x" && $src != "$XDG_RUNTIME_DIR"/* && $src != /run/* ]] || fail "asset mount" "$engine"
+! grep -qE -- "--volume ($XDG_RUNTIME_DIR|/run)/" <<<"$engine" || fail "engine mounts from a tmpfs" "$engine"
+"$CLI" stop "$ID"
+[[ ! -e $src && ! -e ${src%/*} ]] || fail "stop leaves the engine's files" "$(ls -la "${src%/*}")"
+recipes "$PIN"
+pass "the engine's config asset lives in the user's state, so it outlives a reboot, and stop removes it"
 
 SHIM_EMPTY=1 "$CLI" run "$ID" nvidia:0
 wait_for error
