@@ -127,7 +127,7 @@ cmd_registry() (
   printf 'models up to date · %.8s\n' "$sha"
 )
 
-# Setup is offered inside the plugin; the terminal handles package progress and sudo. Whether it is needed is what the
+# Setup is offered inside the plugin; the terminal shows Omarchy's password prompts and package progress. Whether it is needed is what the
 # machine is (lib/access.sh), never which plugin version set it up, so an update never asks for it again.
 cmd_readiness() { readiness; }
 
@@ -412,11 +412,11 @@ phase_start() {
       die "$k is not a card this recipe runs on"
   done
   backend=$(jq -r --arg h "$(jq -r .hw <<<"$r")" '.hardware[$h].match.backend' "$RECIPES")
-  if [[ $backend == "nvidia" ]] && ! docker info --format '{{json .Runtimes}}' 2>/dev/null | runtimes_have_nvidia; then
+  if [[ $backend == "nvidia" ]] && ! nvidia_ready; then
     die "NVIDIA container support is not ready: choose Set up Local AI"
   fi
   if [[ $backend == "nvidia" ]] && v=$(cdi_stale) && [[ -n $v ]]; then
-    say "stale NVIDIA device list; repair with: sudo nvidia-ctk cdi generate --output=$v"
+    say "stale NVIDIA device list $v; regenerate it as root: nvidia-ctk cdi generate --output=$v"
     die "the NVIDIA device list is out of date; see the log for the repair command"
   fi
   owned "$KEY"
@@ -436,8 +436,18 @@ phase_start() {
   a=(docker run -d --name "$(engine "$id")" --restart unless-stopped --security-opt no-new-privileges
     --network "omarchy-local-ai-$id" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=$(id -u)")
   if [[ $backend == "nvidia" ]]; then
-    v=$(printf '%s,' "${@#*:}")
-    a+=(--gpus "\"device=${v%,}\"")
+    # Through CDI (the toolkit's /etc/cdi/nvidia.yaml, which Docker reads without a restart) each card goes by its UUID:
+    # CDI's own numbering need not match nvidia-smi's. An install with the nvidia runtime and no CDI list uses --gpus.
+    if docker info --format '{{json .DiscoveredDevices}}' 2>/dev/null | nvidia_devices; then
+      for k in "$@"; do
+        v=$(nvidia-smi --query-gpu=uuid --format=csv,noheader -i "${k#*:}" 2>/dev/null) && [[ $v == GPU-* ]] ||
+          die "could not read the UUID of NVIDIA GPU ${k#*:}"
+        a+=(--device "nvidia.com/gpu=$v")
+      done
+    else
+      v=$(printf '%s,' "${@#*:}")
+      a+=(--gpus "\"device=${v%,}\"")
+    fi
   else
     [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd --group-add video --group-add render)
     # oneCCL opens every by-path link it finds, so the engine sees only its own cards'

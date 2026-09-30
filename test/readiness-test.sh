@@ -22,12 +22,12 @@ CLI=$TMP/plugin/bin/omarchy-local-ai
 NODE=$(command -v node || true) # before PATH narrows to the shims
 shim() { printf '#!/bin/bash\n%s\n' "$2" >"$TMP/bin/$1"; chmod +x "$TMP/bin/$1"; }
 
-# SUDO_NEEDED: Sudoless Docker is off (exit 0 is Omarchy's answer to --configured)
-shim omarchy-sudo-docker '[[ ${SUDO_NEEDED:-0} == 1 ]]'
+# Omarchy has Sudoless Docker; whether it is on is the docker group (NOT_IN_GROUP)
+shim omarchy-setup-security-sudoless-docker 'exit 0'
 shim omarchy-hw-nvidia '[[ ${NVIDIA:-0} == 1 ]]'
-# DOCKER_DOWN: the daemon does not answer; RUNTIMES: what `docker info` lists
+# DOCKER_DOWN: the daemon does not answer; DEVICES and RUNTIMES: what `docker info` lists
 shim docker '[[ $1 == info && ${DOCKER_DOWN:-0} == 0 ]] || exit 1
-[[ -n ${RUNTIMES:-} ]] && echo "$RUNTIMES" || echo "{\"runc\":{}}"'
+r=${RUNTIMES:-}; [[ -n $r ]] || r="{\"runc\":{}}"; echo "${DEVICES:-null}|$r"'
 # NOT_IN_GROUP: /etc/group does not list the account; PRIMARY_GID: the account's own group
 shim getent 'if [[ $1 == group ]]; then echo "docker:x:998:$([[ -n ${NOT_IN_GROUP:-} ]] && echo nobody || id -un)"
 else echo "$2:x:1000:${PRIMARY_GID:-1000}::/home/$2:/bin/bash"; fi'
@@ -55,11 +55,11 @@ sock_open
 check 'a set up machine is ready' ready --
 [[ $(newgrp_calls) == 0 ]] || fail 'ready needs no group' "$(cat "$SHIM/newgrp.log")"
 
-check 'Sudoless Docker off needs setup' needs-setup -- SUDO_NEEDED=1
+check 'Sudoless Docker off needs setup' needs-setup -- NOT_IN_GROUP=1
 # a PATH with no Omarchy in it: on a real Omarchy the helper is installed system-wide, so removing the shim is not enough
 mkdir "$TMP/bare"
 ln -s "$(command -v readlink)" "$(command -v mkdir)" "$TMP/bare/"
-check 'no Sudoless Docker helper is unsupported' unsupported 'This Omarchy has no Sudoless Docker helper; update Omarchy' -- "PATH=$TMP/bare"
+check 'no Sudoless Docker helper is unsupported' unsupported 'This Omarchy has no Sudoless Docker; update Omarchy' -- "PATH=$TMP/bare"
 
 check 'a daemon that does not answer is docker-down' docker-down 'Docker is not answering' -- DOCKER_DOWN=1
 rm -f "$OMARCHY_DOCKER_SOCKET"
@@ -91,7 +91,8 @@ mv "$TMP/newgrp.off" "$TMP/bin/newgrp"
 
 sock_open
 NVIDIA_RUNTIME='{"nvidia":{"path":"nvidia-container-runtime"},"runc":{}}'
-check 'an NVIDIA card without the runtime needs setup' needs-setup -- NVIDIA=1
+check 'an NVIDIA card Docker cannot use needs setup' needs-setup 'Docker lists no NVIDIA GPU: set up Local AI, and check that nvidia-smi works' -- NVIDIA=1
+check 'an NVIDIA card in the toolkit CDI list is ready' ready -- NVIDIA=1 'DEVICES=[{"Source":"cdi","ID":"nvidia.com/gpu=0"}]'
 check 'an NVIDIA card with the runtime is ready' ready -- NVIDIA=1 "RUNTIMES=$NVIDIA_RUNTIME"
 check 'the toolkit registering only nvidia-cdi counts' ready -- NVIDIA=1 'RUNTIMES={"nvidia-cdi":{},"runc":{}}'
 check 'a machine without an NVIDIA card needs no runtime' ready -- NVIDIA=0
@@ -104,7 +105,7 @@ rm "$STATE/setup-error"
 
 # a start refuses in the words of the state, and asks for nothing
 refusal() { env "$@" "$CLI" run no-such-recipe nvidia:0 2>&1 >/dev/null || true; }
-[[ $(refusal SUDO_NEEDED=1) == *'Local AI is not set up yet: choose Set up Local AI'* ]] || fail 'run refusal: needs-setup' "$(refusal SUDO_NEEDED=1)"
+[[ $(refusal NOT_IN_GROUP=1) == *'Local AI is not set up yet: choose Set up Local AI'* ]] || fail 'run refusal: needs-setup' "$(refusal NOT_IN_GROUP=1)"
 [[ $(refusal DOCKER_DOWN=1) == *'Docker is not answering'* ]] || fail 'run refusal: docker-down' "$(refusal DOCKER_DOWN=1)"
 sock_shut
 [[ $(refusal) == *"This login cannot use Docker's socket"* ]] || fail 'run refusal: socket' "$(refusal)"

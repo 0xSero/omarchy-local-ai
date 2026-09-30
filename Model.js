@@ -189,7 +189,7 @@ function flat(list) { return [].concat.apply([], list.map(function(x) { return x
 // What the panel says and offers for each readiness state the backend reports (lib/access.sh). A state with no button
 // clears by itself and says so; a state this table has never heard of does the same, so none is a dead end.
 var READINESS = {
-  "needs-setup": { note: "Once per machine: Docker access (Omarchy's Sudoless Docker) and GPU support. A terminal opens for your password.",
+  "needs-setup": { note: "Once per machine: Docker access for your account (Omarchy's Sudoless Docker) and, on NVIDIA, the container toolkit. A terminal opens; Omarchy asks for your password.",
     action: "setup" },
   "docker-down": { note: "Docker is not ready. Local AI checks again by itself." },
   unsupported: { note: "This Omarchy is too old for Local AI. It checks again by itself once Omarchy is updated." }

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Setup, with sudo and the Omarchy helpers shimmed: the NVIDIA runtime when an NVIDIA card needs it, Omarchy's
-# Sudoless Docker, the tailnet operator, and the earlier versions' polkit files removed. Run again, it changes nothing.
+# Setup, with the Omarchy helpers shimmed: Omarchy's Sudoless Docker, then on NVIDIA the container toolkit, each run
+# with a password prompt that names it. Local AI itself runs nothing as root: a sudo shim fails the test if called.
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TMP=$(mktemp -d)
@@ -10,108 +10,74 @@ cp "${INSTALLER:-$ROOT/bin/omarchy-install-ai-local}" "$TMP/plugin/bin/omarchy-i
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 export HOME=$TMP/home SETUP_TEST=$TMP
 # the earlier polkit files live in a test folder
-sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|" "$TMP/plugin/bin/omarchy-install-ai-local"
-cat >"$TMP/bin/sudo" <<'SH'
-#!/bin/bash
-if [[ $1 == -p ]]; then
-  printf 'prompt %s\n' "$2" >>"$SETUP_TEST/calls"
-  shift 2
-fi
-printf '%s\n' "$*" >>"$SETUP_TEST/calls"
-case $1 in
--v) exit "${FAIL_SUDO:-0}" ;;
-systemctl) exit 0 ;;
-tailscale) exit "${FAIL_TAILNET:-0}" ;;
-docker)
-  if [[ $2 == ps ]]; then [[ ${BUSY:-0} == 0 ]] || echo busy
-  elif [[ ${READY:-0} == 1 || -f $SETUP_TEST/configured ]]; then echo '{"nvidia":{}}'
-  else echo '{}'; fi ;;
-nvidia-ctk) touch "$SETUP_TEST/configured" ;;
-test | rm) "$@" ;;
-*) exit 1 ;;
-esac
-SH
-cat >"$TMP/bin/omarchy-hw-nvidia" <<'SH'
-#!/bin/bash
-[[ ${NVIDIA:-1} == 1 ]]
-SH
-cat >"$TMP/bin/omarchy-pkg-add" <<'SH'
-#!/bin/bash
-[[ ${FAIL_INSTALL:-0} == 0 ]]
-SH
+sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|g" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|g" "$TMP/plugin/bin/omarchy-install-ai-local"
+shim() { printf '#!/bin/bash\n%s\n' "$2" >"$1"; chmod +x "$1"; }
+shim "$TMP/bin/sudo" 'echo "sudo $*" >>"$SETUP_TEST/calls"; exit 1'
+shim "$TMP/bin/omarchy-hw-nvidia" '[[ ${NVIDIA:-1} == 1 ]]'
+shim "$TMP/bin/omarchy-pkg-add" 'echo "pkg $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"; [[ ${FAIL_INSTALL:-0} == 0 ]]'
 # Omarchy's Sudoless Docker: yes adds the account to the group, DECLINE answers no
-cat >"$TMP/bin/omarchy-setup-security-sudoless-docker" <<'SH'
-#!/bin/bash
-echo "sudoless ${OMARCHY_DEFER_REBOOT:-now}" >>"$SETUP_TEST/calls"
-[[ -n ${DECLINE:-} ]] || touch "$SETUP_TEST/group"
-SH
-cat >"$TMP/bin/omarchy-sudo-docker" <<'SH'
-#!/bin/bash
-[[ ! -f $SETUP_TEST/group ]]
-SH
-cat >"$TMP/bin/tailscale" <<'SH'
-#!/bin/bash
-[[ ${FAIL_PREFS:-0} == 0 ]] || exit 1
-jq -nc --arg user "${TEST_OPERATOR:-}" '{OperatorUser:$user}'
-SH
-chmod +x "$TMP/bin/"*
+shim "$TMP/bin/omarchy-setup-security-sudoless-docker" 'echo "sudoless ${OMARCHY_DEFER_REBOOT:-now} | $SUDO_PROMPT" >>"$SETUP_TEST/calls"
+[[ -n ${DECLINE:-} ]] || touch "$SETUP_TEST/group"'
+shim "$TMP/bin/getent" 'if [[ $1 == group ]]; then echo "docker:x:998:$([[ -f $SETUP_TEST/group ]] && id -un)"
+else echo "$2:x:1000:1000::/home/$2:/bin/bash"; fi'
+# the backend's verdict after setup: READINESS, ready by default
+shim "$TMP/plugin/bin/omarchy-local-ai" '[[ $1 == readiness ]] && printf "%s\t%s\n" "${READINESS:-ready}" "${READINESS_MSG:-}"'
+shim "$TMP/bin/tailscale" '[[ ${FAIL_PREFS:-0} == 0 ]] || exit 1
+jq -nc --arg user "${TEST_OPERATOR-$(id -un)}" "{OperatorUser:\$user}"'
 export PATH=$TMP/bin:$PATH
-setup() { bash "$TMP/plugin/bin/omarchy-install-ai-local" >"$TMP/out" 2>&1; }
+setup() { : >"$TMP/calls"; bash "$TMP/plugin/bin/omarchy-install-ai-local" >"$TMP/out" 2>&1; }
+error=$HOME/.local/state/omarchy/local-ai/setup-error
 
-if BUSY=1 setup; then exit 1; fi
-[[ ! -e $TMP/configured && ! -e $TMP/group ]]
-echo 'ok - setup refuses to modify Docker while containers are running'
-if FAIL_INSTALL=1 setup; then exit 1; fi
-[[ ! -e $TMP/group ]]
-echo 'ok - failed dependency setup is not marked ready'
 if DECLINE=1 setup; then exit 1; fi
 grep -q 'needs Sudoless Docker' "$TMP/out"
-echo 'ok - declining Sudoless Docker leaves Local AI not set up, and says so'
+if grep -q '^pkg' "$TMP/calls"; then exit 1; fi
+[[ -s $error ]]
+echo 'ok - declining Sudoless Docker installs nothing, says so, and leaves a panel error'
 
-touch "$TMP/etc/sero.local-ai.u$(id -u).policy" "$TMP/etc/49-sero.local-ai.u$(id -u).rules"
-: >"$TMP/calls"
 setup
-grep -qx 'sudoless 1' "$TMP/calls"
-[[ -f $TMP/group ]]
-grep -qx "tailscale set --operator=$USER" "$TMP/calls"
-if grep -q setfacl "$TMP/calls"; then exit 1; fi
-[[ -z $(ls "$TMP/etc") ]]
-grep -qx 'systemctl reload polkit' "$TMP/calls"
-echo 'ok - setup turns on Sudoless Docker, gives the socket no permission of its own, makes you the tailnet operator, and removes the old polkit files'
+grep -qx "sudoless 1 | Password for %u to turn on Sudoless Docker for Local AI: " "$TMP/calls"
+grep -qx "pkg nvidia-container-toolkit | Password for %u to install NVIDIA container support for Local AI: " "$TMP/calls"
+grep -q 'Local AI is ready' "$TMP/out"
+[[ ! -e $error ]]
+echo 'ok - setup turns on Sudoless Docker, then installs the NVIDIA toolkit, each prompt naming what it is for'
 
-: >"$TMP/calls"
-READY=1 BUSY=1 setup
-if grep -q 'restart docker' "$TMP/calls"; then exit 1; fi
-if grep -q 'reload polkit' "$TMP/calls"; then exit 1; fi
-echo 'ok - run again, setup restarts nothing'
-[[ $(grep -cx -- '-v' "$TMP/calls") == 1 ]]
-grep -qx 'prompt Password for %u to set up Local AI: ' "$TMP/calls"
-echo 'ok - setup validates sudo once per terminal, with a prompt that names Local AI'
-: >"$TMP/calls"
+setup
+if grep -q '^sudoless' "$TMP/calls"; then exit 1; fi
+echo 'ok - run again, Sudoless Docker is not asked twice'
+
 NVIDIA=0 setup
-if grep -q '^docker\|^nvidia-ctk\|restart docker' "$TMP/calls"; then exit 1; fi
-echo 'ok - a non-NVIDIA machine needs no NVIDIA installation or daemon restart'
-if FAIL_SUDO=1 setup; then exit 1; fi
-if grep -q 'Local AI is ready' "$TMP/out"; then exit 1; fi
-grep -qx 'Setup did not finish; choose Set up Local AI to try again.' "$HOME/.local/state/omarchy/local-ai/setup-error"
-echo 'ok - denied sudo never reports success and leaves a panel error'
-FAIL_TAILNET=1 setup
-[[ ! -f $HOME/.local/state/omarchy/local-ai/setup-error ]]
-grep -q 'Tailscale is not running' "$TMP/out"
-echo 'ok - unavailable Tailscale names the remaining sharing step'
-: >"$TMP/calls"
+if grep -q '^pkg' "$TMP/calls"; then exit 1; fi
+echo 'ok - a non-NVIDIA machine installs no NVIDIA package'
+
+if FAIL_INSTALL=1 setup; then exit 1; fi
+[[ -s $error ]] && ! grep -q 'Local AI is ready' "$TMP/out"
+echo 'ok - a failed package install never reports success and leaves a panel error'
+
+if READINESS=needs-setup READINESS_MSG='Docker lists no NVIDIA GPU' setup; then exit 1; fi
+grep -q 'Docker lists no NVIDIA GPU' "$TMP/out"
+echo 'ok - setup ends with the verdict the panel will show, and fails when it is not ready'
+
+READINESS=docker-down setup
+grep -q 'clears this by itself' "$TMP/out"
+echo 'ok - Docker not answering after setup is reported, not a failure'
+
 TEST_OPERATOR=another-account setup
-if grep -q 'tailscale set' "$TMP/calls"; then exit 1; fi
-grep -q 'another account' "$TMP/out"
-echo 'ok - setup preserves another account as Tailscale operator'
-: >"$TMP/calls"
-TEST_OPERATOR=$USER setup
-grep -qx "tailscale set --operator=$USER" "$TMP/calls"
-echo 'ok - setup accepts the existing operator when it is this account'
-: >"$TMP/calls"
+grep -q "operator must be $(id -un)" "$TMP/out"
+TEST_OPERATOR='' setup
+grep -q "it is 'nobody'" "$TMP/out"
 FAIL_PREFS=1 setup
-if grep -q 'tailscale set' "$TMP/calls"; then exit 1; fi
-echo 'ok - unreadable Tailscale preferences never change the operator'
+if grep -q 'operator' "$TMP/out"; then exit 1; fi
+echo 'ok - setup names the Tailscale operator step and never changes the operator'
+
+touch "$TMP/etc/49-sero.local-ai.u$(id -u).rules"
+setup
+grep -q 'Delete them as root' "$TMP/out"
+echo 'ok - leftover polkit files from earlier versions are named'
+
+if grep -q '^sudo' "$TMP/calls"; then exit 1; fi
+if grep -qE '(^|[^-])\bsudo\b|systemctl|pkexec' "$ROOT/bin/omarchy-install-ai-local"; then exit 1; fi
+echo 'ok - setup itself runs nothing as root'
+
 node - "$ROOT/Model.js" <<'JS'
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const c = {module:{exports:{}}}; vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'),c);
