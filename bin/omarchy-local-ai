@@ -372,8 +372,10 @@ ours() {
   [[ $l == "1|$(id -u)" || $l == "1|" ]]
 }
 
-# rundir <id>: what the start writes for the engine (the config asset, its GPUs' by-path links)
-rundir() { echo "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/omarchy-local-ai/$1"; }
+# rundir <id>: what the start writes for the engine (the config asset, its GPUs' by-path links). The engine restarts
+# with the machine, so this is in the user's state, never /run or XDG_RUNTIME_DIR: a mount source gone after a reboot
+# or a logout comes back as an empty directory and the engine crash-loops
+rundir() { echo "$STATE/run/$1"; }
 
 remove() {
   local c
@@ -494,7 +496,7 @@ serve() {
   fi
 }
 
-# This user's containers and networks, and the engine images the recipes name (Docker keeps any another container uses)
+# This user's containers, networks and engine mounts, and the engine images the recipes name (Docker keeps any another container uses)
 phase_purge() {
   local c
   local containers
@@ -504,6 +506,7 @@ phase_purge() {
   done
   docker network ls -q --filter "label=$LABEL=1" | xargs -r timeout --kill-after=5 30 docker network rm >/dev/null 2>&1 || true
   jq -r '.gateway.image, .hardware[].recipes[].image' "$RECIPES" | sort -u | xargs -r timeout --kill-after=5 30 docker rmi >/dev/null 2>&1 || true
+  rm -rf -- "$STATE/run"
 }
 
 # fail <message>: keep the engine's last lines in the log (taking the containers down deletes them), name its first

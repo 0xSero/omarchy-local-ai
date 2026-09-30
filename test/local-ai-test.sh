@@ -294,6 +294,22 @@ pass "folder changes update both the running model and recent defaults without a
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"
 pass "stop removes both containers and the model's folder"
 
+# the engine restarts with the machine, so what it mounts (a config asset, by-path links) must outlive a reboot:
+# a source in /run or XDG_RUNTIME_DIR is gone after one, and Docker mounts an empty directory in its place
+jq -c '.hardware["rtx-4090-24gb"].recipes[0].asset = {name: "config.yml", mountPath: "/app/config.yml", text: "model: x"}' \
+  "$TMP/plugin/recipes.json" >"$TMP/r2" && mv "$TMP/r2" "$TMP/plugin/recipes.json"
+: >"$SHIM/docker.log"
+"$CLI" run "$ID" nvidia:0
+wait_for ready
+engine=$(grep -- '--name omarchy-local-ai-.*-engine' "$SHIM/docker.log")
+src=$(grep -o -- '--volume [^ ]*:/app/config.yml:ro' <<<"$engine" | cut -d' ' -f2 | cut -d: -f1)
+[[ -n $src && $(cat "$src") == "model: x" && $src != "$XDG_RUNTIME_DIR"/* && $src != /run/* ]] || fail "asset mount" "$engine"
+! grep -qE -- "--volume ($XDG_RUNTIME_DIR|/run)/" <<<"$engine" || fail "engine mounts from a tmpfs" "$engine"
+"$CLI" stop "$ID"
+[[ ! -e $src && ! -e ${src%/*} ]] || fail "stop leaves the engine's files" "$(ls -la "${src%/*}")"
+recipes "$PIN"
+pass "the engine's config asset lives in the user's state, so it outlives a reboot, and stop removes it"
+
 SHIM_EMPTY=1 "$CLI" run "$ID" nvidia:0
 wait_for error
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer" ]] || fail "empty answer reason"
