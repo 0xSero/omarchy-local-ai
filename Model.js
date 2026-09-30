@@ -132,7 +132,7 @@ function slot(s, ui, g, at) {
   } else if (!best(kd.models)) {
     // every model for this card needs more of the machine than it has: why, and Config to see them
     row.rank = 3
-    row.note = kd.models[0].unfit
+    row.note = kd.models.length ? kd.models[0].unfit : "its models run across several cards; see all GPUs"
     items = [config]
   } else {
     var r = best(kd.models)
@@ -208,7 +208,12 @@ function notReadyView(s) {
 // "all GPUs" away.
 function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: [] }
-  if (((s.readiness || {}).state || "ready") !== "ready") return notReadyView(s)
+  if (((s.readiness || {}).state || "ready") !== "ready") {
+    // setup first, but a model that is already running stays reachable to open, stop or dismiss
+    var nr = notReadyView(s)
+    ;(s.deployments || []).forEach(function(d) { nr.rows.push(card(s, d)) })
+    return nr
+  }
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s, ui)
   var rows = [], life = s.life || {}
   if (life.requests > 0) rows.push(activity(s))
@@ -404,4 +409,4 @@ function build(s, ui) {
   return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })
 }
 
-if (typeof module !== "undefined") module.exports = { build: build, parse: parse, apca: apca, reach: reach, tones: tones, over: over, LC: LC }
+if (typeof module !== "undefined") module.exports = { build: build, parse: parse, tones: tones }
