@@ -107,7 +107,10 @@ http://127.0.0.1:*)
     printf "{\"data\":[{\"id\":\"served\",\"max_model_len\":98304}]}" >"$out"
     if [[ $* == *http_code* ]]; then printf 200; fi
   else
-    if [[ -n ${SHIM_EMPTY:-} ]]; then echo "{}"; else
+    if [[ -n ${SHIM_EMPTY:-} ]]; then echo "{}"
+    elif [[ -n ${SHIM_REASONING:-} ]]; then
+      echo "{\"choices\":[{\"message\":{\"content\":null,\"reasoning\":\"The user wants 1 to 60.\"},\"finish_reason\":\"length\"}],\"usage\":{\"completion_tokens\":200}}"
+    else
       echo "{\"choices\":[{\"message\":{\"content\":\"1, 2, 3\"}}],\"usage\":{\"completion_tokens\":200}}"
     fi
   fi ;;
@@ -422,6 +425,11 @@ wait_for error
 [[ -z $(ls "$SHIM/containers") ]] || fail "empty answer cleanup"
 "$CLI" stop "$ID"
 pass "an empty completion is rejected and its containers are removed"
+
+SHIM_REASONING=1 "$CLI" run "$ID" nvidia:0
+wait_for ready
+"$CLI" stop "$ID"
+pass "a check answer that is all thinking, in vLLM's reasoning field, counts as an answer"
 
 
 # a 5.x install left a model running: its ledger names it, its containers carry no uid label
