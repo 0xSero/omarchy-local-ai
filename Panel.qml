@@ -117,7 +117,8 @@ Panel {
     case "run": run(["run", a[1], a[2]]); home(); break
     case "again": run(["stop", a[1]]); run(["run", a[1], a[2]]); home(); break
     case "stop": run(["stop", a[1]]); home(); break
-    case "open": run(["open", a[1]]); root.close(); break
+    // the panel stays up until the agent's terminal is launched, so a refusal shows here instead of vanishing
+    case "open": run(["open", a[1]]); break
     case "share": run(["share", a[1]].concat(a[2] ? [a[2]] : [])); break
     case "set": run(["set", a[1], decodeURIComponent(a[2])].concat(a[3] ? [a[3]] : [])); nav({ open: "" }); break
     case "more": nav({ view: "run", id: a[1] }); break
@@ -153,6 +154,8 @@ Panel {
       queue = []
       if (!root.opened) root.open()
       ui = Object.assign({}, ui, { problem: code === 124 || code === 137 ? "That took too long; try again." : m ? m.slice(10) : "that did not work (see the log)" })
+    } else if (operation === "open") {
+      root.close()
     } else if (operation === "registry") {
       ui = Object.assign({}, ui, { notice: output.trim(), problem: "" })
     }

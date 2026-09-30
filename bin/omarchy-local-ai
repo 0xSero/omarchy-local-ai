@@ -627,8 +627,11 @@ cmd_run() {
   ((port < 12450)) || die "no free port between 12434 and 12449"
   mkdir -p "$d"
   rm -f "$d/err" "$d/cancel"
-  jq -nc --arg id "$id" --argjson p "$port" --arg a "$(get agent)" --arg f "$(get folder)" --arg t "$(now)" \
-    '{id: $id, keys: $ARGS.positional, port: $p, agent: $a, folder: $f, startedAt: $t}' --args "${keys[@]}" >"$d/config.json.tmp"
+  # what Open tells the agent is kept with the model, so a registry update that renames its recipe does not strand it
+  jq -nc --arg id "$id" --argjson p "$port" --arg a "$(get agent)" --arg f "$(get folder)" --arg t "$(now)" --argjson r "$r" \
+    '{id: $id, keys: $ARGS.positional, port: $p, agent: $a, folder: $f, startedAt: $t,
+      serve: {name: $r.name, ctx: ($r.serving.ctxTokens // 32768), vision: ($r.capabilities.vision // false)}}' \
+    --args "${keys[@]}" >"$d/config.json.tmp"
   mv -f "$d/config.json.tmp" "$d/config.json"
   flock -u 9
 
@@ -831,11 +834,18 @@ argv() {
 # open <id>: the model's agent in its folder, in a terminal
 cmd_open() {
   valid_id "${1:-}" || die "open <recipe>"
-  local d c r a b ag dir cmd=() v
+  local d c s a b ag dir cmd=() v
   d=$(dir_of "$1")
   [[ $(jq -r .state "$d/status.json" 2>/dev/null) == "ready" ]] || die "the model is not ready"
   c=$(<"$d/config.json")
-  r=$(recipe "$1") || die "$1 is no longer a recipe here; stop it and run the one for this card"
+  # a model started before its config kept this reads it from its recipe; one whose recipe is gone since opens under
+  # its id (the gateway maps any model name onto the served one) with the context its engine reports: an agent told
+  # less than the engine holds cuts its own replies short once a conversation outgrows it
+  s=$(jq -ce '.serve // empty' <<<"$c") ||
+    s=$(recipe "$1" | jq -ce '{name, ctx: (.serving.ctxTokens // 32768), vision: (.capabilities.vision // false)}') ||
+    s=$(curl -fsS -m 5 -o /dev/stdout -H "@$AUTH" "http://127.0.0.1:$(jq -r .port <<<"$c")/v1/models" 2>/dev/null |
+      jq -ce --arg n "${1%--*}" '{name: $n, ctx: (.data[0].max_model_len // empty), vision: false}') ||
+    s=$(jq -nc --arg n "${1%--*}" '{name: $n, ctx: 32768, vision: false}')
   a=$(jq -r .agent <<<"$c")
   dir=$(jq -r .folder <<<"$c")
   b=$(bin "$a") || die "$a is not installed"
@@ -845,8 +855,8 @@ cmd_open() {
   # the gateway maps any model name onto the served one, so agents see the recipe's name
   while IFS= read -r -d '' v; do
     cmd+=("$v")
-  done < <(argv "$a" "$b" "http://127.0.0.1:$(jq -r .port <<<"$c")" "$(jq -r .name <<<"$r")" \
-    "$(jq -r '.serving.ctxTokens // 32768' <<<"$r")" "$(jq -r '.capabilities.vision // false' <<<"$r")" "$ag")
+  done < <(argv "$a" "$b" "http://127.0.0.1:$(jq -r .port <<<"$c")" "$(jq -r .name <<<"$s")" \
+    "$(jq -r .ctx <<<"$s")" "$(jq -r .vision <<<"$s")" "$ag")
   [[ $a == "omp" && $dir -ef $HOME_DIR ]] && cmd+=(--allow-home)
   say "open $a on $1 in $dir"
   omarchy-launch-tui --app-id=org.omarchy.local-ai bash -c 'cd -- "$1" && shift && exec "$@"' local-ai "$dir" "${cmd[@]}" \
