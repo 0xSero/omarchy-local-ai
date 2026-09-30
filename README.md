@@ -12,32 +12,6 @@ omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 
 Then open Local AI in the bar and click **Set up Local AI** (one password prompt, once per machine), choose a model on your card and **Run**, and pick a coding agent to open on it. [Install](#install) says what setup does, [Requirements](#requirements) what it needs, and [Remove](#remove) how to take it all back out.
 
-## Screens
-
-Every picture is the real panel, rendered headless from the snapshot of a machine with 2× RTX 3090 and 2× Arc Pro B70 (the 3090's model as it ran earlier that day). To show states that machine was not in, some screens change that snapshot: a first run, downloading, loading, a crash, a tailnet share, both or four 3090s free, and a card with no tested model.
-
-| Home | Hovering a day | A first run |
-|---|---|---|
-| <img src="docs/screenshots/home.png" width="240"> | <img src="docs/screenshots/home-hover.png" width="240"> | <img src="docs/screenshots/first-run.png" width="240"> |
-
-Home: your tokens and requests over the last 20 weeks, running models as cards, then the free cards; the rest are one "all GPUs" away.
-
-| A running model | Its agent | Its folder | Shared on the tailnet |
-|---|---|---|---|
-| <img src="docs/screenshots/model.png" width="190"> | <img src="docs/screenshots/model-agent.png" width="190"> | <img src="docs/screenshots/model-folder.png" width="190"> | <img src="docs/screenshots/model-tailnet.png" width="190"> |
-
-| A card's Config | Choosing another model | Downloading | Loading |
-|---|---|---|---|
-| <img src="docs/screenshots/config.png" width="190"> | <img src="docs/screenshots/config-chosen.png" width="190"> | <img src="docs/screenshots/download.png" width="190"> | <img src="docs/screenshots/loading.png" width="190"> |
-
-| Two free cards as a group | A group's page | Four cards of a kind |
-|---|---|---|
-| <img src="docs/screenshots/group-row.png" width="240"> | <img src="docs/screenshots/group.png" width="240"> | <img src="docs/screenshots/rig4.png" width="240"> |
-
-| A crashed card | All GPUs | Coming soon |
-|---|---|---|
-| <img src="docs/screenshots/crashed.png" width="240"> | <img src="docs/screenshots/gpus.png" width="240"> | <img src="docs/screenshots/coming-soon.png" width="240"> |
-
 ## Install
 
 ```bash
@@ -143,4 +117,4 @@ The equivalent commands are `omarchy-local-ai registry` and
 
 ## License
 
-[MIT](LICENSE). The agent and GPU-maker logos in `preview.png` belong to their owners and identify compatibility only; their sources and terms are in [docs/preview/logos/README.md](docs/preview/logos/README.md).
+[MIT](LICENSE). The agent and GPU-maker logos in `preview.png` are trademarks of their owners, shown to identify compatibility only; Local AI is not affiliated with or endorsed by any of them.

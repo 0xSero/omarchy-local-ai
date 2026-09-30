@@ -14,7 +14,7 @@ import pathlib,shutil,json,sys
 p=pathlib.Path(sys.argv[2])
 p.mkdir(exist_ok=True)
 source=pathlib.Path(sys.argv[1])
-for name in ['Panel.qml','Model.js','qwen.svg','hf.svg','lfm.svg']: shutil.copy(source/name,p/name)
+for name in ['Panel.qml','Model.js','qwen.svg','hf.svg']: shutil.copy(source/name,p/name)
 files={
 'Commons/qmldir':'module qs.Commons\nsingleton Style 1.0 Style.qml\nsingleton Color 1.0 Color.qml\nsingleton Util 1.0 Util.qml\n',
 'Commons/Style.qml':'''pragma Singleton

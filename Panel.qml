@@ -832,7 +832,7 @@ Panel {
     width: Style.space(size)
     height: width
     // only the logos shipped beside this file; any other family shows none and takes no space
-    readonly property bool shipped: ["qwen", "lfm", "hf"].indexOf(family) >= 0
+    readonly property bool shipped: ["qwen", "hf"].indexOf(family) >= 0
     visible: shipped && status === Image.Ready
     source: shipped ? Qt.resolvedUrl(family + ".svg") : ""
     sourceSize: Qt.size(Style.space(32), Style.space(32))
