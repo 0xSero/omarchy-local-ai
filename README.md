@@ -4,6 +4,14 @@ Run the model validated for your GPU and open a coding agent on it.
 
 ![Local AI](preview.png)
 
+## Start
+
+```bash
+omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
+```
+
+Then open Local AI in the bar and click **Set up Local AI** (one password prompt, once per machine), choose a model on your card and **Run**, and pick a coding agent to open on it. [Install](#install) says what setup does, [Requirements](#requirements) what it needs, and [Remove](#remove) how to take it all back out.
+
 ## Screens
 
 Every picture is the real panel, rendered headless from the snapshot of a machine with 2× RTX 3090 and 2× Arc Pro B70 (the 3090's model as it ran earlier that day). To show states that machine was not in, some screens change that snapshot: a first run, downloading, loading, a crash, a tailnet share, both or four 3090s free, and a card with no tested model.
@@ -39,6 +47,24 @@ omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 Open Local AI in the bar and click **Set up Local AI**. It opens a terminal for your password and setup progress, turns on Omarchy's Sudoless Docker (it explains what that means and asks first), makes you the tailnet's operator when none is set so a model can be shared, and configures NVIDIA container support when needed. Return to the panel when setup finishes; a login from before setup picks up the new docker group by itself, so no logout or reboot is needed. Setup refuses to restart Docker while containers are running.
 
 Setup is the only password Local AI asks for, once per machine: starting, stopping, sharing, refreshing and removing never ask, and plugin updates never ask for setup again. Sudoless Docker is root-equivalent, as Omarchy's own warning says; turn it off in Setup > Security.
+
+### What setup runs as root
+
+`bin/omarchy-install-ai-local` runs only when you click **Set up Local AI**; adding or updating the plugin never runs it. It asks for your password once (`sudo -v`), then:
+
+- NVIDIA only, when Docker has no `nvidia` runtime: installs `nvidia-container-toolkit` with `omarchy-pkg-add`, runs `nvidia-ctk runtime configure --runtime=docker` (which edits Docker's daemon configuration) and `systemctl restart docker`. It stops without changing anything if containers are running.
+- Runs Omarchy's `omarchy-setup-security-sudoless-docker`, which explains the change and asks first.
+- Until your next login, `setfacl` gives your account read and write access to the Docker socket.
+- When Tailscale is installed and has no operator or you are the operator, `tailscale set --operator=$USER`, so sharing needs no prompt.
+- Removes the polkit policy and rule files that earlier versions wrote for this user, then `systemctl reload polkit`.
+
+## Requirements
+
+- Omarchy with the Quattro shell and its bar. Local AI calls Omarchy's own commands: `omarchy-sudo-docker`, `omarchy-setup-security-sudoless-docker`, `omarchy-pkg-add`, `omarchy-hw-nvidia`, `omarchy-launch-tui`, `omarchy-launch-browser`, `omarchy-notification-send` and `omarchy-cmd-present`.
+- Docker, `jq`, `curl`, `flock` and `sha256sum`.
+- A supported GPU (below). NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. AMD needs ROCm's `amd-smi`.
+- Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
+- Network access to `huggingface.co` (weights), `ghcr.io/0xsero` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (**Refresh models**).
 
 ## What it does
 
@@ -114,3 +140,7 @@ so hard-linked files there may continue to occupy disk space.
 
 The equivalent commands are `omarchy-local-ai registry` and
 `omarchy-local-ai forget <recipe>` (or the plugin's `bin/omarchy-local-ai`).
+
+## License
+
+[MIT](LICENSE). The agent and GPU-maker logos in `preview.png` belong to their owners and identify compatibility only; their sources and terms are in [docs/preview/logos/README.md](docs/preview/logos/README.md).

@@ -4,12 +4,13 @@
 # sync-check: fail when the vendored copy has fallen behind that export
 # check:      test, plus the recipes.json sanity and currency checks
 # bundle:     the release archive: what an install contains, nothing else
+# preview:    render preview.png (the marketplace and README picture) from the agent list and the logos in docs/preview; needs a Chromium-family browser
 REGISTRY ?= ../local-ai-registry
 REGISTRY_REF ?= origin/main
 REGISTRY_EXPORT = $(REGISTRY)/plugin/v2/recipes.json
 SHELL := /bin/bash
 
-.PHONY: test sync sync-check check bundle
+.PHONY: test sync sync-check check bundle preview
 
 BUNDLE = dist/omarchy-local-ai-$(shell jq -r .version manifest.json).tar.gz
 RUNTIME = manifest.json recipes.json LICENSE Panel.qml Model.js lfm.svg qwen.svg hf.svg bin/omarchy-local-ai bin/omarchy-install-ai-local bin/omarchy-remove-ai-local lib/access.sh
@@ -51,3 +52,6 @@ check: test
 bundle:
 	mkdir -p dist
 	COPYFILE_DISABLE=1 tar -czf $(BUNDLE) $(RUNTIME)
+
+preview:
+	python3 docs/preview/build.py preview.png
