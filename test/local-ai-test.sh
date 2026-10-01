@@ -86,7 +86,13 @@ run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
 logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || printf "loading shards\nRuntimeError: XPU out of memory. Tried to allocate 2.00 GiB\n"
   [[ -z ${SHIM_LOAD_LOG:-} ]] || cat "$SHIM_LOAD_LOG" ;;
-rm) rm -f "$c/${@: -1}" ;;
+rm) if [[ ${@: -1} == *-engine ]]; then
+      if [[ -n ${SHIM_RM_ALWAYS:-} ]]; then exit 1; fi
+      if [[ -n ${SHIM_RM_ONCE:-} && ! -e $SHIM/rm-failed ]]; then
+        touch "$SHIM/rm-failed"; exit 1
+      fi
+    fi
+    rm -f "$c/${@: -1}" ;;
 ps) ls "$c" ;;
 esac'
 shim curl '
@@ -426,9 +432,13 @@ mkdir -p "$HOME/Work with spaces"
 [[ $(jq -r '.folders[0]' "$STATE/settings.json") == "$HOME/Work with spaces" ]] || fail "recent folder"
 pass "folder changes update both the running model and recent defaults without a prompt"
 
-"$CLI" stop "$ID"
+if SHIM_RM_ALWAYS=1 "$CLI" stop "$ID"; then fail "stop accepted an engine that would not exit"; fi
+[[ -d $STATE/deploy/$ID && -e $SHIM/containers/omarchy-local-ai-test-model-rtx4090-engine ]] ||
+  fail "failed stop lost the model's state"
+SHIM_RM_ONCE=1 "$CLI" stop "$ID"
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"
-pass "stop removes both containers and the model's folder"
+[[ $(grep -c '^rm -f omarchy-local-ai-test-model-rtx4090-engine$' "$SHIM/docker.log") -ge 2 ]] || fail "stop did not retry a slow engine removal"
+pass "stop retries a slow engine removal and removes both containers and the model's folder"
 
 # the engine restarts with the machine, so what it mounts (a config asset, by-path links) must outlive a reboot:
 # a source in /run or XDG_RUNTIME_DIR is gone after one, and Docker mounts an empty directory in its place

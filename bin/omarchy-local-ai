@@ -429,7 +429,12 @@ rundir() { echo "$STATE/run/$1"; }
 remove() {
   local c
   for c in "$(engine "$1")" "$(gateway "$1")"; do
-    if ours "$c"; then docker rm -f "$c" >/dev/null 2>&1 || return 1; fi
+    if ours "$c"; then
+      if ! docker rm -f "$c" >/dev/null 2>&1; then
+        sleep 3
+        docker rm -f "$c" >/dev/null 2>&1 || return 1
+      fi
+    fi
   done
   docker network rm "omarchy-local-ai-$1" >/dev/null 2>&1 || true
   rm -rf -- "$(rundir "$1")" 2>/dev/null || say "$1: $(rundir "$1") holds files Docker created as root; delete it as root"
