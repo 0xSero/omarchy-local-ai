@@ -1,45 +1,112 @@
 {
-  "updated": "2026-09-30",
+  "updated": "2026-10-01",
   "repo": {
-    "stars": 88,
+    "stars": 93,
     "forks": 16,
     "watchers": 1,
-    "open_issues": 7,
-    "size_kb": 30383
+    "open_issues": 2,
+    "size_kb": 30406
   },
   "clones": {
-    "days": 31,
+    "days": 32,
     "first": "2026-08-29",
-    "last": "2026-09-28",
-    "total": 2864,
+    "last": "2026-09-29",
+    "total": 3254,
     "peak_day": "2026-09-24",
     "peak": 569,
-    "daily_uniques_sum": 1330,
-    "uniques_14d": 854
+    "daily_uniques_sum": 1425,
+    "uniques_14d": 867
   },
   "views": {
-    "days": 31,
+    "days": 32,
     "first": "2026-08-29",
-    "last": "2026-09-28",
-    "total": 1815,
+    "last": "2026-09-29",
+    "total": 1902,
     "peak_day": "2026-09-24",
     "peak": 354,
-    "daily_uniques_sum": 956,
-    "uniques_14d": 686
+    "daily_uniques_sum": 1004,
+    "uniques_14d": 682
   },
   "stars": {
-    "days": 11,
+    "days": 12,
     "first": "2026-09-20",
-    "last": "2026-09-30",
+    "last": "2026-10-01",
     "first_count": 24,
-    "last_count": 88,
-    "gained": 64
+    "last_count": 93,
+    "gained": 69
   },
   "downloads": {
-    "total": 23,
-    "release_count": 46,
-    "latest": "v6.6.0",
+    "total": 25,
+    "release_count": 52,
+    "latest": "v6.8.3",
     "by_release": [
+      {
+        "tag": "v6.8.3",
+        "name": "v6.8.3",
+        "published": "2026-09-30T18:04:44Z",
+        "downloads": 1,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.8.3.tar.gz",
+            "downloads": 1
+          }
+        ]
+      },
+      {
+        "tag": "v6.8.2",
+        "name": "v6.8.2",
+        "published": "2026-09-30T16:27:58Z",
+        "downloads": 1,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.8.2.tar.gz",
+            "downloads": 1
+          }
+        ]
+      },
+      {
+        "tag": "v6.8.1",
+        "name": "v6.8.1",
+        "published": "2026-09-30T16:22:27Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.8.1.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
+      {
+        "tag": "v6.8.0",
+        "name": "v6.8.0",
+        "published": "2026-09-30T13:43:13Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.8.0.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
+      {
+        "tag": "v6.7.0",
+        "name": "v6.7.0",
+        "published": "2026-09-30T13:04:48Z",
+        "downloads": 0,
+        "assets": []
+      },
+      {
+        "tag": "v6.6.1",
+        "name": "v6.6.1",
+        "published": "2026-09-30T10:07:18Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.6.1.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
       {
         "tag": "v6.6.0",
         "name": "v6.6.0",
@@ -580,8 +647,8 @@
     ]
   },
   "interactions": {
-    "day": "2026-09-30",
-    "stars": 88,
+    "day": "2026-10-01",
+    "stars": 93,
     "forks": 16,
     "watchers": 1,
     "issues": {
@@ -590,35 +657,35 @@
       "total": 3
     },
     "pull_requests": {
-      "open": 6,
-      "merged": 32,
+      "open": 1,
+      "merged": 43,
       "closed": 3,
-      "total": 41
+      "total": 47
     },
     "discussions": 0,
     "default_branch": "main",
-    "commits": 254
+    "commits": 266
   },
   "referrers": [
     {
       "referrer": "t.co",
-      "count": 326,
-      "uniques": 268
+      "count": 329,
+      "uniques": 271
     },
     {
       "referrer": "github.com",
-      "count": 143,
-      "uniques": 84
+      "count": 156,
+      "uniques": 91
     },
     {
       "referrer": "Google",
-      "count": 66,
-      "uniques": 46
+      "count": 74,
+      "uniques": 53
     },
     {
       "referrer": "local.sybilsolutions.ai",
-      "count": 20,
-      "uniques": 16
+      "count": 21,
+      "uniques": 17
     },
     {
       "referrer": "search.brave.com",
@@ -628,33 +695,43 @@
     {
       "referrer": "DuckDuckGo",
       "count": 12,
-      "uniques": 9
+      "uniques": 10
+    },
+    {
+      "referrer": "l.meta.ai",
+      "count": 1,
+      "uniques": 1
+    },
+    {
+      "referrer": "webmail.mail.eu-west-1.awsapps.com",
+      "count": 1,
+      "uniques": 1
     }
   ],
   "paths": [
     {
       "path": "/0xSero/omarchy-local-ai",
       "title": "Overview",
-      "count": 943,
-      "uniques": 672
+      "count": 931,
+      "uniques": 656
     },
     {
       "path": "/0xSero/omarchy-local-ai/blob/main/preview.png",
       "title": "/blob/main/preview.png",
-      "count": 43,
-      "uniques": 39
+      "count": 41,
+      "uniques": 38
     },
     {
       "path": "/0xSero/omarchy-local-ai/issues",
       "title": "/issues",
-      "count": 39,
-      "uniques": 24
+      "count": 40,
+      "uniques": 25
     },
     {
       "path": "/0xSero/omarchy-local-ai/pulls",
       "title": "/pulls",
-      "count": 38,
-      "uniques": 17
+      "count": 36,
+      "uniques": 16
     },
     {
       "path": "/0xSero/omarchy-local-ai/tree/main",
@@ -663,16 +740,22 @@
       "uniques": 20
     },
     {
+      "path": "/0xSero/omarchy-local-ai/pull/22",
+      "title": "/pull/22",
+      "count": 21,
+      "uniques": 6
+    },
+    {
       "path": "/0xSero/omarchy-local-ai/releases",
       "title": "/releases",
-      "count": 19,
-      "uniques": 5
+      "count": 20,
+      "uniques": 6
     },
     {
       "path": "/0xSero/omarchy-local-ai/blob/main/docs/screenshots/home.png",
       "title": "/blob/main/docs/screenshots/home.png",
-      "count": 17,
-      "uniques": 16
+      "count": 18,
+      "uniques": 17
     },
     {
       "path": "/0xSero/omarchy-local-ai/tree/main/docs",
@@ -685,12 +768,6 @@
       "title": "/tree/main/bin",
       "count": 16,
       "uniques": 13
-    },
-    {
-      "path": "/0xSero/omarchy-local-ai/blob/main/README.md",
-      "title": "/blob/main/README.md",
-      "count": 16,
-      "uniques": 3
     }
   ]
 }
