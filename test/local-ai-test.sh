@@ -171,6 +171,27 @@ esac'
 "$CLI" snapshot >"$TMP/snap-vulkan.json"
 [[ $(jq -r '.gpus[0].hw' "$TMP/snap-vulkan.json") == rx-9070-xt-16gb ]] || fail "AMD Vulkan card match"
 pass "AMD discovery matches the RX 9070 XT Vulkan recipes"
+
+# A unified-memory APU (Strix Halo) reports only its BIOS carve-out as VRAM. The card matches by GPU
+# name and host RAM covering its stated memory, and the snapshot shows the unified total, not 512 MiB.
+jq '.hardware["ryzen-ai-max-365-128gb"] = {match: {backend: "amd-rocm", name: "AMD Radeon 8060S",
+    names: ["8050s","8050sgraphics","8060s","8060sgraphics"], vramGb: 128, unifiedMemory: true},
+  recipes: .hardware["rx-7600-xt-16gb"].recipes}' "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+shim amd-smi 'case $1 in
+static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon 8060S Graphics\"},\"vram\":{\"size\":{\"value\":512}},\"bus\":{\"bdf\":\"0000:bd:00.0\"}}]}" ;;
+metric) echo "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210}}}]}" ;;
+esac'
+export MEMINFO=$TMP/meminfo
+printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((130 * 1024 * 1024)) $((120 * 1024 * 1024)) >"$MEMINFO"
+"$CLI" snapshot >"$TMP/snap-strix.json"
+[[ $(jq -r '.gpus[0] | "\(.hw) \(.totalMiB) \(.usedMiB)"' "$TMP/snap-strix.json") == "ryzen-ai-max-365-128gb 133120 null" ]] ||
+  fail "unified memory match" "$(jq -c .gpus "$TMP/snap-strix.json")"
+printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((64 * 1024 * 1024)) $((60 * 1024 * 1024)) >"$MEMINFO"
+"$CLI" snapshot >"$TMP/snap-strix.json"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "" ]] || fail "a 64 GB host matched the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
+unset MEMINFO; rm -f "$TMP/meminfo"
+pass "a unified-memory card matches by host RAM, not the BIOS carve-out"
 shim amd-smi 'echo "{\"gpu_data\":[]}"'
 shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
 printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
