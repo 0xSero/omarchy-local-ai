@@ -96,6 +96,8 @@ policy() {
     elif ([.launch.arguments[]? | select(type != "string")] | length) > 0 then "invalid arguments"
     elif (.launch.entrypoint // "" | test("^[A-Za-z0-9_./-]*$") | not) then "invalid entrypoint"
     elif (.launch.shm // "" | test("^([0-9]+[kmg]?)?$") | not) then "invalid shm size"
+    elif ([.launch.flags[]? | select(IN("--device /dev/kfd", "--device /dev/dri", "--ipc host",
+      "--ulimit memlock=-1:-1", "--security-opt seccomp=unconfined") | not)] | length) > 0 then "unrecognized launch flag"
     else "ok" end' <<<"$1"
 }
 
@@ -479,6 +481,11 @@ phase_start() {
   docker network create --label "$LABEL=1" "omarchy-local-ai-$id" >/dev/null
   a=(docker run -d --name "$(engine "$id")" --restart unless-stopped --security-opt no-new-privileges
     --network "omarchy-local-ai-$id" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=$(id -u)")
+  # Container options come from the registry-vetted launch; policy() pins the set a recipe may name.
+  local flag words
+  while IFS= read -r flag; do
+    read -ra words <<<"$flag"; a+=("${words[@]}")
+  done < <(jq -r '.launch.flags[]?' <<<"$r")
   if [[ $backend == "nvidia" ]]; then
     # Through CDI (the toolkit's /etc/cdi/nvidia.yaml, which Docker reads without a restart) each card goes by its UUID:
     # CDI's own numbering need not match nvidia-smi's. An install with the nvidia runtime and no CDI list uses --gpus.

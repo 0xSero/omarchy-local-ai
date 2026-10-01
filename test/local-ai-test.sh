@@ -503,6 +503,28 @@ engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail 
 "$CLI" stop "$ID"
 pass "a ROCm recipe passes the video and render groups by host GID"
 
+# Container options (devices, IPC, memlock, seccomp) come from the registry-vetted launch;
+# policy() pins the set a recipe may name, so an unknown option never reaches docker.
+jq '.hardware["rtx-4090-24gb"].recipes[0].launch.flags =
+  ["--device /dev/kfd", "--device /dev/dri", "--ipc host", "--ulimit memlock=-1:-1", "--security-opt seccomp=unconfined"]' \
+  "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+"$CLI" run "$ID" amd-rocm:0
+wait_for ready
+engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+[[ $engine == *'--device /dev/kfd --device /dev/dri --ipc host --ulimit memlock=-1:-1 --security-opt seccomp=unconfined'* ]] ||
+  fail "launch flags argv" "$engine"
+"$CLI" stop "$ID"
+pass "a recipe's launch flags reach the engine's docker run"
+
+jq '.hardware["rtx-4090-24gb"].recipes[0].launch.flags = ["--privileged"]' "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+"$CLI" run "$ID" amd-rocm:0 2>"$TMP/err" && fail "a privileged flag launched"
+grep -q 'unrecognized launch flag' "$TMP/err" || fail "flag policy" "$(cat "$TMP/err")"
+jq 'del(.hardware["rtx-4090-24gb"].recipes[0].launch.flags)' "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+pass "a launch flag outside the vetted set is refused"
+
 # the bar follows the engine's own log, and a card its driver resets mid-load ends the start at once, not after 30 minutes
 export LOCAL_AI_SYSFS=$TMP/sys
 mkdir -p "$LOCAL_AI_SYSFS/class/drm/renderD129/device"
