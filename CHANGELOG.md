@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.8.4] - 2026-10-02
+
+### Fixed
+- Opening pi, omp or Crush wrote the gateway key into the helper's own command line (`jq --arg k`), so another local user could read it from `/proc/<pid>/cmdline` while the helper ran, and the key is never rotated. `jq` now reads the 0600 key file itself (`--rawfile`), and only its path is in the argument list. The adapter test logs every helper argument and fails if the key appears in one, which it did not check before.
+
 ## [6.8.3] - 2026-09-30
 
 ### Fixed
