@@ -82,6 +82,9 @@ recipe() {
 policy() {
   jq -er --slurpfile all "${2:-$RECIPES}" '
     def name: test("^([A-Za-z0-9_-][A-Za-z0-9_.-]*)?$");
+    # a comma-separated list of names or relative paths; no traversal
+    def names: test("^(([A-Za-z0-9_-][A-Za-z0-9_./-]*)(,([A-Za-z0-9_-][A-Za-z0-9_./-]*))*)?$")
+               and (contains("..") | not);
     def abs: test("^/[A-Za-z0-9_./-]+$") and (contains("..") | not);
     if (.image | test("^[a-z0-9./_:-]+@sha256:[0-9a-f]{64}$") | not) then "image is not pinned by digest"
     elif ($all[0].gateway.image | test("^[a-z0-9./_:-]+@sha256:[0-9a-f]{64}$") | not) then "gateway is not pinned by digest"
@@ -89,7 +92,7 @@ policy() {
     elif ([.weights[]? | select(
         (.repository | test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$") | not) or (.revision | test("^[0-9a-f]{40}$") | not)
         or (.layout != "dir" and .layout != "hub") or (.mountPath | abs | not)
-        or (.dir // "" | name | not) or (.files // "" | name | not))] | length) > 0 then "invalid weights"
+        or (.dir // "" | name | not) or (.files // "" | names | not))] | length) > 0 then "invalid weights"
     elif (.asset != null and ((.asset.name | test("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$") | not) or (.asset.mountPath | abs | not))) then "invalid asset"
     elif ((.launch.port | type) != "number") then "invalid port"
     elif ([.launch.environment | keys[]? | select(test("^[A-Z_][A-Z0-9_]*$") | not)] | length) > 0 then "invalid environment"
@@ -290,7 +293,9 @@ tree() {
     mv -f "$f.tmp" "$f"
   fi
   if [[ -n $files ]]; then
-    awk -F'\t' -v f="$files" '{n = $1; sub(/.*\//, "", n)} n == f || n ~ /mmproj/' "$f"
+    # files is a comma-separated list of basenames: an Engram checkpoint keeps two shards out of a large base model
+    awk -F'\t' -v f="$files" 'BEGIN{n = split(f, a, ","); for (i = 1; i <= n; i++) want[a[i]] = 1}
+      {b = $1; sub(/.*\//, "", b); if (b in want || $1 in want || b ~ /mmproj/) print}' "$f"
   else
     cat "$f"
   fi
