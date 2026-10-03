@@ -2,6 +2,20 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.9.0] - 2026-10-03
+
+### Added
+- Update any of the nine installed coding agents from Local AI. Updates use the existing installation manager and leave running sessions alone.
+- Agent settings use full rows with names and logos, an explicit **Make default** action, and the native folder picker. A running model's configuration page opens its selected agent directly.
+- CPU models: x86-64 AVX2 machines can run LFM2.5-2.6B QAD Q4 entirely in system RAM, with no GPU mapping. The registry's six acceptance gates passed at 38.2 tok/s on the tested EPYC host with a 4 GiB container memory limit. Hardware pages show system RAM.
+
+### Fixed
+- A model's agent selection no longer silently changes the default for new models. Opening a terminal returns promptly so the panel's action timeout cannot kill a healthy agent.
+- Container names are scoped to their owner while existing deployments keep their original names. Concurrent starts serialize their final hardware check and container creation across users; failed unsharing retains its port reservation for retry.
+- Usage totals include logs beyond 200,000 requests. Slow Docker removal is retried before an allocation is considered released.
+- AMD detection accepts ROCm resolver output and uses numeric video/render group IDs. Unified-memory AMD hardware matches its RAM capacity without treating unknown GPU usage as zero.
+- Recipes can select an explicit list of weight files; absolute paths and traversal are rejected.
+
 ## [6.8.4] - 2026-10-02
 
 ### Fixed

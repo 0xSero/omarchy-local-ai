@@ -6,13 +6,13 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 sed '/^paths "\$HOME"$/,$d' "${BACKEND:-$ROOT/bin/omarchy-local-ai}" >"$TMP/functions"
 source "$TMP/functions"
-ALLOCATION_LOCK=$TMP/docker.pid
-printf "1234\n" >"$ALLOCATION_LOCK"
-chmod 444 "$ALLOCATION_LOCK"
+ALLOCATION_LOCK=$TMP/runtime
+mkdir "$ALLOCATION_LOCK"
+chmod 555 "$ALLOCATION_LOCK"
 paths "$TMP/home"
 # Separate users have separate state locks, but must serialize the shared GPU check and creation.
 source "$TMP/functions"
-ALLOCATION_LOCK=$TMP/docker.pid
+ALLOCATION_LOCK=$TMP/runtime
 paths "$TMP/home"
 RECIPES=$TMP/recipes.json
 echo '{"hardware":{"test":{"match":{"backend":"nvidia"}}},"gateway":{"image":"gateway"}}' >"$RECIPES"
@@ -38,5 +38,5 @@ rc2=0; wait "$second" || rc2=$?
 grep -q 'nvidia:0 is in use' "$TMP/first" "$TMP/second"
 echo 'ok - simultaneous users start only one engine on the same GPU'
 
-[[ $(cat "$ALLOCATION_LOCK") == 1234 && $(stat -c %a "$ALLOCATION_LOCK") == 444 ]]
-echo "ok - allocation locks the daemon PID file read-only without changing its contents or mode"
+[[ -d $ALLOCATION_LOCK && $(stat -c %a "$ALLOCATION_LOCK") == 555 ]]
+echo "ok - allocation locks the runtime directory read-only without creating a daemon-specific lock file"

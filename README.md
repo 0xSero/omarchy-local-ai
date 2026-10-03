@@ -1,6 +1,6 @@
 # Local AI for Omarchy
 
-Run a local model on your own GPU and open a coding agent on it. Local AI picks a model that was tested on your card (NVIDIA, Intel Arc Pro, AMD), downloads the weights from a pinned Hugging Face revision and checks them, and serves the model in Docker behind a keyed, OpenAI-compatible gateway on 127.0.0.1. From the bar you open pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it in a folder you choose, without editing their config. The panel shows GPU temperature, VRAM and token use, and can share a running model on your tailnet.
+Run a local model on your own GPU or CPU and open a coding agent on it. Local AI picks a model that was tested on your card (NVIDIA, Intel Arc Pro, AMD) or an x86-64 AVX2 CPU, downloads the weights from a pinned Hugging Face revision and checks them, and serves the model in Docker behind a keyed, OpenAI-compatible gateway on 127.0.0.1. From the bar you open pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it in a folder you choose, without editing their config. The panel shows GPU temperature, VRAM and token use, and can share a running model on your tailnet.
 
 ![Local AI](preview.png)
 
@@ -29,20 +29,20 @@ Setup ends by checking what the panel will show. Sharing a model on your tailnet
 
 - Omarchy with the Quattro shell and its bar. Local AI calls Omarchy's own commands: `omarchy-setup-security-sudoless-docker`, `omarchy-pkg-add`, `omarchy-hw-nvidia`, `omarchy-launch-tui`, `omarchy-launch-browser`, `omarchy-notification-send` and `omarchy-cmd-present`.
 - Docker, `jq`, `curl`, `flock` and `sha256sum`.
-- A supported GPU (below). NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. Docker 25 or later (Omarchy ships 29). AMD needs ROCm's `amd-smi`.
+- A supported GPU (below), or an x86-64 CPU with AVX2 and enough RAM for its recipe. NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. Docker 25 or later (Omarchy ships 29). AMD needs ROCm's `amd-smi`.
 - Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
-- Network access to `huggingface.co` (weights), `ghcr.io/0xsero` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (**Refresh models**).
+- Network access to `huggingface.co` (weights), `ghcr.io/0xsero` and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (**Refresh models**).
 
 ## What it does
 
-- **Validated models per card, or one across several.** `recipes.json` holds, for each of 40 card kinds, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
+- **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
 - **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them, and Config says what is missing.
 - **Weights** are downloaded as you, from the pinned revision, and every file's size is checked against Hugging Face, and the SHA-256 of every large (LFS) file, before it is used. A matching copy in your Hugging Face cache is reused.
 - **Containers.** The engine runs on a private network with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
 - **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. Choose an agent on its full row, **Make default** for new models, or **Update** to update its existing installation. Click the folder row to open a folder picker. **Open** launches the selected agent directly from the model page. Agent choices on a running model do not change the default; the last folder picked remains the folder default. Updates use mise when it manages that agent, the native updater for standalone omp, Hermes, Claude Code and OpenCode, or npm for an existing npm installation. Existing sessions keep running.
 - **Share** a running model on your tailnet with `tailscale serve` (tailnet only, still keyed). **Stop sharing** on its page removes that share. Tailscale must be running and logged in. Setup preserves another account’s operator; ask that account to manage sharing. A failed unshare is logged and does not prevent stopping the model.
 
-Supported: NVIDIA RTX 30, 40 and 50 series, RTX A6000, RTX Ada and RTX Pro Blackwell, Intel Arc Pro B70, and AMD Instinct MI300X and Radeon RX 6800 XT (with ROCm's `amd-smi`).
+Supported: x86-64 AVX2 CPUs (LFM2.5-2.6B in system RAM), NVIDIA RTX 30, 40 and 50 series, RTX A6000, RTX Ada and RTX Pro Blackwell, Intel Arc Pro B70, and AMD Instinct MI300X and Radeon RX 6800 XT (with ROCm's `amd-smi`).
 
 ## From a shell
 
@@ -59,6 +59,8 @@ bin/omarchy-local-ai set agent|folder <value> [recipe]
 bin/omarchy-local-ai share <recipe> [off]
 bin/omarchy-local-ai log
 ```
+
+CPU recipes use system RAM and start without GPU devices. Recipes that offload GPU work into RAM or NVMe remain hardware-specific and list their requirements.
 
 Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); the key is in `~/.local/state/omarchy/local-ai/gateway.key`.
 
