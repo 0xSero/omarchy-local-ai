@@ -213,11 +213,17 @@ MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | sp
       product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1]}))
     + $am;
   def norm: ascii_downcase | gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]"; "");
-  def match($r): [.[] | . as $x
+  def match($r; $ram): [.[] | . as $x
     | ([$r.hardware | to_entries[] | select((.value.match.backend | sub("amd-vulkan"; "amd-rocm")) == $x.backend
         and (.value.match.names | index($x.product | norm)) != null
-        and (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024) | .key][0] // "") as $hw
-    | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw, vramGb: (($x.totalMiB / 1024) | round),
+        # a unified-memory APU reports only its BIOS carve-out as VRAM, so the card is judged by host
+        # RAM covering its stated memory once the carve-out (up to 8 GiB) is added back
+        and (if .value.match.unifiedMemory // false then ($ram + 8192) >= .value.match.vramGb * 1024
+          else (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024 end)) | .key][0] // "") as $hw
+    | ($hw != "" and ($r.hardware[$hw].match.unifiedMemory // false)) as $uni
+    | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw,
+        totalMiB: (if $uni then $ram else $x.totalMiB end), usedMiB: (if $uni then null else $x.usedMiB end),
+        vramGb: (((if $uni then $ram else $x.totalMiB end) / 1024) | round),
         name: ($x.product | gsub("^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )"; ""))}];'
 
 # Every GPU, matched and reserved by any running container, regardless of account or labels.
@@ -234,11 +240,11 @@ gpus() {
         die "could not check Docker GPU allocations; try again"
     fi
   fi
-  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --argjson cpu "$(cpu)" --slurpfile rec "$RECIPES" --argjson claims "$claims" \
+  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --argjson cpu "$(cpu)" --argjson ram "$(awk '/^MemTotal:/ {print int($2 / 1024)}' "${MEMINFO:-/proc/meminfo}")" --slurpfile rec "$RECIPES" --argjson claims "$claims" \
     --arg links "$(for p in /dev/dri/by-path/*-render; do printf '%s\t%s\n' "$p" "$(readlink -f "$p")"; done)" "$MATCH"'
     ($links | split("\n") | map(select(length > 0) | split("\t") | {key: .[0], value: .[1]}) | from_entries) as $links
     | def node: $links[.] // .;
-    (gpus($nv; $xe; $am) + $cpu | match($rec[0])) | map(. as $g
+    (gpus($nv; $xe; $am) + $cpu | match($rec[0]; $ram)) | map(. as $g
       | (if .backend == "cpu" then "" elif .backend == "nvidia" then "/dev/nvidia" + (.index | tostring) else .node | node end) as $node
       | . + {held: (.backend != "cpu" and any($claims[];
           .privileged == true
@@ -441,7 +447,12 @@ rundir() { echo "$STATE/run/$1"; }
 remove() {
   local c
   for c in "$(engine "$1")" "$(gateway "$1")"; do
-    if ours "$c"; then docker rm -f "$c" >/dev/null 2>&1 || return 1; fi
+    if ours "$c"; then
+      if ! docker rm -f "$c" >/dev/null 2>&1; then
+        sleep 3
+        docker rm -f "$c" >/dev/null 2>&1 || return 1
+      fi
+    fi
   done
   docker network rm "$(network "$1")" >/dev/null 2>&1 || true
   rm -rf -- "$(rundir "$1")" 2>/dev/null || say "$1: $(rundir "$1") holds files Docker created as root; delete it as root"
