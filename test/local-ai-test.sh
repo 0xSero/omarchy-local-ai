@@ -49,6 +49,9 @@ shim() { printf '#!/bin/bash\n%s\n' "$2" >"$TMP/bin/$1"; chmod +x "$TMP/bin/$1";
 
 shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
 printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
+# The CLI falls back to /opt/rocm/bin/amd-smi, so absence from PATH no longer
+# keeps a host's real AMD card out of the sandbox; pin an empty report.
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
 shim omarchy-setup-security-sudoless-docker 'exit 0'
 # the account is listed in the docker group unless SHIM_NOGROUP (setup not run); newgrp starts the shell it is given and
 # grants nothing, as when a login is still out of reach of the socket
@@ -145,7 +148,7 @@ shim nvidia-smi 'printf "NVIDIA-SMI has failed because it couldn'\''t communicat
 shim amd-smi 'printf "Unhandled import error: No module named '\''amdsmi'\''\n"'
 "$CLI" snapshot >"$TMP/snap-nosmi.json" || fail "a failed amd-smi broke the snapshot"
 [[ $(jq -r '.gpus | length' "$TMP/snap-nosmi.json") == 0 ]] || fail "a failed amd-smi is no AMD cards" "$(jq -c . "$TMP/snap-nosmi.json")"
-rm -f "$TMP/bin/amd-smi"
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
 shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
 printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 pass "a probe that fails (nvidia-smi's and amd-smi's own error text) reads as no cards, not as a broken snapshot"
@@ -172,7 +175,7 @@ esac'
 "$CLI" snapshot >"$TMP/snap-vulkan.json"
 [[ $(jq -r '.gpus[0].hw' "$TMP/snap-vulkan.json") == rx-9070-xt-16gb ]] || fail "AMD Vulkan card match"
 pass "AMD discovery matches the RX 9070 XT Vulkan recipes"
-rm -f "$TMP/bin/amd-smi"
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
 shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
 printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"
@@ -483,6 +486,18 @@ engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail 
 "$CLI" stop "$ID"
 pass "a Vulkan recipe receives its render node without ROCm or NVIDIA devices"
 
+# ROCm images need not share the host's group names (Halogen has no "render"
+# group), so membership goes in as host GIDs; the shimmed getent answers 998.
+jq '.hardware["rtx-4090-24gb"].match.backend = "amd-rocm"' "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+"$CLI" run "$ID" amd-rocm:0
+wait_for ready
+engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+[[ $engine == *'--device /dev/kfd --group-add 998 --group-add 998'* && $engine != *'--group-add video'* ]] ||
+  fail "ROCm group GIDs" "$engine"
+"$CLI" stop "$ID"
+pass "a ROCm recipe passes the video and render groups by host GID"
+
 # the bar follows the engine's own log, and a card its driver resets mid-load ends the start at once, not after 30 minutes
 export LOCAL_AI_SYSFS=$TMP/sys
 mkdir -p "$LOCAL_AI_SYSFS/class/drm/renderD129/device"
@@ -506,7 +521,8 @@ pass "loading shows the engine's own step and percent, and a GPU reset mid-load 
 "$CLI" stop "$ID"
 rm -f "$TMP/loading" "$LOCAL_AI_SYSFS/class/drm/renderD129/device/devcoredump"
 unset LOCAL_AI_SYSFS
-rm -f "$TMP/bin/amd-smi" "$TMP/bin/readlink"
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
+rm -f "$TMP/bin/readlink"
 recipes "$PIN"
 
 rm -rf "$HOME/.cache/omarchy"
