@@ -27,6 +27,7 @@ RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
 LABEL=io.omarchy.local-ai
+ALLOCATION_LOCK=/run/docker.pid
 SYS=${LOCAL_AI_SYSFS:-/sys}
 AGENTS=(pi claude codex opencode omp crush grok copilot hermes)
 umask 077
@@ -465,13 +466,11 @@ pull() {
     /: (Pull complete|Already exists)$/ && !($1 in done) { done[$1]; printf "downloading the %s: %d of %d layers\n", what, ++d, n; fflush() }'
 }
 
-# All users share the allocation lock. Read-only descriptors can lock the same file, so later users need no
-# write access. Exclusive creation never follows a symlink or truncates an existing file; closing releases it.
+# Lock the daemon's existing root-owned PID file read-only: every Docker user sees the same inode,
+# and no user-created temporary file can block another account through its permissions.
 allocation_lock() {
-  local lock=/tmp/omarchy-local-ai-allocation.lock
-  (umask 022; set -o noclobber; : >"$lock") 2>/dev/null || true
-  [[ -f $lock && ! -L $lock ]] || die "invalid model allocation lock"
-  exec 8<"$lock"
+  [[ -r $ALLOCATION_LOCK ]] || die "Docker's PID file is unavailable; check that Docker is running"
+  exec 8<"$ALLOCATION_LOCK"
   flock -w 30 8 || die "another model is starting; try again"
 }
 
