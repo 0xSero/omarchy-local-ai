@@ -1,5 +1,6 @@
 import QtQuick
-import QtQuick.Controls as Controls
+import QtQuick.Dialogs
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -83,7 +84,7 @@ Panel {
   // a new view starts at its top with nothing chosen; within a view, a chosen model stays chosen
   function nav(patch) {
     var moved = patch.view !== undefined || patch.id !== undefined
-    ui = Object.assign({ view: ui.view, id: ui.id, open: "", key: ui.key, problem: "", pollProblem: ui.pollProblem || "", registryBusy: ui.registryBusy || false, notice: ui.notice || "", model: moved ? "" : ui.model || "" }, patch)
+    ui = Object.assign({ view: ui.view, id: ui.id, open: "", key: ui.key, problem: "", pollProblem: ui.pollProblem || "", registryBusy: ui.registryBusy || false, notice: ui.notice || "", updatingAgent: ui.updatingAgent || "", model: moved ? "" : ui.model || "" }, patch)
     revealed = false
     if (moved) flick.contentY = 0
   }
@@ -93,7 +94,7 @@ Panel {
     if (!queue.length) return refresh()
     var args = queue.shift()
     verb.operation = args[0]
-    verb.command = (args[0] === "setup" ? [cli] : ["timeout", "--kill-after=5", "120", cli]).concat(args)
+    verb.command = (args[0] === "setup" ? [cli] : ["timeout", "--kill-after=5", args[0] === "update" ? "900" : "120", cli]).concat(args)
     verb.running = true
   }
   // a refresh while a snapshot runs (the one after a verb) runs once that ends, so the verb's result shows at once
@@ -115,6 +116,15 @@ Panel {
     switch (a[0]) {
     case "forget": run(["forget", a[1]]); nav({ open: "" }); break
     case "setup": run(["setup"]); break
+    case "default": run(["set", "agent", a[1]]); break
+    case "update": ui = Object.assign({}, ui, { updatingAgent: a[1] }); run(["update", a[1]]); break
+    case "folder":
+      folderDialog.recipe = a[1]
+      folderDialog.currentFolder = "file://" + encodeURI(decodeURIComponent(a[2]) || Quickshell.env("HOME")).replace(/#/g, "%23").replace(/\?/g, "%3F")
+      folderDialog.selectedFolder = folderDialog.currentFolder
+      root.close()
+      Qt.callLater(function() { folderDialog.open() })
+      break
     case "registry": ui = Object.assign({}, ui, { registryBusy: true, problem: "" }); run(["registry"]); break
     case "run": run(["run", a[1], a[2]]); home(); break
     case "again": run(["stop", a[1]]); run(["run", a[1], a[2]]); home(); break
@@ -128,6 +138,7 @@ Panel {
     case "group": nav({ view: "group", id: a[1], key: a[2] }); break
     case "model": nav({ model: a[1] }); break
     case "gpus": nav({ view: "gpus", id: "" }); break
+    case "agents": nav({ view: "agents", id: "" }); break
     case "pick": nav({ open: ui.open === a[1] ? "" : a[1] }); break
     case "home": home(); break
     case "log": Quickshell.execDetached([cli, "log"]); root.close(); break
@@ -150,7 +161,7 @@ Panel {
   }
   // A verb that fails says why on its last "local-ai:" line; the panel opens to show it.
   function finished(code, operation, output, error) {
-    ui = Object.assign({}, ui, { registryBusy: false })
+    ui = Object.assign({}, ui, { registryBusy: false, updatingAgent: operation === "update" ? "" : ui.updatingAgent || "" })
     if (code !== 0) {
       var m = (error || "").split("\n").filter(function(l) { return l.indexOf("local-ai: ") === 0 }).pop()
       queue = []
@@ -158,7 +169,7 @@ Panel {
       ui = Object.assign({}, ui, { problem: code === 124 || code === 137 ? "That took too long; try again." : m ? m.slice(10) : "that did not work (see the log)" })
     } else if (operation === "open") {
       root.close()
-    } else if (operation === "registry") {
+    } else if (operation === "registry" || operation === "update") {
       ui = Object.assign({}, ui, { notice: output.trim(), problem: "" })
     }
     next()
@@ -169,6 +180,20 @@ Panel {
     stdout: StdioCollector { id: verbOut; waitForEnd: true }
     stderr: StdioCollector { id: verbErr; waitForEnd: true }
     onExited: function(code) { root.finished(code, operation, verbOut.text, verbErr.text) }
+  }
+  function pickedFolder(url, id) {
+    run(["set", "folder", decodeURIComponent(String(url).replace(/^file:\/\//, ""))].concat(id ? [id] : []))
+  }
+  FolderDialog {
+    id: folderDialog
+    property string recipe: ""
+    title: "Choose the agent's folder"
+    function returnToSettings() {
+      root.open()
+      root.nav({ view: recipe ? "run" : "agents", id: recipe })
+    }
+    onAccepted: { root.pickedFolder(selectedFolder, recipe); returnToSettings() }
+    onRejected: returnToSettings()
   }
   Process { id: copy }
   Timer { id: copiedTimer; interval: 1500; onTriggered: root.copied = false }
@@ -300,7 +325,7 @@ Panel {
                 y: parent.gap
                 width: parent.width - 2 * inset
                 sourceComponent: ({ life: lifeC, run: runC, slot: slotC, links: linksC, soon: soonC, grid: gridC, gpu: gpuC,
-                  field: fieldC, opt: optC, path: pathC, acts: linksC })[r.type] || textC
+                  field: fieldC, agent: agentC, opt: optC, acts: linksC })[r.type] || textC
               }
 
               // Your lifetime: the totals, then the activity grid (a column a week, a row a weekday) with its months
@@ -749,26 +774,35 @@ Panel {
                 }
               }
 
-              // Any folder, typed
               Component {
-                id: pathC
+                id: agentC
                 Item {
-                  height: Style.space(30)
-                  Controls.TextField {
-                    x: root.gutter + Style.space(12)
-                    width: parent.width - x - root.gutter
-                    placeholderText: "or type a path"
-                    placeholderTextColor: root.labelTone
-                    color: root.ink
-                    font.family: root.mono
-                    font.pixelSize: Style.font.caption
-                    background: Rectangle { color: "transparent"; border.width: 1; border.color: root.ruleTone }
-                    onAccepted: {
-                      var path = text.indexOf("~") === 0 ? Quickshell.env("HOME") + text.slice(1) : text
-                      root.run(["set", "folder", path].concat(r.id ? [r.id] : []))
-                      root.nav({ open: "" })
+                  height: Style.space(38)
+                  Row {
+                    x: root.gutter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(10)
+                    Item {
+                      width: Style.space(24); height: width
+                      Image {
+                        id: agentLogo
+                        anchors.fill: parent
+                        source: ["claude", "codex", "omp", "opencode", "hermes", "copilot", "crush"].indexOf(r.agent) >= 0 ? Qt.resolvedUrl("agents/" + r.agent + (r.agent === "crush" ? ".png" : ".svg")) : ""
+                        fillMode: Image.PreserveAspectFit
+                        layer.enabled: true
+                        layer.effect: MultiEffect { colorization: 1; colorizationColor: root.ink }
+                      }
+                      Label {
+                        anchors.centerIn: parent
+                        visible: agentLogo.status !== Image.Ready
+                        font.pixelSize: Style.space(20)
+                        text: ({ pi: "π", grok: "𝕏" })[r.agent] || root.glyph("agent")
+                      }
                     }
+                    Label { anchors.verticalCenter: parent.verticalCenter; text: r.label; color: root.ink }
                   }
+                  Right { margin: root.gutter; text: r.value + " ›"; color: root.labelTone }
+                  Click { action: r.action }
                 }
               }
 
