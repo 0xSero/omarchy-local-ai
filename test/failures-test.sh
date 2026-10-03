@@ -56,6 +56,7 @@ kill() { echo called >"$TMP/killed"; }
 pgrep() { return 1; }
 check 'a stale worker PID can be dismissed' 0 cmd_stop test
 [[ ! -f $TMP/killed ]] || { echo 'not ok - stop signalled an unrelated process group'; failed=$((failed + 1)); }
+unset -f kill
 mkdir -p "$STATE/deploy/test"
 echo '{"id":"test","port":12434}' >"$STATE/deploy/test/config.json"
 # An empty Hub listing used to be sealed as a verified download.
