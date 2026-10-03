@@ -27,7 +27,7 @@ RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
 LABEL=io.omarchy.local-ai
-ALLOCATION_LOCK=/run/docker.pid
+ALLOCATION_LOCK=/run
 SYS=${LOCAL_AI_SYSFS:-/sys}
 AGENTS=(pi claude codex opencode omp crush grok copilot hermes)
 umask 077
@@ -466,10 +466,10 @@ pull() {
     /: (Pull complete|Already exists)$/ && !($1 in done) { done[$1]; printf "downloading the %s: %d of %d layers\n", what, ++d, n; fflush() }'
 }
 
-# Lock the daemon's existing root-owned PID file read-only: every Docker user sees the same inode,
+# Lock the existing root-owned runtime directory read-only: every user sees the same inode,
 # and no user-created temporary file can block another account through its permissions.
 allocation_lock() {
-  [[ -r $ALLOCATION_LOCK ]] || die "Docker's PID file is unavailable; check that Docker is running"
+  [[ -r $ALLOCATION_LOCK ]] || die "The system runtime directory is unavailable"
   exec 8<"$ALLOCATION_LOCK"
   flock -w 30 8 || die "another model is starting; try again"
 }
