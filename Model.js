@@ -222,7 +222,8 @@ function homeView(s, ui) {
   var free = slots(s, ui, function(r) { return r < 1 || r === 2 })
   if (free.length) rows = rows.concat([{ type: "sec", label: "AVAILABLE" }], flat(free))
   if (s.gpus.length > free.filter(function(x) { return !x.group && !x.lost }).length)
-    rows.push({ type: "field", icon: "gpu", label: "all GPUs", value: String(s.gpus.length), action: "gpus" })
+    rows.push({ type: "field", icon: "gpu", label: s.gpus.some(function(g) { return g.backend === "cpu" }) ? "all hardware" : "all GPUs", value: String(s.gpus.length), action: "gpus" })
+  if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
   rows.push({ type: "field", icon: "agent", label: "Agents", value: String((s.agents || []).length), action: "agents" })
   rows.push({ type: "acts", items: [{ label: ui.registryBusy ? "Refreshing models…" : "Refresh models", action: ui.registryBusy ? "" : "registry" }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
@@ -279,7 +280,7 @@ function card(s, d) {
 
 // every GPU on the machine, as the same rows as home's, so any of them opens to its actions and Config
 function gpusView(s, ui) {
-  return { back: true, rows: [{ type: "sec", label: "GPUS" }].concat(flat(slots(s, ui, function() { return true }))) }
+  return { back: true, rows: [{ type: "sec", label: s.gpus.some(function(g) { return g.backend === "cpu" }) ? "HARDWARE" : "GPUS" }].concat(flat(slots(s, ui, function() { return true }))) }
 }
 
 // nothing to run on: one line on what this machine has, and where the list of supported cards lives
@@ -317,7 +318,7 @@ function page(s, ui, m) {
       v.rows.push({ type: "opt", label: x.name, value: room(x), on: x.id === m.id, off: !fits(x), action: fits(x) ? "model|" + x.id : "" })
     })
   }
-  v.rows.push({ type: "sec", label: "GPUS" })
+  v.rows.push({ type: "sec", label: m.cards.some(function(g) { return g.cpu }) ? "CPU" : "GPUS" })
   m.cards.forEach(function(g) { v.rows.push(g) })
   v.rows.push({ type: "sec", label: "OPENS WITH" })
   pickers(s, v.rows, ui, run ? run.agent : (s.defaults || {}).agent, run ? run.folder : (s.defaults || {}).folder, run ? run.id : "")
@@ -372,6 +373,7 @@ function groupView(s, hw, n, ui) {
 }
 
 function gpuRow(g) {
+  if (g.backend === "cpu") return { type: "gpu", cpu: true, name: g.name, bar: false, mem: g.ramGb + " GB RAM", temp: "" }
   var used = g.usedMiB != null ? g.usedMiB / 1024 : null
   return { type: "gpu", name: g.name, bar: used != null, pct: used != null && g.vramGb ? Math.min(100, Math.round(used / g.vramGb * 100)) : 0,
     mem: (used != null ? Math.round(used * 10) / 10 + " / " : "") + g.vramGb + " GB",

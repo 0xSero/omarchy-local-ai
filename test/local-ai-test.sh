@@ -10,7 +10,8 @@ fail() { printf '%s\n' "${2:-}" >&2; printf 'not ok - %s\n' "$1" >&2; exit 1; }
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-export HOME=$TMP/home SHIM=$TMP/shim XDG_RUNTIME_DIR=$TMP/run
+export HOME=$TMP/home SHIM=$TMP/shim XDG_RUNTIME_DIR=$TMP/run CPUINFO=$TMP/cpuinfo
+: >"$CPUINFO"
 mkdir -p "$HOME" "$SHIM/containers" "$TMP/bin" "$TMP/plugin/bin" "$TMP/plugin/lib"
 cp "$ROOT/bin/omarchy-remove-ai-local" "$TMP/plugin/bin/"
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
@@ -163,7 +164,7 @@ esac'
 shim nvidia-smi 'exit 9'
 cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
 "$CLI" snapshot >"$TMP/snap-amd.json" || fail "the AMD snapshot"
-[[ $(jq -r '.gpus | map("\(.key)=\(.hw)=\(.vramGb)=\(.tempC)") | join(" ")' "$TMP/snap-amd.json") == "amd-rocm:0=rx-7600-xt-16gb=16=41 amd-rocm:1==8=38" ]] ||
+[[ $(jq -r '.gpus | map(select(.backend == "amd-rocm") | "\(.key)=\(.hw)=\(.vramGb)=\(.tempC)") | join(" ")' "$TMP/snap-amd.json") == "amd-rocm:0=rx-7600-xt-16gb=16=41 amd-rocm:1==8=38" ]] ||
   fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"
 jq -e '[.kinds[] | select(.hw == "rx-7600-xt-16gb") | .free[0], (.models | length > 0)] == ["amd-rocm:0", true]' "$TMP/snap-amd.json" >/dev/null ||
   fail "the RX 7600 XT kind" "$(jq -c .kinds "$TMP/snap-amd.json")"
@@ -195,15 +196,15 @@ js() {
     const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " sec,slot,slot,field,field,acts" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view home) == " sec,slot,slot,field,field,field,acts" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,agent,links,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
   # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
   # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
-    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,field,acts" &&
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,field,field,acts" &&
     $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
-    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,field:Agents,acts:Refresh models" &&
+    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,field:RAM,field:Agents,acts:Refresh models" &&
     $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
     fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
@@ -261,7 +262,7 @@ pass "a stale NVIDIA CDI spec stops before the engine, with the repair command i
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready run,sec,slot,field,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,agent,links,field,acts,sec,field,sec,field"*",acts" ]] ||
+  [[ $(view home) == "ready run,sec,slot,field,field,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,agent,links,field,acts,sec,field,sec,field"*",acts" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi
