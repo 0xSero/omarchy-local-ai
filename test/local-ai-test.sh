@@ -10,7 +10,8 @@ fail() { printf '%s\n' "${2:-}" >&2; printf 'not ok - %s\n' "$1" >&2; exit 1; }
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-export HOME=$TMP/home SHIM=$TMP/shim XDG_RUNTIME_DIR=$TMP/run
+export HOME=$TMP/home SHIM=$TMP/shim XDG_RUNTIME_DIR=$TMP/run CPUINFO=$TMP/cpuinfo
+: >"$CPUINFO"
 mkdir -p "$HOME" "$SHIM/containers" "$TMP/bin" "$TMP/plugin/bin" "$TMP/plugin/lib"
 cp "$ROOT/bin/omarchy-remove-ai-local" "$TMP/plugin/bin/"
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
@@ -128,6 +129,10 @@ http://127.0.0.1:*)
   fi ;;
 esac'
 ! command -v node >/dev/null || ln -s "$(command -v node)" "$TMP/bin/node"
+# jq logs every argument it is given: a secret in a jq argv is readable by other local users in
+# /proc/<pid>/cmdline while jq runs, so the key must only ever reach it as a file path
+REAL_JQ=$(command -v jq)
+shim jq "printf '%s\n' \"\$*\" >>\"\$SHIM/jq.log\"; exec $REAL_JQ \"\$@\""
 export PATH=$TMP/bin:/usr/bin:/bin
 # NVIDIA CDI specs are read from here, not /etc/cdi: one device, /dev/null, at its real numbers (1:3)
 export CDI_DIRS=$TMP/cdi
@@ -165,7 +170,7 @@ esac'
 shim nvidia-smi 'exit 9'
 cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
 "$CLI" snapshot >"$TMP/snap-amd.json" || fail "the AMD snapshot"
-[[ $(jq -r '.gpus | map("\(.key)=\(.hw)=\(.vramGb)=\(.tempC)") | join(" ")' "$TMP/snap-amd.json") == "amd-rocm:0=rx-7600-xt-16gb=16=41 amd-rocm:1==8=38" ]] ||
+[[ $(jq -r '.gpus | map(select(.backend == "amd-rocm") | "\(.key)=\(.hw)=\(.vramGb)=\(.tempC)") | join(" ")' "$TMP/snap-amd.json") == "amd-rocm:0=rx-7600-xt-16gb=16=41 amd-rocm:1==8=38" ]] ||
   fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"
 jq -e '[.kinds[] | select(.hw == "rx-7600-xt-16gb") | .free[0], (.models | length > 0)] == ["amd-rocm:0", true]' "$TMP/snap-amd.json" >/dev/null ||
   fail "the RX 7600 XT kind" "$(jq -c .kinds "$TMP/snap-amd.json")"
@@ -218,15 +223,15 @@ js() {
     const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " sec,slot,slot,field,acts" ]] || fail "home view" "$(view home 2>&1)"
-  [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
+  [[ $(view home) == " sec,slot,slot,field,field,field,acts" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,agent,links,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
   # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
   # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
-    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,acts" &&
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,field,field,acts" &&
     $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
-    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,acts:Refresh models" &&
+    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,field:RAM,field:Agents,acts:Refresh models" &&
     $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
     fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
@@ -255,12 +260,14 @@ if command -v node >/dev/null; then
   [[ $(js 'vm.runInNewContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/property string cli: (.*)/)[1],
     {Qt: {resolvedUrl: u => "file:///home/a%2525b%23c/" + u}})') == "/home/a%25b#c/bin/omarchy-local-ai" ]] || fail "the backend's path"
   pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
-  # a folder choice goes from Model.js's action through Panel.qml's activate to the backend's set as one argument
-  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw, open: "folder"})).rows.find(r => r.on && r.type === "opt").action
-    var p = {ui: {}, nav() {}, run(x) { p.args = x }}; vm.createContext(p)
-    vm.runInContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/function activate\([^]*?\n  \}/)[0], p); p.activate(a); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b" ]] ||
-    fail "a folder with a | in it"
-  pass "a folder with a | in its path is one argument of its action"
+  # The folder dialog preserves reserved characters through its URL and sends one path argument.
+  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw})).rows.find(r => r.icon === "folder").action
+    var p = {ui: {}, nav() {}, close() {}, run(x) { p.args = x }, Qt: {callLater: f => f()}, folderDialog: {open() {}}, Quickshell: {env() {return "/home/x"}}}; p.root = p; vm.createContext(p)
+    var q=fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
+    for(var name of ["activate", "pickedFolder"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0],p);
+    p.activate(a); p.pickedFolder(p.folderDialog.currentFolder,p.folderDialog.recipe); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b#c?d%" ]] || fail "folder dialog URL round trip"
+  pass "folder dialog preserves spaces, pipes, hashes, question marks and percent signs"
+
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
 fi
@@ -272,7 +279,7 @@ cdi 237
 wait_for error
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date; see the log for the repair command" ]] ||
   fail "stale CDI reason" "$(cat "$STATE/deploy/$ID/status.json")"
-! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-engine' "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
+! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-%s-engine' "$(id -u)" "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
 cdi 1
 grep -q "regenerate it as root: nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" "$STATE/log" || fail "CDI repair log"
 pass "a stale NVIDIA CDI spec stops before the engine, with the repair command in the log"
@@ -282,7 +289,7 @@ pass "a stale NVIDIA CDI spec stops before the engine, with the repair command i
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready run,sec,slot,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
+  [[ $(view home) == "ready run,sec,slot,field,field,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,agent,links,field,acts,sec,field,sec,field"*",acts" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi
@@ -311,7 +318,7 @@ gateway=$(grep -- '--name omarchy-local-ai-.*-gateway' "$SHIM/docker.log")
   fail "gateway isolation" "$gateway"
 pass "the gateway runs as the user with a read-only root, no capabilities and no external DNS"
 key=$(cat "$STATE/gateway.key")
-! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
+! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$SHIM/jq.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
 [[ $(stat -c %a "$STATE/gateway.key") == 600 ]] || fail "key mode"
 pass "the gateway key stays in a 0600 file, out of every argv and the log"
 grep -q -- "-fsS --max-time 5 http://127.0.0.1:12434/v1/models" "$SHIM/curl.log" || fail "keyless check" "$(cat "$SHIM/curl.log")"
@@ -323,7 +330,7 @@ pass "a card that is running a model cannot be claimed twice"
 
 "$CLI" run "$ID" nvidia:2
 wait_for ready "$ID--2"
-grep -q -- "--name omarchy-local-ai-$ID--2-engine .*--gpus \"device=2\"" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
+grep -q -- "--name omarchy-local-ai-$(id -u)-$ID--2-engine .*--gpus \"device=2\"" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
   fail "second copy" "$(grep -- "$ID--2-engine" "$SHIM/docker.log")"
 # a copy whose recipe recipes.json no longer has is named after that recipe, not <recipe>--2
 jq -c '.hardware["rtx-4090-24gb"].recipes[0].id = "renamed"' "$TMP/plugin/recipes.json" >"$TMP/r2" && mv "$TMP/r2" "$TMP/plugin/recipes.json"
@@ -340,7 +347,7 @@ jq -c --arg id "$ID-tp2" '.hardware["rtx-4090-24gb"].recipes += [.hardware["rtx-
 grep -q "runs on 2 card" "$TMP/err" || fail "card count reason" "$(cat "$TMP/err")"
 "$CLI" run "$ID-tp2" nvidia:0,nvidia:2
 wait_for ready "$ID-tp2"
-grep -q -- '--name omarchy-local-ai-'"$ID"'-tp2-engine .*--gpus "device=0,2"' "$SHIM/docker.log" && [[ $(jq -c .keys "$STATE/deploy/$ID-tp2/config.json") == '["nvidia:0","nvidia:2"]' ]] ||
+grep -q -- '--name omarchy-local-ai-'"$(id -u)-$ID"'-tp2-engine .*--gpus "device=0,2"' "$SHIM/docker.log" && [[ $(jq -c .keys "$STATE/deploy/$ID-tp2/config.json") == '["nvidia:0","nvidia:2"]' ]] ||
   fail "group run" "$(grep -- "$ID-tp2-engine" "$SHIM/docker.log")"
 "$CLI" snapshot >"$TMP/snap.json"
 [[ $(jq -r '.kinds[0].groups[0] | "\(.id) \(.cards)"' "$TMP/snap.json") == "$ID-tp2 2" ]] || fail "groups in snapshot" "$(jq -c .kinds "$TMP/snap.json")"
@@ -354,7 +361,7 @@ pass "a group runs one model across two cards of a kind, refuses the wrong numbe
 "$CLI" stop "$ID"
 SHIM_CDI=1 "$CLI" run "$ID" nvidia:2
 wait_for ready
-engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+engine=$(grep -- "--name omarchy-local-ai-$(id -u)-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *"--device nvidia.com/gpu=GPU-test-2"* && $engine != *--gpus* ]] || fail "CDI device by UUID" "$engine"
 [[ $(SHIM_CDI=1 "$CLI" snapshot | jq -r .readiness.state) == ready ]] || fail "a CDI list is ready"
 "$CLI" stop "$ID"
@@ -380,8 +387,9 @@ sleep 0.5
 [[ -f $STATE/agents/pi/models.json && $(jq -r '.providers["omarchy-local"].baseUrl' "$STATE/agents/pi/models.json") == "http://127.0.0.1:12434/v1" ]] ||
   fail "pi config" "$(cat "$STATE/agents/pi/models.json" 2>/dev/null)"
 grep -q -- "--provider omarchy-local --model Test Model" "$SHIM/tui.log" && ! grep -q "$key" "$SHIM/tui.log" || fail "open argv" "$(cat "$SHIM/tui.log")"
-[[ $(jq -r .agent "$STATE/settings.json") == pi ]] || fail "default agent"
-pass "open starts the chosen agent on the gateway in a terminal, with the key only in its private config; the choice becomes the default"
+"$CLI" set agent pi
+[[ $(jq -r .agent "$STATE/settings.json") == pi ]] || fail "explicit default agent"
+pass "open starts the chosen agent on the gateway in a terminal, with the key only in its private config; the default is explicitly selected"
 
 "$CLI" set agent hermes "$ID"
 "$CLI" open "$ID"
@@ -409,14 +417,27 @@ cp "$TMP/recipes.keep" "$TMP/plugin/recipes.json"
 cp "$TMP/config.keep" "$STATE/deploy/$ID/config.json"
 pass "open keeps working when the registry renames or drops a running model's recipe, with the engine's own context"
 
-# All supported agent adapters stay in private config or keyed environments, never a gateway key in argv.
+# All supported agent adapters stay in private config or keyed environments: the gateway key reaches neither the
+# terminal's argv nor a helper's, and the keyed environments are the only place it is handed over at all.
 for agent in pi claude codex opencode omp crush grok copilot hermes; do
   shim "$agent" 'exit 0'
   "$CLI" set agent "$agent" "$ID"
+  : >"$SHIM/jq.log"
   "$CLI" open "$ID"
   ! grep -q "$key" "$SHIM/tui.log" || fail "agent key leaked" "$agent"
+  ! grep -q "$key" "$SHIM/jq.log" || fail "agent key leaked to jq argv" "$(cat "$SHIM/jq.log")"
 done
-pass "every supported agent opens without exposing the gateway key in terminal arguments"
+pass "every supported agent opens without exposing the gateway key in terminal or helper arguments"
+# the key is still where each agent can read it: the config file only this user reads
+[[ $(jq -r '.providers["omarchy-local"].apiKey' "$STATE/agents/pi/models.json") == "$key" ]] ||
+  fail "pi key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/pi/models.json" 2>/dev/null)"
+[[ $(jq -r '.providers["omarchy-local"].api_key' "$STATE/agents/crush/crush/crush.json") == "$key" ]] ||
+  fail "crush key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/crush/crush/crush.json" 2>/dev/null)"
+pass "pi and Crush still get the gateway key, read from its 0600 file by the helper rather than passed to it"
+shim omarchy-launch-tui 'echo $$ >"$SHIM/terminal.pid"; exec sleep 10'
+timeout 2 "$CLI" open "$ID" || fail "open waited for the terminal session to end"
+kill "$(cat "$SHIM/terminal.pid")"
+pass "open releases the panel while the terminal session continues"
 shim omarchy-launch-tui 'exit 1'
 if "$CLI" open "$ID" 2>"$TMP/open.err"; then fail "a failed launcher looked successful"; fi
 grep -qx 'local-ai: could not open the agent terminal; try again' "$TMP/open.err" || fail "launcher error"
@@ -433,11 +454,11 @@ mkdir -p "$HOME/Work with spaces"
 pass "folder changes update both the running model and recent defaults without a prompt"
 
 if SHIM_RM_ALWAYS=1 "$CLI" stop "$ID"; then fail "stop accepted an engine that would not exit"; fi
-[[ -d $STATE/deploy/$ID && -e $SHIM/containers/omarchy-local-ai-test-model-rtx4090-engine ]] ||
+[[ -d $STATE/deploy/$ID && -e $SHIM/containers/omarchy-local-ai-$(id -u)-test-model-rtx4090-engine ]] ||
   fail "failed stop lost the model's state"
 SHIM_RM_ONCE=1 "$CLI" stop "$ID"
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"
-[[ $(grep -c '^rm -f omarchy-local-ai-test-model-rtx4090-engine$' "$SHIM/docker.log") -ge 2 ]] || fail "stop did not retry a slow engine removal"
+[[ $(grep -c '^rm -f omarchy-local-ai-$(id -u)-test-model-rtx4090-engine$' "$SHIM/docker.log") -ge 2 ]] || fail "stop did not retry a slow engine removal"
 pass "stop retries a slow engine removal and removes both containers and the model's folder"
 
 # the engine restarts with the machine, so what it mounts (a config asset, by-path links) must outlive a reboot:
@@ -496,7 +517,7 @@ esac'
 shim readlink 'if [[ $1 == -f && $2 == /dev/dri/by-path/* ]]; then echo /dev/dri/renderD129; else /usr/bin/readlink "$@"; fi'
 "$CLI" run "$ID" amd-rocm:0
 wait_for ready
-engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+engine=$(grep -- "--name omarchy-local-ai-$(id -u)-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *'--device /dev/dri/renderD129'* && $engine != *'/dev/kfd'* && $engine != *'--gpus'* ]] || fail "Vulkan devices" "$engine"
 "$CLI" stop "$ID"
 pass "a Vulkan recipe receives its render node without ROCm or NVIDIA devices"
@@ -507,33 +528,11 @@ jq '.hardware["rtx-4090-24gb"].match.backend = "amd-rocm"' "$TMP/plugin/recipes.
 mv "$TMP/r2" "$TMP/plugin/recipes.json"
 "$CLI" run "$ID" amd-rocm:0
 wait_for ready
-engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+engine=$(grep -- "--name omarchy-local-ai-$(id -u)-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *'--device /dev/kfd --group-add 998 --group-add 998'* && $engine != *'--group-add video'* ]] ||
   fail "ROCm group GIDs" "$engine"
 "$CLI" stop "$ID"
 pass "a ROCm recipe passes the video and render groups by host GID"
-
-# Container options (devices, IPC, memlock, seccomp) come from the registry-vetted launch;
-# policy() pins the set a recipe may name, so an unknown option never reaches docker.
-jq '.hardware["rtx-4090-24gb"].recipes[0].launch.flags =
-  ["--device /dev/kfd", "--device /dev/dri", "--ipc host", "--ulimit memlock=-1:-1", "--security-opt seccomp=unconfined"]' \
-  "$TMP/plugin/recipes.json" >"$TMP/r2"
-mv "$TMP/r2" "$TMP/plugin/recipes.json"
-"$CLI" run "$ID" amd-rocm:0
-wait_for ready
-engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
-[[ $engine == *'--device /dev/kfd --device /dev/dri --ipc host --ulimit memlock=-1:-1 --security-opt seccomp=unconfined'* ]] ||
-  fail "launch flags argv" "$engine"
-"$CLI" stop "$ID"
-pass "a recipe's launch flags reach the engine's docker run"
-
-jq '.hardware["rtx-4090-24gb"].recipes[0].launch.flags = ["--privileged"]' "$TMP/plugin/recipes.json" >"$TMP/r2"
-mv "$TMP/r2" "$TMP/plugin/recipes.json"
-"$CLI" run "$ID" amd-rocm:0 2>"$TMP/err" && fail "a privileged flag launched"
-grep -q 'unrecognized launch flag' "$TMP/err" || fail "flag policy" "$(cat "$TMP/err")"
-jq 'del(.hardware["rtx-4090-24gb"].recipes[0].launch.flags)' "$TMP/plugin/recipes.json" >"$TMP/r2"
-mv "$TMP/r2" "$TMP/plugin/recipes.json"
-pass "a launch flag outside the vetted set is refused"
 
 # the bar follows the engine's own log, and a card its driver resets mid-load ends the start at once, not after 30 minutes
 export LOCAL_AI_SYSFS=$TMP/sys

@@ -65,7 +65,7 @@ test('stopped model details offer recovery without live reach or uptime', () => 
   const rows=m.build({...s,deployments:[{...s.deployments[0],state:'error',error:'the engine stopped'}]}, {view:'run',id:'test'}).rows;
   assert(!rows.some(r=>r.label==='REACH'||r.icon==='machine'||r.icon==='tailnet'));
   assert(!rows.some(r=>(r.cells||[]).some(c=>c.k==='up')));
-  const actions=rows.flatMap(r=>r.items||[]);
+  const actions=rows.filter(r=>r.type==='acts').flatMap(r=>r.items||[]);
   assert.deepEqual(Array.from(actions,a=>a.label),['Run again ›','View logs','Dismiss']);
   assert(actions[0].primary); assert.equal(actions[0].action,'again|test|nvidia:0');
   assert.equal(actions[2].action,'stop|test');
@@ -85,6 +85,30 @@ test('refresh completion survives polls until the next action', () => {
   ctx.activate(''); assert.equal(ctx.ui.notice,'');
   ctx.finished(1,'registry','','local-ai: refresh failed');
   assert.equal(ctx.ui.problem,'refresh failed'); assert(!ctx.ui.notice);
+});
+test('ready model details open the selected agent without returning home', () => {
+  assert(m.build(s,{view:'run',id:'test'}).rows.some(r=>(r.items||[]).some(a=>a.action==='open|test'&&a.primary)));
+  for(const state of ['loading','error']) assert(!m.build({...s,deployments:[{...s.deployments[0],state}]},{view:'run',id:'test'}).rows.some(r=>(r.items||[]).some(a=>a.action==='open|test')));
+});
+test('agent choice is a named row with explicit default and update controls', () => {
+  const rows=m.build({...s,agents:['pi','claude'],defaults:{agent:'claude'}},{view:'run',id:'test',open:'agent'}).rows;
+  assert(rows.some(r=>r.type==='agent'&&r.agent==='pi'&&r.label==='pi'));
+  assert(rows.some(r=>r.type==='agent'&&r.agent==='claude'&&r.label==='Claude Code'));
+  assert(rows.some(r=>(r.items||[]).some(a=>a.action==='default|pi')));
+  assert(rows.some(r=>(r.items||[]).some(a=>a.action==='update|pi')));
+});
+test('folder row opens a picker with the model id and encoded current path', () => {
+  const folder='/home/test/Work #1|two';
+  const rows=m.build({...s,deployments:[{...s.deployments[0],folder}]},{view:'run',id:'test'}).rows;
+  assert(rows.some(r=>r.action==='folder|test|'+encodeURIComponent(folder)));
+});
+test('CPU hardware shows system RAM without a GPU memory bar', () => {
+  const cpu={key:'cpu:0',hw:'cpu',backend:'cpu',name:'CPU (AVX2)',ramGb:8,vramGb:0};
+  const state={...s,gpus:[cpu],deployments:[],host:{ramGb:8.5,freeRamGb:6.2},kinds:[{...s.kinds[0],hw:'cpu',keys:[cpu.key],free:[cpu.key]}]};
+  assert(m.build(state,{view:'home'}).rows.some(r=>r.label==='RAM'&&r.value==='6 / 8 GB free'));
+  const rows=m.build(state,{view:'kind',id:'cpu',key:cpu.key}).rows;
+  assert(rows.some(r=>r.label==='CPU'));
+  assert(rows.some(r=>r.cpu&&r.mem==='8 GB RAM'&&!r.bar));
 });
 process.exitCode = failed ? 1 : 0;
 JS

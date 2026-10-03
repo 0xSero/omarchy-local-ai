@@ -25,7 +25,7 @@ shim "$TMP/plugin/bin/omarchy-local-ai" '[[ $1 == readiness ]] && printf "%s\t%s
 shim "$TMP/bin/tailscale" '[[ ${FAIL_PREFS:-0} == 0 ]] || exit 1
 jq -nc --arg user "${TEST_OPERATOR-$(id -un)}" "{OperatorUser:\$user}"'
 export PATH=$TMP/bin:$PATH
-setup() { : >"$TMP/calls"; bash "$TMP/plugin/bin/omarchy-install-ai-local" >"$TMP/out" 2>&1; }
+setup() { : >"$TMP/calls"; bash "$TMP/plugin/bin/omarchy-install-ai-local" < /dev/null >"$TMP/out" 2>&1; }
 error=$HOME/.local/state/omarchy/local-ai/setup-error
 
 if DECLINE=1 setup; then exit 1; fi

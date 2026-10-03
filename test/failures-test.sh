@@ -43,9 +43,13 @@ tailscale() { echo '{"OperatorUser":"another-account"}'; }
 timeout() { shift; "$@"; }
 check 'share reports that another account manages Tailscale' 1 cmd_share test
 grep -q 'another account.*ask that account' "$TMP/out" || { echo 'not ok - wrong operator advice'; failed=$((failed + 1)); }
-docker() { case $1 in inspect) echo "1|$(id -u)";; rm) :;; esac; }
-check 'a shared model can stop when unsharing fails' 0 cmd_stop test
-[[ ! -d $STATE/deploy/test ]] && grep -q 'could not unshare' "$LOG" || { echo 'not ok - unshare failure trapped the model'; failed=$((failed + 1)); }
+docker() { case $1 in inspect) echo "1|$(id -u)";; rm) touch "$TMP/stopped";; esac; }
+check 'failed unsharing stops the engine but keeps its port reserved' 1 cmd_stop test
+[[ -f $TMP/stopped && $(jq -r .port "$STATE/deploy/test/config.json") == 12434 ]] || {
+  echo 'not ok - unshare failure lost the port reservation or left the model running'; failed=$((failed + 1)); }
+serve() { return 0; }
+check 'retry Stop removes the share and releases the reservation' 0 cmd_stop test
+[[ ! -d $STATE/deploy/test ]] || { echo 'not ok - successful retry kept the reservation'; failed=$((failed + 1)); }
 unset -f timeout
 mkdir -p "$STATE/deploy/test"
 echo '{"id":"test","port":12434}' >"$STATE/deploy/test/config.json"
@@ -56,6 +60,7 @@ kill() { echo called >"$TMP/killed"; }
 pgrep() { return 1; }
 check 'a stale worker PID can be dismissed' 0 cmd_stop test
 [[ ! -f $TMP/killed ]] || { echo 'not ok - stop signalled an unrelated process group'; failed=$((failed + 1)); }
+unset -f kill
 mkdir -p "$STATE/deploy/test"
 echo '{"id":"test","port":12434}' >"$STATE/deploy/test/config.json"
 # An empty Hub listing used to be sealed as a verified download.
