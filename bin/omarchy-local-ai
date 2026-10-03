@@ -865,8 +865,10 @@ argv() {
       "$b" --model "omarchy-local/$m"
     ;;
   pi | omp)
-    jq -nc --arg u "$ep/v1" --arg m "$m" --arg k "$(<"$KEY")" --argjson ctx "$ctx" --argjson in "$input" '
-      {providers: {"omarchy-local": {baseUrl: $u, apiKey: $k, api: "openai-completions",
+    # --rawfile, not --arg: jq reads the key itself, so only its path is in argv. A key passed as an
+    # argument is readable by other local users in /proc/<pid>/cmdline while jq runs, and the key never rotates.
+    jq -nc --arg u "$ep/v1" --arg m "$m" --rawfile k "$KEY" --argjson ctx "$ctx" --argjson in "$input" '
+      {providers: {"omarchy-local": {baseUrl: $u, apiKey: ($k | rtrimstr("\n")), api: "openai-completions",
         models: [{id: $m, name: ($m + " · local"), reasoning: true, contextWindow: $ctx, maxTokens: 32768, input: $in,
           thinkingLevelMap: {minimal: "low", low: "low", medium: "medium", high: "xhigh", xhigh: "xhigh", max: null},
           cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}, compat: {supportsDeveloperRole: false}}]}}}' >"$ag/models.json"
@@ -880,8 +882,8 @@ argv() {
     ;;
   crush)
     mkdir -p "$ag/crush"
-    jq -nc --arg u "$ep/v1" --arg m "$m" --arg k "$(<"$KEY")" --argjson ctx "$ctx" --argjson v "$vis" '
-      {providers: {"omarchy-local": {type: "openai", name: "Omarchy Local", base_url: $u, api_key: $k,
+    jq -nc --arg u "$ep/v1" --arg m "$m" --rawfile k "$KEY" --argjson ctx "$ctx" --argjson v "$vis" '
+      {providers: {"omarchy-local": {type: "openai", name: "Omarchy Local", base_url: $u, api_key: ($k | rtrimstr("\n")),
         models: [{id: $m, name: $m, context_window: $ctx, default_max_tokens: 8192, supports_attachments: $v}]}},
        models: {large: {provider: "omarchy-local", model: $m}, small: {provider: "omarchy-local", model: $m}}}' >"$ag/crush/crush.json"
     printf '%s\0' env "XDG_CONFIG_HOME=$ag" "XDG_DATA_HOME=$ag" "$b"

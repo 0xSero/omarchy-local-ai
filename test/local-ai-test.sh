@@ -122,6 +122,10 @@ http://127.0.0.1:*)
   fi ;;
 esac'
 ! command -v node >/dev/null || ln -s "$(command -v node)" "$TMP/bin/node"
+# jq logs every argument it is given: a secret in a jq argv is readable by other local users in
+# /proc/<pid>/cmdline while jq runs, so the key must only ever reach it as a file path
+REAL_JQ=$(command -v jq)
+shim jq "printf '%s\n' \"\$*\" >>\"\$SHIM/jq.log\"; exec $REAL_JQ \"\$@\""
 export PATH=$TMP/bin:/usr/bin:/bin
 # NVIDIA CDI specs are read from here, not /etc/cdi: one device, /dev/null, at its real numbers (1:3)
 export CDI_DIRS=$TMP/cdi
@@ -284,7 +288,7 @@ gateway=$(grep -- '--name omarchy-local-ai-.*-gateway' "$SHIM/docker.log")
   fail "gateway isolation" "$gateway"
 pass "the gateway runs as the user with a read-only root, no capabilities and no external DNS"
 key=$(cat "$STATE/gateway.key")
-! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
+! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$SHIM/jq.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
 [[ $(stat -c %a "$STATE/gateway.key") == 600 ]] || fail "key mode"
 pass "the gateway key stays in a 0600 file, out of every argv and the log"
 grep -q -- "-fsS --max-time 5 http://127.0.0.1:12434/v1/models" "$SHIM/curl.log" || fail "keyless check" "$(cat "$SHIM/curl.log")"
@@ -382,14 +386,23 @@ cp "$TMP/recipes.keep" "$TMP/plugin/recipes.json"
 cp "$TMP/config.keep" "$STATE/deploy/$ID/config.json"
 pass "open keeps working when the registry renames or drops a running model's recipe, with the engine's own context"
 
-# All supported agent adapters stay in private config or keyed environments, never a gateway key in argv.
+# All supported agent adapters stay in private config or keyed environments: the gateway key reaches neither the
+# terminal's argv nor a helper's, and the keyed environments are the only place it is handed over at all.
 for agent in pi claude codex opencode omp crush grok copilot hermes; do
   shim "$agent" 'exit 0'
   "$CLI" set agent "$agent" "$ID"
+  : >"$SHIM/jq.log"
   "$CLI" open "$ID"
   ! grep -q "$key" "$SHIM/tui.log" || fail "agent key leaked" "$agent"
+  ! grep -q "$key" "$SHIM/jq.log" || fail "agent key leaked to jq argv" "$(cat "$SHIM/jq.log")"
 done
-pass "every supported agent opens without exposing the gateway key in terminal arguments"
+pass "every supported agent opens without exposing the gateway key in terminal or helper arguments"
+# the key is still where each agent can read it: the config file only this user reads
+[[ $(jq -r '.providers["omarchy-local"].apiKey' "$STATE/agents/pi/models.json") == "$key" ]] ||
+  fail "pi key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/pi/models.json" 2>/dev/null)"
+[[ $(jq -r '.providers["omarchy-local"].api_key' "$STATE/agents/crush/crush/crush.json") == "$key" ]] ||
+  fail "crush key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/crush/crush/crush.json" 2>/dev/null)"
+pass "pi and Crush still get the gateway key, read from its 0600 file by the helper rather than passed to it"
 shim omarchy-launch-tui 'exit 1'
 if "$CLI" open "$ID" 2>"$TMP/open.err"; then fail "a failed launcher looked successful"; fi
 grep -qx 'local-ai: could not open the agent terminal; try again' "$TMP/open.err" || fail "launcher error"
