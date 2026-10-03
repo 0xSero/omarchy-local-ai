@@ -234,7 +234,7 @@ if command -v node >/dev/null; then
   pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
   # The folder dialog preserves reserved characters through its URL and sends one path argument.
   [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw})).rows.find(r => r.icon === "folder").action
-    var p = {ui: {}, nav() {}, run(x) { p.args = x }, folderDialog: {open() {}}, Quickshell: {env() {return "/home/x"}}}; vm.createContext(p)
+    var p = {ui: {}, nav() {}, close() {}, run(x) { p.args = x }, Qt: {callLater: f => f()}, folderDialog: {open() {}}, Quickshell: {env() {return "/home/x"}}}; p.root = p; vm.createContext(p)
     var q=fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
     for(var name of ["activate", "pickedFolder"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0],p);
     p.activate(a); p.pickedFolder(p.folderDialog.currentFolder,p.folderDialog.recipe); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b#c?d%" ]] || fail "folder dialog URL round trip"

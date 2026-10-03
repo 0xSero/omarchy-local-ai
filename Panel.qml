@@ -122,7 +122,8 @@ Panel {
       folderDialog.recipe = a[1]
       folderDialog.currentFolder = "file://" + encodeURI(decodeURIComponent(a[2]) || Quickshell.env("HOME")).replace(/#/g, "%23").replace(/\?/g, "%3F")
       folderDialog.selectedFolder = folderDialog.currentFolder
-      folderDialog.open()
+      root.close()
+      Qt.callLater(function() { folderDialog.open() })
       break
     case "registry": ui = Object.assign({}, ui, { registryBusy: true, problem: "" }); run(["registry"]); break
     case "run": run(["run", a[1], a[2]]); home(); break
@@ -187,7 +188,12 @@ Panel {
     id: folderDialog
     property string recipe: ""
     title: "Choose the agent's folder"
-    onAccepted: root.pickedFolder(selectedFolder, recipe)
+    function returnToSettings() {
+      root.open()
+      root.nav({ view: recipe ? "run" : "agents", id: recipe })
+    }
+    onAccepted: { root.pickedFolder(selectedFolder, recipe); returnToSettings() }
+    onRejected: returnToSettings()
   }
   Process { id: copy }
   Timer { id: copiedTimer; interval: 1500; onTriggered: root.copied = false }
