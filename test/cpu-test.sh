@@ -6,6 +6,8 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 sed '/^paths "\$HOME"$/,$d' "${BACKEND:-$ROOT/bin/omarchy-local-ai}" >"$TMP/functions"
 source "$TMP/functions"
+ALLOCATION_LOCK=$TMP/docker.pid
+: >"$ALLOCATION_LOCK"
 paths "$TMP/home"
 mkdir -p "$STATE"
 RECIPES=$TMP/recipes.json

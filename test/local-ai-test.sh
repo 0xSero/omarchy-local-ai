@@ -18,6 +18,8 @@ cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null || true
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
+sed -i "s|ALLOCATION_LOCK=/run/docker.pid|ALLOCATION_LOCK=$TMP/docker.pid|" "$CLI"
+: >"$TMP/docker.pid"
 sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
