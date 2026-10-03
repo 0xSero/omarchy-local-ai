@@ -458,7 +458,7 @@ if SHIM_RM_ALWAYS=1 "$CLI" stop "$ID"; then fail "stop accepted an engine that w
   fail "failed stop lost the model's state"
 SHIM_RM_ONCE=1 "$CLI" stop "$ID"
 [[ ! -d $STATE/deploy/$ID && -z $(ls "$SHIM/containers") ]] || fail "stop" "$(ls "$SHIM/containers" "$STATE/deploy")"
-[[ $(grep -c '^rm -f omarchy-local-ai-$(id -u)-test-model-rtx4090-engine$' "$SHIM/docker.log") -ge 2 ]] || fail "stop did not retry a slow engine removal"
+[[ $(grep -c "^rm -f omarchy-local-ai-$(id -u)-test-model-rtx4090-engine$" "$SHIM/docker.log") -ge 2 ]] || fail "stop did not retry a slow engine removal"
 pass "stop retries a slow engine removal and removes both containers and the model's folder"
 
 # the engine restarts with the machine, so what it mounts (a config asset, by-path links) must outlive a reboot:
