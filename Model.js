@@ -223,6 +223,7 @@ function homeView(s, ui) {
   if (free.length) rows = rows.concat([{ type: "sec", label: "AVAILABLE" }], flat(free))
   if (s.gpus.length > free.filter(function(x) { return !x.group && !x.lost }).length)
     rows.push({ type: "field", icon: "gpu", label: "all GPUs", value: String(s.gpus.length), action: "gpus" })
+  rows.push({ type: "field", icon: "agent", label: "Agents", value: String((s.agents || []).length), action: "agents" })
   rows.push({ type: "acts", items: [{ label: ui.registryBusy ? "Refreshing models…" : "Refresh models", action: ui.registryBusy ? "" : "registry" }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
 }
@@ -320,6 +321,7 @@ function page(s, ui, m) {
   m.cards.forEach(function(g) { v.rows.push(g) })
   v.rows.push({ type: "sec", label: "OPENS WITH" })
   pickers(s, v.rows, ui, run ? run.agent : (s.defaults || {}).agent, run ? run.folder : (s.defaults || {}).folder, run ? run.id : "")
+  if (run && run.state === "ready") v.rows.push({ type: "acts", items: [{ label: "Open " + agentName(run.agent) + " ›", action: "open|" + run.id, primary: true }] })
   weights(v.rows, m.weights)
   if (failed) {
     v.rows.push({ type: "error", label: run.error || "the engine stopped" })
@@ -385,25 +387,34 @@ function weights(rows, list) {
   })
 }
 
-// the agent and folder rows, and their choices when open; a choice on a running model also becomes the default.
-// The value is URI-encoded in its action (Panel.qml decodes it), so a folder with a "|" in it stays one argument
+// Agent identity and actions keep the same rows and buttons as the rest of the panel.
+function agentName(a) {
+  return ({ pi: "pi", claude: "Claude Code", codex: "Codex", opencode: "OpenCode", omp: "oh-my-pi",
+    crush: "Crush", grok: "Grok", copilot: "GitHub Copilot", hermes: "Hermes" })[a] || a || "Choose an agent"
+}
 function pickers(s, rows, ui, agent, folder, id) {
-  rows.push({ type: "field", icon: "agent", label: "agent", value: agent, action: "pick|agent", drop: true, open: ui.open === "agent" })
+  rows.push({ type: "agent", agent: agent || "", label: agentName(agent), value: "Choose", action: "pick|agent" })
   if (ui.open === "agent") (s.agents || []).forEach(function(a) {
-    rows.push({ type: "opt", label: a, on: a === agent, action: "set|agent|" + encodeURIComponent(a) + "|" + id })
+    rows.push({ type: "agent", agent: a, label: agentName(a), value: a === agent ? "Selected" : "Select",
+      action: "set|agent|" + encodeURIComponent(a) + "|" + id })
   })
-  rows.push({ type: "field", icon: "folder", label: "folder", value: home(folder), action: "pick|folder", drop: true, open: ui.open === "folder" })
-  if (ui.open === "folder") {
-    ;[folder].concat(s.folders || []).filter(function(f, i, a) { return f && a.indexOf(f) === i }).forEach(function(f) {
-      rows.push({ type: "opt", label: home(f), on: f === folder, action: "set|folder|" + encodeURIComponent(f) + "|" + id })
-    })
-    rows.push({ type: "path", id: id })
-  }
+  if (agent) rows.push({ type: "links", items: [
+    { label: (s.defaults || {}).agent === agent ? "Default agent" : "Make default", action: (s.defaults || {}).agent === agent ? "" : "default|" + agent },
+    { label: ui.updatingAgent === agent ? "Updating…" : "Update", action: ui.updatingAgent ? "" : "update|" + agent }
+  ] })
+  rows.push({ type: "field", icon: "folder", label: "folder", value: home(folder),
+    action: "folder|" + id + "|" + encodeURIComponent(folder || "") })
+}
+
+function agentsView(s, ui) {
+  var rows = [{ type: "sec", label: "DEFAULT AGENT" }]
+  pickers(s, rows, Object.assign({}, ui, { open: "agent" }), (s.defaults || {}).agent, (s.defaults || {}).folder, "")
+  return { back: true, rows: rows }
 }
 
 function build(s, ui) {
   s = s || {}
-  var v = (ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
+  var v = (ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
   if (ui.problem || ui.pollProblem || s.setupError) v.rows.unshift({ type: "error", label: ui.problem || ui.pollProblem || s.setupError })
   else if (ui.notice) v.rows.unshift({ type: "links", note: ui.notice, items: [] })
   return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })

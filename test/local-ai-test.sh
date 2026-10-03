@@ -195,15 +195,15 @@ js() {
     const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " sec,slot,slot,field,acts" ]] || fail "home view" "$(view home 2>&1)"
-  [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,field,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
+  [[ $(view home) == " sec,slot,slot,field,field,acts" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,agent,links,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
   # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
   # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
-    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,acts" &&
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,field,acts" &&
     $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
-    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,acts:Refresh models" &&
+    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,field:Agents,acts:Refresh models" &&
     $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
     fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
@@ -232,12 +232,14 @@ if command -v node >/dev/null; then
   [[ $(js 'vm.runInNewContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/property string cli: (.*)/)[1],
     {Qt: {resolvedUrl: u => "file:///home/a%2525b%23c/" + u}})') == "/home/a%25b#c/bin/omarchy-local-ai" ]] || fail "the backend's path"
   pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
-  # a folder choice goes from Model.js's action through Panel.qml's activate to the backend's set as one argument
-  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw, open: "folder"})).rows.find(r => r.on && r.type === "opt").action
-    var p = {ui: {}, nav() {}, run(x) { p.args = x }}; vm.createContext(p)
-    vm.runInContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/function activate\([^]*?\n  \}/)[0], p); p.activate(a); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b" ]] ||
-    fail "a folder with a | in it"
-  pass "a folder with a | in its path is one argument of its action"
+  # The folder dialog preserves reserved characters through its URL and sends one path argument.
+  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw})).rows.find(r => r.icon === "folder").action
+    var p = {ui: {}, nav() {}, close() {}, run(x) { p.args = x }, Qt: {callLater: f => f()}, folderDialog: {open() {}}, Quickshell: {env() {return "/home/x"}}}; p.root = p; vm.createContext(p)
+    var q=fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
+    for(var name of ["activate", "pickedFolder"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0],p);
+    p.activate(a); p.pickedFolder(p.folderDialog.currentFolder,p.folderDialog.recipe); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b#c?d%" ]] || fail "folder dialog URL round trip"
+  pass "folder dialog preserves spaces, pipes, hashes, question marks and percent signs"
+
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
 fi
@@ -259,7 +261,7 @@ pass "a stale NVIDIA CDI spec stops before the engine, with the repair command i
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready run,sec,slot,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,field,field,sec,field,sec,field"*",acts" ]] ||
+  [[ $(view home) == "ready run,sec,slot,field,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,agent,links,field,acts,sec,field,sec,field"*",acts" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi
@@ -357,8 +359,9 @@ sleep 0.5
 [[ -f $STATE/agents/pi/models.json && $(jq -r '.providers["omarchy-local"].baseUrl' "$STATE/agents/pi/models.json") == "http://127.0.0.1:12434/v1" ]] ||
   fail "pi config" "$(cat "$STATE/agents/pi/models.json" 2>/dev/null)"
 grep -q -- "--provider omarchy-local --model Test Model" "$SHIM/tui.log" && ! grep -q "$key" "$SHIM/tui.log" || fail "open argv" "$(cat "$SHIM/tui.log")"
-[[ $(jq -r .agent "$STATE/settings.json") == pi ]] || fail "default agent"
-pass "open starts the chosen agent on the gateway in a terminal, with the key only in its private config; the choice becomes the default"
+"$CLI" set agent pi
+[[ $(jq -r .agent "$STATE/settings.json") == pi ]] || fail "explicit default agent"
+pass "open starts the chosen agent on the gateway in a terminal, with the key only in its private config; the default is explicitly selected"
 
 "$CLI" set agent hermes "$ID"
 "$CLI" open "$ID"
@@ -403,6 +406,10 @@ pass "every supported agent opens without exposing the gateway key in terminal o
 [[ $(jq -r '.providers["omarchy-local"].api_key' "$STATE/agents/crush/crush/crush.json") == "$key" ]] ||
   fail "crush key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/crush/crush/crush.json" 2>/dev/null)"
 pass "pi and Crush still get the gateway key, read from its 0600 file by the helper rather than passed to it"
+shim omarchy-launch-tui 'echo $$ >"$SHIM/terminal.pid"; exec sleep 10'
+timeout 2 "$CLI" open "$ID" || fail "open waited for the terminal session to end"
+kill "$(cat "$SHIM/terminal.pid")"
+pass "open releases the panel while the terminal session continues"
 shim omarchy-launch-tui 'exit 1'
 if "$CLI" open "$ID" 2>"$TMP/open.err"; then fail "a failed launcher looked successful"; fi
 grep -qx 'local-ai: could not open the agent terminal; try again' "$TMP/open.err" || fail "launcher error"
