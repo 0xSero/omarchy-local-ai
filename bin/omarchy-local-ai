@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
+# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -793,8 +793,7 @@ get() {
   echo "$a"
 }
 
-# set agent|folder <value> [recipe]: the default, and one running model's; the last choice is the next default,
-# and the last six folders are offered again
+# set agent|folder <value> [recipe]: a model choice or the default. Recent folders are kept for next time.
 cmd_set() {
   local k=${1:-} v=${2:-} f files=("$STATE/settings.json")
   case $k in
@@ -807,6 +806,7 @@ cmd_set() {
   esac
   if [[ -n ${3:-} ]]; then
     valid_id "$3" && [[ -f $(dir_of "$3")/config.json ]] || die "$3 is not running"
+    if [[ $k == agent ]]; then files=(); fi
     files+=("$(dir_of "$3")/config.json")
   fi
   for f in "${files[@]}"; do
@@ -824,6 +824,49 @@ bin() {
     omarchy-cmd-present "$1" && echo "$1"
   fi
 }
+
+# Use the installed agent's manager. mise upgrades only this tool, from home rather than a project's config.
+cmd_update() (
+  local a=${1:-} b tool package prefix
+  printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$a" || die "unknown agent"
+  b=$(bin "$a") || die "$a is not installed"
+  exec 7>"$STATE/update.lock"
+  flock -n 7 || die "an agent update is already running"
+  cd -- "$HOME_DIR"
+  tool=$a
+  case $a in
+    grok) tool=npm:@xai-official/grok ;;
+    omp) tool=github:can1357/oh-my-pi ;;
+    hermes) tool='pipx:hermes-agent[extras=all]' ;;
+  esac
+  local cmd=()
+  if omarchy-cmd-present mise && timeout 10 mise ls --installed --json "$tool" 2>/dev/null | jq -e 'length > 0' >/dev/null; then
+    cmd=(mise --yes upgrade --bump "$tool")
+    # Omarchy's Hermes launcher uses this interpreter for its native dependencies.
+    [[ $a != hermes ]] || export UV_PYTHON=3.13
+  else
+    case $a in
+      omp | hermes | claude) cmd=("$b" update) ;;
+      opencode) cmd=("$b" upgrade) ;;
+      *)
+        case $a in
+          pi) package=@mariozechner/pi-coding-agent ;;
+          codex) package=@openai/codex ;;
+          copilot) package=@github/copilot ;;
+          crush) package=@charmland/crush ;;
+          grok) package=@xai-official/grok ;;
+        esac
+        prefix=$(timeout 10 npm prefix -g 2>/dev/null) || die "update $a with the package manager that installed it"
+        [[ $(readlink -f -- "$(command -v "$b")") == "$prefix"/* ]] || die "update $a with the package manager that installed it"
+        cmd=(npm install --global "$package@latest")
+        ;;
+    esac
+  fi
+  say "updating $a"
+  timeout 840 "${cmd[@]}" >>"$LOG" 2>&1 || die "could not update $a; see the Local AI log"
+  say "updated $a"
+  printf 'Updated %s. New sessions use the updated version.\n' "$a"
+)
 
 # keyed <VAR...>: argv that exports the gateway key into those variables, read from its file, then runs the rest
 keyed() {
@@ -1142,7 +1185,7 @@ mkdir -p "$STATE"
 # the verbs that use Docker run under the docker group, whatever groups this login began with
 case ${1:-} in snapshot | run | stop | remove | readiness) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
-setup | registry | forget | snapshot | readiness | run | stop | open | set | share) "cmd_$1" "${@:2}" ;;
+setup | registry | forget | snapshot | readiness | run | stop | open | update | set | share) "cmd_$1" "${@:2}" ;;
 log) exec omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G "$LOG" ;;
 remove)
   for d in "$STATE"/deploy/*/; do
