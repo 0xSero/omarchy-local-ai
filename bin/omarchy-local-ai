@@ -465,8 +465,18 @@ pull() {
     /: (Pull complete|Already exists)$/ && !($1 in done) { done[$1]; printf "downloading the %s: %d of %d layers\n", what, ++d, n; fflush() }'
 }
 
+# All users share the allocation lock. Read-only descriptors can lock the same file, so later users need no
+# write access. Exclusive creation never follows a symlink or truncates an existing file; closing releases it.
+allocation_lock() {
+  local lock=/tmp/omarchy-local-ai-allocation.lock
+  (umask 022; set -o noclobber; : >"$lock") 2>/dev/null || true
+  [[ -f $lock && ! -L $lock ]] || die "invalid model allocation lock"
+  exec 8<"$lock"
+  flock -w 30 8 || die "another model is starting; try again"
+}
+
 # phase_start <id> <port> <key>: re-read the recipe here, check every path, build both containers
-phase_start() {
+phase_start() (
   valid_id "$1" && [[ $2 =~ ^[0-9]+$ && $2 -ge 12434 && $2 -lt 12450 ]] || die "invalid request"
   local id=$1 port=$2 r g backend run a=() k v w
   shift 2
@@ -498,6 +508,7 @@ phase_start() {
   done
   echo "starting the engine"
 
+  allocation_lock
   remove "$id"
   # Downloads can take hours. Recheck with the launcher's Docker access immediately before allocation.
   g=$(gpus)
@@ -577,7 +588,7 @@ phase_start() {
     remove "$id"
     die "the gateway did not start"
   fi
-}
+)
 
 # phase_stop <id>: returns non-zero instead of exiting, so the caller records why the stop failed
 phase_stop() {
