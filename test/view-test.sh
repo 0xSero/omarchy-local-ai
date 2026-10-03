@@ -102,5 +102,13 @@ test('folder row opens a picker with the model id and encoded current path', () 
   const rows=m.build({...s,deployments:[{...s.deployments[0],folder}]},{view:'run',id:'test'}).rows;
   assert(rows.some(r=>r.action==='folder|test|'+encodeURIComponent(folder)));
 });
+test('CPU hardware shows system RAM without a GPU memory bar', () => {
+  const cpu={key:'cpu:0',hw:'cpu',backend:'cpu',name:'CPU (AVX2)',ramGb:8,vramGb:0};
+  const state={...s,gpus:[cpu],deployments:[],host:{ramGb:8.5,freeRamGb:6.2},kinds:[{...s.kinds[0],hw:'cpu',keys:[cpu.key],free:[cpu.key]}]};
+  assert(m.build(state,{view:'home'}).rows.some(r=>r.label==='RAM'&&r.value==='6 / 8 GB free'));
+  const rows=m.build(state,{view:'kind',id:'cpu',key:cpu.key}).rows;
+  assert(rows.some(r=>r.label==='CPU'));
+  assert(rows.some(r=>r.cpu&&r.mem==='8 GB RAM'&&!r.bar));
+});
 process.exitCode = failed ? 1 : 0;
 JS

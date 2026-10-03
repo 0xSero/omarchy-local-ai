@@ -57,7 +57,7 @@ docker() {
 }
 notify() { omarchy-notification-send --app-name "Local AI" "$@" 2>/dev/null || echo 0; }
 valid_id() { [[ $1 =~ ^[a-z0-9][a-z0-9.-]{0,63}$ ]]; }
-valid_key() { [[ $1 =~ ^(nvidia|intel-xpu|amd-rocm):[0-9]{1,2}$ ]]; }
+valid_key() { [[ $1 =~ ^(nvidia|intel-xpu|amd-rocm):[0-9]{1,2}$ || $1 == cpu:0 ]]; }
 dir_of() { printf '%s/deploy/%s' "$STATE" "$1"; }
 
 # status <id> <state> [detail] [percent] [error]: what the widget shows; the log gets each new step once
@@ -196,6 +196,15 @@ amd() {
         node: ("/dev/dri/by-path/pci-" + ($g.bus.bdf // "") + "-render")}]' 2>/dev/null || echo '[]'
 }
 
+# CPU recipes use host RAM and no device passthrough. Offer only the architecture/ISA in the catalog.
+cpu() {
+  if [[ $(uname -m) == x86_64 ]] && grep -qw avx2 "${CPUINFO:-/proc/cpuinfo}" &&
+    jq -e 'any(.hardware[]; .match.backend == "cpu" and (.match.names | index("x8664avx2cpu") != null))' "$RECIPES" >/dev/null; then
+    jq -nc --argjson ram "$(awk '/^MemTotal:/{print int($2 * 1024 / 1e9)}' "${MEMINFO:-/proc/meminfo}")" \
+      '[{backend:"cpu",index:0,product:"x86-64 AVX2 CPU",totalMiB:0,usedMiB:null,tempC:null,ramGb:$ram}]'
+  else echo '[]'; fi
+}
+
 # gpus($nvidia; $intel; $amd): the three listings as one; match($recipes): each GPU with the card kind the recipes know
 # it as ("" when none) and a key like nvidia:0
 MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | split(", ") | {backend: "nvidia", index: (.[0] | tonumber),
@@ -225,19 +234,19 @@ gpus() {
         die "could not check Docker GPU allocations; try again"
     fi
   fi
-  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --slurpfile rec "$RECIPES" --argjson claims "$claims" \
+  jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --argjson cpu "$(cpu)" --slurpfile rec "$RECIPES" --argjson claims "$claims" \
     --arg links "$(for p in /dev/dri/by-path/*-render; do printf '%s\t%s\n' "$p" "$(readlink -f "$p")"; done)" "$MATCH"'
     ($links | split("\n") | map(select(length > 0) | split("\t") | {key: .[0], value: .[1]}) | from_entries) as $links
     | def node: $links[.] // .;
-    (gpus($nv; $xe; $am) | match($rec[0])) | map(. as $g
-      | (if .backend == "nvidia" then "/dev/nvidia" + (.index | tostring) else .node | node end) as $node
-      | . + {held: any($claims[];
+    (gpus($nv; $xe; $am) + $cpu | match($rec[0])) | map(. as $g
+      | (if .backend == "cpu" then "" elif .backend == "nvidia" then "/dev/nvidia" + (.index | tostring) else .node | node end) as $node
+      | . + {held: (.backend != "cpu" and any($claims[];
           .privileged == true
           or any(.devices[]?; (.PathOnHost | node) as $p | $node == $p or ($node | startswith($p + "/")))
           or ($g.backend == "nvidia" and any(.requests[]?;
             (.Driver == "nvidia" or any(.Capabilities[]?; index("gpu") != null))
             and ((.DeviceIDs // [] | length) == 0 or any(.DeviceIDs[];
-              . == ($g.index | tostring) or (test("^[0-9]+$") | not))))))})'
+              . == ($g.index | tostring) or (test("^[0-9]+$") | not)))))))})'
 }
 
 # host: what a recipe that offloads weights to the machine needs of it besides the card (its `needs`): available RAM,
@@ -503,7 +512,7 @@ phase_start() {
       v=$(printf '%s,' "${@#*:}")
       a+=(--gpus "\"device=${v%,}\"")
     fi
-  else
+  elif [[ $backend != cpu ]]; then
     # by GID, not name: the engine image need not share the host's group names.
     [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd \
       --group-add "$(getent group video | cut -d: -f3)" \
