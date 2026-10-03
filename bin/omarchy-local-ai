@@ -179,9 +179,13 @@ intel() {
 
 # amd-smi comes with ROCm; without it AMD cards are not listed and the widget says Coming soon.
 amd() {
-  omarchy-cmd-present amd-smi || { echo '[]'; return; }
-  jq -nc --argjson s "$(timeout 10 amd-smi static --json 2>/dev/null || echo '{}')" \
-    --argjson m "$(timeout 10 amd-smi metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
+  # ROCm installs amd-smi in /opt/rocm/bin, which a session started before the
+  # install does not have on PATH.
+  local amdsmi
+  amdsmi=$(command -v amd-smi || echo /opt/rocm/bin/amd-smi)
+  [[ -x $amdsmi ]] || { echo '[]'; return; }
+  jq -nc --argjson s "$(timeout 10 "$amdsmi" static --json 2>/dev/null || echo '{}')" \
+    --argjson m "$(timeout 10 "$amdsmi" metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
     [($s.gpu_data // [])[] | . as $g | ([($m.gpu_data // [])[] | select(.gpu == $g.gpu)][0] // {}) as $u
      | select(($g.asic.market_name // "") != "")
      | {backend: "amd-rocm", index: ($g.gpu | tonumber), product: $g.asic.market_name, totalMiB: ($g.vram.size.value // 0),
@@ -482,7 +486,10 @@ phase_start() {
       a+=(--gpus "\"device=${v%,}\"")
     fi
   else
-    [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd --group-add video --group-add render)
+    # by GID, not name: the engine image need not share the host's group names.
+    [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd \
+      --group-add "$(getent group video | cut -d: -f3)" \
+      --group-add "$(getent group render | cut -d: -f3)")
     # oneCCL opens every by-path link it finds, so the engine sees only its own cards'
     for k in "$@"; do
       v=$(readlink -f "$(jq -r --arg k "$k" '.[] | select(.key == $k) | .node' <<<"$g")")
