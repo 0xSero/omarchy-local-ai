@@ -406,6 +406,10 @@ pass "every supported agent opens without exposing the gateway key in terminal o
 [[ $(jq -r '.providers["omarchy-local"].api_key' "$STATE/agents/crush/crush/crush.json") == "$key" ]] ||
   fail "crush key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/crush/crush/crush.json" 2>/dev/null)"
 pass "pi and Crush still get the gateway key, read from its 0600 file by the helper rather than passed to it"
+shim omarchy-launch-tui 'echo $$ >"$SHIM/terminal.pid"; exec sleep 10'
+timeout 2 "$CLI" open "$ID" || fail "open waited for the terminal session to end"
+kill "$(cat "$SHIM/terminal.pid")"
+pass "open releases the panel while the terminal session continues"
 shim omarchy-launch-tui 'exit 1'
 if "$CLI" open "$ID" 2>"$TMP/open.err"; then fail "a failed launcher looked successful"; fi
 grep -qx 'local-ai: could not open the agent terminal; try again' "$TMP/open.err" || fail "launcher error"

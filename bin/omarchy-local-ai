@@ -964,7 +964,7 @@ argv() {
 # open <id>: the model's agent in its folder, in a terminal
 cmd_open() {
   valid_id "${1:-}" || die "open <recipe>"
-  local d c s a b ag dir cmd=() v
+  local d c s a b ag dir cmd=() v launcher
   d=$(dir_of "$1")
   [[ $(jq -r .state "$d/status.json" 2>/dev/null) == "ready" ]] || die "the model is not ready"
   c=$(<"$d/config.json")
@@ -989,8 +989,16 @@ cmd_open() {
     "$(jq -r .ctx <<<"$s")" "$(jq -r .vision <<<"$s")" "$ag")
   [[ $a == "omp" && $dir -ef $HOME_DIR ]] && cmd+=(--allow-home)
   say "open $a on $1 in $dir"
+  # Some terminals keep their launcher alive for the whole session. Release the panel after startup,
+  # or its action timeout would kill a healthy agent two minutes later.
   omarchy-launch-tui --app-id=org.omarchy.local-ai bash -c 'cd -- "$1" && shift && exec "$@"' local-ai "$dir" "${cmd[@]}" \
-    </dev/null >/dev/null 2>&1 || die "could not open the agent terminal; try again"
+    </dev/null >/dev/null 2>&1 &
+  launcher=$!
+  sleep 0.3
+  if ! kill -0 "$launcher" 2>/dev/null; then
+    wait "$launcher" || die "could not open the agent terminal; try again"
+  fi
+  disown "$launcher" 2>/dev/null || true
 }
 
 # share <id> [off]: tailscale serve as you; never take over another account's operator.
