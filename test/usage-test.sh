@@ -3,7 +3,7 @@
 # log that has not changed is not read again
 set -u
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-B=$ROOT/bin/omarchy-local-ai
+B=${BACKEND:-$ROOT/bin/omarchy-local-ai}
 FNS=$(mktemp); sed '/^paths "\$HOME"$/,$d' "$B" >"$FNS"
 T=$(mktemp -d); D=$T/usage/m; mkdir -p "$D"
 line() { printf '{"t":%d,"prompt":%d,"completion":10,"ms":500,"ttft_ms":50}\n' "$EPOCHSECONDS" "$1"; }
@@ -22,4 +22,7 @@ line 700 >"$D/usage.jsonl"
 check "1 710" "a truncated log is summed again"
 sleep 1.1; line 800 >>"$D/usage.jsonl"
 check "2 1520" "a line a second later"
+rm -f "$D/summary.json"
+line 1 | awk '{for(i=0;i<200005;i++)print}' >"$D/usage.jsonl"
+check "200005 2200055" "large logs cross the 100000-line boundary without SIGPIPE"
 rm -rf "$T" "$FNS"

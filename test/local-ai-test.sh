@@ -251,7 +251,7 @@ cdi 237
 wait_for error
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date; see the log for the repair command" ]] ||
   fail "stale CDI reason" "$(cat "$STATE/deploy/$ID/status.json")"
-! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-engine' "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
+! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-%s-engine' "$(id -u)" "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
 cdi 1
 grep -q "regenerate it as root: nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" "$STATE/log" || fail "CDI repair log"
 pass "a stale NVIDIA CDI spec stops before the engine, with the repair command in the log"
@@ -302,7 +302,7 @@ pass "a card that is running a model cannot be claimed twice"
 
 "$CLI" run "$ID" nvidia:2
 wait_for ready "$ID--2"
-grep -q -- "--name omarchy-local-ai-$ID--2-engine .*--gpus \"device=2\"" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
+grep -q -- "--name omarchy-local-ai-$(id -u)-$ID--2-engine .*--gpus \"device=2\"" "$SHIM/docker.log" && [[ $(jq -r .port "$STATE/deploy/$ID--2/config.json") == 12435 ]] ||
   fail "second copy" "$(grep -- "$ID--2-engine" "$SHIM/docker.log")"
 # a copy whose recipe recipes.json no longer has is named after that recipe, not <recipe>--2
 jq -c '.hardware["rtx-4090-24gb"].recipes[0].id = "renamed"' "$TMP/plugin/recipes.json" >"$TMP/r2" && mv "$TMP/r2" "$TMP/plugin/recipes.json"
@@ -319,7 +319,7 @@ jq -c --arg id "$ID-tp2" '.hardware["rtx-4090-24gb"].recipes += [.hardware["rtx-
 grep -q "runs on 2 card" "$TMP/err" || fail "card count reason" "$(cat "$TMP/err")"
 "$CLI" run "$ID-tp2" nvidia:0,nvidia:2
 wait_for ready "$ID-tp2"
-grep -q -- '--name omarchy-local-ai-'"$ID"'-tp2-engine .*--gpus "device=0,2"' "$SHIM/docker.log" && [[ $(jq -c .keys "$STATE/deploy/$ID-tp2/config.json") == '["nvidia:0","nvidia:2"]' ]] ||
+grep -q -- '--name omarchy-local-ai-'"$(id -u)-$ID"'-tp2-engine .*--gpus "device=0,2"' "$SHIM/docker.log" && [[ $(jq -c .keys "$STATE/deploy/$ID-tp2/config.json") == '["nvidia:0","nvidia:2"]' ]] ||
   fail "group run" "$(grep -- "$ID-tp2-engine" "$SHIM/docker.log")"
 "$CLI" snapshot >"$TMP/snap.json"
 [[ $(jq -r '.kinds[0].groups[0] | "\(.id) \(.cards)"' "$TMP/snap.json") == "$ID-tp2 2" ]] || fail "groups in snapshot" "$(jq -c .kinds "$TMP/snap.json")"
@@ -333,7 +333,7 @@ pass "a group runs one model across two cards of a kind, refuses the wrong numbe
 "$CLI" stop "$ID"
 SHIM_CDI=1 "$CLI" run "$ID" nvidia:2
 wait_for ready
-engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+engine=$(grep -- "--name omarchy-local-ai-$(id -u)-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *"--device nvidia.com/gpu=GPU-test-2"* && $engine != *--gpus* ]] || fail "CDI device by UUID" "$engine"
 [[ $(SHIM_CDI=1 "$CLI" snapshot | jq -r .readiness.state) == ready ]] || fail "a CDI list is ready"
 "$CLI" stop "$ID"
@@ -485,7 +485,7 @@ esac'
 shim readlink 'if [[ $1 == -f && $2 == /dev/dri/by-path/* ]]; then echo /dev/dri/renderD129; else /usr/bin/readlink "$@"; fi'
 "$CLI" run "$ID" amd-rocm:0
 wait_for ready
-engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+engine=$(grep -- "--name omarchy-local-ai-$(id -u)-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *'--device /dev/dri/renderD129'* && $engine != *'/dev/kfd'* && $engine != *'--gpus'* ]] || fail "Vulkan devices" "$engine"
 "$CLI" stop "$ID"
 pass "a Vulkan recipe receives its render node without ROCm or NVIDIA devices"
@@ -496,7 +496,7 @@ jq '.hardware["rtx-4090-24gb"].match.backend = "amd-rocm"' "$TMP/plugin/recipes.
 mv "$TMP/r2" "$TMP/plugin/recipes.json"
 "$CLI" run "$ID" amd-rocm:0
 wait_for ready
-engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+engine=$(grep -- "--name omarchy-local-ai-$(id -u)-$ID-engine" "$SHIM/docker.log" | tail -1)
 [[ $engine == *'--device /dev/kfd --group-add 998 --group-add 998'* && $engine != *'--group-add video'* ]] ||
   fail "ROCm group GIDs" "$engine"
 "$CLI" stop "$ID"
