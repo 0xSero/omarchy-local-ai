@@ -182,9 +182,13 @@ intel() {
 
 # amd-smi comes with ROCm; without it AMD cards are not listed and the widget says Coming soon.
 amd() {
-  omarchy-cmd-present amd-smi || { echo '[]'; return; }
-  jq -nc --argjson s "$(timeout 10 amd-smi static --json 2>/dev/null || echo '{}')" \
-    --argjson m "$(timeout 10 amd-smi metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
+  # ROCm installs amd-smi in /opt/rocm/bin, which a session started before the
+  # install does not have on PATH.
+  local amdsmi
+  amdsmi=$(command -v amd-smi || echo /opt/rocm/bin/amd-smi)
+  [[ -x $amdsmi ]] || { echo '[]'; return; }
+  jq -nc --argjson s "$(timeout 10 "$amdsmi" static --json 2>/dev/null || echo '{}')" \
+    --argjson m "$(timeout 10 "$amdsmi" metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
     [($s.gpu_data // [])[] | . as $g | ([($m.gpu_data // [])[] | select(.gpu == $g.gpu)][0] // {}) as $u
      | select(($g.asic.market_name // "") != "")
      | {backend: "amd-rocm", index: ($g.gpu | tonumber), product: $g.asic.market_name, totalMiB: ($g.vram.size.value // 0),
@@ -487,7 +491,10 @@ phase_start() {
       a+=(--gpus "\"device=${v%,}\"")
     fi
   else
-    [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd --group-add video --group-add render)
+    # by GID, not name: the engine image need not share the host's group names.
+    [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd \
+      --group-add "$(getent group video | cut -d: -f3)" \
+      --group-add "$(getent group render | cut -d: -f3)")
     # oneCCL opens every by-path link it finds, so the engine sees only its own cards'
     for k in "$@"; do
       v=$(readlink -f "$(jq -r --arg k "$k" '.[] | select(.key == $k) | .node' <<<"$g")")
@@ -863,8 +870,10 @@ argv() {
       "$b" --model "omarchy-local/$m"
     ;;
   pi | omp)
-    jq -nc --arg u "$ep/v1" --arg m "$m" --arg k "$(<"$KEY")" --argjson ctx "$ctx" --argjson in "$input" '
-      {providers: {"omarchy-local": {baseUrl: $u, apiKey: $k, api: "openai-completions",
+    # --rawfile, not --arg: jq reads the key itself, so only its path is in argv. A key passed as an
+    # argument is readable by other local users in /proc/<pid>/cmdline while jq runs, and the key never rotates.
+    jq -nc --arg u "$ep/v1" --arg m "$m" --rawfile k "$KEY" --argjson ctx "$ctx" --argjson in "$input" '
+      {providers: {"omarchy-local": {baseUrl: $u, apiKey: ($k | rtrimstr("\n")), api: "openai-completions",
         models: [{id: $m, name: ($m + " · local"), reasoning: true, contextWindow: $ctx, maxTokens: 32768, input: $in,
           thinkingLevelMap: {minimal: "low", low: "low", medium: "medium", high: "xhigh", xhigh: "xhigh", max: null},
           cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}, compat: {supportsDeveloperRole: false}}]}}}' >"$ag/models.json"
@@ -878,8 +887,8 @@ argv() {
     ;;
   crush)
     mkdir -p "$ag/crush"
-    jq -nc --arg u "$ep/v1" --arg m "$m" --arg k "$(<"$KEY")" --argjson ctx "$ctx" --argjson v "$vis" '
-      {providers: {"omarchy-local": {type: "openai", name: "Omarchy Local", base_url: $u, api_key: $k,
+    jq -nc --arg u "$ep/v1" --arg m "$m" --rawfile k "$KEY" --argjson ctx "$ctx" --argjson v "$vis" '
+      {providers: {"omarchy-local": {type: "openai", name: "Omarchy Local", base_url: $u, api_key: ($k | rtrimstr("\n")),
         models: [{id: $m, name: $m, context_window: $ctx, default_max_tokens: 8192, supports_attachments: $v}]}},
        models: {large: {provider: "omarchy-local", model: $m}, small: {provider: "omarchy-local", model: $m}}}' >"$ag/crush/crush.json"
     printf '%s\0' env "XDG_CONFIG_HOME=$ag" "XDG_DATA_HOME=$ag" "$b"

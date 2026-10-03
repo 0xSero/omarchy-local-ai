@@ -51,6 +51,9 @@ view() {
 }
 
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 3090, 24576, 300, 41\n1, NVIDIA GeForce RTX 3090, 24576, 300, 38\n"'
+# The CLI falls back to /opt/rocm/bin/amd-smi, so absence from PATH no longer
+# keeps a host's real AMD card out of the sandbox; pin an empty report.
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
 shim omarchy-cmd-present 'command -v "$1" >/dev/null'
 shim omarchy-setup-security-sudoless-docker 'exit 0'
 shim getent '[[ $1 == group ]] && echo "docker:x:998:$(id -un)" || echo "$2:x:1000:1000::/home/$2:/bin/bash"'

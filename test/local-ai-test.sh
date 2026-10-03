@@ -49,6 +49,9 @@ shim() { printf '#!/bin/bash\n%s\n' "$2" >"$TMP/bin/$1"; chmod +x "$TMP/bin/$1";
 
 shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
 printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
+# The CLI falls back to /opt/rocm/bin/amd-smi, so absence from PATH no longer
+# keeps a host's real AMD card out of the sandbox; pin an empty report.
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
 shim omarchy-setup-security-sudoless-docker 'exit 0'
 # the account is listed in the docker group unless SHIM_NOGROUP (setup not run); newgrp starts the shell it is given and
 # grants nothing, as when a login is still out of reach of the socket
@@ -119,6 +122,10 @@ http://127.0.0.1:*)
   fi ;;
 esac'
 ! command -v node >/dev/null || ln -s "$(command -v node)" "$TMP/bin/node"
+# jq logs every argument it is given: a secret in a jq argv is readable by other local users in
+# /proc/<pid>/cmdline while jq runs, so the key must only ever reach it as a file path
+REAL_JQ=$(command -v jq)
+shim jq "printf '%s\n' \"\$*\" >>\"\$SHIM/jq.log\"; exec $REAL_JQ \"\$@\""
 export PATH=$TMP/bin:/usr/bin:/bin
 # NVIDIA CDI specs are read from here, not /etc/cdi: one device, /dev/null, at its real numbers (1:3)
 export CDI_DIRS=$TMP/cdi
@@ -141,7 +148,7 @@ shim nvidia-smi 'printf "NVIDIA-SMI has failed because it couldn'\''t communicat
 shim amd-smi 'printf "Unhandled import error: No module named '\''amdsmi'\''\n"'
 "$CLI" snapshot >"$TMP/snap-nosmi.json" || fail "a failed amd-smi broke the snapshot"
 [[ $(jq -r '.gpus | length' "$TMP/snap-nosmi.json") == 0 ]] || fail "a failed amd-smi is no AMD cards" "$(jq -c . "$TMP/snap-nosmi.json")"
-rm -f "$TMP/bin/amd-smi"
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
 shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
 printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 pass "a probe that fails (nvidia-smi's and amd-smi's own error text) reads as no cards, not as a broken snapshot"
@@ -168,7 +175,7 @@ esac'
 "$CLI" snapshot >"$TMP/snap-vulkan.json"
 [[ $(jq -r '.gpus[0].hw' "$TMP/snap-vulkan.json") == rx-9070-xt-16gb ]] || fail "AMD Vulkan card match"
 pass "AMD discovery matches the RX 9070 XT Vulkan recipes"
-rm -f "$TMP/bin/amd-smi"
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
 shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
 printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"
@@ -281,7 +288,7 @@ gateway=$(grep -- '--name omarchy-local-ai-.*-gateway' "$SHIM/docker.log")
   fail "gateway isolation" "$gateway"
 pass "the gateway runs as the user with a read-only root, no capabilities and no external DNS"
 key=$(cat "$STATE/gateway.key")
-! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
+! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$SHIM/jq.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
 [[ $(stat -c %a "$STATE/gateway.key") == 600 ]] || fail "key mode"
 pass "the gateway key stays in a 0600 file, out of every argv and the log"
 grep -q -- "-fsS --max-time 5 http://127.0.0.1:12434/v1/models" "$SHIM/curl.log" || fail "keyless check" "$(cat "$SHIM/curl.log")"
@@ -379,14 +386,23 @@ cp "$TMP/recipes.keep" "$TMP/plugin/recipes.json"
 cp "$TMP/config.keep" "$STATE/deploy/$ID/config.json"
 pass "open keeps working when the registry renames or drops a running model's recipe, with the engine's own context"
 
-# All supported agent adapters stay in private config or keyed environments, never a gateway key in argv.
+# All supported agent adapters stay in private config or keyed environments: the gateway key reaches neither the
+# terminal's argv nor a helper's, and the keyed environments are the only place it is handed over at all.
 for agent in pi claude codex opencode omp crush grok copilot hermes; do
   shim "$agent" 'exit 0'
   "$CLI" set agent "$agent" "$ID"
+  : >"$SHIM/jq.log"
   "$CLI" open "$ID"
   ! grep -q "$key" "$SHIM/tui.log" || fail "agent key leaked" "$agent"
+  ! grep -q "$key" "$SHIM/jq.log" || fail "agent key leaked to jq argv" "$(cat "$SHIM/jq.log")"
 done
-pass "every supported agent opens without exposing the gateway key in terminal arguments"
+pass "every supported agent opens without exposing the gateway key in terminal or helper arguments"
+# the key is still where each agent can read it: the config file only this user reads
+[[ $(jq -r '.providers["omarchy-local"].apiKey' "$STATE/agents/pi/models.json") == "$key" ]] ||
+  fail "pi key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/pi/models.json" 2>/dev/null)"
+[[ $(jq -r '.providers["omarchy-local"].api_key' "$STATE/agents/crush/crush/crush.json") == "$key" ]] ||
+  fail "crush key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/crush/crush/crush.json" 2>/dev/null)"
+pass "pi and Crush still get the gateway key, read from its 0600 file by the helper rather than passed to it"
 shim omarchy-launch-tui 'exit 1'
 if "$CLI" open "$ID" 2>"$TMP/open.err"; then fail "a failed launcher looked successful"; fi
 grep -qx 'local-ai: could not open the agent terminal; try again' "$TMP/open.err" || fail "launcher error"
@@ -467,6 +483,18 @@ engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail 
 "$CLI" stop "$ID"
 pass "a Vulkan recipe receives its render node without ROCm or NVIDIA devices"
 
+# ROCm images need not share the host's group names (Halogen has no "render"
+# group), so membership goes in as host GIDs; the shimmed getent answers 998.
+jq '.hardware["rtx-4090-24gb"].match.backend = "amd-rocm"' "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+"$CLI" run "$ID" amd-rocm:0
+wait_for ready
+engine=$(grep -- "--name omarchy-local-ai-$ID-engine" "$SHIM/docker.log" | tail -1)
+[[ $engine == *'--device /dev/kfd --group-add 998 --group-add 998'* && $engine != *'--group-add video'* ]] ||
+  fail "ROCm group GIDs" "$engine"
+"$CLI" stop "$ID"
+pass "a ROCm recipe passes the video and render groups by host GID"
+
 # the bar follows the engine's own log, and a card its driver resets mid-load ends the start at once, not after 30 minutes
 export LOCAL_AI_SYSFS=$TMP/sys
 mkdir -p "$LOCAL_AI_SYSFS/class/drm/renderD129/device"
@@ -490,7 +518,8 @@ pass "loading shows the engine's own step and percent, and a GPU reset mid-load 
 "$CLI" stop "$ID"
 rm -f "$TMP/loading" "$LOCAL_AI_SYSFS/class/drm/renderD129/device/devcoredump"
 unset LOCAL_AI_SYSFS
-rm -f "$TMP/bin/amd-smi" "$TMP/bin/readlink"
+shim amd-smi 'echo "{\"gpu_data\":[]}"'
+rm -f "$TMP/bin/readlink"
 recipes "$PIN"
 
 rm -rf "$HOME/.cache/omarchy"
