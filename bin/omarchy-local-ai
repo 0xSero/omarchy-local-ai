@@ -376,8 +376,15 @@ owned() {
     die "the model files must be owned by you and cannot be symbolic links"
 }
 
-engine() { printf 'omarchy-local-ai-%s-engine' "$1"; }
-gateway() { printf 'omarchy-local-ai-%s-gateway' "$1"; }
+# Existing deployments retain their old names until stopped; new ones are scoped to their owner.
+network() {
+  local uid
+  uid=$(jq -r '.containerUid // empty' "$(dir_of "$1")/config.json" 2>/dev/null) || uid=""
+  [[ -z $uid || $uid =~ ^[0-9]+$ ]] || die "invalid container owner"
+  printf 'omarchy-local-ai-%s%s' "${uid:+$uid-}" "$1"
+}
+engine() { printf '%s-engine' "$(network "$1")"; }
+gateway() { printf '%s-gateway' "$(network "$1")"; }
 # ours <container>: labelled with this user's uid, or a 5.x container (they carry no uid), which the upgrade takes over
 ours() {
   local l
@@ -427,7 +434,7 @@ remove() {
   for c in "$(engine "$1")" "$(gateway "$1")"; do
     if ours "$c"; then docker rm -f "$c" >/dev/null 2>&1 || return 1; fi
   done
-  docker network rm "omarchy-local-ai-$1" >/dev/null 2>&1 || true
+  docker network rm "$(network "$1")" >/dev/null 2>&1 || true
   rm -rf -- "$(rundir "$1")" 2>/dev/null || say "$1: $(rundir "$1") holds files Docker created as root; delete it as root"
 }
 
@@ -472,11 +479,17 @@ phase_start() {
   echo "starting the engine"
 
   remove "$id"
+  # Downloads can take hours. Recheck with the launcher's Docker access immediately before allocation.
+  g=$(gpus)
+  for k in "$@"; do
+    jq -e --arg k "$k" 'any(.[]; .key == $k and (.held or (.usedMiB // 0) > 2048))' <<<"$g" >/dev/null &&
+      die "$k is in use by another program"
+  done
   run=$(rundir "$id")
   mkdir -p "$run/by-path"
-  docker network create --label "$LABEL=1" "omarchy-local-ai-$id" >/dev/null
+  docker network create --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" "$(network "$id")" >/dev/null
   a=(docker run -d --name "$(engine "$id")" --restart unless-stopped --security-opt no-new-privileges
-    --network "omarchy-local-ai-$id" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=$(id -u)")
+    --network "$(network "$id")" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=$(id -u)")
   if [[ $backend == "nvidia" ]]; then
     # Through CDI (the toolkit's /etc/cdi/nvidia.yaml, which Docker reads without a restart) each card goes by its UUID:
     # CDI's own numbering need not match nvidia-smi's. An install with the nvidia runtime and no CDI list uses --gpus.
@@ -535,7 +548,7 @@ phase_start() {
 
   if ! docker run -d --name "$(gateway "$id")" --restart unless-stopped --security-opt no-new-privileges \
     --cap-drop ALL --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --dns 127.0.0.1 \
-    --network "omarchy-local-ai-$id" --user "$(id -u):$(id -g)" --publish "127.0.0.1:$port:12434" \
+    --network "$(network "$id")" --user "$(id -u):$(id -g)" --publish "127.0.0.1:$port:12434" \
     --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" \
     --env "UPSTREAM=http://engine:$(jq -r .launch.port <<<"$r")" --env "MODEL=$(jq -r '.servedName // ""' <<<"$r")" \
     --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY:/run/gateway.key:ro" \
@@ -573,7 +586,7 @@ phase_purge() {
       docker rm -f "$c" >/dev/null || die "could not remove a model container; try again"
     fi
   done
-  docker network ls -q --filter "label=$LABEL=1" | xargs -r timeout --kill-after=5 30 docker network rm >/dev/null 2>&1 || true
+  docker network ls -q --filter "label=$LABEL=1" --filter "label=$LABEL.uid=$(id -u)" | xargs -r timeout --kill-after=5 30 docker network rm >/dev/null 2>&1 || true
   { printf '%s' "$images"; jq -r '.gateway.image, .hardware[].recipes[].image' "$PANEL/recipes.json" "$CATALOG" 2>/dev/null; } |
     grep . | sort -u | xargs -r timeout --kill-after=5 30 docker rmi >/dev/null 2>&1 || true
 }
@@ -712,8 +725,8 @@ cmd_run() {
   mkdir -p "$d"
   rm -f "$d/err" "$d/cancel"
   # what Open tells the agent is kept with the model, so a registry update that renames its recipe does not strand it
-  jq -nc --arg id "$id" --argjson p "$port" --arg a "$(get agent)" --arg f "$(get folder)" --arg t "$(now)" --argjson r "$r" \
-    '{id: $id, keys: $ARGS.positional, port: $p, agent: $a, folder: $f, startedAt: $t,
+  jq -nc --arg id "$id" --argjson uid "$(id -u)" --argjson p "$port" --arg a "$(get agent)" --arg f "$(get folder)" --arg t "$(now)" --argjson r "$r" \
+    '{id: $id, containerUid: $uid, keys: $ARGS.positional, port: $p, agent: $a, folder: $f, startedAt: $t,
       serve: {name: $r.name, ctx: ($r.serving.ctxTokens // 32768), vision: ($r.capabilities.vision // false)}}' \
     --args "${keys[@]}" >"$d/config.json.$$"
   mv -f "$d/config.json.$$" "$d/config.json"
@@ -728,7 +741,7 @@ cmd_run() {
 # Stop waits for the starting worker before taking its containers down.
 cmd_stop() {
   valid_id "${1:-}" || die "stop <recipe>"
-  local d p i
+  local d p i unshared=true
   d=$(dir_of "$1")
   [[ -d $d ]] || return 0
   : >"$d/cancel"
@@ -746,11 +759,15 @@ cmd_stop() {
   fi
   status "$1" stopping "" 0
   if [[ $(jq -r '.shared // false' "$d/config.json" 2>/dev/null) == "true" ]]; then
-    (cmd_share "$1" off) || say "could not unshare $1; stopping the model anyway"
+    (cmd_share "$1" off) || unshared=false
   fi
   if ! phase_stop "$1"; then
     status "$1" error "" 0 "could not stop it; try again"
     return 1
+  fi
+  if [[ $unshared == false ]]; then
+    status "$1" error "" 0 "model stopped, but Tailscale sharing could not be removed; retry Stop"
+    die "sharing could not be removed; the port remains reserved, retry Stop"
   fi
   rm -rf -- "$d"
   say "$1 stopped"
@@ -994,7 +1011,7 @@ summary() {
       flock -n 9 || exit 0
       while ((seen < n)) || [[ ! -f $s ]]; do
         take=$((n - seen < 100000 ? n - seen : 100000))
-        if tail -n +"$((seen + 1))" "$f" | head -n "$take" | { grep '^{' || true; } |
+        if sed -n "$((seen + 1)),$((seen + take))p;$((seen + take))q" "$f" | { grep '^{' || true; } |
           jq -sc --argjson n "$((seen + take))" --slurpfile old <(cat "$s" 2>/dev/null || echo '{}') '
             def rate: .completion / ((if .ms > .ttft_ms then .ms - .ttft_ms else .ms end) / 1000);
             def bump(groups; key; val): reduce groups[] as $g (.; .[$g[0] | key | tostring] += ($g | val));
