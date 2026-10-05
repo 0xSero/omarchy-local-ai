@@ -1,39 +1,39 @@
 {
-  "updated": "2026-10-04",
+  "updated": "2026-10-05",
   "repo": {
-    "stars": 97,
-    "forks": 16,
+    "stars": 105,
+    "forks": 17,
     "watchers": 1,
-    "open_issues": 1,
-    "size_kb": 30648
+    "open_issues": 2,
+    "size_kb": 30684
   },
   "clones": {
-    "days": 35,
+    "days": 36,
     "first": "2026-08-29",
-    "last": "2026-10-02",
-    "total": 3707,
+    "last": "2026-10-03",
+    "total": 3993,
     "peak_day": "2026-09-24",
     "peak": 569,
-    "daily_uniques_sum": 1605,
-    "uniques_14d": 869
+    "daily_uniques_sum": 1706,
+    "uniques_14d": 895
   },
   "views": {
-    "days": 35,
+    "days": 36,
     "first": "2026-08-29",
-    "last": "2026-10-02",
-    "total": 2144,
+    "last": "2026-10-03",
+    "total": 2172,
     "peak_day": "2026-09-24",
     "peak": 354,
-    "daily_uniques_sum": 1129,
-    "uniques_14d": 665
+    "daily_uniques_sum": 1149,
+    "uniques_14d": 658
   },
   "stars": {
-    "days": 15,
+    "days": 16,
     "first": "2026-09-20",
-    "last": "2026-10-04",
+    "last": "2026-10-05",
     "first_count": 24,
-    "last_count": 97,
-    "gained": 73
+    "last_count": 105,
+    "gained": 81
   },
   "downloads": {
     "total": 25,
@@ -671,14 +671,14 @@
     ]
   },
   "interactions": {
-    "day": "2026-10-04",
-    "stars": 97,
-    "forks": 16,
+    "day": "2026-10-05",
+    "stars": 105,
+    "forks": 17,
     "watchers": 1,
     "issues": {
-      "open": 1,
+      "open": 2,
       "closed": 3,
-      "total": 4
+      "total": 5
     },
     "pull_requests": {
       "open": 0,
@@ -693,33 +693,33 @@
   "referrers": [
     {
       "referrer": "t.co",
-      "count": 333,
+      "count": 334,
       "uniques": 275
     },
     {
       "referrer": "github.com",
-      "count": 182,
+      "count": 180,
       "uniques": 106
     },
     {
       "referrer": "Google",
-      "count": 84,
+      "count": 86,
       "uniques": 56
     },
     {
       "referrer": "local.sybilsolutions.ai",
-      "count": 38,
-      "uniques": 26
+      "count": 41,
+      "uniques": 28
     },
     {
       "referrer": "search.brave.com",
-      "count": 18,
-      "uniques": 8
+      "count": 20,
+      "uniques": 9
     },
     {
       "referrer": "DuckDuckGo",
-      "count": 13,
-      "uniques": 11
+      "count": 12,
+      "uniques": 10
     },
     {
       "referrer": "webmail.mail.eu-west-1.awsapps.com",
@@ -736,14 +736,14 @@
     {
       "path": "/0xSero/omarchy-local-ai",
       "title": "Overview",
-      "count": 927,
-      "uniques": 658
+      "count": 930,
+      "uniques": 651
     },
     {
       "path": "/0xSero/omarchy-local-ai/pulls",
       "title": "/pulls",
-      "count": 54,
-      "uniques": 17
+      "count": 50,
+      "uniques": 14
     },
     {
       "path": "/0xSero/omarchy-local-ai/blob/main/preview.png",
@@ -754,14 +754,8 @@
     {
       "path": "/0xSero/omarchy-local-ai/issues",
       "title": "/issues",
-      "count": 40,
-      "uniques": 27
-    },
-    {
-      "path": "/0xSero/omarchy-local-ai/tree/main",
-      "title": "/tree/main",
-      "count": 29,
-      "uniques": 16
+      "count": 38,
+      "uniques": 25
     },
     {
       "path": "/0xSero/omarchy-local-ai/pull/22",
@@ -770,22 +764,28 @@
       "uniques": 6
     },
     {
+      "path": "/0xSero/omarchy-local-ai/tree/main",
+      "title": "/tree/main",
+      "count": 28,
+      "uniques": 16
+    },
+    {
       "path": "/0xSero/omarchy-local-ai/issues/12",
       "title": "/issues/12",
       "count": 22,
       "uniques": 12
     },
     {
-      "path": "/0xSero/omarchy-local-ai/releases",
-      "title": "/releases",
-      "count": 22,
-      "uniques": 8
-    },
-    {
       "path": "/0xSero/omarchy-local-ai/blob/main/docs/screenshots/home.png",
       "title": "/blob/main/docs/screenshots/home.png",
       "count": 21,
       "uniques": 20
+    },
+    {
+      "path": "/0xSero/omarchy-local-ai/releases",
+      "title": "/releases",
+      "count": 21,
+      "uniques": 7
     },
     {
       "path": "/0xSero/omarchy-local-ai/tree/main/docs",
