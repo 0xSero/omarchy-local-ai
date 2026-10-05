@@ -198,11 +198,21 @@ amd() {
 }
 
 # CPU recipes use host RAM and no device passthrough. Offer only the architecture/ISA in the catalog.
+# Apple Silicon under Asahi Linux has no nvidia-smi/amd-smi node: one CPU entry named after the chip in
+# the device tree ("M1", "M4 Pro", …) and sized by its unified RAM, so the catalog's memory test sorts an
+# 8 GB M1 from a 16 GB one exactly as it sorts GPU cards by VRAM.
 cpu() {
   if [[ $(uname -m) == x86_64 ]] && grep -qw avx2 "${CPUINFO:-/proc/cpuinfo}" &&
     jq -e 'any(.hardware[]; .match.backend == "cpu" and (.match.names | index("x8664avx2cpu") != null))' "$RECIPES" >/dev/null; then
     jq -nc --argjson ram "$(awk '/^MemTotal:/{print int($2 * 1024 / 1e9)}' "${MEMINFO:-/proc/meminfo}")" \
       '[{backend:"cpu",index:0,product:"x86-64 AVX2 CPU",totalMiB:0,usedMiB:null,tempC:null,ramGb:$ram}]'
+  elif [[ $(uname -m) == aarch64 && -r ${APPLEMODEL:-/proc/device-tree/model} ]] &&
+    chip=$(tr -d '\0' <"${APPLEMODEL:-/proc/device-tree/model}" | grep -oE '\bM[0-9]( (Pro|Max|Ultra))?\b' | head -1) &&
+    name="apple${chip,,}" && name=${name// /} && [[ -n $name ]] &&
+    jq -e --arg n "$name" 'any(.hardware[]; .match.backend == "cpu" and (.match.names | index($n) != null))' "$RECIPES" >/dev/null; then
+    jq -nc --arg product "Apple $chip" \
+      --argjson ram "$(awk '/^MemTotal:/{print int($2 / 1024)}' "${MEMINFO:-/proc/meminfo}")" \
+      '[{backend:"cpu",index:0,product:$product,totalMiB:$ram,usedMiB:null,tempC:null,ramGb:($ram / 1024 | round)}]'
   else echo '[]'; fi
 }
 
