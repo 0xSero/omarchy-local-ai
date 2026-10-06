@@ -77,7 +77,7 @@ if command -v node >/dev/null; then
   pass "and the card and its group are offered it first, as the registry orders them"
   # a Config row says whether its model fits; the offload one's page names its RAM beside a format without its detail
   rows=$(view kind rtx-3090-24gb)
-  [[ $(jq -r 'map(select(.type == "opt") | .value) | join("|")' <<<"$rows") == "+96 GB RAM|fits" ]] || fail "config rows" "$rows"
+  [[ $(jq -r 'map(select(.type == "model") | .fit) | join("|")' <<<"$rows") == "+96 GB RAM|fits" ]] || fail "config rows" "$rows"
   pass "a Config row says whether its model fits, and an offload recipe the RAM it takes"
 fi
 
@@ -89,7 +89,9 @@ if command -v node >/dev/null; then
   [[ $(view home | jq -r '[.[] | select(.type == "slot") | .run.action] | join(" ")') == "run|small|nvidia:0 run|small|nvidia:1 run|small-tp2|nvidia:0,nvidia:1" ]] ||
     fail "unfit skipped" "$(view home)"
   rows=$(view kind rtx-3090-24gb)
-  jq -e 'map(select(.type == "opt")) | .[0] == {type: "opt", label: "big", value: "needs 96 GB RAM", on: false, off: true, action: ""}
+  # a model this machine cannot run says what it lacks, cannot be chosen, and is not the one chosen
+  jq -e 'map(select(.type == "model")) | .[0].label == "big" and .[0].fit == "needs 96 GB RAM"
+    and .[0].on == false and .[0].off == true and .[0].action == ""
     and .[1].on and .[1].action == "model|small"' <<<"$rows" >/dev/null || fail "config" "$rows"
   jq -e 'any(.[]; .type == "acts" and .items[0].action == "run|small|nvidia:0")' <<<"$rows" >/dev/null || fail "config run" "$rows"
   pass "the card's pick and its group skip it; Config shows it with the reason and cannot choose it"
@@ -140,7 +142,11 @@ if command -v node >/dev/null; then
     fail "all unfit" "$(view gpus)"
   [[ $(view home | jq -r '[.[] | select(.type == "slot")] | length') == 0 ]] || fail "all unfit home" "$(view home)"
   rows=$(view kind rtx-3090-24gb)
-  jq -e '(any(.[]; .type == "acts") | not) and any(.[]; .type == "error" and .label == "needs 96 GB RAM, you have 16")' <<<"$rows" >/dev/null ||
+  # nothing fits: every model says what it needs, and Run is there but disabled, so the page still says what
+  # to do (a bigger machine, a smaller model) instead of only that nothing can run
+  jq -e 'any(.[]; .type == "sec" and .label == "NO MODEL FITS")
+    and any(.[]; .type == "model" and .fit == "needs 96 GB RAM")
+    and any(.[]; .type == "acts" and [.items[] | select(.label == "Run ›") | .action] == [""])' <<<"$rows" >/dev/null ||
     fail "all unfit page" "$rows"
   pass "a card with no model that fits is not offered to run; its row and page say why"
 else

@@ -760,6 +760,8 @@ cmd_run() {
       serve: {name: $r.name, ctx: ($r.serving.ctxTokens // 32768), vision: ($r.capabilities.vision // false)}}' \
     --args "${keys[@]}" >"$d/config.json.$$"
   mv -f "$d/config.json.$$" "$d/config.json"
+  # which cards this run uses, kept with the model's usage (never deleted): a usage line belongs to the last run before it
+  mkdir -p "$STATE/usage/$id" && jq -nc --argjson t "$EPOCHSECONDS" '{t: $t, keys: $ARGS.positional}' --args "${keys[@]}" >>"$STATE/usage/$id/runs.jsonl"
   flock -u 9
 
   setsid "$0" __worker "$id" "${keys[@]}" </dev/null >/dev/null 2>&1 &
@@ -1067,12 +1069,14 @@ cmd_share() {
 
 # summary <usage dir>: one model's usage so far, kept in summary.json beside its log and brought up to date by reading
 # only the lines added since (complete ones: a line still being written waits for the next time), 100,000 at a time.
-# Tokens are kept per hour, with the counts and sums the averages need, so a snapshot costs what is new, not the whole
-# history. One reader brings it up to date while another uses what is there; a log that shrank (cleared or rotated)
-# is summed again from its start.
+# Tokens are kept in time buckets that coarsen with age (5 min for a day, an hour for a week, 6 h for a month, a day
+# for 90 days, a week for a year, 30 days after that), with the counts and sums the averages need, so the summary stays
+# small however long the model runs. A folded log over 256 KB is set aside and deleted, so logs do not grow either;
+# a log shorter than what was read is a new one, and the history is kept.
 summary() {
   local f=$1/usage.jsonl s=$1/summary.json n seen take head
-  [[ -f $f ]] || { echo '{}'; return; }
+  # no log: none yet, or the last one was folded and set aside
+  [[ -f $f ]] || { if [[ -f $s ]]; then echo "$(<"$s")"; else echo '{}'; fi; return; }
   # the summary carries the log's time from just before its lines were counted: a log that is not newer has
   # nothing new, and a line written while the summary was made makes it newer again
   if [[ -f $s && ! $f -nt $s ]]; then
@@ -1086,22 +1090,27 @@ summary() {
   if [[ -f $s ]] && IFS= read -r -n 32 head <"$s" && [[ $head =~ ^\{\"lines\":([0-9]+) ]]; then
     seen=${BASH_REMATCH[1]}
   fi
-  if ((n < seen)); then seen=0; rm -f "$s"; fi
+  if ((n < seen)); then seen=0; fi
   if ((n > seen)) || [[ ! -f $s ]]; then
     (
       flock -n 9 || exit 0
       while ((seen < n)) || [[ ! -f $s ]]; do
         take=$((n - seen < 100000 ? n - seen : 100000))
         if sed -n "$((seen + 1)),$((seen + take))p;$((seen + take))q" "$f" | { grep '^{' || true; } |
-          jq -sc --argjson n "$((seen + take))" --slurpfile old <(cat "$s" 2>/dev/null || echo '{}') '
+          jq -sc --argjson n "$((seen + take))" --argjson now "$EPOCHSECONDS" --slurpfile old <(cat "$s" 2>/dev/null || echo '{}') '
             def rate: .completion / ((if .ms > .ttft_ms then .ms - .ttft_ms else .ms end) / 1000);
             def bump(groups; key; val): reduce groups[] as $g (.; .[$g[0] | key | tostring] += ($g | val));
+            def size: ($now - .) as $a | if $a < 86400 then 300 elif $a < 604800 then 3600 elif $a < 2592000 then 21600
+              elif $a < 7776000 then 86400 elif $a < 31536000 then 604800 else 2592000 end;
+            def compact: to_entries | map((.key | tonumber) as $k | ($k | size) as $z | {key: ($k / $z | floor * $z | tostring), value})
+              | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries;
             $old[0] as $o | map(. + {v: ((.prompt // 0) + (.completion // 0))}) as $rs
             | [$rs[] | select(.completion > 8 and .ms > 0) | rate] as $dec
             | [$rs[] | select(.prompt > 64 and .ttft_ms > 0 and .ttft_ms < .ms) | .prompt / (.ttft_ms / 1000)] as $pre
             | [$rs[] | select(.ttft_ms < .ms)] as $tt
-            | {lines: $n} + ($o | del(.lines)) + {requests: (($o.requests // 0) + ($rs | length)), total: (($o.total // 0) + ([$rs[].v] | add // 0)),
-                hours: (($o.hours // {}) | bump($rs | group_by(.t / 3600 | floor); .t / 3600 | floor; map(.v) | add)),
+            | {lines: $n} + ($o | del(.lines, .hours)) + {requests: (($o.requests // 0) + ($rs | length)), total: (($o.total // 0) + ([$rs[].v] | add // 0)),
+                buckets: (($o.buckets // ($o.hours // {} | with_entries(.key |= (tonumber * 3600 | tostring))))
+                  | bump($rs | group_by(.t / 300 | floor); .t / 300 | floor * 300; map(.v) | add) | compact),
                 first: ([$o.first, ($rs | map(.t) | min)] | map(select(. != null)) | min),
                 last: ([$o.last, ($rs | map(.t) | max)] | map(select(. != null)) | max),
                 decode: {n: (($o.decode.n // 0) + ($dec | length)), sum: (($o.decode.sum // 0) + ($dec | add // 0))},
@@ -1112,6 +1121,12 @@ summary() {
         else rm -f "$s.$$"; break; fi
         seen=$((seen + take))
       done
+      if ((seen >= n)) && (($(wc -c <"$f") > 262144)) && [[ $(tail -c1 "$f") == "" ]] && mv -f "$f" "$f.old"; then
+        n=$(wc -l <"$f.old")
+        if ((n > seen)); then sed -n "$((seen + 1)),${n}p" "$f.old" >"$f.tail" && cat "$f.tail" >>"$f"; fi
+        rm -f "$f.old" "$f.tail"
+        jq -c '.lines = 0' "$s" >"$s.$$" && mv -f "$s.$$" "$s"
+      fi
       touch -r "$s.mark" "$s"
     ) 9>"$s.lock"
   else
@@ -1129,8 +1144,9 @@ tokens() {
     jq -sc --argjson d0 "$(date -d '6 days ago 00:00' +%s)" --argjson now "$EPOCHSECONDS" --argjson w0 "$w0" '
       # a day is a local calendar day: a daylight-saving change makes one 23 or 25 hours long
       def day: localtime | mktime / 86400 | floor;
+      def buckets: .buckets // (.hours // {} | with_entries(.key |= (tonumber * 3600 | tostring)));
       [.[] | select(.requests > 0)] as $all | ($w0 | day) as $l0
-      | [$all[] | .hours | to_entries[] | {t: (.key | tonumber * 3600), v: .value}] as $h
+      | [$all[] | buckets | to_entries[] | {t: (.key | tonumber), v: .value}] as $h
       | {week: ([$h[] | select(.t >= $d0) | .v] | add // 0), total: ([$all[].total] | add // 0),
          life: {requests: ([$all[].requests] | add // 0), since: ([$all[].first] | min // $now | strflocaltime("%b %-d")),
            last: ([$all[].last] | max // $now), start: $w0, today: (($now | day) - $l0),
@@ -1145,10 +1161,11 @@ tokens() {
 session() {
   summary "$STATE/usage/$1" | jq -c --argjson s "$2" --argjson now "$EPOCHSECONDS" --argjson d0 "$(date -d '6 days ago 00:00' +%s)" '
     def avg(x): if (x.n // 0) > 0 then x.sum / x.n | round else null end;
-    [(.hours // {}) | to_entries[] | {t: (.key | tonumber * 3600), v: .value}] as $h
+    def buckets: .buckets // (.hours // {} | with_entries(.key |= (tonumber * 3600 | tostring)));
+    [buckets | to_entries[] | {t: (.key | tonumber), v: .value}] as $h
     | (.first // $s) as $from | (.last // $now) as $last | (($last - $from) / 24 + 1) as $step
     | (.ttftn // 0) as $tn
-    | {tokens: ([$h[] | select(.t + 3600 > $s) | .v] | add // 0), week: ([$h[] | select(.t >= $d0) | .v] | add // 0),
+    | {tokens: ([$h[] | select(.t + 300 > $s) | .v] | add // 0), week: ([$h[] | select(.t >= $d0) | .v] | add // 0),
        all: {since: ($from | strflocaltime("%b %-d")), last: $last, tokens: (.total // 0), decode: avg(.decode), prefill: avg(.prefill),
          ttft: (if $tn > 0 then [.ttft | to_entries[] | {b: (.key | tonumber), c: .value}] | sort_by(.b)
            | reduce .[] as $x ({s: 0, m: null}; (if .m == null and .s + $x.c > $tn / 2 then .m = $x.b * 50 + 25 else . end) | .s += $x.c) | .m
@@ -1175,8 +1192,11 @@ adopt() {
 }
 
 # what the widget needs of a recipe
-SUMMARY='def summary($h): {id, name, family, cards: (.cards // 1), format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
-  needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h)};'
+# whether every file of a recipe is downloaded and checked
+SUMMARY='def ondisk($h): [.weights[]? | select(.layout != "hub") | "\(.repository | gsub("/"; "--"))@\(.revision[:12])\(if (.dir // "") != "" then "/" + .dir else "" end)/.verified"]
+  | length > 0 and all(.[]; . as $x | $h.have | index($x) != null);
+def summary($h): {id, name, family, cards: (.cards // 1), format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
+  needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h), onDisk: ondisk($h)};'
 
 cmd_snapshot() {
   local deps=() d id port at st pid sat boot obj why rc code ts="" sa="" sf="" sfs="" v="" a rstate="" rmsg=""

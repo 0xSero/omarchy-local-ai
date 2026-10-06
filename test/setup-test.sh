@@ -81,7 +81,7 @@ echo 'ok - setup itself runs nothing as root'
 node - "$ROOT/Model.js" <<'JS'
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const c = {module:{exports:{}}}; vm.runInNewContext(fs.readFileSync(process.argv[2],'utf8'),c);
-const v=c.module.exports.build({gpus:[],kinds:[],readiness:{state:'needs-setup'}}, {view:'home'});
-assert.deepEqual(Array.from(v.rows.flatMap(r => (r.items||[]).map(b => b.action))), ['setup']);
+const v=c.module.exports.build({gpus:[],kinds:[],readiness:{state:'needs-setup'}}, {});
+assert.deepEqual(v.items.filter(i => i.button).map(i => i.button.action), ['setup']);
 console.log('ok - fresh installs offer setup directly in the panel');
 JS

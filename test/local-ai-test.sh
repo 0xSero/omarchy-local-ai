@@ -225,17 +225,24 @@ js() {
     const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " sec,slot,slot,field,field,field,acts" ]] || fail "home view" "$(view home 2>&1)"
-  [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,agent,links,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
-  pass "the view model builds home and the free card's page from the backend's own snapshot"
+  [[ $(view home) == " sec,slot,slot,field,field,field,links,acts" ]] || fail "home view" "$(view home 2>&1)"
+  # a card's page is the models validated for it and Run: the agent, the folder and the downloads are
+  # settings, so they are on the settings page rather than repeated on every model's page
+  [[ $(view kind rtx-4090-24gb) == " sec,model,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
+  case "$(view settings)" in " sec,agent,links,field,sec,"*) ;; *) fail "settings view" "$(view settings 2>&1)" ;; esac
+  pass "the view model builds home, the free card's page and the settings page from the backend's own snapshot"
   # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
   # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
+  # three states, one assertion each so a failure names the state it is about: a crashed model whose card is
+  # listed, the same model once its card is gone (a lost row with its reason), and a card with no kind
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
-    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,field,field,acts" &&
-    $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
-    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,field:RAM,field:Agents,acts:Refresh models" &&
-    $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
-    fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,field,field,links,acts" ]] ||
+    fail "a crashed model whose card is listed" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; c.build(s, ui()).rows.map(r => r.type).join(",")')"
+  [[ $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
+    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,field:all GPUs,field:RAM,field:Agents,links:Settings ›,acts:Refresh models" ]] ||
+    fail "a crashed model on no listed card" "$(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}]; c.build(s, ui({open: "lost:m"})).rows.map(r => r.type).join(",")')"
+  [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
+    fail "a crashed model with no kind" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.map(r => r.type).join(",")')"
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
     v.mark + " " + v.rows.filter(r => r.type === "run").map(r => r.sub + " " + r.primary.action)') == "busy pulling image stop|m" ]] ||
     fail "an unknown state" "$(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling"}]; c.build(s, ui())')"
@@ -262,8 +269,9 @@ if command -v node >/dev/null; then
   [[ $(js 'vm.runInNewContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/property string cli: (.*)/)[1],
     {Qt: {resolvedUrl: u => "file:///home/a%2525b%23c/" + u}})') == "/home/a%25b#c/bin/omarchy-local-ai" ]] || fail "the backend's path"
   pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
-  # The folder dialog preserves reserved characters through its URL and sends one path argument.
-  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw})).rows.find(r => r.icon === "folder").action
+  # The folder dialog preserves reserved characters through its URL and sends one path argument. The folder is a
+  # setting, so the row is on the settings page rather than on every model's page.
+  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "settings"})).rows.find(r => r.icon === "folder").action
     var p = {ui: {}, nav() {}, close() {}, run(x) { p.args = x }, Qt: {callLater: f => f()}, folderDialog: {open() {}}, Quickshell: {env() {return "/home/x"}}}; p.root = p; vm.createContext(p)
     var q=fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
     for(var name of ["activate", "pickedFolder"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0],p);
@@ -289,9 +297,11 @@ pass "a stale NVIDIA CDI spec stops before the engine, with the repair command i
 
 "$CLI" run "$ID" nvidia:0
 wait_for ready
+# the run's cards are kept with the model's usage, so usage can be counted per card after it stops
+[[ $(jq -r '.keys | join(",")' "$STATE/usage/$ID/runs.jsonl" | tail -1) == "nvidia:0" ]] || fail "runs.jsonl" "$(cat "$STATE/usage/$ID/runs.jsonl" 2>&1)"
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready run,sec,slot,field,field,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,agent,links,field,acts,sec,field,sec,field"*",acts" ]] ||
+  [[ $(view home) == "ready run,sec,slot,field,field,field,links,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,agent,links,field,links,acts,sec,field,sec,field"*",acts" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi

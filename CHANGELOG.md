@@ -2,6 +2,18 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [7.0.0] - 2026-10-06
+
+### Changed
+- A new panel (design/SPEC.md). Two tabs: **home** is usage (tokens generated, its cumulative line, a bar a day) and **gpus** is one line per running model, free card or build. Hovering a line slides its drawer in from the right: a free card offers Run and config, a running model Open, stop and ⋯. config is one list of the models for those cards, with the chosen one dotted, downloads marked and what does not fit dimmed with its reason; ⋯ holds the model's agent, folder and share.
+- Errors leave the panel: a failed action, a model that stopped, a setup that did not finish and a lost backend each send one desktop notification (clicking it opens the log). A stopped model's line is quiet, with Run again and dismiss.
+- One-colour marks: each model line carries its lab's logo (LobeHub, MIT) and each card its maker's (Simple Icons, CC0), drawn in the line's tone; agent logos are black and white. Shipped in `logos/`.
+- Not ready says what is wrong and offers the one fix: Set up, Start Docker or Update Omarchy.
+- Usage history coarsens with age (5 minutes for a day, then hours, 6 hours, days, weeks, 30 days), folded logs over 256 KB are set aside, and each run records its cards.
+
+### Removed
+- The models, hardware, agents and settings pages, the activity grid, the per-model figures page and in-panel error rows. Agent updates are no longer offered from the panel.
+
 ## [6.9.0] - 2026-10-03
 
 ### Added
