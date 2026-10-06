@@ -8,7 +8,7 @@ if ! command -v quickshell >/dev/null; then
 fi
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-MODES=(gpus home hover config disk more agent folder share setup docker stopped starting cpu)
+MODES=(gpus home open-run open-free open-held model agent folder share setup docker stopped starting cpu full-gpus full-home)
 python3 - "$ROOT" "$TMP" "${MODES[@]}" <<'PY'
 # Isolated shell chrome and snapshot; the plugin QML itself is copied unchanged.
 import pathlib,shutil,json,sys
@@ -58,6 +58,7 @@ ShellRoot {
     implicitWidth:340; implicitHeight:1000; color:"#121214"
     Loader { id: ld; source:"Panel.qml"; onLoaded: { item.open(); step.start() } }
   }
+  function fullOf(p) { var w=p.data||[]; for(var i=0;i<w.length;i++){ if(w[i]&&w[i].contentItem){var r=find(w[i].contentItem,"local-ai-full"); if(r) return r} } return null }
   function find(o,n) {
     if (o.objectName===n) return o
     var c=o.children||[]
@@ -72,15 +73,18 @@ ShellRoot {
       if(!base){base=runner.base=p.snap}
       var s=JSON.parse(JSON.stringify(base)), ui={tab:"gpus",view:"",id:"",open:"",picks:{}}
       if(mode==="home")ui.tab="home"
-      if(mode==="hover")ui.open="g:nvidia:1"
-      if(mode==="config")ui=Object.assign(ui,{view:"config",id:"nvidia:1"})
-      if(mode==="disk")ui=Object.assign(ui,{view:"config",id:"nvidia:1",open:"small"})
-      if(["more","agent","folder","share"].indexOf(mode)>=0)ui=Object.assign(ui,{view:mode,id:"test"})
+      if(mode==="open-run")ui.open="d:test"
+      if(mode==="open-free")ui.open="g:nvidia:1"
+      if(mode==="open-held"){s.kinds[0].free=[];s.kinds[0].taken=["nvidia:1"];ui.open="g:nvidia:1"}
+      if(["model","agent","folder","share"].indexOf(mode)>=0)ui=Object.assign(ui,{view:mode,id:"test"})
+      if(mode==="model"){s.deployments[0].keys=["nvidia:1"];s.kinds[0].free=[]}
       if(mode==="setup")s.readiness={state:"needs-setup"}
       if(mode==="docker")s.readiness={state:"docker-down"}
-      if(mode==="stopped")s.deployments[0].state="error"
+      if(mode==="stopped"){s.deployments[0].state="error";s.deployments[0].error="the engine stopped";ui.open="d:test"}
       if(mode==="starting"){s.deployments[0].state="download";s.deployments[0].detail="downloading";s.deployments[0].percent=42}
       if(mode==="cpu"){s.gpus=[s.gpus[2]];s.kinds=[s.kinds[1]];s.deployments=[]}
+      if(mode==="full-gpus")ui.full=true
+      if(mode==="full-home"){ui.full=true;ui.tab="home"}
       p.snap=s; p.ui=ui
       capture.start()
     }
@@ -91,10 +95,13 @@ ShellRoot {
     onTriggered: {
       var p=ld.item, mode=runner.modes[runner.at], content=runner.find(p,"local-ai-content")
       if(!content){console.log("FAIL no content");Qt.quit();return}
-      var want={gpus:"line",home:"bars",hover:"line",config:"pick",disk:"pick",more:"kv",agent:"opt",folder:"opt",share:"field",setup:"msg",docker:"msg",stopped:"line",starting:"line",cpu:"line"}[mode]
+      var want={gpus:"row",home:"calendar","open-run":"row","open-free":"row","open-held":"row",model:"list",agent:"opt",folder:"opt",share:"field",setup:"msg",docker:"msg",stopped:"row",starting:"row",cpu:"row","full-gpus":"row","full-home":"calendar"}[mode]
       if(!(p.view.items||[]).some(function(i){return i.type===want})){console.log("FAIL "+mode+" has no "+want);runner.failed=true}
+      if(mode.indexOf("full")===0&&!p.view.full){console.log("FAIL no full view");runner.failed=true}
       if(content.height<80){console.log("FAIL "+mode+" drew nothing");runner.failed=true}
-      content.grabToImage(function(img){
+      var shot=mode.indexOf("full")===0?runner.find(p.children.length?p:p,"local-ai-full")||fullOf(p):runner.find(p,"local-ai-panel")
+      if(!shot){console.log("FAIL nothing to capture for "+mode);runner.failed=true;shot=content}
+      shot.grabToImage(function(img){
         img.saveToFile(Quickshell.env("OUT")+"/"+mode+".png")
         console.log("PASS rendered "+mode+" "+content.width+"x"+content.height)
         runner.at++;if(runner.at===runner.modes.length)Qt.exit(runner.failed?1:0);else step.start()
@@ -140,4 +147,4 @@ if [[ -n ${PANEL_ARTIFACTS:-} ]]; then
   mkdir -p "$PANEL_ARTIFACTS"
   cp "$TMP/output/"*.png "$TMP/log" "$PANEL_ARTIFACTS/"
 fi
-echo 'ok - the real panel renders every screen of the tree offscreen: tabs, lines and drawers, config, ⋯ pages, not-ready, stopped, starting, CPU'
+echo 'ok - the real panel renders every state offscreen: bands, home, rows opened (running, free, in use), model, agent, folder, share, not ready, stopped, starting, CPU, full screen'

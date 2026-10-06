@@ -1,0 +1,27 @@
+18:21:47 1. gpus: one row per running model and per card; the header and footer never move
+18:21:49 2. home: launch each running model in its agent and folder; the usage tiers; the calendar
+18:21:52 3. launch › agent: every installed agent, the chosen one dotted, the default named
+18:21:56 4. choose pi: set for this model only, back on home
+18:22:01 5. and back to oh-my-pi (the box's own choice)
+18:22:03 6. launch › folder: recent folders, choose another…
+18:22:07 7. choose ~/Work, back on home
+18:22:12 8. and back to ~/Work/la-typed-test
+18:22:14 9. gpus again
+18:22:16 10. open the running row: speed, prefill, first token, tokens, uptime, its settings, Open · Stop · logs
+18:22:18 11. share: turned on (the tailnet address now answers with the key)
+18:22:19 12. the share page: address and key, each copied with one tap
+18:22:23 13. Stop sharing: off again
+18:22:25 14. close the row
+18:22:27 15. open a free row (the CPU): every model for it, the pick highlighted, Run
+18:22:29 16. Run: the row shows the model starting, with its progress
+18:22:50 17. ready: the model is its own row with its speed
+18:22:52 18. open it
+18:22:55 19. Stop: the CPU is free again
+18:22:57 20. open Arc Pro B70 #1: in use (what holds it, what it could run) or free (its models)
+18:23:00 21. open Arc Pro B70 #2: in use (what holds it, what it could run) or free (its models)
+18:23:04 22. open the RTX 3090: held by another program, its models readable
+18:23:09 23. full screen: the same tabs in a window, every row opened as a tile
+18:23:12 24. full screen home: launch and a year of the calendar
+18:23:15 25. back to the panel
+18:23:28 26. Open: oh-my-pi opens in a terminal on the running model, in its folder
+18:23:29 27. done

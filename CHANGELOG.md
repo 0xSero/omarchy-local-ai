@@ -2,6 +2,15 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [7.1.0] - 2026-10-07
+
+### Changed
+- The panel in a frame: a header band (home · gpus, tokens generated, today, the line, full screen) and a footer band (the machine in one line, logs · refresh) that never move; the body keeps the tallest height it has had while the panel is open.
+- home: **launch** each running model in its agent and folder (Open, and the agent and folder change right there), the usage tiers (today, week, month, 3 months, year, lifetime) and a calendar (a column a week).
+- gpus: every row is two lines and a memory bar (`RTX 3090 · 21 / 24 GB · 62°`) and opens in place, no animation: a running model shows its speed, prefill, first token, tokens, uptime, activity, model/agent/folder/share and Open · Stop · logs; a free card lists every model for it (the pick highlighted, on disk / download / what it needs, remove) with Run; a card in use opens too, saying what holds it and what it could run.
+- Change a running model: the model page lists every model for its cards; Switch stops it and runs the pick.
+- Full screen (the 󰊓 in the header): the same tabs in a window, every row opened as a tile, a year of the calendar.
+
 ## [7.0.0] - 2026-10-06
 
 ### Changed

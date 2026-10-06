@@ -6,9 +6,10 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Local AI: one line per GPU, model or build; hover a line for its drawer (Run · config, Open · stop · ⋯).
-// Model.js turns the backend's snapshot into a list of items; this file draws them and runs the backend's verbs.
-// Errors go to the desktop's notifications, never into the panel.
+// Local AI. A header band (tabs, tokens generated, the line) and a footer band (the machine, logs · refresh) around a
+// body that keeps its height: home launches what runs and shows usage; gpus is one row per model, card and build, and
+// every row opens in place with its buttons. Model.js turns the backend's snapshot into the view; this file draws it
+// and runs the backend's verbs. Errors go to the desktop's notifications, never into the panel.
 Panel {
   id: root
   moduleName: "sero.local-ai"
@@ -31,16 +32,16 @@ Panel {
   readonly property color labelTone: tone("label")
   readonly property color dimTone: tone("dim")
   readonly property color ruleTone: tone("rule")
-  readonly property color drawerTone: Util.alpha(theme, 0.08)
+  readonly property color band: Util.alpha(theme, 0.045)
+  readonly property color edge: Util.alpha(theme, 0.09)
+  readonly property color raised: Util.alpha(theme, 0.035)
 
-  // One grid and one gap: every line starts and ends on the gutter, and every item carries half the gap above and
-  // below it, so the clear space between any two things is the same.
   readonly property int gutter: Style.space(24)
-  readonly property int gap: Style.space(28)
-  readonly property int lineH: Style.space(38)
-  readonly property int drawerW: Style.space(166)
-  // lab and card marks shipped in logos/, drawn in the line's own tone
-  readonly property var logos: ["deepseek", "gemma", "glm", "hf", "hunyuan", "kimi", "laguna", "lfm", "mimo", "minimax", "mistral", "muse", "nemotron", "qwen", "step", "nvidia-hw", "intel-hw", "amd-hw"]
+  readonly property int headH: Style.space(156)
+  readonly property int footH: Style.space(44)
+  // the body keeps the tallest height it has had since the panel opened, so the footer never jumps up
+  property real bodyH: Style.space(320)
+  readonly property var logos: ["deepseek", "gemma", "glm", "hf", "hunyuan", "kimi", "laguna", "lfm", "mimo", "minimax", "mistral", "muse", "nemotron", "qwen", "step"]
 
   property var snap: ({})
   property var ui: ({ tab: "gpus", view: "", id: "", open: "", picks: {}, registryBusy: false })
@@ -48,13 +49,13 @@ Panel {
   property var queue: []
   property bool again: false
   readonly property var view: {
-    try { return Model.build(snap, ui) } catch (e) { return { mark: "failed", items: [] } }
+    try { return Model.build(snap, ui) } catch (e) { return { mark: "failed", items: [], header: {}, footer: "" } }
   }
 
   // ---------------------------------------------------------------- navigation and verbs
 
-  function nav(patch) { ui = Object.assign({}, ui, { open: "" }, patch); flick.contentY = 0 }
-  function back() { nav(ui.view === "agent" || ui.view === "folder" || ui.view === "share" ? { view: "more" } : { view: "", id: "" }) }
+  function nav(patch) { ui = Object.assign({}, ui, patch); flick.contentY = 0 }
+  function back() { nav(ui.view === "agent" || ui.view === "folder" || ui.view === "share" || ui.view === "model" ? { view: "", id: "" } : { view: "", id: "", open: "" }) }
   function run(args) { queue.push(args); if (!verb.running) next() }
   function next() {
     if (!queue.length) return refresh()
@@ -73,17 +74,18 @@ Panel {
   function activate(action) {
     var a = (action || "").split("|")
     switch (a[0]) {
-    case "tab": nav({ tab: a[1], view: "", id: "" }); break
+    case "tab": nav({ tab: a[1], view: "", id: "", open: "" }); break
+    case "full": ui = Object.assign({}, ui, { full: a[1] === "on", view: "", id: "" }); if (a[1] === "on") root.close(); break
+    case "toggle": ui = Object.assign({}, ui, { open: ui.open === a[1] ? "" : a[1] }); break
     case "back": back(); break
-    case "config": nav({ view: "config", id: a[1] }); break
-    case "more": nav({ view: "more", id: a[1] }); break
     case "go": nav({ view: a[1], id: a[2] }); break
     case "pick": var p = Object.assign({}, ui.picks); p[a[1]] = a[2]; ui = Object.assign({}, ui, { picks: p }); break
-    case "run": run(["run", a[1], a[2]]); nav({ tab: "gpus", view: "", id: "" }); break
+    case "run": run(["run", a[1], a[2]]); nav({ tab: "gpus", view: "", id: "", open: "" }); break
     case "again": run(["stop", a[1]]); run(["run", a[1], a[2]]); break
-    case "stop": run(["stop", a[1]]); nav({ view: "", id: "" }); break
+    case "switch": run(["stop", a[1]]); run(["run", a[2], a[3]]); nav({ tab: "gpus", view: "", id: "", open: "" }); break
+    case "stop": run(["stop", a[1]]); ui = Object.assign({}, ui, { open: "" }); break
     case "open": run(["open", a[1]]); break
-    case "share": run(["share", a[1]].concat(a[2] ? [a[2]] : [])); if (a[2]) nav({ view: "more" }); break
+    case "share": run(["share", a[1]].concat(a[2] ? [a[2]] : [])); if (a[2]) back(); break
     case "set": run(["set", a[1], decodeURIComponent(a[2]), a[3]]); back(); break
     case "default": run(["set", "agent", a[1]]); break
     case "forget": run(["forget", a[1]]); break
@@ -154,7 +156,7 @@ Panel {
     running: true; repeat: true; triggeredOnStart: true
     onTriggered: root.refresh()
   }
-  onOpenedChanged: if (opened) { refresh(); nav({ view: "", id: "" }) }
+  onOpenedChanged: if (opened) { refresh(); bodyH = Style.space(320); nav({ view: "", id: "", open: "" }) }
 
   // ---------------------------------------------------------------- the bar mark
 
@@ -201,18 +203,57 @@ Panel {
     focusTarget: keys
     padding: 0
     contentWidth: Style.space(340)
-    contentHeight: panel.fittedContentHeight(content.implicitHeight)
+    contentHeight: panel.fittedContentHeight(root.headH + root.bodyH + root.footH)
 
     Rectangle { anchors.fill: parent; color: root.bg }
     Item {
       id: keys
+      objectName: "local-ai-panel"
       anchors.fill: parent
       focus: true
-      Keys.onEscapePressed: root.ui.view ? root.back() : root.close()
+      Keys.onEscapePressed: root.ui.view || root.ui.open ? root.back() : root.close()
+
+      // the header band: tabs, tokens generated, today, the line
+      Rectangle {
+        id: head
+        width: parent.width
+        height: root.headH
+        color: root.band
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.edge }
+        Row {
+          x: root.gutter
+          y: Style.space(18)
+          spacing: Style.space(26)
+          Repeater {
+            model: ["home", "gpus"]
+            Label {
+              required property string modelData
+              readonly property bool on: root.view.tab === modelData
+              text: modelData
+              color: on ? root.ink : root.labelTone
+              font.pixelSize: Style.font.caption + 1
+              Rectangle { visible: parent.on; y: parent.height + Style.space(4); width: parent.width; height: 1.5; color: root.ink }
+              Click { action: "tab|" + modelData }
+            }
+          }
+        }
+        Row {
+          x: root.gutter
+          y: Style.space(56)
+          spacing: Style.space(8)
+          Label { id: total; text: (root.view.header || {}).empty ? "0" : (root.view.header || {}).tokens || ""; color: (root.view.header || {}).empty ? root.labelTone : root.ink; font.pixelSize: Style.space(26) }
+          Label { anchors.baseline: total.baseline; text: "tokens generated"; color: root.labelTone }
+        }
+        Label { anchors.right: parent.right; anchors.rightMargin: root.gutter; y: Style.space(16); text: "󰊓"; color: root.labelTone; font.pixelSize: Style.font.body + 1; Click { action: "full|on" } }
+        Label { anchors.right: parent.right; anchors.rightMargin: root.gutter; y: Style.space(66); text: (root.view.header || {}).today || ""; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
+        Line { x: root.gutter; y: Style.space(96); width: parent.width - 2 * root.gutter; height: Style.space(44); values: (root.view.header || {}).line || [] }
+      }
 
       Flickable {
         id: flick
-        anchors.fill: parent
+        y: root.headH
+        width: parent.width
+        height: root.bodyH
         contentHeight: content.implicitHeight
         clip: true
         interactive: contentHeight > height
@@ -223,7 +264,8 @@ Panel {
           objectName: "local-ai-content"
           width: flick.width
           topPadding: Style.space(6)
-          bottomPadding: root.gap / 2
+          bottomPadding: Style.space(14)
+          onImplicitHeightChanged: root.bodyH = Math.min(Style.space(600), Math.max(root.bodyH, implicitHeight))
 
           Repeater {
             // keyed by position, so a refresh updates items in place instead of rebuilding them
@@ -232,10 +274,146 @@ Panel {
               required property int index
               readonly property var r: (root.view.items || [])[index] || ({ type: "" })
               width: content.width
-              sourceComponent: ({ tabs: tabsC, top: topC, bars: barsC, note: noteC, line: lineC, msg: msgC, back: backC, pick: lineC,
-                kv: kvC, opt: optC, links: linksC, button: buttonC, field: fieldC })[r.type] || null
+              sourceComponent: ({ msg: msgC, note: noteC, row: rowC, rule: ruleC, launch: launchC, tiers: tiersC, calendar: calendarC,
+                back: backC, list: listC, opt: optC, links: linksC, button: buttonC, field: fieldC })[r.type] || null
             }
           }
+        }
+      }
+
+      // the footer band: the machine in one line, and the quiet doors
+      Rectangle {
+        y: root.headH + root.bodyH
+        width: parent.width
+        height: root.footH
+        color: root.band
+        Rectangle { width: parent.width; height: 1; color: root.edge }
+        Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: root.view.footer || ""; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
+        Row {
+          anchors.right: parent.right
+          anchors.rightMargin: root.gutter
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(12)
+          Label { text: "logs"; color: root.labelTone; font.pixelSize: Style.font.caption - 1; Click { action: "log" } }
+          Label { text: root.ui.registryBusy ? "refreshing…" : "refresh"; color: root.labelTone; font.pixelSize: Style.font.caption - 1; Click { action: root.ui.registryBusy ? "" : "registry" } }
+        }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- full screen
+
+  // The same panel, wider: the header carries the tiers, gpus is every row opened as a tile, home is launch and a year.
+  FloatingWindow {
+    id: fullWin
+    visible: !!root.ui.full
+    implicitWidth: Style.space(1280)
+    implicitHeight: Style.space(800)
+    color: root.bg
+    title: "Local AI"
+    onVisibleChanged: if (!visible && root.ui.full) root.ui = Object.assign({}, root.ui, { full: false })
+    readonly property var f: root.view.full || ({})
+    Item {
+      objectName: "local-ai-full"
+      anchors.fill: parent
+      focus: true
+      Keys.onEscapePressed: root.activate("full|off")
+      Rectangle {
+        id: fhead
+        width: parent.width
+        height: Style.space(220)
+        color: root.band
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.edge }
+        Label { x: Style.space(40); y: Style.space(28); text: "Local AI"; color: root.ink; font.pixelSize: Style.font.body + 2 }
+        Row {
+          x: Style.space(170); y: Style.space(30)
+          spacing: Style.space(26)
+          Repeater {
+            model: ["home", "gpus"]
+            Label {
+              required property string modelData
+              readonly property bool on: root.view.tab === modelData
+              text: modelData
+              color: on ? root.ink : root.labelTone
+              font.pixelSize: Style.font.caption + 1
+              Rectangle { visible: parent.on; y: parent.height + Style.space(4); width: parent.width; height: 1.5; color: root.ink }
+              Click { action: "tab|" + modelData }
+            }
+          }
+        }
+        Label { anchors.right: parent.right; anchors.rightMargin: Style.space(40); y: Style.space(28); text: "󰊔  esc"; color: root.labelTone; Click { action: "full|off" } }
+        Row {
+          x: Style.space(40); y: Style.space(70)
+          spacing: Style.space(12)
+          Label { id: ftotal; text: (root.view.header || {}).tokens || "0"; color: root.ink; font.pixelSize: Style.space(40) }
+          Label { anchors.baseline: ftotal.baseline; text: "tokens generated"; color: root.labelTone; font.pixelSize: Style.font.body }
+        }
+        Line { x: Style.space(40); y: Style.space(130); width: Style.space(760); height: Style.space(70); values: (root.view.header || {}).line || [] }
+        Grid {
+          x: Style.space(860); y: Style.space(72)
+          columns: 3
+          columnSpacing: Style.space(40)
+          rowSpacing: Style.space(22)
+          Repeater {
+            model: fullWin.f.tiers ? fullWin.f.tiers.cells : []
+            Column {
+              required property var modelData
+              required property int index
+              Label { text: modelData[0]; color: index === 0 ? root.ink : root.valueTone; font.pixelSize: Style.space(22) }
+              Label { text: modelData[1]; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
+            }
+          }
+        }
+      }
+      Flickable {
+        y: fhead.height
+        width: parent.width
+        height: parent.height - fhead.height - Style.space(52)
+        contentHeight: fbody.implicitHeight + Style.space(40)
+        clip: true
+        Flow {
+          id: fbody
+          x: Style.space(40); y: Style.space(30)
+          width: parent.width - Style.space(80)
+          spacing: Style.space(20)
+          // gpus: a tile per row, opened
+          Repeater {
+            model: fullWin.f.tiles || []
+            Rectangle {
+              required property var modelData
+              width: Style.space(380)
+              height: tileRow.height + Style.space(8)
+              radius: Style.space(6)
+              color: root.band
+              border.width: 1
+              border.color: root.edge
+              Loader { id: tileRow; y: Style.space(4); width: parent.width; property var r: modelData; sourceComponent: rowC }
+            }
+          }
+          // home: launch, then the year
+          Column {
+            visible: !fullWin.f.tiles
+            width: Style.space(420)
+            Repeater {
+              model: fullWin.f.items || []
+              Loader { required property var modelData; width: parent.width; property var r: modelData; sourceComponent: ({ note: noteC, launch: launchC, msg: msgC, row: rowC })[modelData.type] || null }
+            }
+          }
+          Loader { visible: !fullWin.f.tiles && !!fullWin.f.calendar; property var r: fullWin.f.calendar || ({}); width: Style.space(700); sourceComponent: fullWin.f.calendar ? calendarC : null }
+        }
+      }
+      Rectangle {
+        anchors.bottom: parent.bottom
+        width: parent.width
+        height: Style.space(52)
+        color: root.band
+        Rectangle { width: parent.width; height: 1; color: root.edge }
+        Label { x: Style.space(40); anchors.verticalCenter: parent.verticalCenter; text: (root.view.footer || "") + "  ·  Local AI " + (root.snap.version || ""); color: root.labelTone }
+        Row {
+          anchors.right: parent.right; anchors.rightMargin: Style.space(40); anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(16)
+          Label { text: "logs"; color: root.labelTone; Click { action: "log" } }
+          Label { text: root.ui.registryBusy ? "refreshing…" : "refresh models"; color: root.labelTone; Click { action: root.ui.registryBusy ? "" : "registry" } }
         }
       }
     }
@@ -243,91 +421,23 @@ Panel {
 
   // ---------------------------------------------------------------- items
 
-  // home · gpus; a page under gpus keeps gpus underlined
+  // A heading, its sentence, and the one button
   Component {
-    id: tabsC
+    id: msgC
     Item {
       readonly property var rr: parent.r
-      height: Style.space(40)
-      Row {
-        x: root.gutter
-        y: Style.space(18)
-        spacing: Style.space(26)
-        Repeater {
-          model: ["home", "gpus"]
-          Label {
-            required property string modelData
-            readonly property bool on: rr.on === modelData
-            text: modelData
-            color: on ? root.ink : root.labelTone
-            Rectangle { visible: parent.on; y: parent.height + Style.space(4); width: parent.width; height: 1.5; color: root.ink }
-            Click { action: "tab|" + modelData }
-          }
-        }
-      }
-    }
-  }
-
-  // tokens generated, then its cumulative line under it
-  Component {
-    id: topC
-    Item {
-      readonly property var rr: parent.r
-      height: topCol.implicitHeight + root.gap
+      height: msgCol.implicitHeight
       Column {
-        id: topCol
-        x: root.gutter
-        y: root.gap / 2
-        width: parent.width - 2 * root.gutter
-        spacing: Style.space(10)
-        Row {
-          spacing: Style.space(8)
-          Label { id: tokens; text: rr.tokens; color: root.ink; font.pixelSize: Style.space(24) }
-          Label { anchors.baseline: tokens.baseline; text: "tokens generated"; color: root.labelTone }
-        }
-        Line { width: parent.width; height: Style.space(rr.h || 44); values: rr.line || [] }
-      }
-    }
-  }
-
-  // a bar per day; hovering one says its date and tokens, the last day is said otherwise
-  Component {
-    id: barsC
-    Item {
-      id: barsItem
-      property var rr: parent.r
-      property int hover: -1
-      readonly property var values: rr.values || []
-      readonly property real peak: Math.max.apply(null, values.concat([1]))
-      height: Style.space(64) + Style.space(30) + root.gap / 2
-      Row {
+        id: msgCol
         x: root.gutter
         width: parent.width - 2 * root.gutter
-        height: Style.space(64)
-        Repeater {
-          model: barsItem.values.length
-          Item {
-            required property int index
-            width: parent.width / barsItem.values.length
-            height: parent.height
-            Rectangle {
-              x: 1
-              width: Math.max(1, parent.width - 3)
-              height: barsItem.values[index] / barsItem.peak * parent.height
-              anchors.bottom: parent.bottom
-              color: index === barsItem.hover || barsItem.hover < 0 && index === barsItem.values.length - 1 ? root.ink : root.ruleTone
-            }
-            MouseArea { anchors.fill: parent; hoverEnabled: true; onEntered: barsItem.hover = index; onExited: if (barsItem.hover === index) barsItem.hover = -1 }
-          }
-        }
-      }
-      Rectangle { x: root.gutter; y: Style.space(64); width: parent.width - 2 * root.gutter; height: 1; color: root.ruleTone }
-      Label {
-        x: root.gutter
-        y: Style.space(64) + Style.space(10)
-        text: (barsItem.rr.labels || [])[barsItem.hover >= 0 ? barsItem.hover : barsItem.values.length - 1] || ""
-        color: root.labelTone
-        font.pixelSize: Style.font.caption - 1
+        topPadding: Style.space(26)
+        bottomPadding: Style.space(14)
+        spacing: Style.space(8)
+        Label { width: parent.width; text: rr.head; color: root.ink; font.pixelSize: Style.font.body + 2; wrapMode: Text.WordWrap }
+        Repeater { model: rr.lines || []; Label { required property string modelData; width: msgCol.width; wrapMode: Text.WordWrap; text: modelData; color: root.labelTone } }
+        Item { width: 1; height: rr.button ? Style.space(6) : 0 }
+        Btn { visible: !!rr.button; label: rr.button ? rr.button.label : ""; action: rr.button ? rr.button.action : "" }
       }
     }
   }
@@ -335,153 +445,244 @@ Panel {
   Component {
     id: noteC
     Item {
-      height: noteText.implicitHeight + root.gap / 2
       readonly property var rr: parent.r
-      Label { id: noteText; x: root.gutter; y: root.gap / 2; text: rr.text; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
+      height: Style.space(30)
+      Label { x: root.gutter; anchors.bottom: parent.bottom; anchors.bottomMargin: Style.space(4); text: rr.text; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
     }
   }
 
-  // A line: a mark, a name, on the right what it is doing; hovering slides its drawer in from the right, one button
-  // and quiet links. A free line names, while hovered, the model its Run starts. A config pick is the same line.
+  Component { id: ruleC; Item { height: Style.space(10); Rectangle { x: root.gutter; y: Style.space(5); width: parent.width - 2 * root.gutter; height: 1; color: root.ruleTone } } }
+
+  // A row: the mark, the name, what it is doing on the right and ⌄; the card's facts and a memory bar under it. Click
+  // opens it in place, on a raised surface, with what it holds and its buttons.
   Component {
-    id: lineC
+    id: rowC
     Item {
-      id: line
+      id: row
       readonly property var rr: parent.r
-      readonly property bool pick: rr.type === "pick"
-      readonly property bool open: !!rr.drawer && (hov.hovered || root.ui.open === rr.id)
-      readonly property var shown: open && rr.next ? rr.next : rr
-      readonly property color tone: rr.dim || rr.off ? root.dimTone : open || rr.on ? root.ink : rr.quiet ? root.labelTone : root.valueTone
-      height: root.lineH + (pick && rr.note ? Style.space(14) : 0) + (rr.progress >= 0 ? Style.space(4) : 0)
-      HoverHandler { id: hov }
-      Click { action: line.pick ? line.rr.action || "" : "" }
-      TapHandler { enabled: !!line.rr.drawer && !line.pick; onTapped: root.ui = Object.assign({}, root.ui, { open: root.ui.open === line.rr.id ? "" : line.rr.id }) }
-      Rectangle { visible: !!rr.on; x: root.gutter - Style.space(12); y: root.lineH / 2 - 2; width: 4; height: 4; radius: 2; color: root.ink }
-      Mark { id: mk; x: root.gutter; y: (root.lineH - height) / 2; logo: line.shown.logo || ({}); tone: line.tone }
+      readonly property var d: rr.detail || null
+      readonly property bool open: !!rr.open && !!d
+      readonly property color tone: rr.dim ? root.dimTone : rr.quiet ? root.labelTone : rr.mark && rr.mark.kind === "lab" ? root.ink : root.valueTone
+      height: Style.space(62) + (open ? detail.implicitHeight + Style.space(8) : 0)
+      Rectangle {
+        visible: row.open
+        x: Style.space(8); y: Style.space(2)
+        width: parent.width - Style.space(16); height: parent.height - Style.space(4)
+        radius: Style.space(6)
+        color: root.raised
+        border.width: 1
+        border.color: root.edge
+      }
+      Click { height: Style.space(62); action: row.d ? "toggle|" + rr.id : "" }
+      Mark { id: mk; x: root.gutter; y: Style.space(13); logo: rr.mark || ({}); tone: row.tone }
       Label {
-        x: root.gutter + Style.space(22)
-        width: (line.open ? parent.width - root.drawerW - Style.space(8) : info.x - Style.space(10)) - x
+        id: rowName
+        x: root.gutter + Style.space(24)
+        width: Math.min(implicitWidth, rowRight.x - x - Style.space(24))
         anchors.verticalCenter: mk.verticalCenter
         elide: Text.ElideRight
-        text: line.shown.name || ""
-        color: line.tone
+        text: rr.name || ""
+        color: row.tone
+        font.pixelSize: Style.font.caption + 1
       }
+      Rectangle { visible: !!rr.live; x: rowName.x + rowName.width + Style.space(8); anchors.verticalCenter: mk.verticalCenter; width: 5; height: 5; radius: 2.5; color: root.ink }
       Label {
-        visible: line.pick && !!line.rr.note
-        x: root.gutter + Style.space(22)
-        y: root.lineH / 2 + Style.space(8)
-        text: line.rr.note || ""
-        color: line.rr.off ? root.dimTone : root.labelTone
+        id: rowRight
+        anchors.right: parent.right
+        anchors.rightMargin: root.gutter + (row.d ? Style.space(14) : 0)
+        anchors.verticalCenter: mk.verticalCenter
+        text: rr.right || ""
+        color: rr.live ? root.valueTone : rr.dim ? root.dimTone : root.labelTone
+      }
+      Label { visible: !!row.d; anchors.right: parent.right; anchors.rightMargin: root.gutter; anchors.verticalCenter: mk.verticalCenter; text: row.open ? "⌃" : "⌄"; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
+      Label {
+        x: root.gutter + Style.space(24); y: Style.space(30)
+        width: parent.width - x - root.gutter
+        elide: Text.ElideRight
+        text: rr.facts || ""
+        color: rr.dim ? root.dimTone : root.labelTone
         font.pixelSize: Style.font.caption - 1
       }
-      Label {
-        id: info
-        visible: !line.open
-        anchors.right: parent.right
-        anchors.rightMargin: root.gutter
-        anchors.verticalCenter: mk.verticalCenter
-        text: line.rr.info || ""
-        color: line.rr.dim ? root.dimTone : root.labelTone
-      }
       Rectangle {
-        visible: line.rr.progress >= 0
-        x: root.gutter; y: root.lineH / 2 + Style.space(12)
-        width: parent.width - 2 * root.gutter; height: 2; color: root.ruleTone
-        Rectangle { width: parent.width * (line.rr.progress || 0) / 100; height: 2; color: root.ink }
+        visible: rr.frac != null || rr.progress >= 0
+        x: root.gutter + Style.space(24); y: Style.space(50)
+        width: parent.width - x - root.gutter; height: 3; radius: 1.5
+        color: root.ruleTone
+        Rectangle { width: parent.width * Math.max(0, Math.min(1, rr.progress >= 0 ? rr.progress / 100 : rr.frac || 0)); height: 3; radius: 1.5; color: rr.progress >= 0 ? root.ink : rr.dim ? root.dimTone : root.labelTone }
       }
-      // the drawer: a sliver with a fold at rest, the full width while open
-      Rectangle {
-        visible: !!line.rr.drawer
-        x: parent.width - (line.open ? root.drawerW : Style.space(5))
-        y: root.lineH / 2 - Style.space(15)
-        width: root.drawerW
-        height: Style.space(30)
-        radius: Style.space(4)
-        color: root.drawerTone
-        Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-        Rectangle { width: 1; height: parent.height; color: Util.alpha(root.theme, 0.16) }
-        Row {
-          visible: line.open
-          x: Style.space(16)
-          anchors.verticalCenter: parent.verticalCenter
-          spacing: Style.space(10)
+
+      // opened: the row's own contents
+      Column {
+        id: detail
+        visible: row.open
+        x: root.gutter + Style.space(24)
+        y: Style.space(66)
+        width: parent.width - x - root.gutter
+        spacing: Style.space(10)
+        // running: six figures, the activity spark, its settings, its buttons
+        Grid {
+          visible: !!row.d && row.d.kind === "run"
+          columns: 3
+          width: parent.width
+          rowSpacing: Style.space(8)
           Repeater {
-            model: line.rr.drawer || []
-            Item {
+            model: row.d && row.d.cells || []
+            Column {
               required property var modelData
-              required property int index
-              width: index === 0 ? Style.space(70) : quiet.implicitWidth
-              height: Style.space(26)
-              visible: !!modelData
-              Btn { visible: index === 0; anchors.fill: parent; label: modelData ? modelData.label : ""; action: modelData ? modelData.action : "" }
-              Label { id: quiet; visible: index > 0; anchors.verticalCenter: parent.verticalCenter; text: modelData ? modelData.label : ""; color: root.labelTone
-                Click { action: modelData ? modelData.action : "" } }
+              width: detail.width / 3
+              Label { text: modelData[0]; color: root.ink; font.pixelSize: Style.font.caption + 2 }
+              Label { text: modelData[1]; color: root.labelTone; font.pixelSize: Style.font.caption - 2 }
             }
+          }
+        }
+        Spark { visible: !!row.d && row.d.kind === "run" && (row.d.spark || []).length > 1; width: parent.width; height: Style.space(18); values: row.d && row.d.spark || [] }
+        Repeater {
+          model: row.d && row.d.kv || []
+          Item {
+            required property var modelData
+            visible: !!modelData.v
+            width: detail.width
+            height: visible ? Style.space(20) : 0
+            Label { anchors.verticalCenter: parent.verticalCenter; text: modelData.k; color: root.labelTone }
+            Label { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: modelData.v; color: root.valueTone }
+            Click { action: modelData.action || "" }
+          }
+        }
+        // held or stopped: what it is and why
+        Repeater { model: row.d && row.d.lines || []; Label { required property string modelData; width: detail.width; wrapMode: Text.WordWrap; text: modelData; color: root.valueTone } }
+        Label { visible: !!row.d && !!row.d.note; text: row.d && row.d.note || ""; color: root.labelTone; font.pixelSize: Style.font.caption - 2 }
+        // free (or held, read only): every model for the card
+        ModelList { visible: !!row.d && (row.d.models || []).length > 0; width: parent.width; models: row.d && row.d.models || [] }
+        Row {
+          visible: !!row.d && (!!row.d.button || (row.d.links || []).length > 0)
+          spacing: Style.space(14)
+          Btn { visible: !!row.d && !!row.d.button; label: row.d && row.d.button ? row.d.button.label : ""; action: row.d && row.d.button ? row.d.button.action : "" }
+          Repeater {
+            model: row.d && row.d.links || []
+            Label { required property var modelData; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: root.labelTone; Click { action: modelData.action } }
           }
         }
       }
     }
   }
 
-  // A heading, its sentence, and the one button
+  // launch: a running model in its agent and folder, Open on the right; the agent and the folder each change here
   Component {
-    id: msgC
+    id: launchC
     Item {
-    readonly property var rr: parent.r
-    height: msgCol.implicitHeight
-    Column {
-      id: msgCol
-      x: root.gutter
-      width: parent.width - 2 * root.gutter
-      topPadding: root.gap / 2
-      bottomPadding: root.gap / 2
-      spacing: Style.space(6)
-      Label { width: parent.width; text: rr.head; color: root.ink; font.pixelSize: Style.font.body + 2; wrapMode: Text.WordWrap }
-      Repeater { model: rr.lines || []; Label { required property string modelData; width: msgCol.width; wrapMode: Text.WordWrap; text: modelData; color: root.labelTone } }
-      Item { width: 1; height: rr.button ? root.gap - Style.space(6) : 0 }
-      Btn { visible: !!rr.button; label: rr.button ? rr.button.label : ""; action: rr.button ? rr.button.action : "" }
-    }
+      readonly property var rr: parent.r
+      height: Style.space(52)
+      Mark { id: lm; x: root.gutter; y: Style.space(10); logo: ({ kind: "lab", name: rr.family }); tone: root.ink }
+      Label { x: root.gutter + Style.space(24); width: parent.width - x - openBtn.width - root.gutter - Style.space(12); anchors.verticalCenter: lm.verticalCenter; elide: Text.ElideRight; text: rr.name; color: root.ink; font.pixelSize: Style.font.caption + 1 }
+      Row {
+        x: root.gutter + Style.space(24); y: Style.space(28)
+        spacing: Style.space(6)
+        Label { text: rr.agent; color: root.valueTone; font.pixelSize: Style.font.caption - 1; Click { action: rr.agentAction } }
+        Label { text: "·"; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
+        Label { text: rr.folder; color: root.valueTone; font.pixelSize: Style.font.caption - 1; Click { action: rr.folderAction } }
+      }
+      Btn { id: openBtn; anchors.right: parent.right; anchors.rightMargin: root.gutter; y: Style.space(10); label: "Open"; action: rr.open }
     }
   }
 
-  // ‹ where you came from, and what this page is about
+  // today, week, month, 3 months, year, lifetime
+  Component {
+    id: tiersC
+    Item {
+      readonly property var rr: parent.r
+      height: Style.space(112)
+      Grid {
+        id: tierGrid
+        x: root.gutter; y: Style.space(18)
+        width: parent.width - 2 * root.gutter
+        columns: 3
+        rowSpacing: Style.space(14)
+        Repeater {
+          model: rr.cells || []
+          Column {
+            required property var modelData
+            required property int index
+            width: tierGrid.width / 3
+            Label { text: modelData[0]; color: index === 0 ? root.ink : root.valueTone; font.pixelSize: Style.font.body + 2 }
+            Label { text: modelData[1]; color: root.labelTone; font.pixelSize: Style.font.caption - 2 }
+          }
+        }
+      }
+    }
+  }
+
+  // the calendar: a column a week, a row a weekday, each day shaded by its tokens; hover says the day
+  Component {
+    id: calendarC
+    Item {
+      id: cal
+      readonly property var rr: parent.r
+      readonly property real cell: Style.space(9)
+      readonly property real step: Style.space(11)
+      property int hover: -1
+      height: Style.space(16) + 7 * step + Style.space(34)
+      Repeater {
+        model: cal.rr.months || []
+        Label { required property var modelData; x: root.gutter + Style.space(12) + modelData.col * cal.step; text: modelData.label; color: root.labelTone; font.pixelSize: Style.font.caption - 3 }
+      }
+      Repeater {
+        model: [["M", 0], ["W", 2], ["F", 4]]
+        Label { required property var modelData; x: root.gutter; y: Style.space(14) + modelData[1] * cal.step - 1; text: modelData[0]; color: root.labelTone; font.pixelSize: Style.font.caption - 4 }
+      }
+      Repeater {
+        model: (cal.rr.cells || []).length
+        Rectangle {
+          required property int index
+          readonly property int level: cal.rr.cells[index]
+          x: root.gutter + Style.space(12) + Math.floor(index / 7) * cal.step
+          y: Style.space(16) + index % 7 * cal.step
+          width: cal.cell; height: cal.cell; radius: 1.5
+          visible: level >= 0
+          color: Util.alpha(root.theme, [0.07, 0.22, 0.42, 0.66, 0.95][Math.max(0, level)])
+          border.width: index === cal.rr.today || index === cal.hover ? 1 : 0
+          border.color: root.ink
+          MouseArea { anchors.fill: parent; hoverEnabled: true; onEntered: cal.hover = index; onExited: if (cal.hover === index) cal.hover = -1 }
+        }
+      }
+      Label {
+        x: root.gutter + Style.space(12)
+        y: Style.space(16) + 7 * cal.step + Style.space(8)
+        text: (cal.rr.labels || [])[cal.hover >= 0 ? cal.hover : cal.rr.today] || ""
+        color: root.valueTone
+        font.pixelSize: Style.font.caption - 1
+      }
+    }
+  }
+
+  // ‹ back to the rows, and what this page is about
   Component {
     id: backC
     Item {
       readonly property var rr: parent.r
-      height: Style.space(20) + root.gap
-      Row {
-        x: root.gutter
-        y: root.gap / 2
-        spacing: Style.space(10)
-        Label { id: backLabel; width: Math.min(implicitWidth, (content.width - 2 * root.gutter) * 0.7); elide: Text.ElideRight
-          text: "‹ " + rr.label; color: root.ink; font.pixelSize: Style.font.body + 1 }
-        Label { anchors.baseline: backLabel.baseline; width: Math.max(0, content.width - 2 * root.gutter - backLabel.width - Style.space(10)); elide: Text.ElideRight
-          text: rr.sub || ""; color: root.labelTone }
-      }
+      height: Style.space(52)
+      Label { id: backLabel; x: root.gutter; y: Style.space(20); width: Math.min(implicitWidth, (parent.width - 2 * root.gutter) * 0.7); elide: Text.ElideRight; text: "‹ " + rr.label; color: root.ink; font.pixelSize: Style.font.body + 1 }
+      Label { anchors.left: backLabel.right; anchors.leftMargin: Style.space(10); anchors.baseline: backLabel.baseline; width: parent.width - x - root.gutter; elide: Text.ElideRight; text: rr.sub || ""; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
       Click { action: "back" }
     }
   }
 
   Component {
-    id: kvC
+    id: listC
     Item {
       readonly property var rr: parent.r
-      height: root.lineH
-      Label { x: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: rr.k; color: root.labelTone }
-      Label { anchors.right: parent.right; anchors.rightMargin: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: rr.v; color: root.valueTone }
-      Click { action: rr.action || "" }
+      height: ml.implicitHeight + Style.space(10)
+      ModelList { id: ml; x: root.gutter; width: parent.width - 2 * root.gutter; models: rr.models || [] }
     }
   }
 
-  // a choice in a list: an agent (its mark in the line's tone) or a folder; the chosen one dotted
+  // a choice: an agent (its mark in black and white) or a folder; the chosen one dotted
   Component {
     id: optC
     Item {
       readonly property var rr: parent.r
-      height: root.lineH
+      height: Style.space(34)
       Rectangle { visible: !!rr.on; x: root.gutter - Style.space(12); anchors.verticalCenter: parent.verticalCenter; width: 4; height: 4; radius: 2; color: root.ink }
-      Mark { id: optMark; visible: !!rr.agent; x: root.gutter; anchors.verticalCenter: parent.verticalCenter; agent: rr.agent || ""; tone: rr.on ? root.ink : root.valueTone }
+      Mark { visible: !!rr.agent; x: root.gutter; anchors.verticalCenter: parent.verticalCenter; agent: rr.agent || ""; tone: rr.on ? root.ink : root.valueTone }
       Label { x: root.gutter + (rr.agent ? Style.space(24) : 0); width: parent.width - x - root.gutter - Style.space(60); elide: Text.ElideMiddle; anchors.verticalCenter: parent.verticalCenter; text: rr.name
         color: rr.on ? root.ink : rr.quiet ? root.labelTone : root.valueTone }
       Label { anchors.right: parent.right; anchors.rightMargin: root.gutter; anchors.verticalCenter: parent.verticalCenter; text: rr.note || ""; color: root.labelTone; font.pixelSize: Style.font.caption - 1 }
@@ -493,7 +694,7 @@ Panel {
     id: linksC
     Item {
       readonly property var rr: parent.r
-      height: root.lineH
+      height: Style.space(40)
       Row {
         x: root.gutter
         anchors.verticalCenter: parent.verticalCenter
@@ -510,15 +711,11 @@ Panel {
     id: buttonC
     Item {
       readonly property var rr: parent.r
-      height: Style.space(30) + root.gap
-      Btn { x: root.gutter; y: root.gap / 2; label: rr.label; action: rr.action || "" }
-      Label { visible: !!rr.right; anchors.right: parent.right; anchors.rightMargin: root.gutter; y: root.gap / 2 + Style.space(8)
-        text: rr.right ? rr.right.label : ""; color: root.labelTone; font.pixelSize: Style.font.caption - 1
-        Click { action: rr.right ? rr.right.action : "" } }
+      height: Style.space(58)
+      Btn { x: root.gutter; y: Style.space(14); label: rr.label; action: rr.action || "" }
     }
   }
 
-  // a value, and under it what it is with its links
   Component {
     id: fieldC
     Item {
@@ -527,8 +724,8 @@ Panel {
       Column {
         id: fieldCol
         x: root.gutter
-        topPadding: root.gap / 2
-        bottomPadding: root.gap / 2
+        topPadding: Style.space(14)
+        bottomPadding: Style.space(8)
         spacing: Style.space(6)
         Label { text: rr.value; color: root.ink }
         Repeater { model: rr.links || []; Label { required property var modelData; text: modelData.label; color: root.labelTone; font.pixelSize: Style.font.caption - 1; Click { action: modelData.action } } }
@@ -547,10 +744,34 @@ Panel {
 
   component Click: MouseArea {
     property string action
-    anchors.fill: parent
+    width: parent ? parent.width : 0
+    height: parent ? parent.height : 0
     enabled: action !== ""
     cursorShape: Qt.PointingHandCursor
     onClicked: root.activate(action)
+  }
+
+  // every model for a card: the picked one highlighted, the first tagged, what each needs under its name, `remove`
+  // beside one on disk; a model that cannot run here is dim and does nothing
+  component ModelList: Column {
+    id: list
+    property var models: []
+    Repeater {
+      model: list.models
+      Item {
+        required property var modelData
+        width: list.width
+        height: Style.space(34)
+        Rectangle { visible: !!modelData.on; x: -Style.space(6); width: parent.width + Style.space(6); height: parent.height - 2; radius: 3; color: Util.alpha(root.theme, 0.07) }
+        Mark { id: lmk; y: Style.space(4); logo: ({ kind: "lab", name: modelData.family }); tone: modelData.off ? root.dimTone : modelData.on ? root.ink : root.valueTone }
+        Label { x: Style.space(20); y: Style.space(4); width: parent.width - x - removeLink.width - Style.space(8); elide: Text.ElideRight; text: modelData.name
+          color: modelData.off ? root.dimTone : modelData.on ? root.ink : root.valueTone }
+        Label { x: Style.space(20); y: Style.space(19); text: [modelData.tag, modelData.note].filter(Boolean).join(" · "); color: modelData.off ? root.dimTone : root.labelTone; font.pixelSize: Style.font.caption - 2 }
+        Click { action: modelData.action || "" }
+        Label { id: removeLink; visible: !!modelData.remove; anchors.right: parent.right; y: Style.space(4); text: visible ? "remove" : ""; color: root.labelTone; font.pixelSize: Style.font.caption - 2
+          Click { action: modelData.remove || "" } }
+      }
+    }
   }
 
   // A lab's, a card maker's or an agent's mark: a lab's or a card maker's in the line's tone, an agent's in black and
@@ -565,10 +786,9 @@ Panel {
       : logo.kind === "hw" ? (logo.name === "cpu" ? "" : "logos/" + logo.name + "-hw.svg")
       : root.logos.indexOf(logo.name) >= 0 ? "logos/" + logo.name + ".svg" : ""
     property string svg: ""
-    width: Style.space(agent ? 16 : 14)
+    width: Style.space(agent ? 16 : 15)
     height: width
     FileView {
-      id: fv
       path: m.file && m.file.endsWith(".svg") ? decodeURIComponent(String(Qt.resolvedUrl(m.file)).replace(/^file:\/\//, "")) : ""
       blockLoading: true
       onLoaded: m.svg = text()
@@ -591,7 +811,7 @@ Panel {
     }
   }
 
-  // Tokens over time, cumulative: a line over a faint area
+  // Tokens over time, cumulative: a line over a faint area; flat when there is nothing yet
   component Line: Canvas {
     property var values: []
     onValuesChanged: requestPaint()
@@ -599,15 +819,15 @@ Panel {
     onPaint: {
       var g = getContext("2d"), v = values || [], n = v.length, top = Math.max.apply(null, v.concat([1]))
       g.clearRect(0, 0, width, height)
-      if (n < 2) return
+      g.strokeStyle = root.valueTone
+      g.lineWidth = 1.4
       g.beginPath()
+      if (n < 2 || top <= 1) { g.moveTo(0, height - 1); g.lineTo(width, height - 1); g.strokeStyle = root.ruleTone; g.stroke(); return }
       for (var i = 0; i < n; i++) {
         var x = i / (n - 1) * width, y = height - 1 - v[i] / top * (height * 0.92)
         if (i) g.lineTo(x, y)
         else g.moveTo(x, y)
       }
-      g.strokeStyle = root.valueTone
-      g.lineWidth = 1.4
       g.stroke()
       g.lineTo(width, height)
       g.lineTo(0, height)
@@ -617,14 +837,33 @@ Panel {
     }
   }
 
+  // a small bar chart, newest at the right
+  component Spark: Item {
+    id: sp
+    property var values: []
+    readonly property real peak: Math.max.apply(null, (values || []).concat([1]))
+    readonly property real step: width / Math.max(1, (values || []).length)
+    Repeater {
+      model: (sp.values || []).length
+      Rectangle {
+        required property int index
+        x: index * sp.step
+        width: Math.max(1, sp.step - 1)
+        height: Math.max(1, sp.values[index] / sp.peak * sp.height)
+        y: sp.height - height
+        color: sp.values[index] > 0 ? Util.alpha(root.theme, 0.5) : root.ruleTone
+      }
+    }
+  }
+
   // the one solid button
   component Btn: Rectangle {
     id: btn
     property string label
     property string action
     visible: label !== ""
-    implicitWidth: btnText.implicitWidth + Style.space(28)
-    implicitHeight: Style.space(30)
+    implicitWidth: btnText.implicitWidth + Style.space(26)
+    implicitHeight: Style.space(28)
     radius: Style.space(3)
     color: root.ink
     opacity: action === "" ? 0.4 : 1
