@@ -13,15 +13,17 @@ T = ("", "root", "Local AI panel", [
   ("no tested card", "screen", "no-supported-gpu", [("See supported cards", "out", "browser: local.sybilsolutions.ai", [])]),
   ("home tab", "screen", "home", [("󰊓 full screen", "screen", "full-home", [])]),
   ("gpus tab", "screen", "gpus", [
-    ("hover a running line", "screen", "gpus-hover-running", [
+    ("open a running row", "screen", "gpus-open-running", [
       ("Open pi", "out", "pi opens on the model", []),
-      ("⋯", "screen", "more", [("agent ›", "screen", "agent", []), ("folder ›", "screen", "folder", []), ("share: turn on", "screen", "share", []), ("logs ›", "out", "the log in a terminal", [])]),
+      ("model: change ›", "screen", "config", [("hover a model on disk", "screen", "config-hover-on-disk", [])]),
+      ("agent ›", "screen", "agent", []), ("folder ›", "screen", "folder", []), ("share: turn on", "screen", "share", []),
+      ("logs", "out", "the log in a terminal", []),
     ]),
-    ("hover a free line", "screen", "gpus-hover-free", [
-      ("Run", "screen", "starting-download", [("downloaded", "screen", "starting-load", [])]),
-      ("config", "screen", "config", [("hover a model on disk", "screen", "config-hover-on-disk", [])]),
+    ("open a free row", "screen", "gpus-open-free", [
+      ("Run (the picked model)", "screen", "starting-download", [("downloaded", "screen", "starting-load", [])]),
     ]),
-    ("a model stops by itself", "screen", "notification", [("the line", "screen", "stopped", [])]),
+    ("open an in-use row", "screen", "gpus-open-in-use", []),
+    ("a model stops by itself", "screen", "notification", [("its row, opened", "screen", "stopped", [])]),
     ("󰊓 full screen", "screen", "full-gpus", []),
     ("a one-GPU machine", "screen", "one-gpu", []),
     ("no GPU: the CPU", "screen", "cpu-only", []),

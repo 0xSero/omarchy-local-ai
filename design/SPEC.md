@@ -18,12 +18,18 @@ drawings are samples.
 
 ## GPU rows
 
-Two lines each. Running: lab mark, model, a speed spark, `88 tok/s`, a live dot; under it `on RTX 3090 · 62° · 87%`
-(`2 × Arc Pro B70` for a model on two cards). Free: maker mark, full card name, `free`; under it `24 GB · 38°` and a memory
-bar. A build that needs a busy card sits under a rule, dim, `in use`. Order: running, starting/stopped, free, dim.
+Closed, each row is two lines and a bar: the mark (lab for a model, maker for a card, a chip for the CPU), the name, on
+the right what it is doing (`88 tok/s`, `free`, `downloading 42%`, `stopped`, `in use`) and ⌄; under it the card's facts
+(`RTX 3090 · 21 / 24 GB · 62° · 87%`) and a memory bar the width of the row. Every row opens, in place, on click (a
+dropdown on a raised surface, no animation), with its buttons inside:
 
-Hover slides a drawer in from the right (a 4 px sliver at rest): running `[Open pi] stop ⋯`, free `[Run] config` (the
-name turns into the model Run starts), starting `stop`, stopped `[Run again] dismiss`.
+- running: tok/s, prefill, first token, today, total, up; the last hour as a spark; model (change ›), agent, folder,
+  share; `[Open pi] Stop · logs`.
+- free: every model for the card, best first, fast · medium · smart tagged, the picked one highlighted, on disk /
+  download / what it needs under each, one that does not fit dim; `[Run <picked>]`.
+- in use (held by another program, or a build whose cards are busy): what holds it, then the models it could run,
+  readable but not runnable.
+- starting: the step and its progress; `stop`. stopped: when and why; `[Run again] dismiss · logs`.
 
 ## The states
 
@@ -33,25 +39,26 @@ name turns into the model Run starts), starting `stop`, stopped `[Run again] dis
 | 02 | not-ready-docker | set up, Docker does not answer | Start Docker → terminal |
 | 03 | not-ready-old | Omarchy has no Sudoless Docker | Update Omarchy → terminal |
 | 04 | no-supported-gpu | no card with a tested model, nothing running | See supported cards → browser |
-| 05 | home | tokens exist | 󰊓 → full-home |
+| 05 | home | tokens exist: tiers and the calendar (a column a week) | 󰊓 → full-home |
 | 06 | home-first | nothing generated yet | gpus |
-| 07 | gpus | ready | hover, ⋯, config, 󰊓 |
-| 08 | gpus-hover-running | hover a running line | Open pi → agent; stop; ⋯ → more |
-| 09 | gpus-hover-free | hover a free line | Run → starting; config |
+| 07 | gpus | ready, rows closed | open a row, 󰊓 |
+| 08 | gpus-open-running | a running row opened | Open pi; Stop; model/agent/folder/share; logs |
+| 09 | gpus-open-free | a free row opened: the model list | pick; Run |
 | 10 | starting-download | weights downloading | loading |
-| 11 | starting-load | engine loading, checks | ready (gpus) |
-| 12 | stopped | a model stopped by itself (hovered) | Run again; dismiss |
-| 13 | notification | anything went wrong | click → logs |
-| 14 | config | config on a card or build | pick; Run <mode> |
-| 15 | config-hover-on-disk | hover a downloaded model | Run; remove |
-| 16 | more | ⋯ on a running model | agent, folder, share, logs |
-| 17 | agent | agent › | sets the model's agent; make default |
-| 18 | folder | folder › | sets the folder; choose another… (picker) |
-| 19 | share | share on | copy address, copy key, Stop sharing |
-| 20 | one-gpu | a one-card machine | (shorter body, same frame) |
-| 21 | cpu-only | no GPU | the CPU as the one line |
-| 22 | full-gpus | 󰊓 on gpus | a tile per GPU, actions in plain view |
-| 23 | full-home | 󰊓 on home | per day, by model |
+| 11 | starting-load | engine loading, checks | ready |
+| 12 | gpus-open-in-use | an in-use row opened | (read only) |
+| 13 | stopped | a model stopped by itself, its row opened | Run again; dismiss; logs |
+| 14 | notification | anything went wrong | click → logs |
+| 15 | config | model: change › on a running model | pick; Run |
+| 16 | config-hover-on-disk | a downloaded model in that list | Run; remove |
+| 17 | more | (folded into the running row; kept for the full-screen ⋯) | agent, folder, share |
+| 18 | agent | agent › | sets the model's agent; make default |
+| 19 | folder | folder › | sets the folder; choose another… |
+| 20 | share | share on | copy address, copy key, Stop sharing |
+| 21 | one-gpu | a one-card machine (its row opened) | |
+| 22 | cpu-only | no GPU | the CPU as the one row |
+| 23 | full-gpus | 󰊓 on gpus | a tile per GPU, actions in plain view |
+| 24 | full-home | 󰊓 on home | the year calendar, by model, by card |
 
 fast · medium · smart (config) come from decode speed and the Artificial Analysis index (registry branch `aa-scores`,
 not merged); until they are in the catalog, config lists the registry's order with the first that fits chosen.

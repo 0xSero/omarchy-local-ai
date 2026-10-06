@@ -49,6 +49,40 @@ function days(s, x, y, w, h, pick = DAYS.length - 2) {
   s.text(x, y + h + 16, DAYS[0].label.replace(/^\S+ /, ""), { size: 10, fill: P.label })
   s.text(x + w, y + h + 16, DAYS[pick].label + "  " + short(DAYS[pick].tokens), { size: 10, fill: P.ink, anchor: "end" })
 }
+// The calendar: a column a week, a row a weekday (Mon at the top), the last n weeks ending today; each day shaded in five
+// steps by its tokens against the busiest day; the month above its first week; today outlined; a hovered day is said
+// under it. SAMPLE history: the last 4 weeks are the fixture's days, older weeks a fixed pattern.
+const TODAY = new Date(2026, 9, 6)
+function history(weeks) {
+  const n = weeks * 7 - (6 - ((TODAY.getDay() + 6) % 7)), out = []
+  for (let i = 0; i < n; i++) {
+    const back = n - 1 - i, fx = DAYS[DAYS.length - 1 - back]
+    out.push(fx ? fx.tokens : ((i * 7919) % 13 < 4 ? 0 : ((i * 104729) % 97) * 600))
+  }
+  return out
+}
+function calendar(s, x, y, weeks, cell, gap, o = {}) {
+  const v = history(weeks), mx = Math.max(...v), L = [0.06, 0.22, 0.42, 0.66, 0.95], step = cell + gap
+  const start = new Date(TODAY); start.setDate(start.getDate() - (v.length - 1))
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  let last = -1
+  for (let w = 0; w < weeks; w++) {
+    const d = new Date(start); d.setDate(d.getDate() + w * 7)
+    if (d.getMonth() !== last && w < weeks - 2) s.text(x + w * step, y, MON[d.getMonth()], { size: o.label || 9, fill: P.label })
+    last = d.getMonth()
+  }
+  const gy = y + 8
+  ;["M", "", "W", "", "F", "", ""].forEach((k, r) => k && o.days && s.text(x - 12, gy + r * step + cell - 1, k, { size: 8, fill: P.label }))
+  v.forEach((t, i) => {
+    const w = Math.floor(i / 7), r = i % 7, lvl = t ? Math.min(4, Math.ceil(t / mx * 4)) : 0
+    s.parts.push(`<rect x="${x + w * step}" y="${gy + r * step}" width="${cell}" height="${cell}" rx="1.5" fill="rgba(221,221,221,${L[lvl]})"${i === v.length - 1 ? ` stroke="${P.ink}" stroke-width="1"` : ""}/>`)
+  })
+  const by = gy + 7 * step + 14
+  s.text(x, by, o.said || "Mon Oct 5  ·  23k tokens", { size: o.label || 10, fill: P.value })
+  s.text(x + weeks * step - gap, by, "less ▫ ◻ ◼ more", { size: 9, fill: P.label, anchor: "end" })
+  return by
+}
+
 const agentMark = (name) => {
   const f = { claude: "claude.svg", codex: "codex.svg", opencode: "opencode.svg", crush: "crush.png", hermes: "hermes.svg", omp: "omp.svg", copilot: "copilot.svg" }[name]
   if (!f) return null
@@ -57,7 +91,7 @@ const agentMark = (name) => {
 
 // ---------------------------------------------------------------- the popup frame
 
-const PW = 340, HEAD = 156, FOOT = 44, BODY = 372
+const PW = 340, HEAD = 156, FOOT = 44, BODY = 600
 // one machine, one body height: its tallest screen's, so nothing below the header ever moves
 function frame(tab, o = {}) {
   const body = o.body || BODY, H = HEAD + body + FOOT, s = new Wide(PW)
@@ -85,53 +119,80 @@ function frame(tab, o = {}) {
 }
 const done = (s) => s.svg(s.H)
 
-// A GPU row, two lines: what is on it (or the card), then the card's facts. kind: run | free | busy | stopped | dim.
-// open: its drawer, slid in from the right (one button, quiet links); at rest a 4 px sliver says it is there.
+// A GPU row. Closed: the mark, the name, what it is doing on the right, then the card's facts and a memory bar the
+// width of the row. Click opens it in place (a dropdown, no animation): the details on a raised surface, and its
+// buttons inside. Running: speed, prefill, first token, today, total, up; its agent, folder, share; [Open pi] Stop · logs.
+// Free: what Run starts, as fast · medium · smart with their speeds, its format, context and size; [Run medium] all models ›.
+const RAISED = "rgba(255,255,255,0.035)"
+// every model for a card, best first: the three choices tagged, the picked one highlighted, on disk / download / what it
+// needs under each name, one this machine cannot hold dim with its reason; ro: shown but not runnable (the card is held)
+const MODELS = [["fast", "Qwen3.6-35B-A3B", 310, "on disk"], ["medium", "Qwen3.8-27B", 129, "on disk"], ["smart", "Qwen3.8-Flash-Next", 51, "+75 GB RAM"],
+  ["", "Gemma 4 26B A4B", 96, "on disk"], ["", "Qwen3.5-9B", 113, "14 GB download"], ["", "DeepSeek-V4.1-Flash", 18, "needs 228 GB RAM", true]]
+function models(s, x, y, w, pick = "Qwen3.8-27B", ro = false) {
+  MODELS.forEach(([tag, n, v, note, unfit], i) => {
+    const on = n === pick && !ro, ry = y + i * 30, tone = unfit || ro ? P.v(.4) : on ? P.ink : P.value
+    if (on) s.parts.push(`<rect x="${x - 6}" y="${ry}" width="${w + 6}" height="28" rx="3" fill="rgba(255,255,255,0.07)"/>`)
+    s.text(x, ry + 12, tag, { size: 10, fill: on ? P.ink : P.label })
+    logo(s, x + 46, ry + 2, 12, familyOf(n), tone); s.text(x + 64, ry + 12, n, { size: 12, fill: tone })
+    s.text(x + 64, ry + 24, note, { size: 9, fill: unfit ? P.v(.35) : P.label })
+    s.text(PW - G, ry + 12, v + " tok/s", { size: 10, fill: unfit || ro ? P.v(.35) : P.label, anchor: "end" })
+  })
+  return y + MODELS.length * 30
+}
 function row(s, y, r, open = false) {
-  const top = y + 18, sub = y + 36
-  const tone = r.kind === "dim" ? P.v(.35) : r.kind === "stopped" ? P.label : P.ink
-  if (r.kind === "run" || r.kind === "busy" || r.kind === "stopped") {
-    logo(s, G, top - 12, 15, familyOf(r.model), tone)
-    s.text(G + 24, top, open && r.model.length > 13 ? r.model.slice(0, 12) + "…" : r.model, { size: 13, fill: tone })
-    if (r.kind === "run" && !open) {
-      const sp = r.tps + " tok/s"
-      spark(s, PW - G - 12 - tw(sp, 12) - 58, top - 11, 48, 12, r.spark, P.v(.55))
-      s.text(PW - G - 12, top, sp, { size: 12, fill: P.value, anchor: "end" }); s.dot(PW - G - 3, top - 4, 3, P.ink)
-    }
-    if (r.kind === "busy") s.text(PW - G, top, r.step, { size: 12, fill: P.label, anchor: "end" })
-    if (r.kind === "stopped" && !open) s.text(PW - G, top, "stopped", { size: 12, fill: P.label, anchor: "end" })
-    s.text(G + 24, sub, open ? r.on.split("  ·  ")[0] : r.on, { size: 11, fill: P.label })
-    if (r.kind === "busy") bar(s, G + 24, sub + 8, PW - 2 * G - 24, r.pct, P.ink)
-  } else {
-    const t = r.kind === "dim" ? tone : open ? P.ink : P.value
-    if (r.maker === "cpu") s.text(G + 7, top + 1, "\u{f061a}", { size: 15, fill: t, anchor: "middle" })
-    else logo(s, G, top - 12, 15, open && r.next ? familyOf(r.next) : r.maker, t)
-    s.text(G + 24, top, open && r.next ? r.next : r.name, { size: 13, fill: t })
-    if (!open) s.text(PW - G, top, r.kind === "dim" ? r.why || "in use" : "free", { size: 12, fill: r.kind === "dim" ? tone : P.label, anchor: "end" })
-    s.text(G + 24, sub, open && r.next ? "on " + r.name : r.facts, { size: 11, fill: r.kind === "dim" ? P.v(.3) : P.label })
-    if (!open && r.kind === "free") bar(s, PW - G - 60, sub - 4, 60, r.used, P.value)
+  const top = y + 20, sub = y + 38
+  const dim = r.kind === "dim", tone = dim ? P.v(.35) : r.kind === "stopped" ? P.label : P.ink
+  if (open) s.parts.push(`<rect x="8" y="${y + 2}" width="${PW - 16}" height="${r.openH}" rx="6" fill="${RAISED}" stroke="${EDGE}"/>`)
+  const model = r.kind === "run" || r.kind === "busy" || r.kind === "stopped"
+  if (model) logo(s, G, top - 12, 15, familyOf(r.model), tone)
+  else if (r.maker === "cpu") s.text(G + 7, top + 1, "\u{f061a}", { size: 15, fill: dim ? tone : P.value, anchor: "middle" })
+  else logo(s, G, top - 12, 15, r.maker, dim ? tone : P.value)
+  s.text(G + 24, top, model ? r.model : r.name, { size: 13, fill: model ? tone : dim ? tone : P.value })
+  const right = r.kind === "run" ? r.tps + " tok/s" : r.kind === "busy" ? r.step : r.kind === "stopped" ? "stopped" : dim ? r.why || "in use" : "free"
+  s.text(PW - G - 14, top, right, { size: 12, fill: r.kind === "run" ? P.value : P.label, anchor: "end" })
+  s.text(PW - G, top, open ? "⌃" : "⌄", { size: 11, fill: P.label, anchor: "end" })
+  if (r.kind === "run") s.dot(G + 24 + tw(r.model, 13) + 9, top - 4, 2.5, P.ink)
+  s.text(G + 24, sub, r.facts, { size: 11, fill: dim ? P.v(.3) : P.label })
+  bar(s, G + 24, sub + 9, PW - 2 * G - 24, r.kind === "busy" ? r.pct : r.used, r.kind === "busy" ? P.ink : dim ? P.v(.25) : P.v(.55))
+  let y2 = y + 62
+  if (!open) return y2
+  // ---- opened
+  const x = G + 24, w = PW - G - x
+  if (r.kind === "run") {
+    const cells = [["88", "tok/s"], ["1.9k", "prefill/s"], ["0.4 s", "first token"], ["23k", "today"], ["1.9M", "total"], ["3:12", "up"]]
+    cells.forEach(([v, k], i) => { const cx = x + (i % 3) * (w / 3), cy = y2 + 8 + Math.floor(i / 3) * 38; s.text(cx, cy, v, { size: 14, fill: P.ink }); s.text(cx, cy + 14, k, { size: 10, fill: P.label }) })
+    y2 += 82
+    spark(s, x, y2, w, 18, r.spark, P.v(.5)); s.text(x, y2 + 32, "the last hour", { size: 9, fill: P.label }); y2 += 44
+    for (const [k, v] of [["model", "change ›"], ["agent", "pi ›"], ["folder", "~/Work ›"], ["share", "off · turn on"]]) { y2 += 20; s.text(x, y2, k, { size: 12, fill: P.label }); s.text(PW - G, y2, v, { size: 12, fill: P.value, anchor: "end" }) }
+    y2 += 16; const bw = button(s, x, y2, "Open pi"); s.text(x + bw + 14, y2 + 17, "Stop  ·  logs", { size: 12, fill: P.label }); y2 += 44
+  } else if (r.kind === "free") {
+    s.text(x, y2 + 6, "model", { size: 10, fill: P.label }); y2 += 12
+    y2 = models(s, x, y2, w) + 8
+    const bw = button(s, x, y2, "Run Qwen3.8-27B"); s.text(x + bw + 14, y2 + 17, "refresh", { size: 12, fill: P.label }); y2 += 44
+  } else if (r.kind === "dim") {
+    // held: what holds it, then what it could run, readable but not runnable until it is free
+    s.text(x, y2 + 6, r.held, { size: 11, fill: P.value }); s.text(x, y2 + 22, r.heldWhy, { size: 10, fill: P.label }); y2 += 36
+    s.text(x, y2 + 6, "runs here when free", { size: 10, fill: P.label }); y2 += 12
+    y2 = models(s, x, y2, w, "", true) + 8
+  } else if (r.kind === "stopped") {
+    s.text(x, y2 + 8, "stopped 2 min ago: needs 75 GB of RAM, 41 free", { size: 10, fill: P.label }); y2 += 20
+    const bw = button(s, x, y2, "Run again"); s.text(x + bw + 14, y2 + 17, "dismiss  ·  logs", { size: 12, fill: P.label }); y2 += 44
   }
-  const acts = r.kind === "run" ? ["Open pi", "stop  ⋯"] : r.kind === "free" ? ["Run", "config"] : r.kind === "stopped" ? ["Run again", "dismiss"] : r.kind === "busy" ? [null, "stop"] : null
-  if (acts && open) {
-    const dw = 176, dx = PW - dw
-    s.parts.push(`<rect x="${dx}" y="${y + 6}" width="${dw}" height="40" rx="4" fill="${DRAWER}"/>`)
-    s.line(dx, y + 6, dx, y + 46, { stroke: EDGE })
-    const bw = acts[0] ? button(s, dx + 14, y + 13, acts[0], 76) : -12
-    s.text(dx + 14 + bw + 12, y + 30, acts[1], { size: 12, fill: P.label })
-  } else if (acts) s.parts.push(`<rect x="${PW - 4}" y="${y + 10}" width="4" height="32" rx="1" fill="${DRAWER}"/>`)
-  return y + 52
+  return y2 + 6
 }
 const ROWS = {
-  q27: { kind: "run", model: "Qwen3.8-27B", tps: 88, on: "on RTX 3090  ·  62°  ·  87%", spark: [70, 82, 91, 88, 64, 0, 0, 77, 90, 93, 86, 88] },
-  q35: { kind: "run", model: "Qwen3.6-35B-A3B", tps: 115, on: "2 × Arc Pro B70  ·  57°  ·  64%", spark: [100, 112, 118, 0, 0, 0, 104, 117, 120, 115, 111, 115] },
-  free: { kind: "free", maker: "hw-nvidia", name: "RTX 3090", facts: "24 GB  ·  38°", used: .03, next: "Qwen3.8-27B" },
-  pair: { kind: "dim", maker: "hw-nvidia", name: "2 × RTX 3090", facts: "48 GB  ·  needs both cards" },
+  q27: { kind: "run", model: "Qwen3.8-27B", tps: 88, facts: "RTX 3090  ·  21 / 24 GB  ·  62°  ·  87%", used: 21.2 / 24, openH: 338, spark: [70, 82, 91, 88, 64, 0, 0, 77, 90, 93, 86, 88, 84, 90, 91, 0, 0, 0, 72, 88, 92, 89, 87, 88] },
+  q35: { kind: "run", model: "Qwen3.6-35B-A3B", tps: 115, facts: "2 × Arc Pro B70  ·  64 GB  ·  57°  ·  64%", used: null, openH: 318, spark: [100, 112, 118, 0, 0, 0, 104, 117, 120, 115, 111, 115] },
+  free: { kind: "free", maker: "hw-nvidia", name: "RTX 3090", facts: "24 GB free  ·  38°  ·  idle", used: .03, openH: 300 },
+  pair: { kind: "dim", maker: "hw-nvidia", name: "2 × RTX 3090", facts: "48 GB  ·  needs both cards free", used: .45 },
+  held: { kind: "dim", maker: "hw-nvidia", name: "RTX 3090", why: "in use", facts: "15.5 / 24 GB  ·  44°  ·  92%", used: 15.5 / 24, openH: 318,
+    held: "held by another program", heldWhy: "VLLM::EngineCore in container dsv41-lab" },
 }
 function gpus(rows, o = {}) {
   const s = frame("gpus", o)
-  let y = HEAD + 10
+  let y = HEAD + 6
   rows.forEach((r, i) => {
-    if (r === "rule") { s.line(G, y + 6, PW - G, y + 6, { stroke: P.rule }); y += 12; return }
+    if (r === "rule") { s.line(G, y + 4, PW - G, y + 4, { stroke: P.rule }); y += 8; return }
     y = row(s, y, r, i === o.open)
   })
   return done(s)
@@ -171,17 +232,18 @@ S["home"] = () => {
     const cx = G + (i % 3) * ((PW - 2 * G) / 3), cy = y + Math.floor(i / 3) * 48
     s.text(cx, cy, v, { size: 17, fill: i === 0 ? P.ink : P.value }); s.text(cx, cy + 16, k, { size: 10, fill: P.label })
   })
-  y += 116; s.text(G, y, "per day", { size: 10, fill: P.label })
-  days(s, G, y + 10, PW - 2 * G, 90)
+  y += 112
+  calendar(s, G + 12, y, 25, 9, 2, { days: true })
   return done(s)
 }
 S["home-first"] = () => { const s = frame("home", { empty: true, foot: "4 GPUs · nothing run yet" }); message(s, "No tokens yet", ["Run a model on gpus and they add up", "here: today, this week, all time."]); return done(s) }
 S["gpus"] = () => office()
-S["gpus-hover-running"] = () => office({ open: 0 })
-S["gpus-hover-free"] = () => office({ open: 2 })
-S["starting-download"] = () => gpus([ROWS.q27, ROWS.q35, { kind: "busy", model: "Qwen3.8-27B", step: "downloading 42%", pct: .42, on: "on RTX 3090  ·  6.1 of 14.5 GB" }, "rule", ROWS.pair])
-S["starting-load"] = () => gpus([ROWS.q27, ROWS.q35, { kind: "busy", model: "Qwen3.8-27B", step: "loading 80%", pct: .8, on: "on RTX 3090  ·  checking it answers" }, "rule", ROWS.pair])
-S["stopped"] = () => gpus([ROWS.q27, ROWS.q35, { kind: "stopped", model: "Qwen3.8-Flash-Next", on: "on RTX 3090  ·  stopped 2 min ago" }, "rule", ROWS.pair], { open: 2 })
+S["gpus-open-running"] = () => office({ open: 0 })
+S["gpus-open-free"] = () => office({ open: 2 })
+S["starting-download"] = () => gpus([ROWS.q27, ROWS.q35, { kind: "busy", model: "Qwen3.8-27B", step: "downloading 42%", pct: .42, facts: "RTX 3090  ·  6.1 of 14.5 GB  ·  12 MB/s" }, "rule", ROWS.pair])
+S["starting-load"] = () => gpus([ROWS.q27, ROWS.q35, { kind: "busy", model: "Qwen3.8-27B", step: "loading 80%", pct: .8, facts: "RTX 3090  ·  checking it answers" }, "rule", ROWS.pair])
+S["gpus-open-in-use"] = () => gpus([ROWS.q35, ROWS.held, ROWS.free], { open: 1 })
+S["stopped"] = () => gpus([ROWS.q27, ROWS.q35, { kind: "stopped", model: "Qwen3.8-Flash-Next", facts: "RTX 3090  ·  24 GB free  ·  40°", used: .03, openH: 104 }, "rule", ROWS.pair], { open: 2 })
 S["notification"] = () => {
   const s = new Wide(PW), x = 16, w = PW - 32, top = 16
   s.parts.push(`<rect x="${x}" y="${top}" width="${w}" height="78" rx="6" fill="rgb(28,28,31)" stroke="rgba(255,255,255,0.18)"/>`)
@@ -250,9 +312,9 @@ S["share"] = () => {
   button(s, G, y + 24, "Stop sharing")
   return done(s)
 }
-S["one-gpu"] = () => gpus([ROWS.q27], { body: 236, foot: "1 GPU · 1 model running" })
-S["cpu-only"] = () => gpus([{ kind: "run", model: "LFM2.5-2.6B", tps: 38, on: "on the CPU  ·  4 GB RAM", spark: [30, 36, 38, 0, 37, 39, 38, 36] },
-  { kind: "free", maker: "cpu", name: "CPU", facts: "64 GB RAM  ·  61 free", used: .05, next: "Qwen3.5-9B" }], { body: 236, foot: "CPU only · 1 model running" })
+S["one-gpu"] = () => gpus([ROWS.q27], { body: 340, open: 0, foot: "1 GPU · 1 model running" })
+S["cpu-only"] = () => gpus([{ kind: "run", model: "LFM2.5-2.6B", tps: 38, facts: "CPU  ·  4 GB of RAM  ·  12 threads", used: .06, spark: [30, 36, 38, 0, 37, 39, 38, 36] },
+  { kind: "free", maker: "cpu", name: "CPU", facts: "61 of 64 GB RAM free  ·  52°", used: .05 }], { body: 236, foot: "CPU only · 1 model running" })
 
 // ---------------------------------------------------------------- full screen
 
@@ -301,18 +363,27 @@ S["full-gpus"] = () => {
   tile(1, 1, { maker: "hw-nvidia", name: "RTX 3090", temp: "38°", used: .6 / 24, mem: "0.6 / 24 GB", util: "idle" })
   tile(2, 2, { maker: "hw-intel", name: "2 × Arc Pro B70", temp: "55° / 57°", used: null, mem: "64 GB", util: "64% busy" }, ROWS.q35)
   const by = ty + th + 44
-  s.text(X, by - 12, "per day", { size: 11, fill: P.label }); days(s, X, by, FW - 2 * X, 90)
+  calendar(s, X + 16, by - 14, 52, 12, 3, { days: true, label: 11 })
   return s.svg(FH)
 }
 S["full-home"] = () => {
   const s = full("home"), y = FHEAD + 50
-  s.text(X, y, "per day, the last 4 weeks", { size: 11, fill: P.label }); days(s, X, y + 12, 760, 200)
+  calendar(s, X + 16, y, 52, 12, 3, { days: true, label: 11, said: "Mon Oct 5  ·  23k tokens  ·  412 requests  ·  Qwen3.8-27B, Qwen3.6-35B-A3B" })
   const tx = 860
   s.text(tx, y, "by model", { size: 11, fill: P.label })
   ;[["Qwen3.8-27B", "1.9M", "88 tok/s", "RTX 3090"], ["Qwen3.6-35B-A3B", "820k", "115 tok/s", "2 × B70"], ["LFM2.5-2.6B", "61k", "38 tok/s", "CPU"]].forEach(([m, t, v, c], i) => {
     const ry = y + 30 + i * 52
     logo(s, tx, ry - 12, 15, familyOf(m), P.value); s.text(tx + 24, ry, m, { size: 13, fill: P.value }); s.text(FW - X, ry, t, { size: 13, fill: P.ink, anchor: "end" })
     s.text(tx + 24, ry + 18, v + "  ·  " + c, { size: 11, fill: P.label })
+  })
+  // by card: what each card generated, how long it ran, its energy (from the card's own counter) and the hottest it got
+  const cy = y + 200
+  s.text(X, cy, "by card", { size: 11, fill: P.label })
+  ;["card", "tokens", "running", "energy", "hottest"].forEach((h, i) => s.text(X + [0, 340, 480, 620, 760][i], cy + 26, h, { size: 10, fill: P.label, anchor: i ? "end" : "start" }))
+  ;[["hw-nvidia", "RTX 3090", "1.9M", "412 h", "96 kWh", "71°"], ["hw-nvidia", "RTX 3090", "140k", "38 h", "8 kWh", "64°"], ["hw-intel", "Arc Pro B70", "410k", "210 h", "31 kWh", "66°"], ["hw-intel", "Arc Pro B70", "410k", "210 h", "30 kWh", "68°"]].forEach((r, i) => {
+    const ry = cy + 52 + i * 28
+    logo(s, X, ry - 11, 13, r[0], P.value); s.text(X + 22, ry, r[1], { size: 12, fill: P.value })
+    r.slice(2).forEach((v, j) => s.text(X + [340, 480, 620, 760][j], ry, v, { size: 12, fill: j ? P.label : P.ink, anchor: "end" }))
   })
   return s.svg(FH)
 }
