@@ -114,10 +114,10 @@ cmd_registry() (
   tmp=$(mktemp "${CATALOG%/*}/.recipes.XXXXXX")
   trap 'rm -f "$tmp"' EXIT
   sha=$(curl -fsSL --proto '=https' --connect-timeout 10 --max-time 30 --max-filesize 1048576 \
-    https://api.github.com/repos/0xSero/local-ai-registry/commits/main | jq -er .sha) || die "could not check the registry; existing models are unchanged"
+    https://api.github.com/repos/sybil-solutions/local-ai-registry/commits/main | jq -er .sha) || die "could not check the registry; existing models are unchanged"
   [[ $sha =~ ^[0-9a-f]{40}$ ]] || die "invalid registry revision"
   curl -fsSL --proto '=https' --connect-timeout 10 --max-time 60 --max-filesize 10485760 \
-    "https://raw.githubusercontent.com/0xSero/local-ai-registry/$sha/plugin/v2/recipes.json" >"$tmp" ||
+    "https://raw.githubusercontent.com/sybil-solutions/local-ai-registry/$sha/plugin/v2/recipes.json" >"$tmp" ||
     die "could not download the registry; existing models are unchanged"
   jq -e '.schemaVersion == "omarchy-local-ai/recipes/2" and (.hardware | type == "object" and length > 0)
     and all(.hardware[]; (.recipes | type == "array" and length > 0))

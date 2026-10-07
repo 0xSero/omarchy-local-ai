@@ -7,7 +7,7 @@ Run a local model on your own GPU or CPU and open a coding agent on it. Local AI
 ## Start
 
 ```bash
-omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
+omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable
 ```
 
 Then open Local AI in the bar and click **Set up Local AI** (once per machine; Omarchy asks for your password), choose a model on your card and **Run**, and pick a coding agent to open on it. [Install](#install) says what setup does, [Requirements](#requirements) what it needs, and [Remove](#remove) how to take it all back out.
@@ -15,7 +15,7 @@ Then open Local AI in the bar and click **Set up Local AI** (once per machine; O
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
+omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable
 ```
 
 Open Local AI in the bar and click **Set up Local AI**. A terminal opens and runs two of Omarchy's own commands; Local AI itself runs nothing as root, and adding or updating the plugin never runs setup.
@@ -35,7 +35,7 @@ Setup ends by checking what the panel will show. Sharing a model on your tailnet
 
 ## What it does
 
-- **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/0xSero/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
+- **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
 - **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them, and Config says what is missing.
 - **Weights** are downloaded as you, from the pinned revision, and every file's size is checked against Hugging Face, and the SHA-256 of every large (LFS) file, before it is used. A matching copy in your Hugging Face cache is reused.
 - **Containers.** The engine runs on a private network with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
