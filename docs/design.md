@@ -8,7 +8,7 @@ A bar widget that runs the one model validated for each GPU in the machine and o
 | `lib/access.sh` | Whether a model can start (`readiness`), and the re-run under the docker group for a login older than setup; sourced by the backend and the installer |
 | `Model.js` | Pure functions: snapshot and ui state in, a view (rows and actions) out |
 | `Panel.qml` | Draws the view; turns an action (`verb\|arg\|arg`) into a backend verb |
-| `recipes.json` | The vendored recipes, one card kind per line: from [local-ai-registry](https://github.com/0xSero/local-ai-registry)'s `plugin/v2/recipes.json`, every recipe of each kind, best first: the first on one card is the kind's recommended model, and the rest are what a card's Config offers, on one card or across several (a group) |
+| `recipes.json` | The vendored recipes, one card kind per line: from [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry)'s `plugin/v3/recipes.json`, every recipe of each kind, best first: the first on one card is the kind's recommended model, and the rest are what a card's Config offers, on one card or across several (a group) |
 
 ## Flow
 
@@ -35,7 +35,7 @@ The backend validates recipe arguments before starting, mounts paths owned by th
 
 ## Why it is shaped this way
 
-- **Validated models, vendored.** Every recipe was accepted on its exact card, or cards: download, load, a correctness check, speed at several context lengths. Recipes arrive through plugin updates or an explicit **Refresh models**. Refresh resolves a registry commit, validates its catalog and replaces the cache atomically; failures retain the previous catalog. The backend checks recipe arguments again before a start. A card without an accepted recipe shows Coming soon and links the [supported list](https://github.com/0xSero/local-ai-registry/blob/main/supported/README.md).
+- **Validated models, vendored.** Every recipe was accepted on its exact card, or cards: download, load, a correctness check, speed at several context lengths. Recipes arrive through plugin updates or an explicit **Refresh models**. Refresh resolves a registry commit, validates its catalog and replaces the cache atomically; failures retain the previous catalog. The backend checks recipe arguments again before a start. A card without an accepted recipe shows Coming soon and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
 - **EXL3 first, engines that serve it in-process.** The registry recommends, per card, EXL3 weights on SGLang or vLLM ahead of TabbyAPI and llama.cpp, then vision, context and measured decode. On a 3090 that is Qwen3.8-27B on SGLang at 200K context and about 90 tok/s.
 - **Containers, not packages.** Engines need exact CUDA, ROCm or oneAPI stacks; an image pinned by digest is the smallest thing that reproduces the accepted run.
 - **A gateway in front.** Engines differ in API and none checks a key; the gateway gives every engine the same keyed endpoint and the same usage accounting.

@@ -22,7 +22,7 @@ exec </dev/null
 
 TARGET=$(readlink -f -- "${BASH_SOURCE[0]}")
 PANEL=${TARGET%/bin/*}
-CATALOG=$HOME/.cache/omarchy/local-ai/recipes.json
+CATALOG=$HOME/.cache/omarchy/local-ai/v3/recipes.json
 RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
@@ -53,7 +53,7 @@ die() { printf 'local-ai: %s\n' "$*" >&2; exit 1; }
 # --foreground keeps the call in the worker's process group, so a Stop that kills the group ends it too.
 docker() {
   local t=30
-  case ${1:-} in pull) t=7200 ;; run) t=120 ;; esac
+  case ${1:-} in pull|wait) t=7200 ;; run) t=120 ;; logs) [[ ${2:-} != --follow ]] || t=7200 ;; esac
   timeout --foreground --kill-after=5 "$t" docker "$@"
 }
 notify() { omarchy-notification-send --app-name "Local AI" "$@" 2>/dev/null || echo 0; }
@@ -87,6 +87,12 @@ policy() {
     def names: test("^(([A-Za-z0-9_-][A-Za-z0-9_./-]*)(,([A-Za-z0-9_-][A-Za-z0-9_./-]*))*)?$")
                and (contains("..") | not);
     def abs: test("^/[A-Za-z0-9_./-]+$") and (contains("..") | not);
+    def strings: type == "array" and length > 0 and all(.[]; type == "string" and (contains("\u0000") | not));
+    def resources:
+      type == "object" and (keys - ["memoryBytes", "memorySwapBytes", "memlockUnlimited", "ipcLock"] | length == 0)
+      and all(to_entries[]; if (.key == "memoryBytes" or .key == "memorySwapBytes") then
+        (.value | type == "number" and . == floor and . > 0 and . <= 9007199254740991) else (.value | type == "boolean") end)
+      and (if has("memorySwapBytes") then has("memoryBytes") and .memorySwapBytes >= .memoryBytes else true end);
     if (.image | test("^[a-z0-9./_:-]+@sha256:[0-9a-f]{64}$") | not) then "image is not pinned by digest"
     elif ($all[0].gateway.image | test("^[a-z0-9./_:-]+@sha256:[0-9a-f]{64}$") | not) then "gateway is not pinned by digest"
     elif ((.cards // 1) | (. < 1 or . > 8)) then "invalid card count"
@@ -96,10 +102,19 @@ policy() {
         or (.dir // "" | name | not) or (.files // "" | names | not))] | length) > 0 then "invalid weights"
     elif (.asset != null and ((.asset.name | test("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$") | not) or (.asset.mountPath | abs | not))) then "invalid asset"
     elif ((.launch.port | type) != "number") then "invalid port"
-    elif ([.launch.environment | keys[]? | select(test("^[A-Z_][A-Z0-9_]*$") | not)] | length) > 0 then "invalid environment"
-    elif ([.launch.arguments[]? | select(type != "string")] | length) > 0 then "invalid arguments"
+    elif ((.launch.environment | type) != "object" or any(.launch.environment | to_entries[]; (.key | test("^[A-Z_][A-Z0-9_]*$") | not) or (.value | type != "string" or contains("\u0000")))) then "invalid environment"
+    elif ([.launch.arguments[]? | select(type != "string" or contains("\u0000"))] | length) > 0 then "invalid arguments"
     elif (.launch.entrypoint // "" | test("^[A-Za-z0-9_./-]*$") | not) then "invalid entrypoint"
     elif (.launch.shm // "" | test("^([0-9]+[kmg]?)?$") | not) then "invalid shm size"
+    elif ((.launch.flags // []) | length > 0) then "arbitrary launch flags are unsupported"
+    elif ((.launch.resources // {}) | resources | not) then "invalid resources"
+    elif (.prepare != null and (.prepare |
+        (type == "object" and (keys == ["args", "at", "gpu", "sizeGb", "verifyArgs"])
+         and (.at | test("^/(models|nvx|prepared)(/[A-Za-z0-9_.-]+)*$") and (contains("..") | not))
+         and (.args | strings) and (.verifyArgs | strings) and (.gpu | type == "boolean")
+         and (.sizeGb | type == "number" and . > 0 and . < 100000)) | not)) then "invalid preparation"
+    elif (.prepare != null and (.prepare.at as $out | any(.weights[]?; .mountPath as $raw |
+        $out == $raw or ($out | startswith($raw + "/"))))) then "input mount masks prepared output"
     else "ok" end' <<<"$1"
 }
 
@@ -117,9 +132,9 @@ cmd_registry() (
     https://api.github.com/repos/sybil-solutions/local-ai-registry/commits/main | jq -er .sha) || die "could not check the registry; existing models are unchanged"
   [[ $sha =~ ^[0-9a-f]{40}$ ]] || die "invalid registry revision"
   curl -fsSL --proto '=https' --connect-timeout 10 --max-time 60 --max-filesize 10485760 \
-    "https://raw.githubusercontent.com/sybil-solutions/local-ai-registry/$sha/plugin/v2/recipes.json" >"$tmp" ||
+    "https://raw.githubusercontent.com/sybil-solutions/local-ai-registry/$sha/plugin/v3/recipes.json" >"$tmp" ||
     die "could not download the registry; existing models are unchanged"
-  jq -e '.schemaVersion == "omarchy-local-ai/recipes/2" and (.hardware | type == "object" and length > 0)
+  jq -e '.schemaVersion == "omarchy-local-ai/recipes/3" and (.hardware | type == "object" and length > 0)
     and all(.hardware[]; (.recipes | type == "array" and length > 0))
     and all(.hardware[].recipes[]; .id | test("^[a-z0-9][a-z0-9.-]{0,63}$"))' "$tmp" >/dev/null || die "invalid registry catalog"
   while IFS= read -r r; do
@@ -261,7 +276,7 @@ gpus() {
 # Sizes are GB of 1e9 bytes, as the registry states them. Weights folders already downloaded and checked are listed,
 # and every weights folder's bytes so far (a download resumes, and files linked in from another copy take no space).
 host() {
-  local d=$MODELS ram=0 free=0 src="" avail=0 disk="" have=() got=()
+  local d=$MODELS ram=0 free=0 src="" avail=0 disk="" prepared have=() got=()
   while [[ ! -d $d && $d == /*/* ]]; do d=${d%/*}; done
   read -r ram free < <(awk '/^MemTotal:/{t = $2} /^MemAvailable:/{a = $2} END{print t + 0, a + 0}' "${MEMINFO:-/proc/meminfo}" 2>/dev/null) || true
   read -r src avail < <(df -B1 --output=source,avail -- "$d" 2>/dev/null | tail -1) || true
@@ -270,9 +285,10 @@ host() {
     else if (k == "") k = ($2 == "0" ? "ssd" : "hdd")} END {print n && v == n ? "nvme" : k}')
   for d in "$MODELS"/*/.verified "$MODELS"/*/*/.verified; do have+=("${d#"$MODELS"/}"); done
   for d in "$MODELS"/*/ "$MODELS"/*/*/; do got+=("${d#"$MODELS"/}" "$(du -sb -- "$d" 2>/dev/null | cut -f1)"); done
-  jq -nc --argjson r "${ram:-0}" --argjson f "${free:-0}" --argjson a "${avail:-0}" --arg d "$disk" \
+  prepared=$(jq -s 'map(select(type == "object"))' "$MODELS"/prepared/*/.complete.json 2>/dev/null) || prepared='[]'
+  jq -nc --argjson r "${ram:-0}" --argjson f "${free:-0}" --argjson a "${avail:-0}" --arg d "$disk" --argjson prepared "$prepared" \
     'def gb: . * 10 | floor / 10; {ramGb: ($r * 1024 / 1e9 | gb), freeRamGb: ($f * 1024 / 1e9 | gb), diskFreeGb: ($a / 1e9 | gb), disk: $d,
-      have: [$ARGS.positional[] | select(endswith("/.verified"))],
+      prepared: $prepared, have: [$ARGS.positional[] | select(endswith("/.verified"))],
       got: ([$ARGS.positional[] | select(endswith("/.verified") | not)] | [range(0; length; 2) as $i | {(.[$i] | rtrimstr("/")): (.[$i + 1] | tonumber? // 0)}] | add // {})}' \
     --args ${have[@]+"${have[@]}"} ${got[@]+"${got[@]}"}
 }
@@ -281,12 +297,16 @@ host() {
 # host_ram_gb of MemAvailable, disk_gb free under the models folder, and with fast_storage "nvme" that folder on a
 # non-rotational NVMe drive. A recipe without `needs` always fits; weights already downloaded and checked take no more
 # disk, and a download under way needs only what is left of it.
-NEEDS='def unfit($h): (.needs // {}) as $n | def gb: ceil | tostring;
+PREP_CONTRACT='def prepared_contract: {image, weights, prepare, launch: (.launch | {entrypoint, environment, resources, shm})};'
+NEEDS="$PREP_CONTRACT"'def unfit($h): (.needs // {}) as $n | prepared_contract as $contract | def gb: ceil | tostring;
   ([.weights[]? | if .layout == "hub" then "" else "\(.repository | gsub("/"; "--"))@\(.revision[:12])\(if (.dir // "") != "" then "/" + .dir else "" end)" end]) as $w
   | ([$w[] | $h.got[.] // 0] | add // 0 | . / 1e9) as $got
+  | (.prepare.sizeGb // 0) as $pack
+  | (if .prepare == null or (($h.prepared // []) | index($contract)) != null then 0 else $pack end) as $missingPack
+  | ((if ($w | length) > 0 and all($w[]; . as $x | $h.have | index($x + "/.verified") != null) then 0
+      else [0, ($n.disk_gb // 0) - $got - $pack] | max end) + $missingPack) as $missingDisk
   | [if ($n.host_ram_gb // 0) > $h.freeRamGb then "needs \($n.host_ram_gb | gb) GB RAM, you have \($h.freeRamGb | floor)" else empty end,
-     if ($n.disk_gb // 0) - $got > $h.diskFreeGb and (($w | length) == 0 or any($w[]; . as $x | $h.have | index($x + "/.verified") == null))
-       then "needs \($n.disk_gb | gb) GB free disk, you have \($h.diskFreeGb | floor)" else empty end,
+     if $missingDisk > $h.diskFreeGb then "needs \($missingDisk | gb) GB free disk, you have \($h.diskFreeGb | floor)" else empty end,
      if ($n.fast_storage // "") == "nvme" and $h.disk != "nvme" then "needs the models folder on an NVMe drive" else empty end]
   | join("; ");'
 
@@ -401,6 +421,85 @@ network() {
 }
 engine() { printf '%s-engine' "$(network "$1")"; }
 gateway() { printf '%s-gateway' "$(network "$1")"; }
+preparer() { printf '%s-prepare' "$(network "$1")"; }
+prepared_contract() { jq -cS "$PREP_CONTRACT prepared_contract" <<<"$1"; }
+prepared_path() { printf '%s/prepared/%s' "$MODELS" "$(prepared_contract "$1" | sha256sum | cut -c1-64)"; }
+managed_paths() {
+  local w d
+  while IFS= read -r w; do IFS='|' read -r _ _ _ _ _ _ d < <(wpaths "$w"); printf '%s\n' "$d"; done < <(jq -c '.weights[]?' <<<"$1")
+  [[ $(jq -r '.prepare // empty' <<<"$1") == "" ]] || { prepared_path "$1"; echo; }
+}
+
+# Typed resources and environment used by preparation, verification and serving.
+launch_options() {
+  jq -j 'def o($f; $v): if $v != null and $v != "" then "\($f)\u0000\($v)\u0000" else "" end;
+    o("--shm-size"; .launch.shm), o("--entrypoint"; .launch.entrypoint),
+    o("--memory"; .launch.resources.memoryBytes), o("--memory-swap"; .launch.resources.memorySwapBytes),
+    (if .launch.resources.memlockUnlimited then o("--ulimit"; "memlock=-1:-1") else "" end),
+    (if .launch.resources.ipcLock then o("--cap-add"; "IPC_LOCK") else "" end),
+    (.launch.environment | to_entries[]? | select(.key != "NVIDIA_VISIBLE_DEVICES") | o("--env"; "\(.key)=\(.value)")),
+    o("--env"; if any(.weights[]?; .layout == "hub") then "HF_HUB_OFFLINE=1" else null end)' <<<"$1"
+}
+
+# Build only in private staging; publish after same-image verification. Stop keeps completed stores.
+prepare_model() (
+  local id=$1 r=$2 pack stage="" at v w rc opts=() raw=() gpu=()
+  shift 2
+  [[ $(jq -r '.prepare // empty' <<<"$r") ]] || return 0
+  pack=$(prepared_path "$r")
+  at=$(jq -r .prepare.at <<<"$r")
+  mkdir -p "${pack%/*}"
+  owned "${pack%/*}"
+  exec 6>"$pack.lock"
+  flock -w 7200 6 || die "another preparation is still using this model"
+  trap 'rc=$?; if ours "$(preparer "$id")"; then docker rm -f "$(preparer "$id")" >/dev/null 2>&1 || true; fi;
+    [[ -z $stage ]] || rm -rf -- "$stage"; exit "$rc"' EXIT
+  trap 'exit 143' TERM; trap 'exit 130' INT
+  while IFS= read -r -d '' v; do opts+=("$v"); done < <(launch_options "$r")
+  while IFS='|' read -r _ _ _ _ v w _; do owned "$w"; raw+=(--volume "$w:$v:ro"); done \
+    < <(jq -c '.weights[]?' <<<"$r" | while IFS= read -r w; do wpaths "$w"; done)
+  prep_run() {
+    local output=$1 mode=$2 args=() visibility=() x result logger
+    while IFS= read -r -d '' x; do args+=("$x"); done < <(jq -j --arg mode "$mode" '.prepare[$mode][] | . + "\u0000"' <<<"$r")
+    if [[ $mode == args && ${#gpu[@]} -gt 0 ]]; then
+      allocation_lock
+      cards_free ${prepare_keys[@]+"${prepare_keys[@]}"}
+    fi
+    ((${#gpu[@]} > 0)) || visibility=(--env NVIDIA_VISIBLE_DEVICES=void)
+    timeout --foreground --kill-after=5 120 docker run -d --name "$(preparer "$id")" --network none \
+      --security-opt no-new-privileges --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" \
+      --user "$(id -u):$(id -g)" --env HOME=/tmp --env HF_HUB_OFFLINE=1 \
+      "${opts[@]}" ${gpu[@]+"${gpu[@]}"} ${visibility[@]+"${visibility[@]}"} --volume "$output:$at:$([[ $mode == args ]] && echo rw || echo ro)" \
+      "${raw[@]}" "$(jq -r .image <<<"$r")" "${args[@]}" >/dev/null || return 1
+    # A running container now reserves its cards. Unrelated cards can start during the long conversion.
+    flock -u 8 2>/dev/null || true
+    docker logs --follow "$(preparer "$id")" >&2 & logger=$!
+    result=$(timeout --foreground --kill-after=5 7200 docker wait "$(preparer "$id")") || result=timeout
+    kill "$logger" 2>/dev/null || true; wait "$logger" 2>/dev/null || true
+    docker rm "$(preparer "$id")" >/dev/null 2>&1 || true
+    [[ $result == 0 ]]
+  }
+  [[ ! -e $(dir_of "$id")/cancel ]] || die "preparation cancelled"
+  if [[ -e $pack || -L $pack ]]; then
+    owned "$pack"
+    [[ -f $pack/.complete.json && $(cat "$pack/.complete.json") == "$(prepared_contract "$r")" ]] || die "prepared model is incomplete; remove its managed download and retry"
+    echo "checking the prepared model"
+    prep_run "$pack" verifyArgs || die "prepared model failed verification; remove its managed download and retry"
+    [[ ! -e $(dir_of "$id")/cancel ]] || die "preparation cancelled"
+    return
+  fi
+  [[ ! -e $(dir_of "$id")/cancel ]] || die "preparation cancelled"
+  stage=$(mktemp -d "${pack%/*}/.staging.XXXXXX")
+  [[ $(jq -r .prepare.gpu <<<"$r") == false ]] || gpu=("$@")
+  echo "preparing the model (first start only)"
+  prep_run "$stage" args || die "model preparation failed"
+  gpu=()
+  prep_run "$stage" verifyArgs || die "prepared model failed verification"
+  prepared_contract "$r" >"$stage/.complete.json"
+  [[ ! -e $(dir_of "$id")/cancel ]] || die "preparation cancelled"
+  mv -T -- "$stage" "$pack"
+  stage=""
+)
 # ours <container>: labelled with this user's uid, or a 5.x container (they carry no uid), which the upgrade takes over
 ours() {
   local l
@@ -447,7 +546,7 @@ rundir() { echo "$STATE/run/$1"; }
 
 remove() {
   local c
-  for c in "$(engine "$1")" "$(gateway "$1")"; do
+  for c in "$(preparer "$1")" "$(engine "$1")" "$(gateway "$1")"; do
     if ours "$c"; then
       if ! docker rm -f "$c" >/dev/null 2>&1; then
         sleep 3
@@ -474,12 +573,22 @@ allocation_lock() {
   flock -w 30 8 || die "another model is starting; try again"
 }
 
+cards_free() {
+  local g k
+  g=$(gpus)
+  for k in "$@"; do
+    jq -e --arg k "$k" 'any(.[]; .key == $k and (.held or (.usedMiB // 0) > 2048))' <<<"$g" >/dev/null &&
+      die "$k is in use by another program"
+  done
+  return 0
+}
+
 # phase_start <id> <port> <key>: re-read the recipe here, check every path, build both containers
 phase_start() (
   valid_id "$1" && [[ $2 =~ ^[0-9]+$ && $2 -ge 12434 && $2 -lt 12450 ]] || die "invalid request"
-  local id=$1 port=$2 r g backend run a=() k v w
+  local id=$1 port=$2 r g backend run a=() devices=() k v w
   shift 2
-  r=$(recipe "$id") || die "no recipe $id"
+  r=$(jq -ce '.recipe // empty' "$(dir_of "$id")/config.json" 2>/dev/null || recipe "$id") || die "no recipe $id"
   v=$(policy "$r")
   [[ $v == "ok" ]] || die "recipe refused: $v"
   (($# == $(jq -r '.cards // 1' <<<"$r"))) || die "this recipe runs on $(jq -r '.cards // 1' <<<"$r") card(s)"
@@ -509,15 +618,11 @@ phase_start() (
 
   allocation_lock
   remove "$id"
+  trap 'v=$?; if ((v != 0)); then remove "$id" || true; fi; exit "$v"' EXIT
   # Downloads can take hours. Recheck with the launcher's Docker access immediately before allocation.
-  g=$(gpus)
-  for k in "$@"; do
-    jq -e --arg k "$k" 'any(.[]; .key == $k and (.held or (.usedMiB // 0) > 2048))' <<<"$g" >/dev/null &&
-      die "$k is in use by another program"
-  done
+  cards_free "$@"
   run=$(rundir "$id")
   mkdir -p "$run/by-path"
-  docker network create --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" "$(network "$id")" >/dev/null
   a=(docker run -d --name "$(engine "$id")" --restart unless-stopped --security-opt no-new-privileges
     --network "$(network "$id")" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=$(id -u)")
   if [[ $backend == "nvidia" ]]; then
@@ -527,15 +632,15 @@ phase_start() (
       for k in "$@"; do
         v=$(nvidia-smi --query-gpu=uuid --format=csv,noheader -i "${k#*:}" 2>/dev/null) && [[ $v == GPU-* ]] ||
           die "could not read the UUID of NVIDIA GPU ${k#*:}"
-        a+=(--device "nvidia.com/gpu=$v")
+        devices+=(--device "nvidia.com/gpu=$v")
       done
     else
       v=$(printf '%s,' "${@#*:}")
-      a+=(--gpus "\"device=${v%,}\"")
+      devices+=(--gpus "\"device=${v%,}\"")
     fi
   elif [[ $backend != cpu ]]; then
     # by GID, not name: the engine image need not share the host's group names.
-    [[ $backend == "amd-rocm" ]] && a+=(--device /dev/kfd \
+    [[ $backend == "amd-rocm" ]] && devices+=(--device /dev/kfd \
       --group-add "$(getent group video | cut -d: -f3)" \
       --group-add "$(getent group render | cut -d: -f3)")
     # oneCCL opens every by-path link it finds, so the engine sees only its own cards'
@@ -545,16 +650,27 @@ phase_start() (
       for w in /dev/dri/by-path/*-render; do
         [[ $(readlink -f "$w") == "$v" ]] && ln -s "../${v##*/}" "$run/by-path/${w##*/}"
       done
-      a+=(--device "$v")
+      devices+=(--device "$v")
     done
-    a+=(--volume "$run/by-path:/dev/dri/by-path:ro")
+    devices+=(--volume "$run/by-path:/dev/dri/by-path:ro")
     # Intel's runtime lets the copy engine read ordinary host memory in place while the weights load. On a B70 with
     # less RAM than the checkpoint that range is unmapped mid-transfer (xe: "Fault response: Unsuccessful -ENOENT",
     # copy engine reset) and vLLM waits on the lost copy. Staging through the runtime's own buffers is not enough:
     # the engine still registers the mapped file as shared-system memory, so shared-system USM is off as well.
     if [[ $backend == "intel-xpu" ]]; then
-      a+=(--env NEOReadDebugKeys=1 --env TreatNonUsmForTransfersAsSharedSystem=0 --env EnableSharedSystemUsmSupport=0)
+      devices+=(--env NEOReadDebugKeys=1 --env TreatNonUsmForTransfersAsSharedSystem=0 --env EnableSharedSystemUsmSupport=0)
     fi
+  fi
+  local prepare_keys=("$@")
+  flock -u 8
+  prepare_model "$id" "$r" ${devices[@]+"${devices[@]}"}
+  # Preparation may take minutes. Reacquire allocation before the final check and engine start.
+  allocation_lock
+  cards_free "$@"
+  docker network create --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" "$(network "$id")" >/dev/null
+  a+=(${devices[@]+"${devices[@]}"})
+  if [[ $(jq -r '.prepare // empty' <<<"$r") ]]; then
+    a+=(--volume "$(prepared_path "$r"):$(jq -r .prepare.at <<<"$r"):ro")
   fi
   while IFS='|' read -r _ _ _ _ v w _; do
     owned "$w"
@@ -565,17 +681,16 @@ phase_start() (
   # the rest of the options, the image and its arguments; the cards are chosen above, never by the recipe
   while IFS= read -r -d '' v; do
     a+=("$v")
-  done < <(jq -j --arg run "$run" 'def o($f; $v): if ($v // "") != "" then "\($f)\u0000\($v)\u0000" else "" end;
-    o("--shm-size"; .launch.shm), o("--entrypoint"; .launch.entrypoint),
+  done < <(launch_options "$r"; jq -j --arg run "$run" 'def o($f; $v): if ($v // "") != "" then "\($f)\u0000\($v)\u0000" else "" end;
     o("--volume"; .asset | if . then "\($run)/\(.name):\(.mountPath):ro" else null end),
-    o("--env"; if any(.weights[]?; .layout == "hub") then "HF_HUB_OFFLINE=1" else null end),
-    (.launch.environment | to_entries[]? | select(.key != "NVIDIA_VISIBLE_DEVICES") | o("--env"; "\(.key)=\(.value)")),
     "\(.image)\u0000", (.launch.arguments[]? | "\(.)\u0000")' <<<"$r")
+  [[ ! -e $(dir_of "$id")/cancel ]] || die "start cancelled"
   if ! "${a[@]}" >/dev/null; then
     remove "$id"
     die "the engine did not start"
   fi
 
+  [[ ! -e $(dir_of "$id")/cancel ]] || die "start cancelled"
   if ! docker run -d --name "$(gateway "$id")" --restart unless-stopped --security-opt no-new-privileges \
     --cap-drop ALL --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --dns 127.0.0.1 \
     --network "$(network "$id")" --user "$(id -u):$(id -g)" --publish "127.0.0.1:$port:12434" \
@@ -639,7 +754,7 @@ worker_run() {
   local r t0 w reply served="" code nodes seen quiet last top step pct line
   WID=$1
   shift
-  r=$(recipe "$WID")
+  r=$(jq -ce '.recipe // empty' "$(dir_of "$WID")/config.json" 2>/dev/null || recipe "$WID")
   WD=$(dir_of "$WID")
   WNAME=$(jq -r .name <<<"$r")
   NID=0
@@ -756,8 +871,9 @@ cmd_run() {
   rm -f "$d/err" "$d/cancel"
   # what Open tells the agent is kept with the model, so a registry update that renames its recipe does not strand it
   jq -nc --arg id "$id" --argjson uid "$(id -u)" --argjson p "$port" --arg a "$(get agent)" --arg f "$(get folder)" --arg t "$(now)" --argjson r "$r" \
+    --argjson managed "$(managed_paths "$r" | jq -Rsc 'split("\n") | map(select(length > 0))')" \
     '{id: $id, containerUid: $uid, keys: $ARGS.positional, port: $p, agent: $a, folder: $f, startedAt: $t,
-      serve: {name: $r.name, ctx: ($r.serving.ctxTokens // 32768), vision: ($r.capabilities.vision // false)}}' \
+      recipe: $r, managedPaths: $managed, serve: {name: $r.name, ctx: ($r.serving.ctxTokens // 32768), vision: ($r.capabilities.vision // false)}}' \
     --args "${keys[@]}" >"$d/config.json.$$"
   mv -f "$d/config.json.$$" "$d/config.json"
   flock -u 9
@@ -811,17 +927,23 @@ cmd_forget() {
   [[ $(policy "$r") == "ok" ]] || die "recipe refused"
   exec 9>"$STATE/claim.lock"
   flock -w 10 9 || die "another model operation is running; try again"
-  while IFS= read -r w; do
-    IFS='|' read -r _ _ _ _ _ _ d < <(wpaths "$w")
+  while IFS= read -r d; do
     [[ $d == "$MODELS/"* && $d != *"/../"* ]] || die "invalid download path"
     paths+=("${d%/}")
-  done < <(jq -c '.weights[]?' <<<"$r")
+  done < <(managed_paths "$r")
   for other in "$STATE"/deploy/*/config.json; do
-    live=$(recipe "$(jq -r .id "$other")") || die "stop existing models before removing downloads"
-    while IFS= read -r w; do
-      IFS='|' read -r _ _ _ _ _ _ d < <(wpaths "$w")
-      busy+=("$d")
-    done < <(jq -c '.weights[]?' <<<"$live")
+    live=$(jq -ce '.recipe // empty' "$other" || recipe "$(jq -r .id "$other")") || live=""
+    if [[ -n $live ]]; then
+      if jq -e 'has("managedPaths")' "$other" >/dev/null; then
+        [[ $(jq -cS '.managedPaths | sort' "$other") == "$(managed_paths "$live" | jq -Rsc 'split("\n") | map(select(length>0)) | sort')" ]] ||
+          die "stop existing models with incomplete download records before removing downloads"
+      fi
+      while IFS= read -r d; do busy+=("$d"); done < <(managed_paths "$live")
+    elif jq -e --arg root "$MODELS/" '.managedPaths | type == "array" and length > 0 and all(.[]; type == "string" and startswith($root))' "$other" >/dev/null; then
+      while IFS= read -r d; do busy+=("$d"); done < <(jq -r '.managedPaths[]' "$other")
+    else
+      die "stop existing models before removing downloads"
+    fi
   done
   for target in "${paths[@]}"; do
     for d in "${busy[@]}"; do

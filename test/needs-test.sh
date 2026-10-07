@@ -16,7 +16,7 @@ cp "$ROOT/bin/omarchy-local-ai" "$TMP/plugin/bin/"
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/manifest.json" "$TMP/plugin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
 : >"$OMARCHY_DOCKER_SOCKET"
@@ -68,7 +68,7 @@ recipes
 NVME_CRYPT='crypt 0 |part 0 nvme|disk 0 nvme'
 host 256 500 "$NVME_CRYPT"
 "$CLI" snapshot >"$TMP/snap.json"
-[[ $(jq -c '.host' "$TMP/snap.json") == '{"ramGb":512,"freeRamGb":256,"diskFreeGb":500,"disk":"nvme"}' ]] || fail "host" "$(jq -c .host "$TMP/snap.json")"
+[[ $(jq -c '.host' "$TMP/snap.json") == '{"ramGb":512,"freeRamGb":256,"diskFreeGb":500,"disk":"nvme","prepared":[]}' ]] || fail "host" "$(jq -c .host "$TMP/snap.json")"
 [[ -z $(unfit big) && -z $(unfit big-tp2) && -z $(unfit small) ]] || fail "fit" "$(jq -c .kinds "$TMP/snap.json")"
 pass "a machine with the RAM, the disk and an NVMe drive under LUKS fits the offload recipe"
 if command -v node >/dev/null; then
@@ -108,7 +108,7 @@ mkdir -p "$MODELS/test--big@000000000000/big" && : >"$MODELS/test--big@000000000
 rm -rf "$MODELS"
 mkdir -p "$MODELS/test--big@000000000000/big" && truncate -s 60G "$MODELS/test--big@000000000000/big/model.safetensors.part"
 "$CLI" snapshot >"$TMP/snap.json"
-[[ $(unfit big) == "needs 120 GB free disk, you have 54" ]] || fail "partial download short" "$(unfit big)"
+[[ $(unfit big) == "needs 56 GB free disk, you have 54" ]] || fail "partial download short" "$(unfit big)"
 truncate -s 10G "$MODELS/test--big@000000000000/big/model-2.safetensors"
 "$CLI" snapshot >"$TMP/snap.json"
 [[ -z $(unfit big) ]] || fail "partial download" "$(unfit big)"
