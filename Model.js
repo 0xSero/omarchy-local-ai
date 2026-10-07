@@ -175,7 +175,7 @@ function catalog(s) {
       // a setup across more cards than the machine has is listed as too big, saying how many it takes
       out.push({ id: r.id, name: r.name, family: r.family, format: r.format, engine: r.engine || "", ctx: r.ctx, size: r.sizeGb, needs: r.needs || {}, hw: hw, n: n, d: d || null,
         fits: fits(r) && !short_, unfit: short_ ? "needs " + n + " × " + hw + ", this machine has " + kd.keys.length : r.unfit || "",
-        downloaded: !!r.downloaded, dl: find(s.downloads || [], "id", r.id),
+        downloaded: !!r.downloaded, dl: find(s.downloads || [], "id", r.id), reported: !!r.reported,
         free: kd.free.length >= n, pin: pins.indexOf(r.id), rec: !!rec[r.id], at: at * 1000 + i,
         on: (n > 1 ? n + "× " : "") + short(hw),
         run: kd.free.length >= n && !short_ ? "run|" + r.id + "|" + kd.free.slice(0, n).join(",") : "",
@@ -218,6 +218,7 @@ function state(c) {
   if (c.dl) return c.dl.state === "error" ? "download failed: " + (c.dl.error || "try again") : "downloading · " + (c.dl.detail || "") + (c.dl.percent > 0 ? " · " + c.dl.percent + "%" : "")
   if (!c.fits) return c.unfit
   return (c.downloaded ? "downloaded" : "not downloaded · " + (c.size ? gb(c.size) : "")) + (c.free ? "" : " · its card is in use")
+    + (c.reported ? " · reported by its publisher, not yet run by the lab" : "")
 }
 // a model's row opened on the models tab: its state, then Start or Open and Stop, Download, Cancel or Remove, Pin
 function manage(c) {
@@ -403,7 +404,7 @@ function page(s, ui, m) {
     : m.unfit ? m.unfit
     : !m.action ? (held ? "its " + m.cards[0].name + " is " + held : "its cards are in use")
     : dl && dl.state === "download" ? "downloading · " + (dl.detail || "") + (dl.percent > 0 ? " · " + dl.percent + "%" : "")
-    : m.downloaded ? "downloaded · ready to start" : "starts with a " + gb(m.sizeGb || 0) + " download"
+    : (m.downloaded ? "downloaded · ready to start" : "starts with a " + gb(m.sizeGb || 0) + " download") + (m.reported ? " · reported, not yet run by the lab" : "")
   v.rows.push(failed || m.unfit ? { type: "error", label: said } : { type: "links", note: said, items: [] })
   // one action, two when it runs: Open and Stop; none for a model this machine cannot run
   if (!m.unfit || run) v.rows.push({ type: "acts", items: failed ? [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true }, { label: "Dismiss", action: "stop|" + run.id, danger: true }]

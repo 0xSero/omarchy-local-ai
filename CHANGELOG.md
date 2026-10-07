@@ -2,6 +2,14 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.11.1] - 2026-10-07
+
+### Added
+- GLM-5.3-Flash and DeepSeek-V4.1-Flash on an RTX 3090 (with experts in system RAM and an NVMe drive), from the registry at 56621dc9. A recipe its publisher reported but the lab has not yet run says so on its row and its page.
+
+### Fixed
+- The panel is never taller than its screen, even when the shell does not say how much room there is; the rest scrolls. A list that gets shorter while scrolled down (a search, a section folded) slides back into view.
+
 ## [6.11.0] - 2026-10-07
 
 ### Added
