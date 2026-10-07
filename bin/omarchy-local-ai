@@ -883,7 +883,6 @@ cmd_run() {
     --args "${keys[@]}" >"$d/config.json.$$"
   mv -f "$d/config.json.$$" "$d/config.json"
   flock -u 9
-  cmd_pin "$id" || true
 
   setsid "$0" __worker "$id" "${keys[@]}" </dev/null >/dev/null 2>&1 &
   jq -nc --argjson p "$!" --arg t "$(now)" '{state: "download", detail: "starting", percent: 0, error: "", pid: $p, at: $t}' >"$d/status.json.$$"
@@ -1025,7 +1024,7 @@ cmd_card() {
 
 # download <recipe> [off]: a model's weights and its engine image, without running it (Models tab); off cancels and
 # forgets it. Its progress is in the snapshot's downloads until it finishes; a finished one is the recipe's
-# `downloaded`. Downloading a model pins it.
+# `downloaded`.
 cmd_download() {
   valid_id "${1:-}" || die "download <recipe> [off]"
   local id=${1%--*} r d pid
@@ -1046,7 +1045,6 @@ cmd_download() {
   jq -nc --argjson p "$!" --arg t "$(now)" '{state: "download", detail: "starting", percent: 0, error: "", pid: $p, at: $t}' >"$d/status.json.$$"
   mv -f "$d/status.json.$$" "$d/status.json"
   disown
-  cmd_pin "$id" || true
 }
 download_run() {
   local id=$1 r w img
@@ -1072,7 +1070,7 @@ download_run() {
   rm -rf -- "$(dir_of "$id")"
 }
 
-# pin <recipe> [off]: pinned models lead the panel's list, the latest first; running one pins it
+# pin <recipe> [off]: a model not on this machine, kept on home to try later, the latest first
 cmd_pin() {
   local f=$STATE/settings.json
   valid_id "${1:-}" || die "pin <recipe> [off]"

@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.12.1] - 2026-10-07
+
+### Changed
+- A model row says what tapping it does: ⌄ (⌃ while open) on the models tab, where it opens in place, and › on home, where it opens the model's page. An open row is shaded.
+- Home lists your models: what is on this machine (running first, then by AA) and the ones you pinned to try. Pin is offered only for a model not on this machine; running or downloading a model no longer pins it.
+
 ## [6.12.0] - 2026-10-07
 
 ### Added

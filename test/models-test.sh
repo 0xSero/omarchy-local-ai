@@ -50,12 +50,13 @@ test('home: tabs, the grid, recommended models as a table, the machine; no searc
   assert(r.filter(x => x.type === 'trow')[2].dim);
   assert(!r.some(x => x.type === 'search' || x.type === 'slot' || (x.items || []).some(a => a.action === 'registry')));
 });
-test('pinned models lead home, latest first; a running one has a dot, its card Stop', () => {
+test('home: your models, what runs first, then those pinned to try; each row goes to its page; a running card has Stop', () => {
   const st = {...s, pins: ['gemma.3090', 'lfm.cpu'], deployments: [{id: 'lfm.cpu', name: 'LFM2.5-2.6B', keys: ['cpu:0'], state: 'ready', agent: 'pi', session: {}}]};
   const r = home(st);
-  assert.deepEqual(sec(r), ['PINNED', 'THIS MACHINE']);
-  assert.deepEqual(table(r), ['Gemma 4 26B A4B | EXL3 5.1 bpw | RTX 3090', 'LFM2.5-2.6B | GGUF Q4_K_M | CPU']);
-  assert.equal(r.filter(x => x.type === 'trow')[1].mark, '●');
+  assert.deepEqual(sec(r), ['YOUR MODELS', 'THIS MACHINE']);
+  assert.deepEqual(table(r), ['LFM2.5-2.6B | GGUF Q4_K_M | CPU', 'Gemma 4 26B A4B | EXL3 5.1 bpw | RTX 3090']);
+  assert.equal(r.filter(x => x.type === 'trow')[0].mark, '●');
+  assert(r.filter(x => x.type === 'trow').every(x => x.go && !x.drop));
   const card = r.find(x => x.type === 'run');
   assert.deepEqual([card.primary.action, card.more, card.stop], ['open|lfm.cpu', 'more|lfm.cpu', 'stop|lfm.cpu']);
 });
@@ -76,7 +77,8 @@ test('a model row opens in place: its state and Start, Download, Pin, Details', 
   const i = r.findIndex(x => x.type === 'trow' && x.open);
   const box = r[i + 1];
   assert.equal(box.note, 'not downloaded · 14 GB');
-  assert.deepEqual(box.items.map(a => a.label + '=' + a.action), ['Start ›=run|q27.3090|nvidia:0', 'Download=download|q27.3090', 'Pin=pin|q27.3090',
+  assert(r[i].drop && r.filter(x => x.type === 'trow' && !x.open).every(x => x.drop));
+  assert.deepEqual(box.items.map(a => a.label + '=' + a.action), ['Start ›=run|q27.3090|nvidia:0', 'Download=download|q27.3090', 'Pin to home=pin|q27.3090',
     'Details ›=kind|rtx-3090-24gb|nvidia:0|q27.3090']);
 });
 test('downloaded, downloading, running and pinned rows offer what fits their state', () => {
@@ -84,10 +86,11 @@ test('downloaded, downloading, running and pinned rows offer what fits their sta
     downloads: [{id: 'gemma.3090', state: 'download', detail: '3 of 20 GB', percent: 15}],
     deployments: [{id: 'q27.b70', name: 'Qwen3.8-27B', keys: ['intel-xpu:0'], state: 'ready', agent: 'pi', session: {}}]};
   const box = id => { const r = tab(st, {open: 'm:' + id}); return r[r.findIndex(x => x.type === 'trow' && x.open) + 1] };
-  assert.deepEqual(box('lfm.cpu').items.map(a => a.label), ['Start ›', 'Remove download', 'Unpin', 'Details ›']);
+  // a model on this machine is on home already: no Pin
+  assert.deepEqual(box('lfm.cpu').items.map(a => a.label), ['Start ›', 'Remove download', 'Details ›']);
   assert.equal(box('gemma.3090').note, 'downloading · 3 of 20 GB · 15%');
-  assert.deepEqual(box('gemma.3090').items.map(a => a.action), ['run|gemma.3090|nvidia:0', 'download|gemma.3090|off', 'pin|gemma.3090', 'kind|rtx-3090-24gb|nvidia:0|gemma.3090']);
-  assert.deepEqual(box('q27.b70').items.map(a => a.label), ['Open ›', 'Stop', 'Pin', 'Details ›']);
+  assert.deepEqual(box('gemma.3090').items.map(a => a.action), ['run|gemma.3090|nvidia:0', 'download|gemma.3090|off', 'kind|rtx-3090-24gb|nvidia:0|gemma.3090']);
+  assert.deepEqual(box('q27.b70').items.map(a => a.label), ['Open ›', 'Stop', 'Details ›']);
   assert.equal(box('q27.b70').note, 'running on B70');
 });
 test('search matches name, format, family and hardware, every word; typing lands on the models tab', () => {
