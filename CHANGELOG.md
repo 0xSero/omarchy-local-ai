@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.10.1] - 2026-10-07
+
+### Fixed
+- Withdraw the Qwen3.8-27B SC3bpw/131k/MTP configuration from eight 16 GB NVIDIA catalog entries after a reported RTX 4070 Ti SUPER load failure with desktop VRAM in use. Sibling cards are held as a precaution until requalified with desktop headroom.
+- Existing deployments and their weights remain available. Historical proof records stay in the registry; no untested replacement configuration is offered.
+
 ## [6.10.0] - 2026-10-07
 
 ### Added
