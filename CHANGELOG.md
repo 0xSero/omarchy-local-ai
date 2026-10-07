@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.9.1] - 2026-10-07
+
+### Changed
+- Local AI and its registry now live in the sybil-solutions organization. Installation, model refresh and release checks use the canonical repositories.
+- Existing installations retain the sero.local-ai identity, recipe IDs and pinned container images.
+
 ## [6.9.0] - 2026-10-03
 
 ### Added
