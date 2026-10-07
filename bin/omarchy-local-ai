@@ -574,7 +574,11 @@ allocation_lock() {
 
 cards_free() {
   local g k
-  cards_free "$@"
+  g=$(gpus)
+  for k in "$@"; do
+    jq -e --arg k "$k" 'any(.[]; .key == $k and (.held or (.usedMiB // 0) > 2048))' <<<"$g" >/dev/null &&
+      die "$k is in use by another program"
+  done
   return 0
 }
 

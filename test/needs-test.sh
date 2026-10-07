@@ -68,7 +68,7 @@ recipes
 NVME_CRYPT='crypt 0 |part 0 nvme|disk 0 nvme'
 host 256 500 "$NVME_CRYPT"
 "$CLI" snapshot >"$TMP/snap.json"
-[[ $(jq -c '.host' "$TMP/snap.json") == '{"ramGb":512,"freeRamGb":256,"diskFreeGb":500,"disk":"nvme"}' ]] || fail "host" "$(jq -c .host "$TMP/snap.json")"
+[[ $(jq -c '.host' "$TMP/snap.json") == '{"ramGb":512,"freeRamGb":256,"diskFreeGb":500,"disk":"nvme","prepared":[]}' ]] || fail "host" "$(jq -c .host "$TMP/snap.json")"
 [[ -z $(unfit big) && -z $(unfit big-tp2) && -z $(unfit small) ]] || fail "fit" "$(jq -c .kinds "$TMP/snap.json")"
 pass "a machine with the RAM, the disk and an NVMe drive under LUKS fits the offload recipe"
 if command -v node >/dev/null; then
