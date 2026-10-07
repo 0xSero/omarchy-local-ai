@@ -157,5 +157,11 @@ test('full screen opens a model page with its details shown', () => {
   assert(!w.rows.some(x => x.label === 'details'));
   assert(w.rows.some(x => x.pair && x.cells[0] === 'engine'));
 });
+test('a recipe its publisher reported says so, on its row and its page', () => {
+  const st = {...s, kinds: s.kinds.map(k => k.hw === 'rtx-3090-24gb' ? {...k, models: k.models.map(x => x.id === 'gemma.3090' ? {...x, reported: true} : x)} : k)};
+  const r = tab(st, {open: 'm:gemma.3090'});
+  assert.equal(r[r.findIndex(x => x.type === 'trow' && x.open) + 1].note, 'not downloaded · 14 GB · reported by its publisher, not yet run by the lab');
+  assert.equal(m.build(st, {view: 'kind', id: 'rtx-3090-24gb', key: 'nvidia:0', model: 'gemma.3090'}).rows[0].note, 'starts with a 14 GB download · reported, not yet run by the lab');
+});
 process.exitCode = failed ? 1 : 0;
 JS

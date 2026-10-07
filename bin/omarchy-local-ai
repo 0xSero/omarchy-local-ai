@@ -1383,7 +1383,7 @@ adopt() {
 # what the widget needs of a recipe
 SUMMARY='def downloaded($h): [.weights[]? | if .layout == "hub" then "" else "\(.repository | gsub("/"; "--"))@\(.revision[:12])\(if (.dir // "") != "" then "/" + .dir else "" end)" end] as $w
   | ($w | length) > 0 and all($w[]; . as $x | $x != "" and ($h.have | index($x + "/.verified")) != null);
-def summary($h): {id, name, family, cards: (.cards // 1), format, engine, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
+def summary($h): {id, name, family, cards: (.cards // 1), format, engine, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, reported: (.reported // false),
   needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h), downloaded: downloaded($h)};'
 
 # downloads: each download under way or failed, with its id; one whose worker is gone has stopped

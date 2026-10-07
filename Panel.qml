@@ -367,7 +367,8 @@ Panel {
     focusTarget: keys
     padding: 0
     contentWidth: Style.space(340)
-    contentHeight: panel.fittedContentHeight(body.contentHeight)
+    // never taller than its screen, whether or not the shell says how much room there is: the rest scrolls
+    contentHeight: panel.fittedContentHeight(body.contentHeight, panel.screen ? panel.screen.height - Style.space(96) : 0)
 
     Rectangle { anchors.fill: parent; color: root.bg }
     Item {
@@ -410,6 +411,8 @@ Panel {
     // a new view starts at its top
     property int resetAt: root.topTick
     onResetAtChanged: contentY = 0
+    // a list that got shorter while scrolled down (a search, a section folded) slides back so its end is on screen
+    onContentHeightChanged: if (contentY > Math.max(0, contentHeight - height)) contentY = Math.max(0, contentHeight - height)
     // a mouse's back and forward buttons step through the views anywhere on the panel
     MouseArea {
       width: flick.width
