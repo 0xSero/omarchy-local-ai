@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent> | set agent|folder <value> [recipe] | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | cdi | log | remove
+# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent> | set agent|folder <value> [recipe] | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | outdated | cdi | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -1130,7 +1130,41 @@ cmd_update() (
   say "updating $a"
   timeout 840 "${cmd[@]}" >>"$LOG" 2>&1 || die "could not update $a; see the Local AI log"
   say "updated $a"
+  jq -c --arg a "$a" '.updates |= del(.[$a])' "$STATE/outdated.json" >"$STATE/outdated.json.$$" 2>/dev/null && mv -f "$STATE/outdated.json.$$" "$STATE/outdated.json" || rm -f "$STATE/outdated.json.$$"
   printf 'Updated %s. New sessions use the updated version.\n' "$a"
+)
+
+# outdated: which installed agents have a newer version, from the managers update uses (mise, then npm), kept in
+# outdated.json for the snapshot; an agent that updates itself (claude, omp, hermes, opencode) without mise is not asked
+cmd_outdated() (
+  local a b tool package m='{}' n='{}' out='{}' cur lat
+  cd -- "$HOME_DIR"
+  omarchy-cmd-present mise && m=$(timeout 60 mise outdated --json 2>/dev/null | jq -c 'if type == "object" then . else {} end' 2>/dev/null) || m='{}'
+  omarchy-cmd-present npm && n=$(timeout 60 npm outdated --global --json 2>/dev/null | jq -c 'if type == "object" then . else {} end' 2>/dev/null) || n='{}'
+  [[ -n $m ]] || m='{}'
+  [[ -n $n ]] || n='{}'
+  for a in "${AGENTS[@]}"; do
+    b=$(bin "$a") || continue
+    tool=$a package=""
+    case $a in
+      grok) tool=npm:@xai-official/grok package=@xai-official/grok ;;
+      omp) tool=github:can1357/oh-my-pi ;;
+      hermes) tool='pipx:hermes-agent' ;;
+      pi) package=@mariozechner/pi-coding-agent ;;
+      codex) package=@openai/codex ;;
+      copilot) package=@github/copilot ;;
+      crush) package=@charmland/crush ;;
+    esac
+    IFS=$'\t' read -r cur lat < <(jq -r --arg t "$tool" --arg p "$package" --arg a "$a" '
+      ([to_entries[] | select(.key == $t or .key == $a or (.key | startswith($t + "["))) | .value][0] // {}) as $x
+      | [$x.current // "", $x.latest // ""] | @tsv' <<<"$m") || true
+    if [[ -z $lat && -n $package ]]; then
+      IFS=$'\t' read -r cur lat < <(jq -r --arg p "$package" '.[$p] // {} | [.current // "", .latest // ""] | @tsv' <<<"$n") || true
+    fi
+    [[ -n $lat && $lat != "$cur" ]] && out=$(jq -c --arg a "$a" --arg c "$cur" --arg l "$lat" '.[$a] = {current: $c, latest: $l}' <<<"$out")
+  done
+  jq -nc --argjson u "$out" --arg t "$(now)" '{at: $t, updates: $u}' >"$STATE/outdated.json.$$"
+  mv -f "$STATE/outdated.json.$$" "$STATE/outdated.json"
 )
 
 # keyed <VAR...>: argv that exports the gateway key into those variables, read from its file, then runs the rest
@@ -1383,7 +1417,7 @@ adopt() {
 # what the widget needs of a recipe
 SUMMARY='def downloaded($h): [.weights[]? | if .layout == "hub" then "" else "\(.repository | gsub("/"; "--"))@\(.revision[:12])\(if (.dir // "") != "" then "/" + .dir else "" end)" end] as $w
   | ($w | length) > 0 and all($w[]; . as $x | $x != "" and ($h.have | index($x + "/.verified")) != null);
-def summary($h): {id, name, family, cards: (.cards // 1), format, engine, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, reported: (.reported // false),
+def summary($h): {id, name, family, cards: (.cards // 1), format, engine, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, reported: (.reported // false), aa,
   needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h), downloaded: downloaded($h)};'
 
 # downloads: each download under way or failed, with its id; one whose worker is gone has stopped
@@ -1443,6 +1477,7 @@ cmd_snapshot() {
     --arg rstate "$rstate" --arg rmsg "$rmsg" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg setupError "$(cat "$STATE/setup-error" 2>/dev/null || true)" --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --arg cdi "$(cdi_stale 2>/dev/null || true)" --argjson downloads "$(downloads)" \
+    --argjson outdated "$(jq -c '{at, updates}' "$STATE/outdated.json" 2>/dev/null || echo '{"at":"","updates":{}}')" \
     --argjson folders "${sfs:-[]}" --argjson pins "$(jq -c '.pins // [] | map(strings)' "$STATE/settings.json" 2>/dev/null || echo '[]')" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
     ($agents | split("\n") | map(select(length > 0))) as $agents
@@ -1455,7 +1490,7 @@ cmd_snapshot() {
     | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, pins: $pins, tailnet: $ts,
        cdi: (if $cdi == "" then null else ($cdi | split("\t") | {spec: .[0], why: .[1]}) end),
-       downloads: $downloads, catalog: {commit: ($rec[0].registryCommit // ""), at: ($rec[0].refreshedAt // "")},
+       downloads: $downloads, updates: $outdated.updates, updatesAt: $outdated.at, catalog: {commit: ($rec[0].registryCommit // ""), at: ($rec[0].refreshedAt // "")},
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
@@ -1474,7 +1509,7 @@ mkdir -p "$STATE"
 # the verbs that use Docker run under the docker group, whatever groups this login began with
 case ${1:-} in snapshot | run | stop | remove | readiness | download) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
-setup | registry | forget | snapshot | readiness | run | stop | open | update | set | share | pin | download | card) "cmd_$1" "${@:2}" ;;
+setup | registry | forget | snapshot | readiness | run | stop | open | update | outdated | set | share | pin | download | card) "cmd_$1" "${@:2}" ;;
 # the stale NVIDIA device list, if any, as "<spec>\t<why>" (setup rewrites it)
 cdi) cdi_stale ;;
 log) exec omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G "$LOG" ;;

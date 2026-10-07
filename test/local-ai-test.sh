@@ -254,7 +254,7 @@ if command -v node >/dev/null; then
   pass "the view model rounds before picking a unit, keeps months on their weeks across DST, and shows a model with no recipe or start"
   # Panel.qml: a refresh asked for while a snapshot runs (the one after a verb) runs once that one ends
   [[ $(js 'var q = fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8"), p = {Model: c, snap: {}, ui: {}, poll: {running: true},
-    pollOut: {text: fs.readFileSync(process.argv[2], "utf8")}, Qt: {callLater: f => f()}, autoRefresh() {}}; p.root = p; vm.createContext(p)
+    pollOut: {text: fs.readFileSync(process.argv[2], "utf8")}, Qt: {callLater: f => f()}, autoRefresh() {}, autoOutdated() {}}; p.root = p; vm.createContext(p)
     ;[q.match(/function refresh\(\) \{.*\}/)[0], q.match(/function polled\([^]*?\n  \}/)[0], "var exited = " + q.match(/id: poll\n[^]*?onExited: (function\(code\) \{.*\})/)[1]].forEach(f => vm.runInContext(f, p))
     p.refresh(); p.poll.running = false; p.exited(0); p.poll.running + " " + p.snap.gpus.length') == "true 3" ]] || fail "a refresh while a snapshot runs"
   # the plugin's path as Qt's URL gives it, for a folder named a%25b#c: its "%" and "#" stay encoded

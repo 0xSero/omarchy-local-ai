@@ -175,7 +175,7 @@ function catalog(s) {
       // a setup across more cards than the machine has is listed as too big, saying how many it takes
       out.push({ id: r.id, name: r.name, family: r.family, format: r.format, engine: r.engine || "", ctx: r.ctx, size: r.sizeGb, needs: r.needs || {}, hw: hw, n: n, d: d || null,
         fits: fits(r) && !short_, unfit: short_ ? "needs " + n + " × " + hw + ", this machine has " + kd.keys.length : r.unfit || "",
-        downloaded: !!r.downloaded, dl: find(s.downloads || [], "id", r.id), reported: !!r.reported,
+        downloaded: !!r.downloaded, dl: find(s.downloads || [], "id", r.id), reported: !!r.reported, aa: r.aa != null ? r.aa : null,
         free: kd.free.length >= n, pin: pins.indexOf(r.id), rec: !!rec[r.id], at: at * 1000 + i,
         on: (n > 1 ? n + "× " : "") + short(hw),
         run: kd.free.length >= n && !short_ ? "run|" + r.id + "|" + kd.free.slice(0, n).join(",") : "",
@@ -191,16 +191,18 @@ function matches(c, q) {
 // one model as a table row: a dot when it runs, its name, format and hardware; dim when it cannot start now. Full
 // screen adds its engine, context, download and the RAM and NVMe it needs besides its cards.
 function trow(c, wide) {
-  var cells = [c.name, brief(c.format), c.on]
-  if (wide) cells = [c.name, brief(c.format), c.engine || "–", c.on, c.ctx ? ctx(c.ctx) : "–", c.size ? gb(c.size) : "–",
+  // the Artificial Analysis index, whole: a rank to compare, not a measurement to read
+  var aa = c.aa != null ? String(Math.round(c.aa)) : "–"
+  var cells = [c.name, aa, brief(c.format), c.on]
+  if (wide) cells = [c.name, aa, brief(c.format), c.engine || "–", c.on, c.ctx ? ctx(c.ctx) : "–", c.size ? gb(c.size) : "–",
     c.needs.host_ram_gb ? Math.ceil(c.needs.host_ram_gb) + " GB" : "–", c.needs.fast_storage === "nvme" ? "yes" : "–"]
   // the mark before the name: running, downloading, downloaded
-  var mark = c.d ? "●" : c.dl && c.dl.state === "download" ? "↓" : c.downloaded ? "✓" : ""
+  var mark = c.d ? "●" : c.dl && c.dl.state === "download" ? "↓" : ""
   return { type: "trow", family: c.family || "", live: !!c.d, mark: mark, dim: !c.d && (!c.fits || !c.free), cells: cells, action: c.action }
 }
 // a table of models; on the models tab each row opens in place to manage it
 function table(list, wide, ui) {
-  var rows = [{ type: "thead", cells: wide ? ["MODEL", "FORMAT", "ENGINE", "ON", "CONTEXT", "DOWNLOAD", "RAM", "NVMe"] : ["MODEL", "FORMAT", "ON"] }]
+  var rows = [{ type: "thead", cells: wide ? ["MODEL", "AA", "FORMAT", "ENGINE", "ON", "CONTEXT", "DOWNLOAD", "RAM", "NVMe"] : ["MODEL", "AA", "FORMAT", "ON"] }]
   list.forEach(function(c) {
     var r = trow(c, wide)
     if (ui) {
@@ -251,7 +253,9 @@ function modelsTab(s, ui) {
     rows.push({ type: "sec", label: "MATCHES" })
     return rows.concat(hit.length ? table(hit, ui.wide, ui) : [{ type: "links", note: "No model here matches \u201c" + ui.query.trim() + "\u201d. New ones arrive by themselves.", items: [] }])
   }
-  var have = all.filter(function(c) { return c.d || c.dl || c.downloaded }), rest = ok.filter(function(c) { return have.indexOf(c) < 0 })
+  // the smartest first, by the Artificial Analysis Intelligence Index; models AA does not list after, in registry order
+  var byAA = function(a, b) { return ((b.aa != null) - (a.aa != null)) || (b.aa || 0) - (a.aa || 0) || a.at - b.at }
+  var have = all.filter(function(c) { return c.d || c.dl || c.downloaded }).sort(byAA), rest = ok.filter(function(c) { return have.indexOf(c) < 0 }).sort(byAA)
   var big = all.filter(function(c) { return !c.fits && have.indexOf(c) < 0 })
   if (have.length) rows = rows.concat([{ type: "sec", label: "ON THIS MACHINE" }], table(have, ui.wide, ui))
   if (rest.length) rows = rows.concat([{ type: "sec", label: have.length ? "MORE THAT FIT" : "FITS THIS MACHINE" }], table(rest, ui.wide, ui))
@@ -347,24 +351,28 @@ function gpusView(s, ui) {
     { v: h.cpus ? String(h.cpus) : "–", u: "", k: "CPU threads" },
     { v: h.diskFreeGb != null ? String(Math.floor(h.diskFreeGb)) : "–", u: "GB", k: h.disk === "nvme" ? "NVMe free" : "disk free" }] }]
   if (cards.length) rows.push({ type: "sec", label: cards.length === 1 ? "GPU" : "GPUS" })
+  // a card is one line (maker, name, temperature, what it is doing); opened, its memory and where it leads
   cards.forEach(function(g) {
     var d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0], kd = find(s.kinds || [], "hw", g.hw)
-    var r = gpuRow(g)
-    r.status = d ? (d.state === "ready" ? "running " : d.state === "error" ? "stopped: " : d.state + " ") + d.name
-      : (kd && kd.taken.indexOf(g.key) >= 0) || g.held ? "in use by another program" : kd ? "free" : "no tested model yet"
-    r.warn = r.status === "in use by another program"
-    r.action = d ? "more|" + d.id : kd ? "find|" + short(g.name) : SUPPORTED
-    rows.push(r)
+    var held = !d && ((kd && kd.taken.indexOf(g.key) >= 0) || g.held)
+    var status = d ? (d.state === "ready" ? "running " : d.state === "error" ? "stopped: " : d.state + " ") + d.name
+      : held ? "in use by another program" : kd ? "free" : "no tested model yet"
+    var open = ui.open === "hw:" + g.key || ui.wide
+    rows.push({ type: "field", logo: vendor(g), label: g.name, value: (g.tempC != null ? g.tempC + "°  " : "") + (d ? (d.state === "ready" ? "running" : d.state) : held ? "in use" : kd ? "free" : "–"),
+      warn: held, drop: !ui.wide, open: open, action: ui.wide ? "" : "pick|hw:" + g.key })
+    if (open) {
+      var mem = gpuRow(g)
+      mem.status = status
+      rows.push(mem)
+      rows.push({ type: "links", items: [d ? { label: "Open " + d.name + " ›", action: "more|" + d.id } : kd ? { label: "Models for it ›", action: "find|" + short(g.name) } : { label: "Supported hardware ›", action: SUPPORTED }] })
+    }
   })
   var cpu = (s.gpus || []).filter(function(g) { return g.backend === "cpu" })[0]
   if (cpu) {
     rows.push({ type: "sec", label: "CPU" })
-    var c = gpuRow(cpu)
-    c.name = h.cpuName || cpu.name
-    c.mem = (h.cpus ? h.cpus + " threads · " : "") + cpu.ramGb + " GB RAM"
-    c.status = find(s.kinds || [], "hw", cpu.hw) ? "runs small models" : "no tested model yet"
-    c.action = find(s.kinds || [], "hw", cpu.hw) ? "find|CPU" : ""
-    rows.push(c)
+    // its maker's name without the marketing tail (24-Core Processor, (R), (TM), @ 3.2GHz)
+    var cpuName = (h.cpuName || cpu.name).replace(/\((R|TM)\)/g, "").replace(/\s+(\d+-Core Processor|CPU\b.*|@.*)$/i, "").replace(/\s+/g, " ").trim()
+    rows.push({ type: "field", icon: "machine", label: cpuName, value: (h.cpus ? h.cpus + " threads · " : "") + cpu.ramGb + " GB" })
   }
   var crashed = stopped(s, ui)
   if (crashed.length) rows = rows.concat([{ type: "sec", label: "STOPPED" }], crashed)
@@ -394,7 +402,7 @@ function page(s, ui, m) {
   var facts = spec(run ? Object.assign({}, m, { sizeGb: 0 }) : m)
   facts.splice(m.format ? 1 : 0, 0, { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") })
   if ((m.caps || {}).vision) facts.push({ icon: "vision", text: "" })
-  var v = { back: true, where: m.name, rows: [], hero: { name: m.name, family: m.family, chips: facts } }
+  var v = { back: true, where: m.name, whereFamily: m.family, rows: [], hero: { name: "", family: "", chips: facts } }
   if (run && !failed) Object.assign(v.hero, { line: line, top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: all.last ? ago(all.last) : "now" })
   // one line: what it is doing, or why it cannot start
   var dl = find(s.downloads || [], "id", run ? base(run.id) : m.id), held = (m.cards[0] || {}).status
@@ -526,16 +534,20 @@ function agentName(a) {
 }
 // The agent: closed, one row with the one chosen; opened, every agent once, the chosen one marked (a check, an ink
 // bar), each of the others choosing itself. Then default and update for the chosen one, and the folder.
+// an agent's newer version, when its manager has one (outdated.json): "Update to 2.1.292"
+function update(s, ui, a) {
+  var u = (s.updates || {})[a]
+  return u ? { label: ui.updatingAgent === a ? "Updating…" : "Update to " + u.latest, action: ui.updatingAgent ? "" : "update|" + a } : null
+}
 function pickers(s, rows, ui, agent, folder, id, always) {
+  // on the agents page choosing sets the default; on a model it sets that model's agent
+  var choose = function(a) { return always ? "default|" + a : "set|agent|" + encodeURIComponent(a) + "|" + id }
   if (ui.open === "agent" || always) (s.agents || []).forEach(function(a) {
-    rows.push({ type: "agent", agent: a, label: agentName(a), on: a === agent, value: a === agent ? "selected" : "select",
-      action: a === agent ? (always ? "" : "pick|agent") : "set|agent|" + encodeURIComponent(a) + "|" + id })
+    rows.push({ type: "agent", agent: a, label: agentName(a), on: a === agent, action: a === agent ? (always ? "" : "pick|agent") : choose(a) })
   })
-  else rows.push({ type: "agent", agent: agent || "", label: agentName(agent), on: true, value: "change", drop: true, action: "pick|agent" })
-  if (agent) rows.push({ type: "links", items: [
-    { label: (s.defaults || {}).agent === agent ? "Default agent" : "Make default", action: (s.defaults || {}).agent === agent ? "" : "default|" + agent },
-    { label: ui.updatingAgent === agent ? "Updating…" : "Update", action: ui.updatingAgent ? "" : "update|" + agent }
-  ] })
+  else rows.push({ type: "agent", agent: agent || "", label: agentName(agent), on: true, drop: true, action: "pick|agent" })
+  var u = !always && agent && update(s, ui, agent)
+  if (u) rows.push({ type: "links", items: [u] })
   rows.push({ type: "field", icon: "folder", label: "folder", value: home(folder),
     action: "folder|" + id + "|" + encodeURIComponent(folder || "") })
 }
@@ -543,6 +555,15 @@ function pickers(s, rows, ui, agent, folder, id, always) {
 function agentsView(s, ui) {
   var rows = [{ type: "sec", label: "DEFAULT AGENT" }]
   pickers(s, rows, ui, (s.defaults || {}).agent, (s.defaults || {}).folder, "", true)
+  // only agents with a newer version, each with its update
+  var ups = (s.agents || []).map(function(a) { return [a, update(s, ui, a)] }).filter(function(x) { return x[1] })
+  if (ups.length) {
+    rows.push({ type: "sec", label: "UPDATES" })
+    ups.forEach(function(x) {
+      rows.push({ type: "field", label: agentName(x[0]), value: (s.updates[x[0]].current || "") + " → " + s.updates[x[0]].latest })
+      rows.push({ type: "links", items: [x[1]] })
+    })
+  }
   return { back: true, where: "agents", rows: rows }
 }
 

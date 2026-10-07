@@ -28,7 +28,7 @@ Panel {
   readonly property string mono: bar ? bar.fontFamily : Style.font.family
   // Nerd Font glyphs for the icon names Model.js uses
   readonly property var glyphs: ({ gpu: 0xf08ae, memory: 0xf035b, temp: 0xf050f, context: 0xf09aa, weights: 0xf01a7, vision: 0xf06d0,
-    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf07b7, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140 })
+    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf07b7, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140, full: 0xf0293, unfull: 0xf0294, more: 0xf01d8 })
   function glyph(name) { return glyphs[name] ? String.fromCodePoint(glyphs[name]) : "" }
 
   // Four tones, each picked by the APCA contrast it must reach on a card (Model.tones): ink for what matters
@@ -253,7 +253,15 @@ Panel {
     var ok = s && Array.isArray(s.gpus) && Array.isArray(s.kinds) && Array.isArray(s.deployments)
     if (ok) snap = s
     ui = Object.assign({}, ui, { pollProblem: ok ? "" : "Could not refresh Local AI; retrying." })
-    if (ok) autoRefresh(s)
+    if (ok) { autoRefresh(s); autoOutdated(s) }
+  }
+  // agent updates are looked up when the last look is 6 hours old, at most once an hour, quietly
+  property real outdatedAt: 0
+  function autoOutdated(s) {
+    var at = Date.parse(s.updatesAt || "")
+    if (Date.now() - outdatedAt < 3600000 || (!isNaN(at) && Date.now() - at < 6 * 3600000)) return
+    outdatedAt = Date.now()
+    run(["outdated"])
   }
   // New models arrive by themselves: the catalog is checked against the registry when it is 12 hours old, at most
   // once an hour; a failed check says nothing and keeps the models there are
@@ -274,6 +282,7 @@ Panel {
   }
   // A verb that fails says why on its last "local-ai:" line; the panel opens to show it.
   function finished(code, operation, output, error) {
+    if (operation === "outdated") return next()
     if (operation === "registry") {
       // said only when it brought new models
       var was = ((snap.catalog || {}).commit || "").slice(0, 8)
@@ -456,9 +465,17 @@ Panel {
             }
           }
         }
+        Logo {
+          id: headLogo
+          anchors.left: steps.right
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          family: flick.view.back ? flick.view.whereFamily || "" : ""
+          size: 13
+        }
         Label {
           id: head
-          anchors.left: steps.right
+          anchors.left: headLogo.visible ? headLogo.right : steps.right
           anchors.leftMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
           // where you are: the page's name, else the panel's
@@ -480,8 +497,9 @@ Panel {
           anchors.right: parent.right
           anchors.rightMargin: root.gutter
           anchors.verticalCenter: parent.verticalCenter
-          text: flick.wide ? "esc  close full screen" : "full screen"
-          color: root.labelTone
+          text: root.glyph(flick.wide ? "unfull" : "full")
+          color: root.valueTone
+          font.pixelSize: Style.font.body
         }
         Click { anchors.fill: fullToggle; action: flick.wide ? "full|off" : "full" }
       }
@@ -540,10 +558,11 @@ Panel {
                   Label { id: lifeTokens; text: r.tokens; color: root.ink }
                   Label { anchors.baseline: lifeTokens.baseline; text: r.requests; color: root.labelTone }
                 }
+                // a hovered day takes the top line's right side; otherwise since when
                 Right {
                   margin: root.gutter
-                  text: r.since
-                  color: root.labelTone
+                  text: life.hover >= 0 ? (r.labels || [])[life.hover] || "" : r.since
+                  color: life.hover >= 0 ? root.valueTone : root.labelTone
                 }
               }
               Grid {
@@ -573,27 +592,7 @@ Panel {
                   }
                 }
               }
-              Item {
-                width: parent.width
-                height: Style.space(12)
-                Repeater {
-                  model: r.months || []
-                  Label {
-                    required property var modelData
-                    x: root.gutter + modelData.col * (life.cell + Style.space(3))
-                    text: modelData.label
-                    color: root.labelTone
-                    font.pixelSize: Style.font.caption - 1
-                  }
-                }
-              }
-              Label {
-                x: root.gutter
-                width: parent.width - 2 * root.gutter
-                text: (r.labels || [])[life.hover >= 0 ? life.hover : (r.labels || []).length - 1] || ""
-                color: root.labelTone
-                font.pixelSize: Style.font.caption
-              }
+
             }
           }
 
@@ -668,7 +667,7 @@ Panel {
                   primary: !r.primary.quiet
                   danger: !!r.primary.quiet
                 }
-                Btn { label: "More"; action: r.more }
+                Btn { label: root.glyph("more"); action: r.more }
                 // a ready model stops from home too (one starting has Stop as its first button)
                 Btn { label: r.stop ? "Stop" : ""; action: r.stop || ""; danger: true }
               }
@@ -862,7 +861,7 @@ Panel {
                 width: Math.min(implicitWidth, parent.width - fieldLabel.x - fieldLabel.width - root.gutter - Style.space(16))
                 elide: Text.ElideMiddle
                 text: r.secret ? (root.copied ? "copied" : "copy") : r.value + (r.drop ? "  " + root.glyph("down") : r.action ? " ›" : "")
-                color: r.open ? root.ink : root.valueTone
+                color: r.warn ? root.alertTone : r.open ? root.ink : root.valueTone
               }
               Label {
                 id: secretValue
@@ -988,7 +987,7 @@ Panel {
             id: tableC
             Item {
               readonly property bool head: r.type === "thead"
-              readonly property var cols: r.pair ? (flick.wide ? [0.2, 0.8] : [0.32, 0.68]) : (r.cells || []).length > 3 ? [0.24, 0.14, 0.1, 0.12, 0.09, 0.1, 0.11, 0.1] : [0.45, 0.31, 0.24]
+              readonly property var cols: r.pair ? (flick.wide ? [0.2, 0.8] : [0.32, 0.68]) : (r.cells || []).length > 4 ? [0.22, 0.06, 0.13, 0.09, 0.12, 0.08, 0.1, 0.1, 0.1] : [0.4, 0.11, 0.27, 0.22]
               // model rows: a mark (running, downloading, downloaded), the maker's logo, then the cells
               readonly property real lead: r.pair ? 0 : Style.space(30)
               readonly property real inner: width - 2 * root.gutter - lead
@@ -1062,7 +1061,7 @@ Panel {
               }
               // the chosen agent: an ink bar at the edge and a check
               Rectangle { visible: !!r.on; x: root.gutter - Style.space(10); width: 2; height: parent.height - Style.space(12); anchors.verticalCenter: parent.verticalCenter; color: root.ink }
-              Right { margin: root.gutter; text: r.drop ? r.value + "  " + root.glyph("down") : r.on ? root.glyph("check") + " " + r.value : r.value + " ›"; color: r.on ? root.ink : root.labelTone }
+              Right { margin: root.gutter; text: r.drop ? root.glyph("down") : r.on ? root.glyph("check") : ""; color: root.ink }
               Click { action: r.action }
             }
           }
@@ -1212,9 +1211,10 @@ Panel {
     visible: label !== ""
     implicitWidth: Math.ceil(glyphs.width) + Style.space(24)
     implicitHeight: btnText.implicitHeight + Style.space(10)
-    color: halt ? root.alertTone : primary ? root.ink : "transparent"
-    border.width: primary || halt ? 0 : 1
-    border.color: danger ? root.alertRule : root.ink
+    // Stop: no fill, a strong alert border and alert text, never mistaken for anything else
+    color: primary ? root.ink : "transparent"
+    border.width: primary ? 0 : halt ? 2 : 1
+    border.color: halt ? root.alertTone : danger ? root.alertRule : root.ink
     opacity: action === "" ? 0.5 : 1
     TextMetrics { id: metrics; font: btnText.font; text: btn.label }
     TextMetrics { id: words; font: btnText.font; text: btn.label.replace(/\s›$/, "") }
@@ -1223,7 +1223,7 @@ Panel {
       anchors.centerIn: parent
       anchors.horizontalCenterOffset: metrics.advanceWidth / 2 - (btn.glyphs.x + btn.glyphs.width / 2) + btn.weight
       text: btn.label
-      color: btn.primary || btn.halt ? Qt.rgba(root.bg.r, root.bg.g, root.bg.b, 1) : btn.danger ? root.alertTone : root.ink
+      color: btn.primary ? Qt.rgba(root.bg.r, root.bg.g, root.bg.b, 1) : btn.danger || btn.halt ? root.alertTone : root.ink
     }
     Click { action: btn.action }
   }
@@ -1237,7 +1237,9 @@ Panel {
       x: root.pad
       width: parent.width - 2 * root.pad
       spacing: Style.space(4)
+      // the name is in the top line; a hero without one is its facts alone
       Row {
+        visible: !!h.name
         width: parent.width
         spacing: Style.space(8)
         Logo { id: heroLogo; family: h.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
