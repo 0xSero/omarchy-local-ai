@@ -108,7 +108,7 @@ mkdir -p "$MODELS/test--big@000000000000/big" && : >"$MODELS/test--big@000000000
 rm -rf "$MODELS"
 mkdir -p "$MODELS/test--big@000000000000/big" && truncate -s 60G "$MODELS/test--big@000000000000/big/model.safetensors.part"
 "$CLI" snapshot >"$TMP/snap.json"
-[[ $(unfit big) == "needs 120 GB free disk, you have 54" ]] || fail "partial download short" "$(unfit big)"
+[[ $(unfit big) == "needs 56 GB free disk, you have 54" ]] || fail "partial download short" "$(unfit big)"
 truncate -s 10G "$MODELS/test--big@000000000000/big/model-2.safetensors"
 "$CLI" snapshot >"$TMP/snap.json"
 [[ -z $(unfit big) ]] || fail "partial download" "$(unfit big)"
