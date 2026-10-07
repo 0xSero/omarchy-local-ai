@@ -459,16 +459,17 @@ prepare_model() (
   while IFS='|' read -r _ _ _ _ v w _; do owned "$w"; raw+=(--volume "$w:$v:ro"); done \
     < <(jq -c '.weights[]?' <<<"$r" | while IFS= read -r w; do wpaths "$w"; done)
   prep_run() {
-    local output=$1 mode=$2 args=() x result logger
+    local output=$1 mode=$2 args=() visibility=() x result logger
     while IFS= read -r -d '' x; do args+=("$x"); done < <(jq -j --arg mode "$mode" '.prepare[$mode][] | . + "\u0000"' <<<"$r")
     if [[ $mode == args && ${#gpu[@]} -gt 0 ]]; then
       allocation_lock
       cards_free ${prepare_keys[@]+"${prepare_keys[@]}"}
     fi
+    ((${#gpu[@]} > 0)) || visibility=(--env NVIDIA_VISIBLE_DEVICES=void)
     timeout --foreground --kill-after=5 120 docker run -d --name "$(preparer "$id")" --network none \
       --security-opt no-new-privileges --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" \
       --user "$(id -u):$(id -g)" --env HOME=/tmp --env HF_HUB_OFFLINE=1 \
-      "${opts[@]}" ${gpu[@]+"${gpu[@]}"} --volume "$output:$at:$([[ $mode == args ]] && echo rw || echo ro)" \
+      "${opts[@]}" ${gpu[@]+"${gpu[@]}"} ${visibility[@]+"${visibility[@]}"} --volume "$output:$at:$([[ $mode == args ]] && echo rw || echo ro)" \
       "${raw[@]}" "$(jq -r .image <<<"$r")" "${args[@]}" >/dev/null || return 1
     # A running container now reserves its cards. Unrelated cards can start during the long conversion.
     flock -u 8 2>/dev/null || true

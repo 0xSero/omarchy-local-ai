@@ -53,7 +53,7 @@ PACK=$(prepared_path "$R")
 [[ -f $PACK/.complete.json && ! -e $(rundir test)/generated ]]
 jq -se 'map(select(.[0]=="run")) as $r | $r|length==2' "$TMP/docker.jsonl" >/dev/null
 jq -se 'map(select(.[0]=="run")) as $r |
-  ($r[0]|index("--gpus")!=null) and ($r[1]|index("--gpus")==null) and
+  ($r[0]|index("--gpus")!=null) and ($r[1]|index("--gpus")==null and index("NVIDIA_VISIBLE_DEVICES=void")!=null) and
   all($r[]; index("MODE=exact")!=null and index("59055800320")!=null and index("memlock=-1:-1")!=null and index("IPC_LOCK")!=null
     and index("NVIDIA_VISIBLE_DEVICES=all")==null) and
   all($r[]; [range(0;length) as $i|select(.[$i]=="--volume")|.[$i+1]] as $m |
@@ -80,7 +80,7 @@ echo 'ok - completion markers cannot admit corrupted output or trigger its repla
 R_CPU=$(jq '.prepare.gpu=false|.launch.environment.MODE="cpu"' <<<"$R")
 : >"$TMP/docker.jsonl"
 prepare_model test "$R_CPU" --gpus '"device=0"' --device /dev/dri/renderD128
-jq -se 'all(.[]; index("--gpus")==null and index("--device")==null)' "$TMP/docker.jsonl" >/dev/null
+jq -se 'all(.[]|select(.[0]=="run"); index("--gpus")==null and index("--device")==null and index("NVIDIA_VISIBLE_DEVICES=void")!=null)' "$TMP/docker.jsonl" >/dev/null
 echo 'ok - CPU preparation and verification receive no GPU or device passthrough'
 H=$(jq -nc '{freeRamGb:500,diskFreeGb:1,disk:"nvme",got:{},have:["test--raw@bbbbbbbbbbbb/.verified","test--engram@cccccccccccc/.verified"],prepared:[]}')
 [[ $(jq -r --argjson h "$H" "$NEEDS unfit(\$h)" <<<"$R") == *'117 GB free disk'* ]]
