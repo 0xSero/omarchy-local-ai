@@ -208,7 +208,8 @@ function table(list, wide, ui) {
     if (ui) {
       r.action = "pick|m:" + c.id
       r.open = ui.open === "m:" + c.id
-    }
+      r.drop = true
+    } else r.go = !!r.action
     rows.push(r)
     if (r.open) rows.push(manage(c))
   })
@@ -233,14 +234,20 @@ function manage(c) {
     else if (c.downloaded) items.push({ label: "Remove download", action: "forget|" + c.id, danger: true })
     else if (c.fits) items.push({ label: c.dl ? "Download again" : "Download", action: "download|" + c.id })
   }
-  items.push({ label: c.pin >= 0 ? "Unpin" : "Pin", action: "pin|" + c.id + (c.pin >= 0 ? "|off" : "") }, { label: "Details ›", action: c.action })
+  // a model on this machine is on home already; one that is not can be pinned there to try later
+  if (!c.d && !c.dl && !c.downloaded) items.push({ label: c.pin >= 0 ? "Unpin" : "Pin to home", action: "pin|" + c.id + (c.pin >= 0 ? "|off" : "") })
+  items.push({ label: "Details ›", action: c.action })
   return { type: "links", note: state(c), items: items.filter(function(x) { return x.action !== undefined }) }
 }
 // home's models: the ones you pinned (running or downloading one pins it), else the recommended ones
 function pinned(s, ui) {
-  var all = catalog(s), pins = all.filter(function(c) { return c.pin >= 0 }).sort(function(a, b) { return a.pin - b.pin })
-  var top = pins.length ? pins : all.filter(function(c) { return c.rec && c.fits })
-  return [{ type: "sec", label: pins.length ? "PINNED" : "RECOMMENDED" }].concat(top.length ? table(top, ui.wide)
+  // your models: what is on this machine (running, downloading, downloaded), then those you pinned to try; until
+  // there are any, the recommended ones
+  var all = catalog(s), here = function(c) { return c.d || c.dl || c.downloaded }
+  var mine = all.filter(here).sort(function(a, b) { return (!!b.d - !!a.d) || ((b.aa || 0) - (a.aa || 0)) || a.at - b.at })
+    .concat(all.filter(function(c) { return !here(c) && c.pin >= 0 }).sort(function(a, b) { return a.pin - b.pin }))
+  var top = mine.length ? mine : all.filter(function(c) { return c.rec && c.fits })
+  return [{ type: "sec", label: mine.length ? "YOUR MODELS" : "RECOMMENDED" }].concat(top.length ? table(top, ui.wide)
     : [{ type: "links", note: "Nothing fits this machine yet; the models tab says what each one needs.", items: [{ label: "Models ›", action: "models" }] }])
 }
 // the models tab: a search line (type anywhere), then the matches, or what you have downloaded, every other model

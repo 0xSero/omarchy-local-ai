@@ -28,7 +28,7 @@ Panel {
   readonly property string mono: bar ? bar.fontFamily : Style.font.family
   // Nerd Font glyphs for the icon names Model.js uses
   readonly property var glyphs: ({ gpu: 0xf08ae, memory: 0xf035b, temp: 0xf050f, context: 0xf09aa, weights: 0xf01a7, vision: 0xf06d0,
-    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf07b7, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140, full: 0xf0293, unfull: 0xf0294, more: 0xf01d8 })
+    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf07b7, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140, up: 0xf0143, full: 0xf0293, unfull: 0xf0294, more: 0xf01d8 })
   function glyph(name) { return glyphs[name] ? String.fromCodePoint(glyphs[name]) : "" }
 
   // Four tones, each picked by the APCA contrast it must reach on a card (Model.tones): ink for what matters
@@ -990,8 +990,19 @@ Panel {
               readonly property var cols: r.pair ? (flick.wide ? [0.2, 0.8] : [0.32, 0.68]) : (r.cells || []).length > 4 ? [0.22, 0.06, 0.13, 0.09, 0.12, 0.08, 0.1, 0.1, 0.1] : [0.4, 0.11, 0.27, 0.22]
               // model rows: a mark (running, downloading, downloaded), the maker's logo, then the cells
               readonly property real lead: r.pair ? 0 : Style.space(30)
-              readonly property real inner: width - 2 * root.gutter - lead
+              // and a hint at the end: ⌄ (⌃ open) for a row that opens in place, › for one that opens a page
+              readonly property real tail: r.pair ? 0 : Style.space(16)
+              readonly property real inner: width - 2 * root.gutter - lead - tail
               height: head ? root.headH + Style.space(4) : root.rowH
+              Rectangle { visible: !!r.open; anchors.fill: parent; color: Util.alpha(root.theme, 0.06) }
+              Label {
+                visible: !head && !r.pair
+                anchors.right: parent.right
+                anchors.rightMargin: root.gutter
+                anchors.verticalCenter: parent.verticalCenter
+                text: r.drop ? root.glyph(r.open ? "up" : "down") : r.go ? "›" : ""
+                color: r.open ? root.ink : root.labelTone
+              }
               Rectangle { visible: head; x: root.gutter; y: parent.height - 1; width: parent.width - 2 * root.gutter; height: 1; color: root.ruleTone }
               Label {
                 visible: !head && !r.pair
