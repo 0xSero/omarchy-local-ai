@@ -20,7 +20,7 @@ mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
 sed -i "s|ALLOCATION_LOCK=/run|ALLOCATION_LOCK=$TMP/docker.pid|" "$CLI"
 : >"$TMP/docker.pid"
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
 : >"$OMARCHY_DOCKER_SOCKET"
@@ -31,7 +31,7 @@ PIN=ghcr.io/x/engine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 # recipes <image>: one card kind, one recipe, in the vendored schema
 recipes() {
-  jq -nc --arg id "$ID" --arg img "$1" '{schemaVersion: "omarchy-local-ai/recipes/2", registryCommit: ("d" * 40),
+  jq -nc --arg id "$ID" --arg img "$1" '{schemaVersion: "omarchy-local-ai/recipes/3", registryCommit: ("d" * 40),
     gateway: {image: ("ghcr.io/x/gateway@sha256:" + ("b" * 64))},
     hardware: {"rtx-4090-24gb": {match: {backend: "nvidia", vramGb: 24, names: ["rtx4090"]}, recipes: [{id: $id,
       name: "Test Model", family: "qwen", format: "EXL3", sizeGb: 0.004, cards: 1, image: $img, servedName: "served",
@@ -611,7 +611,7 @@ mkdir -p "${fresh%/*}" "$TMP/fresh/lib"
 cp "$ROOT/bin/omarchy-local-ai" "$fresh"
 cp "$ROOT/lib/access.sh" "$TMP/fresh/lib/"
 cp "$TMP/plugin/recipes.json" "$TMP/plugin/manifest.json" "$TMP/fresh/"
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
 [[ $(SHIM_NOGROUP=1 "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup"
 [[ $(SHIM_NOGROUP=1 OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup, socket out of reach"
 [[ $("$fresh" snapshot | jq -r .readiness.state) == ready ]] || fail "setup after setup"

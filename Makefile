@@ -1,12 +1,12 @@
 # test:       every shell test (docker, curl, the GPU tools and privilege helpers are shimmed; node for Model.js)
-# sync:       take every recipe of each card kind from the registry's published schema-2 export
+# sync:       take every recipe of each card kind from the registry's published schema-3 export
 #             (REGISTRY=<checkout>, at its origin/main), written one card kind per line
 # sync-check: fail when the vendored copy has fallen behind that export
 # check:      test, plus the recipes.json sanity and currency checks
 # bundle:     the release archive: what an install contains, nothing else
 REGISTRY ?= ../local-ai-registry
 REGISTRY_REF ?= origin/main
-REGISTRY_EXPORT = $(REGISTRY)/plugin/v2/recipes.json
+REGISTRY_EXPORT = $(REGISTRY)/plugin/v3/recipes.json
 SHELL := /bin/bash
 
 .PHONY: test sync sync-check check bundle
@@ -18,7 +18,7 @@ test:
 	bash test/all
 
 # "Published" means the file committed at the registry's origin/main, not a checkout's working tree.
-export_ = if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >/dev/null 2>&1; then git -C "$(REGISTRY)" show "$(REGISTRY_REF):plugin/v2/recipes.json"; else cat "$(REGISTRY_EXPORT)"; fi
+export_ = if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >/dev/null 2>&1; then git -C "$(REGISTRY)" show "$(REGISTRY_REF):plugin/v3/recipes.json"; else cat "$(REGISTRY_EXPORT)"; fi
 commit = $$(git -C "$(REGISTRY)" rev-parse "$(REGISTRY_REF)" 2>/dev/null || git -C "$(REGISTRY)" rev-parse HEAD)
 # the registry lists each kind's recipes best first: the bundle keeps every one, one card first, in that order, so the
 # first is a card's recommended model and the rest are what its Config offers (a group: one model across several cards)
@@ -43,8 +43,8 @@ sync-check:
 	fi
 
 check: test
-	@jq -e '.schemaVersion=="omarchy-local-ai/recipes/2" and (.registryCommit|test("^[0-9a-f]{40}$$")) and (.gateway.image|test("@sha256:[0-9a-f]{64}$$")) and (.hardware|length>0) and all(.hardware[].recipes[]; (.image|test("@sha256:[0-9a-f]{64}$$")) and (.launch|has("ipc")|not))' recipes.json >/dev/null \
-	  && echo "recipes.json: ok" || { echo "recipes.json: not a clean schema-2 export" >&2; exit 1; }
+	@jq -e '.schemaVersion=="omarchy-local-ai/recipes/3" and (.registryCommit|test("^[0-9a-f]{40}$$")) and (.gateway.image|test("@sha256:[0-9a-f]{64}$$")) and (.hardware|length>0) and all(.hardware[].recipes[]; (.image|test("@sha256:[0-9a-f]{64}$$")) and (.launch|has("ipc")|not))' recipes.json >/dev/null \
+	  && echo "recipes.json: ok" || { echo "recipes.json: not a clean schema-3 export" >&2; exit 1; }
 	@if [ -f "$(REGISTRY_EXPORT)" ]; then $(MAKE) --no-print-directory sync-check; \
 	 else echo "recipes.json: registry not checked out at $(REGISTRY); the currency check was skipped"; fi
 

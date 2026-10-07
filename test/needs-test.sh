@@ -16,7 +16,7 @@ cp "$ROOT/bin/omarchy-local-ai" "$TMP/plugin/bin/"
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/manifest.json" "$TMP/plugin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
 : >"$OMARCHY_DOCKER_SOCKET"

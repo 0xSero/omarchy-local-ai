@@ -31,7 +31,7 @@ Setup ends by checking what the panel will show. Sharing a model on your tailnet
 - Docker, `jq`, `curl`, `flock` and `sha256sum`.
 - A supported GPU (below), or an x86-64 CPU with AVX2 and enough RAM for its recipe. NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. Docker 25 or later (Omarchy ships 29). AMD needs ROCm's `amd-smi`.
 - Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
-- Network access to `huggingface.co` (weights), `ghcr.io/0xsero` and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (**Refresh models**).
+- Network access to `huggingface.co` (weights), `ghcr.io/sybil-solutions`, historical `ghcr.io/0xsero` pins, and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (**Refresh models**).
 
 ## What it does
 
@@ -97,10 +97,17 @@ connections.
 
 Use **Refresh models** at the bottom of Local AI to fetch the latest published
 registry for your GPUs without reinstalling the plugin; the catalog lives in your
-cache (`~/.cache/omarchy/local-ai`). Downloads are pinned to a registry commit,
+cache (`~/.cache/omarchy/local-ai/v3`). Downloads are pinned to a registry commit,
 validated before an atomic replacement, and failures keep the previous catalog.
 Refreshing does not stop running models or download model weights. Offload
 recipes are offered only when their RAM, disk and storage requirements fit.
+
+A recipe that generates a pack first declares its output budget separately from
+raw weights. Local AI prepares with the pinned serving image, verifies the pack
+and publishes it from private staging. Each reuse is verified. Stop retains the
+completed pack; Remove download removes it only when no managed model uses it.
+The v3 contract supports these operations; research models still require their
+own accepted image, hardware and fidelity evidence before they appear here.
 
 Choose a GPU's **Config**, select a model, then **Run** to download and start it.
 **Remove download** deletes that model's managed weights after it is stopped;

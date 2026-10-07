@@ -2,6 +2,23 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.10.0] - 2026-10-07
+
+### Added
+- Schema-3 recipes can prepare generated model packs with the serving image, typed memory/IPC limits and explicit disk budgets. Preparation writes into private staging, verifies output before publishing and checks every reuse.
+- Completed packs survive Stop. Remove download protects the frozen paths of running models, including models removed from the refreshed catalog.
+
+### Changed
+- Catalog refresh and release sync use a separate v3 export/cache. Older plugins keep their v2 catalog; recipes requiring preparation or typed resources are excluded from v2.
+- The gateway uses the public sybil-solutions build, verified against all 42 protocol checks. Existing recipe IDs and model image pins remain stable.
+- Registry catalog updates require a normal reviewed release PR; the manual workflow supplies a checked patch instead of writing to main.
+
+### Fixed
+- Reject malformed environment values and arguments before building Docker options.
+- Cancellation and failed preparation clean up owned containers and staging. Long conversions reserve their selected cards while allowing unrelated cards to start.
+
+No new CPU/NVMe research recipe is promoted by this release. Exact-image hardware, fidelity and speed acceptance remain separate gates.
+
 ## [6.9.1] - 2026-10-07
 
 ### Changed
