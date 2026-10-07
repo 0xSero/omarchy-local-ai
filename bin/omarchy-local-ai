@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent> | set agent|folder <value> [recipe] | share <recipe> [off] | log | remove
+# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent> | set agent|folder <value> [recipe] | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | cdi | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -153,18 +153,22 @@ cmd_readiness() { readiness; }
 
 cmd_setup() { omarchy-launch-tui --app-id=org.omarchy.local-ai-setup "$PANEL/bin/omarchy-install-ai-local"; }
 
-# cdi_stale: the first NVIDIA CDI spec whose device numbers no longer match /dev (a driver update can move them, as
-# /dev/nvidia-uvm from 237 to 238). Docker hands --gpus through that spec, so the engine would see no CUDA device.
+# cdi_stale: the first NVIDIA CDI spec, and why, that no longer matches /dev: a device it lists is gone (a card was
+# removed, so /dev/nvidia1 with it) or has moved (a driver update moved /dev/nvidia-uvm from 237 to 238). Docker
+# checks every device in the spec, so either stops any start through it. Prints "<spec>\t<why>".
 cdi_stale() {
   local d f p ma mi x y
   for d in ${CDI_DIRS:-/etc/cdi /var/run/cdi}; do
     for f in "$d"/nvidia*.yaml; do
       [[ -f $f ]] || continue
       while read -r p ma mi; do
-        [[ -e $p ]] || continue
+        if [[ ! -e $p ]]; then
+          printf '%s\t%s is gone\n' "$f" "$p"
+          return
+        fi
         read -r x y < <(stat -c '%t %T' "$p") || continue
         if ((16#$x != ma || 16#$y != mi)); then
-          echo "$f"
+          printf '%s\t%s has moved\n' "$f" "$p"
           return
         fi
       done < <(awk '/^ *- /{if (p != "" && ma != "") print p, ma, mi; p = ""; ma = ""; mi = 0}
@@ -196,7 +200,7 @@ intel() {
   ((${#rows[@]} == 0)) || printf '%s\t%s\n' "${rows[@]}"
 }
 
-# amd-smi comes with ROCm; without it AMD cards are not listed and the widget says Coming soon.
+# amd-smi comes with ROCm; without it AMD cards are not listed.
 amd() {
   # ROCm installs amd-smi in /opt/rocm/bin, which a session started before the
   # install does not have on PATH.
@@ -287,7 +291,8 @@ host() {
   for d in "$MODELS"/*/ "$MODELS"/*/*/; do got+=("${d#"$MODELS"/}" "$(du -sb -- "$d" 2>/dev/null | cut -f1)"); done
   prepared=$(jq -s 'map(select(type == "object"))' "$MODELS"/prepared/*/.complete.json 2>/dev/null) || prepared='[]'
   jq -nc --argjson r "${ram:-0}" --argjson f "${free:-0}" --argjson a "${avail:-0}" --arg d "$disk" --argjson prepared "$prepared" \
-    'def gb: . * 10 | floor / 10; {ramGb: ($r * 1024 / 1e9 | gb), freeRamGb: ($f * 1024 / 1e9 | gb), diskFreeGb: ($a / 1e9 | gb), disk: $d,
+    --argjson cpus "$(nproc 2>/dev/null || echo 0)" --arg cpuName "$(awk -F': *' '/^model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null)" \
+    'def gb: . * 10 | floor / 10; {ramGb: ($r * 1024 / 1e9 | gb), freeRamGb: ($f * 1024 / 1e9 | gb), diskFreeGb: ($a / 1e9 | gb), disk: $d, cpus: $cpus, cpuName: $cpuName,
       prepared: $prepared, have: [$ARGS.positional[] | select(endswith("/.verified"))],
       got: ([$ARGS.positional[] | select(endswith("/.verified") | not)] | [range(0; length; 2) as $i | {(.[$i] | rtrimstr("/")): (.[$i + 1] | tonumber? // 0)}] | add // {})}' \
     --args ${have[@]+"${have[@]}"} ${got[@]+"${got[@]}"}
@@ -295,7 +300,7 @@ host() {
 
 # unfit($host): why this machine cannot run the recipe, "" when it can. A recipe's `needs` (the registry's contract):
 # host_ram_gb of MemAvailable, disk_gb free under the models folder, and with fast_storage "nvme" that folder on a
-# non-rotational NVMe drive. A recipe without `needs` always fits; weights already downloaded and checked take no more
+# non-rotational NVMe drive, cpus the CPU threads its engine pins work to. A recipe without `needs` always fits; weights already downloaded and checked take no more
 # disk, and a download under way needs only what is left of it.
 PREP_CONTRACT='def prepared_contract: {image, weights, prepare, launch: (.launch | {entrypoint, environment, resources, shm})};'
 NEEDS="$PREP_CONTRACT"'def unfit($h): (.needs // {}) as $n | prepared_contract as $contract | def gb: ceil | tostring;
@@ -307,7 +312,8 @@ NEEDS="$PREP_CONTRACT"'def unfit($h): (.needs // {}) as $n | prepared_contract a
       else [0, ($n.disk_gb // 0) - $got - $pack] | max end) + $missingPack) as $missingDisk
   | [if ($n.host_ram_gb // 0) > $h.freeRamGb then "needs \($n.host_ram_gb | gb) GB RAM, you have \($h.freeRamGb | floor)" else empty end,
      if $missingDisk > $h.diskFreeGb then "needs \($missingDisk | gb) GB free disk, you have \($h.diskFreeGb | floor)" else empty end,
-     if ($n.fast_storage // "") == "nvme" and $h.disk != "nvme" then "needs the models folder on an NVMe drive" else empty end]
+     if ($n.fast_storage // "") == "nvme" and $h.disk != "nvme" then "needs the models folder on an NVMe drive" else empty end,
+     if ($n.cpus // 0) > ($h.cpus // 0) then "needs \($n.cpus) CPU threads, you have \($h.cpus // 0)" else empty end]
   | join("; ");'
 
 # wpaths <weights-item>: repository|revision|files|layout|mountPath|the folder the engine mounts|where the files are in it
@@ -603,8 +609,8 @@ phase_start() (
     die "NVIDIA container support is not ready: choose Set up Local AI"
   fi
   if [[ $backend == "nvidia" ]] && v=$(cdi_stale) && [[ -n $v ]]; then
-    say "stale NVIDIA device list $v; regenerate it as root: nvidia-ctk cdi generate --output=$v"
-    die "the NVIDIA device list is out of date; see the log for the repair command"
+    say "stale NVIDIA device list ${v%%$'\t'*} (${v#*$'\t'}); regenerate it as root: nvidia-ctk cdi generate --output=${v%%$'\t'*}"
+    die "the NVIDIA device list is out of date (${v#*$'\t'}): run sudo nvidia-ctk cdi generate --output=${v%%$'\t'*}"
   fi
   owned "$KEY"
   owned "$STATE/usage/$id"
@@ -877,6 +883,7 @@ cmd_run() {
     --args "${keys[@]}" >"$d/config.json.$$"
   mv -f "$d/config.json.$$" "$d/config.json"
   flock -u 9
+  cmd_pin "$id" || true
 
   setsid "$0" __worker "$id" "${keys[@]}" </dev/null >/dev/null 2>&1 &
   jq -nc --argjson p "$!" --arg t "$(now)" '{state: "download", detail: "starting", percent: 0, error: "", pid: $p, at: $t}' >"$d/status.json.$$"
@@ -995,6 +1002,83 @@ cmd_set() {
       '.[$k] = $v | if $k == "folder" then .folders = ([$v] + ((.folders // []) - [$v]))[:6] else . end' >"$f.$$"
     mv -f "$f.$$" "$f"
   done
+}
+
+# card <recipe>: the model card (README.md) of the recipe's first weights, at the pinned revision, from Hugging Face;
+# kept once fetched. Full screen shows it.
+cmd_card() {
+  valid_id "${1:-}" || die "card <recipe>"
+  local r repo rev f h=()
+  r=$(recipe "$1") || die "no recipe $1"
+  IFS=$'\t' read -r repo rev < <(jq -r '.weights[0] | [.repository, .revision] | @tsv' <<<"$r") || die "no weights"
+  [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && $rev =~ ^[0-9a-f]{40}$ ]] || die "invalid weights"
+  f=$STATE/cards/${repo//\//--}@$rev.md
+  if [[ ! -s $f ]]; then
+    mkdir -p "$STATE/cards"
+    [[ -s $HOME_DIR/.cache/huggingface/token ]] && h=(-H "Authorization: Bearer $(<"$HOME_DIR/.cache/huggingface/token")")
+    curl -fsSL --proto '=https' --connect-timeout 10 --max-time 20 --max-filesize 1048576 ${h[@]+"${h[@]}"} \
+      "https://huggingface.co/$repo/raw/$rev/README.md" >"$f.$$" || { rm -f "$f.$$"; die "could not fetch the model card"; }
+    mv -f "$f.$$" "$f"
+  fi
+  cat "$f"
+}
+
+# download <recipe> [off]: a model's weights and its engine image, without running it (Models tab); off cancels and
+# forgets it. Its progress is in the snapshot's downloads until it finishes; a finished one is the recipe's
+# `downloaded`. Downloading a model pins it.
+cmd_download() {
+  valid_id "${1:-}" || die "download <recipe> [off]"
+  local id=${1%--*} r d pid
+  d=$STATE/downloads/$id
+  if [[ ${2:-} == off ]]; then
+    touch "$d/cancel" 2>/dev/null || true
+    pid=$(jq -r '.pid // 0' "$d/status.json" 2>/dev/null || echo 0)
+    if ((pid > 1)) && grep -qa omarchy-local-ai "/proc/$pid/cmdline" 2>/dev/null; then kill -- "-$pid" 2>/dev/null || true; fi
+    rm -rf -- "$d"
+    return 0
+  fi
+  r=$(recipe "$id") || die "no recipe $id"
+  [[ $(policy "$r") == "ok" ]] || die "recipe refused: $(policy "$r")"
+  [[ ! -f $d/status.json || $(jq -r .state "$d/status.json") == "error" ]] || die "$(jq -r .name <<<"$r") is already downloading"
+  rm -rf -- "$d"
+  mkdir -p "$d"
+  setsid "$0" __download "$id" </dev/null >/dev/null 2>&1 &
+  jq -nc --argjson p "$!" --arg t "$(now)" '{state: "download", detail: "starting", percent: 0, error: "", pid: $p, at: $t}' >"$d/status.json.$$"
+  mv -f "$d/status.json.$$" "$d/status.json"
+  disown
+  cmd_pin "$id" || true
+}
+download_run() {
+  local id=$1 r w img
+  # this worker's status lives with the downloads, never with the running models
+  dir_of() { printf '%s/downloads/%s' "$STATE" "$1"; }
+  r=$(recipe "$id") || die "no recipe $id"
+  trap 'rc=$?; if ((rc)) && [[ ! -f $(dir_of "$id")/cancel ]]; then status "$id" error "" 0 "$(grep "^local-ai: " "$(dir_of "$id")/err" 2>/dev/null | tail -1 | cut -c11- || true)"; fi' EXIT
+  exec 2>>"$(dir_of "$id")/err"
+  HF=()
+  if [[ -s $HOME_DIR/.cache/huggingface/token ]]; then
+    printf 'Authorization: Bearer %s\n' "$(<"$HOME_DIR/.cache/huggingface/token")" >"$STATE/hf.header"
+    HF=(-H "@$STATE/hf.header")
+  fi
+  status "$id" download "checking the files" 0
+  while IFS= read -r w; do
+    fetch "$id" "$w"
+  done < <(jq -c '.weights[]?' <<<"$r")
+  img=$(jq -r .image <<<"$r")
+  if ! docker image inspect "$img" >/dev/null 2>&1; then
+    status "$id" download "downloading the engine" 99
+    pull "$img" engine >/dev/null || die "could not pull $img"
+  fi
+  rm -rf -- "$(dir_of "$id")"
+}
+
+# pin <recipe> [off]: pinned models lead the panel's list, the latest first; running one pins it
+cmd_pin() {
+  local f=$STATE/settings.json
+  valid_id "${1:-}" || die "pin <recipe> [off]"
+  { cat "$f" 2>/dev/null || echo '{}'; } | jq --arg id "${1%--*}" --arg off "${2:-}" \
+    '.pins = (if $off == "off" then (.pins // []) - [$id] else [$id] + ((.pins // []) - [$id]) end)' >"$f.$$"
+  mv -f "$f.$$" "$f"
 }
 
 # bin <agent>: how to start it, preferring a copy in ~/.local/bin that the session's PATH may not have
@@ -1297,8 +1381,21 @@ adopt() {
 }
 
 # what the widget needs of a recipe
-SUMMARY='def summary($h): {id, name, family, cards: (.cards // 1), format, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
-  needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h)};'
+SUMMARY='def downloaded($h): [.weights[]? | if .layout == "hub" then "" else "\(.repository | gsub("/"; "--"))@\(.revision[:12])\(if (.dir // "") != "" then "/" + .dir else "" end)" end] as $w
+  | ($w | length) > 0 and all($w[]; . as $x | $x != "" and ($h.have | index($x + "/.verified")) != null);
+def summary($h): {id, name, family, cards: (.cards // 1), format, engine, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities,
+  needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h), downloaded: downloaded($h)};'
+
+# downloads: each download under way or failed, with its id; one whose worker is gone has stopped
+downloads() {
+  local f pid
+  for f in "$STATE"/downloads/*/status.json; do
+    [[ -f $f ]] || continue
+    pid=$(jq -r '.pid // 0' "$f" 2>/dev/null || echo 0)
+    jq -c --arg id "$(basename "$(dirname "$f")")" --argjson alive "$(grep -qa omarchy-local-ai "/proc/$pid/cmdline" 2>/dev/null && echo true || echo false)" \
+      '{id: $id, state, detail, percent, error} | if .state == "download" and ($alive | not) then .state = "error" | .error = "the download stopped" else . end' "$f" 2>/dev/null
+  done | jq -sc .
+}
 
 cmd_snapshot() {
   local deps=() d id port at st pid sat boot obj why rc code ts="" sa="" sf="" sfs="" v="" a rstate="" rmsg=""
@@ -1345,7 +1442,8 @@ cmd_snapshot() {
   jq -nc --argjson g "$(gpus "$([[ $rstate == ready ]] || echo none)")" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
     --arg rstate "$rstate" --arg rmsg "$rmsg" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg setupError "$(cat "$STATE/setup-error" 2>/dev/null || true)" --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
-    --argjson folders "${sfs:-[]}" \
+    --arg cdi "$(cdi_stale 2>/dev/null || true)" --argjson downloads "$(downloads)" \
+    --argjson folders "${sfs:-[]}" --argjson pins "$(jq -c '.pins // [] | map(strings)' "$STATE/settings.json" 2>/dev/null || echo '[]')" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
     ($agents | split("\n") | map(select(length > 0))) as $agents
     # a running model with its session, in error when its worker or engine is gone; a second copy of a recipe runs
@@ -1355,7 +1453,9 @@ cmd_snapshot() {
       | {name: $rid} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, tailnet: $ts,
+    | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, pins: $pins, tailnet: $ts,
+       cdi: (if $cdi == "" then null else ($cdi | split("\t") | {spec: .[0], why: .[1]}) end),
+       downloads: $downloads, catalog: {commit: ($rec[0].registryCommit // ""), at: ($rec[0].refreshedAt // "")},
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
          free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
@@ -1372,9 +1472,11 @@ paths "$HOME"
 . "$PANEL/lib/access.sh"
 mkdir -p "$STATE"
 # the verbs that use Docker run under the docker group, whatever groups this login began with
-case ${1:-} in snapshot | run | stop | remove | readiness) docker_group_reexec "$TARGET" "$@" ;; esac
+case ${1:-} in snapshot | run | stop | remove | readiness | download) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
-setup | registry | forget | snapshot | readiness | run | stop | open | update | set | share) "cmd_$1" "${@:2}" ;;
+setup | registry | forget | snapshot | readiness | run | stop | open | update | set | share | pin | download | card) "cmd_$1" "${@:2}" ;;
+# the stale NVIDIA device list, if any, as "<spec>\t<why>" (setup rewrites it)
+cdi) cdi_stale ;;
 log) exec omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G "$LOG" ;;
 remove)
   for d in "$STATE"/deploy/*/; do
@@ -1387,6 +1489,7 @@ remove)
   ((${#left[@]} == 0)) || die "everything else was removed; these hold files Docker created as root, delete them as root: ${left[*]}"
   ;;
 __worker) worker_run "${@:2}" ;;
+__download) download_run "${@:2}" ;;
 *)
   sed -n 's/^# omarchy:args=//p' "$0"
   exit 2

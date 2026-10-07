@@ -37,17 +37,17 @@ test('a failed model shows its reason without expanding its GPU row', () => {
   const rows=m.build(failedState,{view:'home'}).rows;
   assert.equal(rows.filter(r=>r.type==='error'&&r.label==='the engine stopped').length,1);
 });
-test('a shared model offers stop sharing', () => assert(m.build(s,{view:'run',id:'test'}).rows
+test('a shared model offers stop sharing', () => assert(m.build(s,{view:'run',id:'test',details:true}).rows
   .some(r=>(r.items||[]).some(a=>a.action==='share|test|off'))));
-test('unsupported GPUs show refresh progress and disable a duplicate refresh', () => {
-  const rows=m.build({gpus:[],kinds:[]},{view:'home',registryBusy:true}).rows;
-  assert(rows.some(r=>(r.items||[]).some(a=>a.label==='Refreshing models…'&&a.action==='')));
+test('no Refresh button anywhere: new models arrive by themselves', () => {
+  for (const [st, view] of [[{gpus:[],kinds:[]},'home'],[s,'home'],[s,'models']])
+    assert(!m.build(st,{view}).rows.some(r=>(r.items||[]).some(a=>a.action==='registry')));
 });
 test('failed and malformed polls retain the last snapshot, show a problem, and recover', () => {
   const qml=fs.readFileSync(process.argv[3],'utf8');
   const fn=qml.match(/function polled\(code, text\) \{([\s\S]*?)\n  \}/);
   assert(fn, 'poll handler missing');
-  const ctx={Model:m,snap:s,ui:{problem:'an action failed'}};
+  const ctx={Model:m,snap:s,ui:{problem:'an action failed'},autoRefresh(){}};
   vm.createContext(ctx); vm.runInContext('function polled(code,text) {'+fn[1]+'}',ctx);
   for (const [code,text] of [[124,''],[1,JSON.stringify(s)],[0,'broken'],[0,'{}']]) {
     ctx.polled(code,text); assert.equal(ctx.snap,s); assert(ctx.ui.pollProblem); assert.equal(ctx.ui.problem,'an action failed');
@@ -56,59 +56,76 @@ test('failed and malformed polls retain the last snapshot, show a problem, and r
 });
 test('a held Intel card with unknown VRAM has no run action', () => {
   const held={...s,gpus:[{...gpu,usedMiB:null}],deployments:[],kinds:[{...s.kinds[0],free:[],taken:[gpu.key]}]};
-  assert(m.build(held,{view:'gpus'}).rows.some(r=>r.note==='in use by another program'));
-  const rows=m.build(held,{view:'kind',id:'test',key:gpu.key}).rows;
+  assert(m.build(held,{view:'gpus'}).rows.some(r=>r.status==='in use by another program'&&r.warn));
+  const rows=m.build(held,{view:'kind',id:'test',key:gpu.key,details:true}).rows;
   assert(rows.some(r=>r.status==='in use by another program'));
+  assert.equal(rows.find(r=>r.type==='links').note,'its Test GPU is in use by another program');
   assert(!rows.some(r=>(r.items||[]).some(a=>a.action.startsWith('run|'))));
 });
 test('stopped model details offer recovery without live reach or uptime', () => {
-  const rows=m.build({...s,deployments:[{...s.deployments[0],state:'error',error:'the engine stopped'}]}, {view:'run',id:'test'}).rows;
+  const rows=m.build({...s,deployments:[{...s.deployments[0],state:'error',error:'the engine stopped'}]}, {view:'run',id:'test',details:true}).rows;
   assert(!rows.some(r=>r.label==='REACH'||r.icon==='machine'||r.icon==='tailnet'));
   assert(!rows.some(r=>(r.cells||[]).some(c=>c.k==='up')));
   const actions=rows.filter(r=>r.type==='acts').flatMap(r=>r.items||[]);
-  assert.deepEqual(Array.from(actions,a=>a.label),['Run again ›','View logs','Dismiss']);
+  assert.deepEqual(Array.from(actions,a=>a.label),['Run again ›','Dismiss']);
   assert(actions[0].primary); assert.equal(actions[0].action,'again|test|nvidia:0');
-  assert.equal(actions[2].action,'stop|test');
-});
-test('refresh completion survives polls until the next action', () => {
-  const qml=fs.readFileSync(process.argv[3],'utf8');
-  const ctx={Model:m,snap:s,ui:{registryBusy:true},queue:[],opened:true,next(){},root:null}; ctx.root=ctx;
-  vm.createContext(ctx);
-  for (const name of ['finished','polled','activate']) {
-    const fn=qml.match(new RegExp('function '+name+'\\([^]*?\\n  \\}'));
-    assert(fn, name+' missing'); vm.runInContext(fn[0],ctx);
-  }
-  ctx.finished(0,'registry','models up to date · 12345678','');
-  assert.equal(ctx.ui.registryBusy,false); assert.equal(ctx.ui.notice,'models up to date · 12345678');
-  ctx.polled(0,JSON.stringify(s));
-  assert(m.build(s,ctx.ui).rows.some(r=>r.note===ctx.ui.notice));
-  ctx.activate(''); assert.equal(ctx.ui.notice,'');
-  ctx.finished(1,'registry','','local-ai: refresh failed');
-  assert.equal(ctx.ui.problem,'refresh failed'); assert(!ctx.ui.notice);
+  assert.equal(actions[1].action,'stop|test');
+  assert(rows.some(r=>(r.items||[]).some(a=>a.action==='log')));
 });
 test('ready model details open the selected agent without returning home', () => {
   assert(m.build(s,{view:'run',id:'test'}).rows.some(r=>(r.items||[]).some(a=>a.action==='open|test'&&a.primary)));
   for(const state of ['loading','error']) assert(!m.build({...s,deployments:[{...s.deployments[0],state}]},{view:'run',id:'test'}).rows.some(r=>(r.items||[]).some(a=>a.action==='open|test')));
 });
 test('agent choice is a named row with explicit default and update controls', () => {
-  const rows=m.build({...s,agents:['pi','claude'],defaults:{agent:'claude'}},{view:'run',id:'test',open:'agent'}).rows;
-  assert(rows.some(r=>r.type==='agent'&&r.agent==='pi'&&r.label==='pi'));
+  const rows=m.build({...s,agents:['pi','claude'],defaults:{agent:'claude'}},{view:'run',id:'test',open:'agent',details:true}).rows;
+  assert(rows.some(r=>r.type==='agent'&&r.agent==='pi'&&r.label==='pi'&&r.on&&r.value==='selected'));
+  assert.equal(rows.filter(r=>r.type==='agent'&&r.agent==='pi').length,1);
+  const closed=m.build({...s,agents:['pi','claude']},{view:'run',id:'test',details:true}).rows.filter(r=>r.type==='agent');
+  assert.deepEqual(closed.map(r=>[r.agent,r.on,r.value,r.action]),[['pi',true,'change','pick|agent']]);
   assert(rows.some(r=>r.type==='agent'&&r.agent==='claude'&&r.label==='Claude Code'));
   assert(rows.some(r=>(r.items||[]).some(a=>a.action==='default|pi')));
   assert(rows.some(r=>(r.items||[]).some(a=>a.action==='update|pi')));
 });
 test('folder row opens a picker with the model id and encoded current path', () => {
   const folder='/home/test/Work #1|two';
-  const rows=m.build({...s,deployments:[{...s.deployments[0],folder}]},{view:'run',id:'test'}).rows;
+  const rows=m.build({...s,deployments:[{...s.deployments[0],folder}]},{view:'run',id:'test',details:true}).rows;
   assert(rows.some(r=>r.action==='folder|test|'+encodeURIComponent(folder)));
 });
 test('CPU hardware shows system RAM without a GPU memory bar', () => {
   const cpu={key:'cpu:0',hw:'cpu',backend:'cpu',name:'CPU (AVX2)',ramGb:8,vramGb:0};
   const state={...s,gpus:[cpu],deployments:[],host:{ramGb:8.5,freeRamGb:6.2},kinds:[{...s.kinds[0],hw:'cpu',keys:[cpu.key],free:[cpu.key]}]};
   assert(m.build(state,{view:'home'}).rows.some(r=>r.label==='RAM'&&r.value==='6 / 8 GB free'));
-  const rows=m.build(state,{view:'kind',id:'cpu',key:cpu.key}).rows;
+  const rows=m.build(state,{view:'kind',id:'cpu',key:cpu.key,details:true}).rows;
   assert(rows.some(r=>r.label==='CPU'));
   assert(rows.some(r=>r.cpu&&r.mem==='8 GB RAM'&&!r.bar));
+});
+test('the catalog refreshes by itself; it says so only when it brought new models, and a failure says nothing', () => {
+  const qml=fs.readFileSync(process.argv[3],'utf8');
+  const ctx={Model:m,snap:{...s,catalog:{commit:'1234567890',at:''}},ui:{},queue:[],opened:true,autoBusy:true,autoRefresh(){},next(){},root:null}; ctx.root=ctx;
+  vm.createContext(ctx);
+  const fn=qml.match(/function finished\([^]*?\n  \}/); vm.runInContext(fn[0],ctx);
+  ctx.finished(0,'registry','models up to date · 12345678',''); assert(!ctx.ui.notice); assert.equal(ctx.autoBusy,false);
+  ctx.autoBusy=true; ctx.finished(0,'registry','models up to date · abcdef12',''); assert.equal(ctx.ui.notice,'new models from the registry');
+  ctx.ui={}; ctx.autoBusy=true; ctx.finished(1,'registry','','local-ai: could not check the registry'); assert(!ctx.ui.problem && !ctx.ui.notice);
+});
+test('a model page: name, one line of state, one action (Open and Stop when it runs), the rest under details', () => {
+  const run=m.build(s,{view:'run',id:'test'}).rows;
+  assert.deepEqual(run.map(r=>r.type),['links','acts','field']);
+  assert.deepEqual(run[1].items.map(a=>a.label),['Open pi ›','Stop']);
+  assert.equal(run[2].label,'details');
+  const free=m.build({...s,deployments:[]},{view:'kind',id:'test',key:gpu.key}).rows;
+  assert.deepEqual(free[1].items.map(a=>[a.label,a.action]),[['Start ›','run|test|nvidia:0']]);
+  assert.equal(free[0].note,'starts with a 0 GB download');
+});
+test('back and forward step through the views, as in a browser', () => {
+  const qml=fs.readFileSync(process.argv[3],'utf8');
+  const ctx={ui:{view:'home',id:'',key:'',open:''},past:[],ahead:[],topTick:0,revealed:false}; vm.createContext(ctx);
+  for (const name of ['here','back','forward','go','nav']) { const fn=qml.match(new RegExp('function '+name+'\\([^)]*\\) \\{[^]*?\\n  \\}|function '+name+'\\([^)]*\\) \\{.*\\}')); assert(fn,name+' missing'); vm.runInContext(fn[0],ctx); }
+  ctx.nav({view:'models',id:''}); ctx.nav({view:'kind',id:'hw',model:'x'});
+  assert.deepEqual(ctx.past.map(p=>p.view),['home','models']);
+  ctx.back(); assert.equal(ctx.ui.view,'models'); ctx.back(); assert.equal(ctx.ui.view,'home');
+  ctx.forward(); assert.equal(ctx.ui.view,'models'); ctx.forward(); assert.deepEqual([ctx.ui.view,ctx.ui.model],['kind','x']);
+  ctx.back(); ctx.nav({view:'gpus',id:''}); assert.equal(ctx.ahead.length,0);
 });
 process.exitCode = failed ? 1 : 0;
 JS

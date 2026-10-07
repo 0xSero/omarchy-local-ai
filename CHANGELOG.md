@@ -2,6 +2,31 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.11.0] - 2026-10-07
+
+### Added
+- Two tabs. **Home**: your activity grid (always, empty before first use), running models with Open, More and Stop, your pinned models (else the recommended ones) and this machine. **Models**: every model this machine can run, on whichever of its cards or across several, as one table; type anywhere to search it. A row opens in place to Start or Open and Stop, Download, Cancel or Remove the download, Pin or Unpin, and see Details. Running or downloading a model pins it.
+- Multi-card recipes (2×, 4× on one machine). A setup across more cards than the machine has, or one needing more RAM, disk, NVMe or CPU threads, is listed as too big with the reason.
+- New backend verbs `download <recipe> [off]`, `pin <recipe> [off]` and `card <recipe>`. The snapshot carries `downloads`, `pins`, each model's `downloaded`, the catalog's commit and age, the CPU's name and threads, and a stale NVIDIA device list (`cdi`).
+- `needs.cpus`: the CPU threads a recipe's engine pins work to.
+- Full screen: the same views over the whole screen, a year of activity, the model table with engine, context, download, RAM and NVMe columns, and a model's Hugging Face card (pinned revision, cached; no HTML, styles or remote images drawn) with its details open.
+- Hardware: the machine in figures (GPUs, VRAM, what runs, RAM, CPU threads, disk), then each card with its maker, memory, temperature and what is on it, and the CPU by name.
+- Makers' logos beside every model name (Qwen, Gemma, DeepSeek, GLM, LFM, Hunyuan, Mistral, Nemotron, Step, MiMo; an initial for others) and every card (NVIDIA, Intel, AMD), drawn in the panel's ink (`Logos.js`).
+- Back and forward in the top line, Alt+Left/Right and a mouse's buttons; the top line names where you are.
+- Keyboard: Up and Down (or Tab) move a ring through everything clickable in screen order, scrolled into view; Enter clicks it. Escape clears the search, steps back home, then closes.
+
+### Changed
+- A model's page is its name, one line of what it is doing or why it cannot start, one action (Start; Open and Stop while it runs; Run again and Dismiss after a crash), and the rest under details.
+- New models arrive by themselves: the catalog is checked against the registry once it is 12 hours old, at most hourly, and says so only when it brought new ones.
+- Stop is a solid alert button everywhere. The agent picker lists each agent once, the chosen one checked.
+- A running model's address is hidden until clicked, beside a copy. The registry line, notices and warnings are small banners.
+- The no-tested-model screen is a plain home page with this machine's hardware and the supported list.
+- A stale NVIDIA device list (a card taken out, a driver update), which makes Docker refuse every start, is named on home with Fix; setup writes it again by reinstalling the toolkit with Omarchy's own commands, and a start through it fails with that reason.
+- Recipes: the registry's export now includes every validated model a card lacks and multi-card setups.
+
+### Removed
+- The per-card model picker and Config, the AVAILABLE GPU rows, the Refresh button and the Coming soon wave; `qwen.svg`.
+
 ## [6.10.1] - 2026-10-07
 
 ### Fixed

@@ -1,6 +1,6 @@
 # Catalog releases
 
-The registry owns recipes. Refresh models reaches its published export between plugin releases.
+The registry owns recipes. The panel's automatic catalog check reaches its published export between plugin releases.
 Vendor semantic catalog changes in a normal release PR with `make sync REGISTRY=<checkout>`, then
 `make check`. Commit-only changes in the registry do not require a plugin release.
 

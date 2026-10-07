@@ -12,7 +12,7 @@ SHELL := /bin/bash
 .PHONY: test sync sync-check check bundle
 
 BUNDLE = dist/omarchy-local-ai-$(shell jq -r .version manifest.json).tar.gz
-RUNTIME = manifest.json recipes.json LICENSE Panel.qml Model.js agents qwen.svg hf.svg bin/omarchy-local-ai bin/omarchy-install-ai-local bin/omarchy-remove-ai-local lib/access.sh
+RUNTIME = manifest.json recipes.json LICENSE Panel.qml FullScreen.qml Model.js Logos.js agents hf.svg bin/omarchy-local-ai bin/omarchy-install-ai-local bin/omarchy-remove-ai-local lib/access.sh
 
 test:
 	bash test/all
@@ -21,7 +21,7 @@ test:
 export_ = if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >/dev/null 2>&1; then git -C "$(REGISTRY)" show "$(REGISTRY_REF):plugin/v3/recipes.json"; else cat "$(REGISTRY_EXPORT)"; fi
 commit = $$(git -C "$(REGISTRY)" rev-parse "$(REGISTRY_REF)" 2>/dev/null || git -C "$(REGISTRY)" rev-parse HEAD)
 # the registry lists each kind's recipes best first: the bundle keeps every one, one card first, in that order, so the
-# first is a card's recommended model and the rest are what its Config offers (a group: one model across several cards)
+# first is a card's recommended model and the rest are listed on the models tab (a group: one model across several cards)
 published = $(export_) | jq -r --arg c "$(commit)" '.hardware |= map_values(.recipes |= sort_by(.cards // 1)) | .registryCommit = $$c \
   | (del(.hardware) | tojson | .[:-1]) + ",\"hardware\":{\n" + ([.hardware | to_entries[] | "\(.key | tojson):\(.value | tojson)"] | join(",\n")) + "\n}}"'
 PROVENANCE = del(.registryCommit, .generatedAt)

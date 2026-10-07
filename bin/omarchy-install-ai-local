@@ -44,6 +44,15 @@ if omarchy-hw-nvidia; then
     omarchy-pkg-add nvidia-container-toolkit
 fi
 
+# A card taken out or put in, or a driver update, leaves the toolkit's device list behind, and Docker then refuses
+# every start through it. The toolkit's package hook writes the list on install, so reinstalling it, with Omarchy's own
+# commands, writes it again; Local AI still runs nothing as root.
+if omarchy-hw-nvidia && stale=$("$HERE/omarchy-local-ai" cdi) && [[ -n $stale ]]; then
+  echo "The NVIDIA device list is out of date (${stale#*$'\t'}): reinstalling NVIDIA container support writes it again."
+  SUDO_PROMPT="Password for %u to reinstall NVIDIA container support for Local AI: " omarchy-pkg-drop nvidia-container-toolkit &&
+    SUDO_PROMPT="Password for %u to reinstall NVIDIA container support for Local AI: " omarchy-pkg-add nvidia-container-toolkit
+fi
+
 # the verdict the panel will show, asked the way a start asks it (under the docker group)
 IFS=$'\t' read -r state msg < <("$HERE/omarchy-local-ai" readiness) || true
 case $state in
