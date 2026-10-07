@@ -1,13 +1,9 @@
 name: registry
-# The registry is the source of truth for recipes; this daily job vendors its schema-2 export for
-# plugin updates. Users can also refresh the catalog directly from the panel.
+# Generate a checked catalog for a release PR. Refresh models reaches the registry between releases.
 on:
-  schedule:
-    - cron: '17 4 * * *'
   workflow_dispatch:
 permissions:
-  contents: write
-  statuses: write
+  contents: read
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -17,26 +13,24 @@ jobs:
         with:
           repository: sybil-solutions/local-ai-registry
           path: registry
-      - name: Take the registry's export when it has moved
+      - name: Generate and check the release catalog
         run: |
-          make sync REGISTRY=registry
-          if git diff --quiet recipes.json; then
-            echo "recipes.json is current with the registry"
+          if make sync-check REGISTRY=registry; then
+            echo "Catalog content is current; provenance-only changes need no release." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add recipes.json
-          git commit -m "recipes: take the registry's export ($(jq -r '.registryCommit[:12]' recipes.json), $(jq -r '.hardware | length' recipes.json) hardware, $(jq -r '[.hardware[].recipes[]] | length' recipes.json) recipes)"
-          # main requires the `test` check, which a commit made here never gets on its own (a push by this
-          # token starts no workflow). So: publish the commit on a side branch, run what test.yml runs,
-          # record the result as the `test` status on that commit, then fast-forward main to it.
-          git push --force origin HEAD:refs/heads/registry-sync
+          make sync REGISTRY=registry
           make check REGISTRY="$GITHUB_WORKSPACE/registry"
           for f in bin/* test/*; do bash -n "$f"; done
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$(git rev-parse HEAD)" -f state=success -f context=test \
-            -f description="make check and bash -n, run by the registry sync" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
-          git push origin HEAD:main
-          git push origin --delete registry-sync
-        env:
-          GH_TOKEN: ${{ github.token }}
+          git diff -- recipes.json > registry-catalog.patch
+          {
+            echo "Catalog changed. Open a release PR with this patch; normal CI and branch protection apply."
+            echo "Plugin base: $(git rev-parse HEAD); registry: $(git -C registry rev-parse HEAD)"
+            # shellcheck disable=SC2016
+            echo 'Apply on that plugin base with `git apply registry-catalog.patch`, then open the release PR.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: registry-catalog
+          path: registry-catalog.patch
+          if-no-files-found: ignore
