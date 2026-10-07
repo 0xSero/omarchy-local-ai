@@ -47,7 +47,7 @@ test('failed and malformed polls retain the last snapshot, show a problem, and r
   const qml=fs.readFileSync(process.argv[3],'utf8');
   const fn=qml.match(/function polled\(code, text\) \{([\s\S]*?)\n  \}/);
   assert(fn, 'poll handler missing');
-  const ctx={Model:m,snap:s,ui:{problem:'an action failed'},autoRefresh(){}};
+  const ctx={Model:m,snap:s,ui:{problem:'an action failed'},autoRefresh(){},autoOutdated(){}};
   vm.createContext(ctx); vm.runInContext('function polled(code,text) {'+fn[1]+'}',ctx);
   for (const [code,text] of [[124,''],[1,JSON.stringify(s)],[0,'broken'],[0,'{}']]) {
     ctx.polled(code,text); assert.equal(ctx.snap,s); assert(ctx.ui.pollProblem); assert.equal(ctx.ui.problem,'an action failed');
@@ -56,7 +56,7 @@ test('failed and malformed polls retain the last snapshot, show a problem, and r
 });
 test('a held Intel card with unknown VRAM has no run action', () => {
   const held={...s,gpus:[{...gpu,usedMiB:null}],deployments:[],kinds:[{...s.kinds[0],free:[],taken:[gpu.key]}]};
-  assert(m.build(held,{view:'gpus'}).rows.some(r=>r.status==='in use by another program'&&r.warn));
+  assert(m.build(held,{view:'gpus'}).rows.some(r=>r.warn&&/in use$/.test(r.value)));
   const rows=m.build(held,{view:'kind',id:'test',key:gpu.key,details:true}).rows;
   assert(rows.some(r=>r.status==='in use by another program'));
   assert.equal(rows.find(r=>r.type==='links').note,'its Test GPU is in use by another program');
@@ -76,15 +76,16 @@ test('ready model details open the selected agent without returning home', () =>
   assert(m.build(s,{view:'run',id:'test'}).rows.some(r=>(r.items||[]).some(a=>a.action==='open|test'&&a.primary)));
   for(const state of ['loading','error']) assert(!m.build({...s,deployments:[{...s.deployments[0],state}]},{view:'run',id:'test'}).rows.some(r=>(r.items||[]).some(a=>a.action==='open|test')));
 });
-test('agent choice is a named row with explicit default and update controls', () => {
-  const rows=m.build({...s,agents:['pi','claude'],defaults:{agent:'claude'}},{view:'run',id:'test',open:'agent',details:true}).rows;
-  assert(rows.some(r=>r.type==='agent'&&r.agent==='pi'&&r.label==='pi'&&r.on&&r.value==='selected'));
-  assert.equal(rows.filter(r=>r.type==='agent'&&r.agent==='pi').length,1);
-  const closed=m.build({...s,agents:['pi','claude']},{view:'run',id:'test',details:true}).rows.filter(r=>r.type==='agent');
-  assert.deepEqual(closed.map(r=>[r.agent,r.on,r.value,r.action]),[['pi',true,'change','pick|agent']]);
-  assert(rows.some(r=>r.type==='agent'&&r.agent==='claude'&&r.label==='Claude Code'));
-  assert(rows.some(r=>(r.items||[]).some(a=>a.action==='default|pi')));
-  assert(rows.some(r=>(r.items||[]).some(a=>a.action==='update|pi')));
+test('agents: each once, the chosen one checked; choosing on the agents page sets the default; Update only when there is one', () => {
+  const st={...s,agents:['pi','claude'],defaults:{agent:'claude'}};
+  const rows=m.build(st,{view:'run',id:'test',open:'agent',details:true}).rows.filter(r=>r.type==='agent');
+  assert.deepEqual(rows.map(r=>[r.agent,!!r.on,r.action]),[['pi',true,'pick|agent'],['claude',false,'set|agent|claude|test']]);
+  assert(!m.build(st,{view:'run',id:'test',details:true}).rows.some(r=>(r.items||[]).some(a=>/^(update|default)\|/.test(a.action))));
+  const up=m.build({...st,updates:{pi:{current:'0.3',latest:'0.4'}}},{view:'run',id:'test',details:true}).rows;
+  assert(up.some(r=>(r.items||[]).some(a=>a.label==='Update to 0.4'&&a.action==='update|pi')));
+  const ag=m.build({...st,updates:{claude:{current:'2.1.270',latest:'2.1.292'}}},{view:'agents'}).rows;
+  assert.deepEqual(ag.filter(r=>r.type==='agent').map(r=>[r.agent,!!r.on,r.action]),[['pi',false,'default|pi'],['claude',true,'']]);
+  assert(ag.some(r=>r.type==='field'&&r.label==='Claude Code'&&r.value==='2.1.270 → 2.1.292'));
 });
 test('folder row opens a picker with the model id and encoded current path', () => {
   const folder='/home/test/Work #1|two';

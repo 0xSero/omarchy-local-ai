@@ -2,6 +2,21 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.12.0] - 2026-10-07
+
+### Added
+- AA: every model's Artificial Analysis Intelligence Index, as a column in every model table, and the models tab ranked by it, highest first (from the registry at d414b407).
+- Agent updates are looked up by themselves (backend verb `outdated`: mise, then npm; every 6 hours at most hourly). **Update to <version>** appears only when there is one, and the agents page lists the agents that have one.
+- GLM's mark is Z.ai's.
+
+### Changed
+- A model's page shows its name once, in the top line with its maker's logo.
+- Stop is outlined: no fill, a strong alert border and alert text.
+- Agents: the chosen one is checked, the others show nothing; on the agents page choosing an agent makes it the default (no Default agent button).
+- Hardware: a line a card (maker, name, temperature, running or free), opening to its memory and where it leads; full screen opens them all. The CPU is its name, threads and RAM.
+- The activity grid has no month names or date line under it; a hovered day shows in its top line.
+- Full screen and a running model's More are icons. Pinned models carry no downloaded check.
+
 ## [6.11.1] - 2026-10-07
 
 ### Added

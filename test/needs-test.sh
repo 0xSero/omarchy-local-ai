@@ -81,7 +81,7 @@ host 256 500 "$NVME_CRYPT"
 [[ -z $(unfit big) && -z $(unfit big-tp2) && -z $(unfit small) ]] || fail "fit" "$(jq -c .kinds "$TMP/snap.json")"
 pass "a machine with the RAM, the disk and an NVMe drive under LUKS fits the offload recipe"
 if command -v node >/dev/null; then
-  [[ $(view home | jq -r '[.[] | select(.type == "trow") | .cells[0] + "@" + .cells[2]] | join(" ")') == "big@RTX 3090 big-tp2@2× RTX 3090" ]] ||
+  [[ $(view home | jq -r '[.[] | select(.type == "trow") | .cells[0] + "@" + .cells[3]] | join(" ")') == "big@RTX 3090 big-tp2@2× RTX 3090" ]] ||
     fail "fit picks" "$(view home)"
   pass "and home recommends it first on a card and across two, as the registry orders them"
   # the models tab lists every model that fits; the offload one's page names the RAM it takes beside its format

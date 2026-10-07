@@ -26,7 +26,8 @@ const s = {...base,
     {hw: 'cpu', keys: ['cpu:0'], free: ['cpu:0'], taken: [], groups: [], models: [rec('lfm.cpu', 'LFM2.5-2.6B', {family: 'lfm', format: 'GGUF · Q4_K_M'})]}]};
 const home = (st, ui = {}) => m.build(st, {view: 'home', ...ui}).rows;
 const tab = (st, ui = {}) => m.build(st, {view: 'models', ...ui}).rows;
-const table = rows => rows.filter(r => r.type === 'trow').map(r => r.cells.join(' | '));
+// model, format, hardware (the AA column is checked on its own)
+const table = rows => rows.filter(r => r.type === 'trow').map(r => [r.cells[0], r.cells[2], r.cells[3]].join(' | '));
 const sec = rows => rows.filter(r => r.type === 'sec').map(r => r.label);
 let failed = 0;
 function test(name, f) { try { f(); console.log('ok - ' + name) } catch (e) { failed++; console.error('not ok - ' + name + ': ' + e.message) } }
@@ -44,7 +45,7 @@ test('home: tabs, the grid, recommended models as a table, the machine; no searc
   assert.deepEqual(r[0].items.map(t => t.label + (t.on ? '*' : '')), ['home*', 'models']);
   assert.equal(r[1].type, 'life');
   assert.deepEqual(sec(r), ['RECOMMENDED', 'THIS MACHINE']);
-  assert.deepEqual(r.find(x => x.type === 'thead').cells, ['MODEL', 'FORMAT', 'ON']);
+  assert.deepEqual(r.find(x => x.type === 'thead').cells, ['MODEL', 'AA', 'FORMAT', 'ON']);
   assert.deepEqual(table(r), ['Qwen3.8-27B | EXL3 3 bpw | RTX 3090', 'Qwen3.8-27B | GGUF Q4_K_M | B70', 'Qwen3.6-35B-A3B | FP8 | 2× B70', 'LFM2.5-2.6B | GGUF Q4_K_M | CPU']);
   assert(r.filter(x => x.type === 'trow')[2].dim);
   assert(!r.some(x => x.type === 'search' || x.type === 'slot' || (x.items || []).some(a => a.action === 'registry')));
@@ -66,7 +67,7 @@ test('models tab: search line, what is on this machine, the rest that fits, too 
   assert.equal(r[1].hint, 'type to search 6 models');
   assert.deepEqual(sec(r), ['ON THIS MACHINE', 'MORE THAT FIT']);
   const rows = r.filter(x => x.type === 'trow');
-  assert.deepEqual(rows.slice(0, 2).map(x => x.mark + x.cells[0]), ['↓Gemma 4 26B A4B', '✓LFM2.5-2.6B']);
+  assert.deepEqual(rows.slice(0, 2).map(x => x.mark + x.cells[0]), ['↓Gemma 4 26B A4B', 'LFM2.5-2.6B']);
   assert.equal(r.find(x => x.label === 'too big for this machine').value, '1');
   assert(tab(st, {big: true}).some(x => x.type === 'trow' && x.cells[0] === 'Qwen3.8-Flash-Next' && x.dim));
 });
@@ -97,7 +98,8 @@ test('search matches name, format, family and hardware, every word; typing lands
 });
 test('a model page: what it needs, under details', () => {
   const p = m.build(s, {view: 'kind', id: 'rtx-3090-24gb', key: 'nvidia:0', model: 'gemma.3090', details: true});
-  assert.equal(p.hero.name, 'Gemma 4 26B A4B');
+  // the name is in the top line, once, with its maker's logo
+  assert.deepEqual([p.where, p.whereFamily, p.hero.name], ['Gemma 4 26B A4B', 'gemma', '']);
   assert.deepEqual(p.rows.filter(x => x.type === 'trow' && x.pair).map(x => x.cells.join('=')),
     ['format=EXL3 5.1 bpw', 'engine=tabbyapi', 'GPU=RTX 3090 · 24 GB', 'RAM=–', 'disk=14 GB', 'NVMe=no', 'context=128K tokens']);
   assert(!p.rows.some(x => (x.items || []).some(a => /^(pin|download|forget)\|/.test(a.action))));
@@ -118,8 +120,8 @@ test('a CPU-only machine, one where nothing fits, and one with only multi-card r
 });
 test('full screen: the same tables with engine, context, download, RAM and NVMe columns', () => {
   const r = tab(s, {wide: true, big: true});
-  assert.deepEqual(r.find(x => x.type === 'thead').cells, ['MODEL', 'FORMAT', 'ENGINE', 'ON', 'CONTEXT', 'DOWNLOAD', 'RAM', 'NVMe']);
-  assert.deepEqual(r.filter(x => x.type === 'trow').pop().cells, ['Qwen3.8-Flash-Next', 'EXL3 3 bpw', 'sglang', 'RTX 3090', '128K', '14 GB', '75 GB', 'yes']);
+  assert.deepEqual(r.find(x => x.type === 'thead').cells, ['MODEL', 'AA', 'FORMAT', 'ENGINE', 'ON', 'CONTEXT', 'DOWNLOAD', 'RAM', 'NVMe']);
+  assert.deepEqual(r.filter(x => x.type === 'trow').pop().cells, ['Qwen3.8-Flash-Next', '–', 'EXL3 3 bpw', 'sglang', 'RTX 3090', '128K', '14 GB', '75 GB', 'yes']);
 });
 test('a stale NVIDIA device list is a small banner under this machine, its Fix running setup; never on top', () => {
   const r = home({...s, cdi: {spec: '/etc/cdi/nvidia.yaml', why: '/dev/nvidia1 is gone'}});
@@ -141,16 +143,27 @@ test('a running model page hides its address until clicked; full screen shows it
   assert.equal(w.rows.find(x => x.type === 'card').text, '# LFM\nHi');
   assert(!m.build(st, {view: 'run', id: 'lfm.cpu'}).rows.some(x => x.type === 'card'));
 });
-test('hardware: the machine in figures, then each card with its maker, memory, temperature and what is on it', () => {
-  const st = {...s, host: {freeRamGb: 40, ramGb: 64, cpus: 48, cpuName: 'AMD EPYC 7413', diskFreeGb: 781, disk: 'nvme'},
+test('hardware: the machine in figures, then a line a card (maker, temperature, what it does) opening to its memory', () => {
+  const st = {...s, host: {freeRamGb: 40, ramGb: 64, cpus: 48, cpuName: 'AMD EPYC 7413 24-Core Processor', diskFreeGb: 781, disk: 'nvme'},
     deployments: [{id: 'q27.b70', name: 'Qwen3.8-27B', keys: ['intel-xpu:0'], state: 'ready', agent: 'pi', session: {}}]};
   const r = m.build(st, {view: 'gpus'}).rows;
   assert.deepEqual(r[1].cells.map(c => c.v + c.u + ' ' + c.k), ['3 GPUs', '1/72GB VRAM used', '1 running', '40/64GB RAM free', '48 CPU threads', '781GB NVMe free']);
-  const cards = r.filter(x => x.type === 'gpu' && !x.cpu);
-  assert.deepEqual(cards.map(c => [c.vendor, c.name, c.status, c.temp]), [['nvidia', 'RTX 3090', 'free', '40°'], ['intel', 'Arc Pro B70', 'running Qwen3.8-27B', '40°'], ['intel', 'Arc Pro B70', 'in use by another program', '40°']]);
-  assert.deepEqual(cards.map(c => c.action), ['find|RTX 3090', 'more|q27.b70', 'find|B70']);
-  const cpu = r.find(x => x.cpu);
-  assert.deepEqual([cpu.name, cpu.mem], ['AMD EPYC 7413', '48 threads · 64 GB RAM']);
+  const cards = r.filter(x => x.type === 'field' && x.logo);
+  assert.deepEqual(cards.map(c => [c.logo, c.label, c.value, !!c.warn, c.action]), [['nvidia', 'RTX 3090', '40°  free', false, 'pick|hw:nvidia:0'],
+    ['intel', 'Arc Pro B70', '40°  running', false, 'pick|hw:intel-xpu:0'], ['intel', 'Arc Pro B70', '40°  in use', true, 'pick|hw:intel-xpu:1']]);
+  assert(!r.some(x => x.type === 'gpu'));
+  const open = m.build(st, {view: 'gpus', open: 'hw:intel-xpu:0'}).rows;
+  assert.equal(open.find(x => x.type === 'gpu').status, 'running Qwen3.8-27B');
+  assert.equal(open.find(x => x.type === 'links').items[0].action, 'more|q27.b70');
+  // the CPU: its name, threads and RAM, nothing else
+  assert.deepEqual(r.filter(x => x.icon === 'machine').map(x => x.label + ' = ' + x.value), ['AMD EPYC 7413 = 48 threads · 64 GB']);
+  // full screen shows every card opened
+  assert.equal(m.build(st, {view: 'gpus', wide: true}).rows.filter(x => x.type === 'gpu').length, 3);
+});
+test('the models tab ranks by the Artificial Analysis index, highest first, those without one after', () => {
+  const st = {...s, kinds: s.kinds.map(k => ({...k, models: k.models.map(x => ({...x, aa: {'gemma.3090': 16.7, 'q27.3090': 27.6, 'q27.b70': 27.6}[x.id]}))}))};
+  const rows = tab(st).filter(x => x.type === 'trow').map(x => x.cells[0] + ':' + x.cells[1]);
+  assert.deepEqual(rows, ['Qwen3.8-27B:28', 'Qwen3.8-27B:28', 'Gemma 4 26B A4B:17', 'Qwen3.6-35B-A3B:–', 'LFM2.5-2.6B:–']);
 });
 test('full screen opens a model page with its details shown', () => {
   const w = m.build(s, {view: 'kind', id: 'rtx-3090-24gb', key: 'nvidia:0', model: 'gemma.3090', wide: true});
