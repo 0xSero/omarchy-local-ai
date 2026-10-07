@@ -50,6 +50,13 @@ view() {
     console.log(JSON.stringify(v.rows))' "$ROOT/Model.js" "$TMP/snap.json" "$@"
 }
 
+# js <expression>: its value, with the view model under c, the snapshot as s and ui(patch) a ui state
+js() {
+  node -e 'const fs = require("fs"), vm = require("vm"), c = {}; vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), c)
+    const s = JSON.parse(fs.readFileSync(process.argv[2], "utf8")), ui = p => Object.assign({view: "home", id: "", open: "", key: "", problem: ""}, p)
+    const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
+}
+
 shim nvidia-smi 'printf "0, NVIDIA GeForce RTX 3090, 24576, 300, 41\n1, NVIDIA GeForce RTX 3090, 24576, 300, 38\n"'
 # The CLI falls back to /opt/rocm/bin/amd-smi, so absence from PATH no longer
 # keeps a host's real AMD card out of the sandbox; pin an empty report.
@@ -68,17 +75,19 @@ recipes
 NVME_CRYPT='crypt 0 |part 0 nvme|disk 0 nvme'
 host 256 500 "$NVME_CRYPT"
 "$CLI" snapshot >"$TMP/snap.json"
-[[ $(jq -c '.host' "$TMP/snap.json") == '{"ramGb":512,"freeRamGb":256,"diskFreeGb":500,"disk":"nvme","prepared":[]}' ]] || fail "host" "$(jq -c .host "$TMP/snap.json")"
+# cpus is this machine's own thread count
+[[ $(jq -c '.host | del(.cpus, .cpuName)' "$TMP/snap.json") == '{"ramGb":512,"freeRamGb":256,"diskFreeGb":500,"disk":"nvme","prepared":[]}' ]] &&
+  jq -e '.host.cpus | type == "number" and . > 0' "$TMP/snap.json" >/dev/null || fail "host" "$(jq -c .host "$TMP/snap.json")"
 [[ -z $(unfit big) && -z $(unfit big-tp2) && -z $(unfit small) ]] || fail "fit" "$(jq -c .kinds "$TMP/snap.json")"
 pass "a machine with the RAM, the disk and an NVMe drive under LUKS fits the offload recipe"
 if command -v node >/dev/null; then
-  [[ $(view home | jq -r '[.[] | select(.type == "slot") | .run.action] | join(" ")') == "run|big|nvidia:0 run|big|nvidia:1 run|big-tp2|nvidia:0,nvidia:1" ]] ||
+  [[ $(view home | jq -r '[.[] | select(.type == "trow") | .cells[0] + "@" + .cells[2]] | join(" ")') == "big@RTX 3090 big-tp2@2× RTX 3090" ]] ||
     fail "fit picks" "$(view home)"
-  pass "and the card and its group are offered it first, as the registry orders them"
-  # a Config row says whether its model fits; the offload one's page names its RAM beside a format without its detail
-  rows=$(view kind rtx-3090-24gb)
-  [[ $(jq -r 'map(select(.type == "opt") | .value) | join("|")' <<<"$rows") == "+96 GB RAM|fits" ]] || fail "config rows" "$rows"
-  pass "a Config row says whether its model fits, and an offload recipe the RAM it takes"
+  pass "and home recommends it first on a card and across two, as the registry orders them"
+  # the models tab lists every model that fits; the offload one's page names the RAM it takes beside its format
+  [[ $(view models | jq -r '[.[] | select(.type == "trow") | .cells[0]] | join(" ")') == "big small big-tp2 small-tp2" ]] || fail "models tab" "$(view models)"
+  [[ $(js 'c.build(s, ui({view: "kind", id: "rtx-3090-24gb", model: "big"})).hero.chips.map(x => x.text).join("|")') == *"96 GB RAM"* ]] || fail "offload page" "$(view kind rtx-3090-24gb)"
+  pass "the models tab lists every model that fits, and an offload recipe's page the RAM it takes"
 fi
 
 host 64 500 "$NVME_CRYPT"
@@ -86,13 +95,13 @@ host 64 500 "$NVME_CRYPT"
 [[ $(unfit big) == "needs 96 GB RAM, you have 64" && -z $(unfit small) ]] || fail "RAM short" "$(unfit big)"
 pass "too little free RAM: needs 96 GB RAM, you have 64"
 if command -v node >/dev/null; then
-  [[ $(view home | jq -r '[.[] | select(.type == "slot") | .run.action] | join(" ")') == "run|small|nvidia:0 run|small|nvidia:1 run|small-tp2|nvidia:0,nvidia:1" ]] ||
-    fail "unfit skipped" "$(view home)"
-  rows=$(view kind rtx-3090-24gb)
-  jq -e 'map(select(.type == "opt")) | .[0] == {type: "opt", label: "big", value: "needs 96 GB RAM", on: false, off: true, action: ""}
-    and .[1].on and .[1].action == "model|small"' <<<"$rows" >/dev/null || fail "config" "$rows"
-  jq -e 'any(.[]; .type == "acts" and .items[0].action == "run|small|nvidia:0")' <<<"$rows" >/dev/null || fail "config run" "$rows"
-  pass "the card's pick and its group skip it; Config shows it with the reason and cannot choose it"
+  [[ $(view home | jq -r '[.[] | select(.type == "trow") | .cells[0]] | join(" ")') == "small small-tp2" ]] || fail "unfit skipped" "$(view home)"
+  [[ $(js 'c.build(s, ui({view: "models", big: true})).rows.filter(r => r.type === "trow").map(r => r.cells[0] + (r.dim ? "-" : "")).join(" ")') == "small small-tp2 big- big-tp2-" ]] ||
+    fail "too big" "$(view models)"
+  rows=$(js 'c.build(s, ui({view: "kind", id: "rtx-3090-24gb", model: "big"})).rows')
+  jq -e '.[0] == {type: "error", label: "needs 96 GB RAM, you have 64"} and (any(.[]; .type == "acts") | not)' <<<"$rows" >/dev/null || fail "unfit page" "$rows"
+  jq -e 'map(select(.type == "acts")) | .[0].items[0].action == "run|small|nvidia:0"' <<<"$(js 'c.build(s, ui({view: "kind", id: "rtx-3090-24gb"})).rows')" >/dev/null || fail "pick run" "$(view kind rtx-3090-24gb)"
+  pass "home recommends what fits; the models tab folds the rest as too big; its page says why and offers no Start"
 fi
 "$CLI" run big nvidia:0 2>"$TMP/err" && fail "an unfit run started"
 grep -qx "local-ai: big needs 96 GB RAM, you have 64" "$TMP/err" || fail "run reason" "$(cat "$TMP/err")"
@@ -136,9 +145,9 @@ pass "every reason is given at once, and a recipe without needs fits anywhere"
 jq '.hardware[].recipes |= map(. + {needs: {host_ram_gb: 96, disk_gb: 1}})' "$TMP/plugin/recipes.json" >"$TMP/r" && mv "$TMP/r" "$TMP/plugin/recipes.json"
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view gpus | jq -r '[.[] | select(.type == "slot") | "\(.run // "none") \(.note)"] | unique | join(",")') == "none needs 96 GB RAM, you have 16" ]] ||
-    fail "all unfit" "$(view gpus)"
-  [[ $(view home | jq -r '[.[] | select(.type == "slot")] | length') == 0 ]] || fail "all unfit home" "$(view home)"
+  [[ $(view home | jq -r '[.[] | select(.type == "links") | .note] | join("")') == "Nothing fits this machine yet; the models tab says what each one needs." ]] ||
+    fail "all unfit" "$(view home)"
+  [[ $(view home | jq -r '[.[] | select(.type == "trow")] | length') == 0 ]] || fail "all unfit home" "$(view home)"
   rows=$(view kind rtx-3090-24gb)
   jq -e '(any(.[]; .type == "acts") | not) and any(.[]; .type == "error" and .label == "needs 96 GB RAM, you have 16")' <<<"$rows" >/dev/null ||
     fail "all unfit page" "$rows"

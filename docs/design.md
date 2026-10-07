@@ -1,20 +1,22 @@
 # Local AI
 
-A bar widget that runs the one model validated for each GPU in the machine and opens a coding agent on it. The plugin has five main parts:
+A bar widget that runs models validated for the machine's hardware and opens a coding agent on them. The plugin has these parts:
 
 | File | Role |
 |---|---|
 | `bin/omarchy-local-ai` | The backend: detect GPUs, download and check weights, start and stop containers, open agents, print a snapshot |
 | `lib/access.sh` | Whether a model can start (`readiness`), and the re-run under the docker group for a login older than setup; sourced by the backend and the installer |
 | `Model.js` | Pure functions: snapshot and ui state in, a view (rows and actions) out |
-| `Panel.qml` | Draws the view; turns an action (`verb\|arg\|arg`) into a backend verb |
-| `recipes.json` | The vendored recipes, one card kind per line: from [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry)'s `plugin/v3/recipes.json`, every recipe of each kind, best first: the first on one card is the kind's recommended model, and the rest are what a card's Config offers, on one card or across several (a group) |
+| `Panel.qml` | Draws the view; turns an action (`verb\|arg\|arg`) into a backend verb; history, keyboard ring, automatic catalog refresh |
+| `FullScreen.qml` | The full-screen overlay, made only while it is up, holding the panel's body drawn wide |
+| `Logos.js` | Single-colour marks of model and card makers, drawn in the panel's ink |
+| `recipes.json` | The vendored recipes, one card kind per line: from [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry)'s `plugin/v3/recipes.json`, every recipe of each kind, best first: the first on one card is the kind's recommended model; the models tab lists them all, on one card or across several (a group) |
 
 ## Flow
 
 The widget polls `bin/omarchy-local-ai snapshot` (every 1.5 s while something starts, 5 s while open, 30 s closed). The snapshot joins the GPUs (`nvidia-smi`, the Arc Pro B70's PCI id and hwmon, `amd-smi`), the recipes and one folder per running model, `~/.local/state/omarchy/local-ai/deploy/<recipe>/` with `config.json` (cards, port, agent, folder) and `status.json` (step, detail, percent, error). While a model loads, detail and percent come from the engine's own log lines (`loadstep`), never from a clock, and the worker ends a start whose card the driver resets (a new devcoredump) or whose engine prints nothing for 15 minutes. `Model.build()` turns that into the page; nothing in the view model has side effects.
 
-A recipe may carry `needs` (`host_ram_gb`, `disk_gb`, `fast_storage: "nvme"`) when it offloads to the host. The snapshot measures the host once (MemAvailable, free space under the models folder, and `lsblk -s` from that folder's filesystem down through dm-crypt or LVM to its drives) and gives each recipe an `unfit` reason, empty when it fits; `Model.js` picks the first recipe that fits and shows the others disabled with the reason, and `run` refuses an unfit one.
+A recipe may carry `needs` (`host_ram_gb`, `disk_gb`, `fast_storage: "nvme"`) when it offloads to the host. The snapshot measures the host once (MemAvailable, free space under the models folder, and `lsblk -s` from that folder's filesystem down through dm-crypt or LVM to its drives) and gives each recipe an `unfit` reason, empty when it fits; `Model.js` recommends the first recipe that fits and lists the others as too big with the reason, and `run` refuses an unfit one.
 
 `run <recipe> <gpu>[,<gpu>...]` claims the cards and a port under a lock, writes `config.json`, and starts a detached worker. The worker downloads the weights as the user and checks every file's size and sha256 against the Hub listing at the pinned revision, starts the engine and a keyed gateway, waits for the model, and sends one request to check it returns an answer. Each step writes `status.json` and a desktop notification says when it starts, is ready, or failed and why.
 
@@ -24,26 +26,26 @@ The gateway (`ghcr.io/0xsero/gateway`, pinned by digest) listens on `127.0.0.1` 
 
 ## Privilege
 
-Setup opens one terminal and runs nothing as root itself: Omarchy's Sudoless Docker, then on NVIDIA `omarchy-pkg-add nvidia-container-toolkit`, each with a password prompt that names it (`SUDO_PROMPT`). The toolkit's package hook writes `/etc/cdi/nvidia.yaml`; Docker reads CDI specs on every start, so it needs no configuration change or restart, and an engine gets its cards as `--device nvidia.com/gpu=<uuid>` (an older install with the `nvidia` runtime and no CDI list keeps `--gpus`). Setup ends with the readiness verdict and names, without changing, a Tailscale operator that is not this user and polkit files left by 6.0-6.4. Every later backend operation runs as the user.
+Setup opens one terminal and runs nothing as root itself: Omarchy's Sudoless Docker, then on NVIDIA `omarchy-pkg-add nvidia-container-toolkit`, each with a password prompt that names it (`SUDO_PROMPT`). A stale device list (a card taken out, a driver update: Docker then refuses every start) is written again by reinstalling the toolkit with `omarchy-pkg-drop` and `omarchy-pkg-add`, whose package hook writes it; home names it with a Fix that runs setup. The toolkit's package hook writes `/etc/cdi/nvidia.yaml`; Docker reads CDI specs on every start, so it needs no configuration change or restart, and an engine gets its cards as `--device nvidia.com/gpu=<uuid>` (an older install with the `nvidia` runtime and no CDI list keeps `--gpus`). Setup ends with the readiness verdict and names, without changing, a Tailscale operator that is not this user and polkit files left by 6.0-6.4. Every later backend operation runs as the user.
 
 A session carries the groups it logged in with, so a login older than setup has the docker group only in `/etc/group`. The backend then runs the verbs that use Docker (`snapshot`, `run`, `stop`, `remove`, `readiness`) again under `newgrp docker`, once (`LOCAL_AI_REEXEC` stops a second try): no root, no password, no logout, and the Docker socket keeps its own permissions.
 
 Whether a model can start is decided in one place, `lib/access.sh`, from machine state and never a plugin version marker. `readiness` prints one of `ready`, `needs-setup` (Sudoless Docker off, the account outside the docker group, no NVIDIA runtime in `docker info`, or a setup that did not finish), `docker-down` (Docker is not running or not answering) or `unsupported` (no Sudoless Docker helper). The snapshot carries it as `readiness: {state, message}`; the panel, a start and setup all read the same answer, and `Model.js` has a page for every state: a Set up Local AI button, or a note that it clears by itself.
 
-The backend validates recipe arguments before starting, mounts paths owned by the user without symbolic links, and labels containers with the user's uid. Stop and remove retain deployment state if Docker cannot remove a container. Legacy 5.x containers without a uid are still adopted. Docker operations and panel polls have time limits; downloads fail on stalled transfers and keep partial files for resumption. Action and poll failures appear on the current page, including Config and unsupported-GPU pages.
+The backend validates recipe arguments before starting, mounts paths owned by the user without symbolic links, and labels containers with the user's uid. Stop and remove retain deployment state if Docker cannot remove a container. Legacy 5.x containers without a uid are still adopted. Docker operations and panel polls have time limits; downloads fail on stalled transfers and keep partial files for resumption. Action and poll failures appear on the current page, whichever it is.
 
 
 ## Why it is shaped this way
 
-- **Validated models, vendored.** Every recipe was accepted on its exact card, or cards: download, load, a correctness check, speed at several context lengths. Recipes arrive through plugin updates or an explicit **Refresh models**. Refresh resolves a registry commit, validates its catalog and replaces the cache atomically; failures retain the previous catalog. The backend checks recipe arguments again before a start. A card without an accepted recipe shows Coming soon and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
+- **Validated models, vendored.** Every recipe was accepted on its exact card, or cards: download, load, a correctness check, speed at several context lengths. Recipes arrive through plugin updates and by themselves: the panel checks the registry once its catalog is 12 hours old. A check resolves a registry commit, validates its catalog and replaces the cache atomically; failures retain the previous catalog. The backend checks recipe arguments again before a start. A machine without an accepted recipe says so and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
 - **EXL3 first, engines that serve it in-process.** The registry recommends, per card, EXL3 weights on SGLang or vLLM ahead of TabbyAPI and llama.cpp, then vision, context and measured decode. On a 3090 that is Qwen3.8-27B on SGLang at 200K context and about 90 tok/s.
 - **Containers, not packages.** Engines need exact CUDA, ROCm or oneAPI stacks; an image pinned by digest is the smallest thing that reproduces the accepted run.
 - **A gateway in front.** Engines differ in API and none checks a key; the gateway gives every engine the same keyed endpoint and the same usage accounting.
-- **The view is data.** `Model.js` is plain functions over the snapshot, so every page (home, a running model, a free card, Coming soon) is a function of state and can be rendered without the backend.
+- **The view is data.** `Model.js` is plain functions over the snapshot, so every page (home, models, a model, hardware, no tested model) is a function of state and can be rendered without the backend.
 
 ## Limits
 
-- AMD cards are found through `amd-smi`, which comes with ROCm; without it they show Coming soon.
+- AMD cards are found through `amd-smi`, which comes with ROCm; without it they are not listed.
 - A model has up to 30 minutes to become ready; repeated engine restarts fail sooner. Stop cancels the download or startup worker.
 - `newgrp` is how an old login gets the docker group; if it grants nothing (the socket is unreachable for another reason), the state is `docker-down` with the reason, not a request to log in again.
 - Tailscale must be running and logged in for sharing; setup preserves another account’s operator. Failed unsharing is logged but never prevents stopping a model.

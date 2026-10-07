@@ -1,6 +1,6 @@
 # Local AI for Omarchy
 
-Run a local model on your own GPU or CPU and open a coding agent on it. Local AI picks a model that was tested on your card (NVIDIA, Intel Arc Pro, AMD) or an x86-64 AVX2 CPU, downloads the weights from a pinned Hugging Face revision and checks them, and serves the model in Docker behind a keyed, OpenAI-compatible gateway on 127.0.0.1. From the bar you open pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it in a folder you choose, without editing their config. The panel shows GPU temperature, VRAM and token use, and can share a running model on your tailnet.
+Run a local model on your own GPU or CPU and open a coding agent on it. Local AI picks a model that was tested on your card (NVIDIA, Intel Arc Pro, AMD) or an x86-64 AVX2 CPU, downloads the weights from a pinned Hugging Face revision and checks them, and serves the model in Docker behind a keyed, OpenAI-compatible gateway on 127.0.0.1. From the bar you open pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it in a folder you choose, without editing their config. The panel has two tabs (home: your activity, what runs, your pinned models; models: every model this machine can run, to search, download, start and pin), a hardware page with each card's memory and temperature, a full-screen view with each model's Hugging Face card, keyboard navigation, and can share a running model on your tailnet.
 
 ![Local AI](preview.png)
 
@@ -10,7 +10,7 @@ Run a local model on your own GPU or CPU and open a coding agent on it. Local AI
 omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable
 ```
 
-Then open Local AI in the bar and click **Set up Local AI** (once per machine; Omarchy asks for your password), choose a model on your card and **Run**, and pick a coding agent to open on it. [Install](#install) says what setup does, [Requirements](#requirements) what it needs, and [Remove](#remove) how to take it all back out.
+Then open Local AI in the bar and click **Set up Local AI** (once per machine; Omarchy asks for your password), pick a model on the models tab (or just type its name) and **Start** it, and open a coding agent on it. [Install](#install) says what setup does, [Requirements](#requirements) what it needs, and [Remove](#remove) how to take it all back out.
 
 ## Install
 
@@ -31,15 +31,15 @@ Setup ends by checking what the panel will show. Sharing a model on your tailnet
 - Docker, `jq`, `curl`, `flock` and `sha256sum`.
 - A supported GPU (below), or an x86-64 CPU with AVX2 and enough RAM for its recipe. NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. Docker 25 or later (Omarchy ships 29). AMD needs ROCm's `amd-smi`.
 - Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
-- Network access to `huggingface.co` (weights), `ghcr.io/sybil-solutions`, historical `ghcr.io/0xsero` pins, and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (**Refresh models**).
+- Network access to `huggingface.co` (weights), `ghcr.io/sybil-solutions`, historical `ghcr.io/0xsero` pins, and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (the automatic catalog check), and `huggingface.co` again for model cards in full screen.
 
 ## What it does
 
-- **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended; a card's Config lists the rest. A card without a recipe shows Coming soon and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
-- **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them, and Config says what is missing.
+- **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended. The models tab lists every model this machine can run, on whichever of its cards it lands, as one searchable table; home shows the ones you pinned (running or downloading one pins it). A machine with no tested model says so and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
+- **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them; the others are listed as too big, saying what is missing. A recipe may also name the CPU threads its engine pins work to.
 - **Weights** are downloaded as you, from the pinned revision, and every file's size is checked against Hugging Face, and the SHA-256 of every large (LFS) file, before it is used. A matching copy in your Hugging Face cache is reused.
 - **Containers.** The engine runs on a private network with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
-- **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. Choose an agent on its full row, **Make default** for new models, or **Update** to update its existing installation. Click the folder row to open a folder picker. **Open** launches the selected agent directly from the model page. Agent choices on a running model do not change the default; the last folder picked remains the folder default. Updates use mise when it manages that agent, the native updater for standalone omp, Hermes, Claude Code and OpenCode, or npm for an existing npm installation. Existing sessions keep running.
+- **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. A model's details list the agents once, the chosen one checked; **Make default** sets it for new models, **Update** updates its installation. Click the folder row to open a folder picker. **Open** launches the chosen agent from home or the model's page. Agent choices on a running model do not change the default; the last folder picked remains the folder default. Updates use mise when it manages that agent, the native updater for standalone omp, Hermes, Claude Code and OpenCode, or npm for an existing npm installation. Existing sessions keep running.
 - **Share** a running model on your tailnet with `tailscale serve` (tailnet only, still keyed). **Stop sharing** on its page removes that share. Tailscale must be running and logged in. Setup preserves another account’s operator; ask that account to manage sharing. A failed unshare is logged and does not prevent stopping the model.
 
 Supported: x86-64 AVX2 CPUs (LFM2.5-2.6B in system RAM), NVIDIA RTX 30, 40 and 50 series, RTX A6000, RTX Ada and RTX Pro Blackwell, Intel Arc Pro B70, and AMD Instinct MI300X and Radeon RX 6800 XT (with ROCm's `amd-smi`).
@@ -93,11 +93,11 @@ not make untrusted code safe. Engine restrictions need per-engine hardware
 validation before rollout. Disabling gateway DNS does not block outbound IP
 connections.
 
-### Refresh and remove models
+### New models, downloads and removal
 
-Use **Refresh models** at the bottom of Local AI to fetch the latest published
-registry for your GPUs without reinstalling the plugin; the catalog lives in your
-cache (`~/.cache/omarchy/local-ai/v3`). Downloads are pinned to a registry commit,
+New models arrive by themselves: once the catalog is 12 hours old, Local AI checks
+the latest published registry (at most once an hour) and says so only when it
+brought new models; the catalog lives in your cache (`~/.cache/omarchy/local-ai/v3`). Downloads are pinned to a registry commit,
 validated before an atomic replacement, and failures keep the previous catalog.
 Refreshing does not stop running models or download model weights. Offload
 recipes are offered only when their RAM, disk and storage requirements fit.
@@ -109,15 +109,15 @@ completed pack; Remove download removes it only when no managed model uses it.
 The v3 contract supports these operations; research models still require their
 own accepted image, hardware and fidelity evidence before they appear here.
 
-Choose a GPU's **Config**, select a model, then **Run** to download and start it.
-**Remove download** deletes that model's managed weights after it is stopped;
+On the models tab, open a model's row to **Start** it, **Download** it without
+starting, **Pin** it to home, or see its details. **Remove download** deletes that model's managed weights after it is stopped;
 shared weights in use by another managed model are protected. The recipe stays
 available to download again. Files in your separate Hugging Face cache are kept,
 so hard-linked files there may continue to occupy disk space.
 
-The equivalent commands are `omarchy-local-ai registry` and
-`omarchy-local-ai forget <recipe>` (or the plugin's `bin/omarchy-local-ai`).
+The equivalent commands are `omarchy-local-ai registry`, `download <recipe> [off]`,
+`pin <recipe> [off]` and `forget <recipe>` (or the plugin's `bin/omarchy-local-ai`).
 
 ## License
 
-[MIT](LICENSE). The agent and GPU-maker logos in `preview.png` are trademarks of their owners, shown to identify compatibility only; Local AI is not affiliated with or endorsed by any of them.
+[MIT](LICENSE). Model-maker marks in `Logos.js` come from [lobe-icons](https://github.com/lobehub/lobe-icons) (MIT) and, for Intel and AMD, [Simple Icons](https://simpleicons.org) (CC0). The agent, model-maker and GPU-maker logos are trademarks of their owners, shown to identify compatibility only; Local AI is not affiliated with or endorsed by any of them.

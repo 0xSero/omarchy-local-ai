@@ -14,7 +14,7 @@ import pathlib,shutil,json,sys
 p=pathlib.Path(sys.argv[2])
 p.mkdir(exist_ok=True)
 source=pathlib.Path(sys.argv[1])
-for name in ['Panel.qml','Model.js','qwen.svg','hf.svg']: shutil.copy(source/name,p/name)
+for name in ['Panel.qml','FullScreen.qml','Model.js','Logos.js','hf.svg']: shutil.copy(source/name,p/name)
 shutil.copytree(source/"agents",p/"agents")
 files={
 'Commons/qmldir':'module qs.Commons\nsingleton Style 1.0 Style.qml\nsingleton Color 1.0 Color.qml\nsingleton Util 1.0 Util.qml\n',
@@ -68,21 +68,21 @@ ShellRoot {
       if(!p.snap.gpus){step.start();return}
       p.snap=Object.assign({},p.snap,{readiness:{state:mode==="setup"?"needs-setup":"ready"}})
       if(mode==="crash" || mode==="stopped")p.snap=Object.assign({},p.snap,{deployments:p.snap.deployments.map(function(d){return Object.assign({},d,{state:"error",error:"the engine stopped"})})})
-      p.ui={view:mode==="crash"?"home":mode==="setup"?"home":mode==="kind"?"kind":"run",id:"test",problem:mode==="error"?"Could not open the agent terminal; try again.":""}
-      if(mode==="refreshed"){p.ui={view:"home"};p.activate("registry")}
+      p.ui={view:mode==="crash"?"home":mode==="setup"?"home":mode==="kind"?"models":"run",id:"test",problem:mode==="error"?"Could not open the agent terminal; try again.":""}
+      if(mode==="refreshed"){p.ui={view:"home"};p.snap=Object.assign({},p.snap,{catalog:{commit:"00000000",at:""}});p.autoAt=0;p.autoBusy=false;p.autoRefresh(p.snap)}
       capture.start()
     }
   }
   Timer {
     id: capture; interval:150
     onTriggered: {
-      if(runner.modes[runner.at]==="refreshed" && (ld.item.ui.notice!=="models up to date · 12345678" || ld.item.ui.registryBusy)){
+      if(runner.modes[runner.at]==="refreshed" && (ld.item.ui.notice!=="new models from the registry" || ld.item.autoBusy)){
         console.log("FAIL registry completion was not shown");runner.failed=true
       }
       var content=runner.find(ld.item,"local-ai-content")
       if(!content){console.log("FAIL no content");Qt.quit();return}
       var name=runner.find(content,"local-ai-option-name"), fit=runner.find(content,"local-ai-option-fit")
-      if(runner.modes[runner.at]==="kind" && (!name || !fit)){console.log("FAIL missing model choices");runner.failed=true}
+      if(runner.modes[runner.at]==="kind" && (!name || !fit)){console.log("FAIL missing the models table");runner.failed=true}
       if(name && fit) {
         var right=name.mapToItem(content,name.width,0).x, left=fit.mapToItem(content,0,0).x
         var ok=right<=left && name.width>=0 && fit.width>=0

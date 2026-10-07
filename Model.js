@@ -86,105 +86,20 @@ function spec(r) {
   return [r.format ? { text: fmt(r.format) } : null, r.ctx ? { icon: "context", text: ctx(r.ctx) } : null, r.sizeGb ? { icon: "weights", text: gb(r.sizeGb) } : null,
     ram(r) ? { icon: "memory", text: ram(r) } : null].filter(Boolean)
 }
-// whether a recipe fits this machine: on the card alone, with part of it in RAM, or what it lacks
-function room(r) {
-  if (r.unfit) return r.unfit.split("; ")[0].replace(/, you have \d+$/, "").replace("the models folder on ", "")
-  return ram(r) ? "+" + ram(r) : "fits"
-}
-// a card's memory and temperature as chips
-function health(g) {
-  var m = gpuRow(g)
-  return [{ icon: "memory", text: m.mem }, m.temp ? { icon: "temp", text: m.temp } : null].filter(Boolean)
-}
-
 var SUPPORTED = "url|https://local.sybilsolutions.ai"
 
-// One GPU as a row: on the right its quick action (run its model, run again) or what it is doing; opened, a line
-// under it with its memory, what there is to know, and buttons for the rest, Config included for every card with
-// a model, so a busy one can be set up too. Rank orders the rows: free, groups, running, crashed, held, no model.
-function slot(s, ui, g, at) {
-  var kd = find(s.kinds || [], "hw", g.hw), d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0]
-  var row = { type: "slot", label: g.name, toggle: "pick|gpu:" + g.key, open: ui.open === "gpu:" + g.key }, note = "", chips = [], items = []
-  var config = { label: "Config", action: d ? "more|" + d.id : kd ? "kind|" + kd.hw + "|" + g.key : "" }
-  if (!kd) {
-    row.rank = 4
-    row.note = "no validated model yet"
-    items = [{ label: "See supported cards ›", action: SUPPORTED }]
-  } else if (d && d.state === "error") {
-    row.rank = 2
-    row.crashed = true
-    row.hint = "stopped"
-    row.run = { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") }
-    row.dismiss = "stop|" + d.id
-    note = d.error || "stopped"
-    // run again and dismiss are on the row itself
-    items = [{ label: "View logs", action: "log" }, config]
-  } else if (d) {
-    row.rank = 1
-    row.note = (d.state === "ready" ? "running " : d.state === "stopping" ? "stopping " : "starting ") + d.name
-    items = (d.state === "ready" ? [{ label: "Open " + d.agent + " ›", action: "open|" + d.id, primary: true }] : [])
-      .concat([config, { label: "Stop model", action: stop(d), danger: true }])
-  } else if (kd.taken.indexOf(g.key) >= 0) {
-    row.rank = 3
-    row.warn = true
-    row.note = "in use by another program"
-    items = [config]
-  } else if (!best(kd.models)) {
-    // every model for this card needs more of the machine than it has: why, and Config to see them
-    row.rank = 3
-    row.note = kd.models.length ? kd.models[0].unfit : "its models run across several cards; see all GPUs"
-    items = [config]
-  } else {
-    var r = best(kd.models)
-    row.rank = 0
-    row.run = { family: r.family, label: "run " + r.name + " ›", action: "run|" + r.id + "|" + g.key }
-    chips = spec(r)
-    items = [{ label: "Run ›", action: row.run.action, primary: true }, config]
-  }
-  chips = health(g).concat(chips)
-  var rows = [row]
-  if (row.crashed) rows.push({ type: "error", label: note })
-  if (row.open) rows.push({ type: "links", chips: chips, note: row.crashed ? "" : note, items: items })
-  return { rank: row.rank, at: at, rows: rows }
-}
-
-// A group, its own row: one model across several free cards of a kind, offered when enough of them are free
-// (the first recipe for each number of cards). Its Config is the group's page.
-function groups(s, ui) {
-  var out = []
-  ;(s.kinds || []).forEach(function(kd, at) {
-    var first = find(s.gpus || [], "key", kd.keys[0]), seen = {}
-    ;(kd.groups || []).forEach(function(gr) {
-      if (seen[gr.cards] || kd.free.length < gr.cards || !fits(gr)) return
-      seen[gr.cards] = 1
-      var id = "group:" + kd.hw + ":" + gr.cards
-      var row = { type: "slot", label: gr.cards + " × " + (first ? first.name : kd.hw), toggle: "pick|" + id, open: ui.open === id,
-        run: { family: gr.family, label: "run " + gr.name + " ›", action: "run|" + gr.id + "|" + kd.free.slice(0, gr.cards).join(",") } }
-      var links = { type: "links", chips: spec(gr), items: [{ label: "Run ›", action: row.run.action, primary: true },
-        { label: "Config", action: "group|" + kd.hw + "|" + gr.cards }] }
-      out.push({ rank: 0.5, at: at * 100 + gr.cards, group: true, rows: row.open ? [row, links] : [row] })
-    })
-  })
-  return out
-}
-// A crashed model no GPU row shows (its card is gone from the list, has no kind, or it never had one): a row of its
-// own, with its reason and dismiss, so the failed mark it raises can always be cleared
-function lost(s, ui) {
-  return (s.deployments || []).filter(function(d) {
-    return d.state === "error" && !(s.gpus || []).some(function(g) { return d.keys.indexOf(g.key) >= 0 && find(s.kinds, "hw", g.hw) })
-  }).map(function(d, at) {
+// A model that stopped by itself: its row, framed, with run again (while its cards are still here) and dismiss, its
+// reason under it, and, opened, its log and its page. Dismissing clears the failed mark it raises.
+function stopped(s, ui) {
+  return [].concat.apply([], (s.deployments || []).filter(function(d) { return d.state === "error" }).map(function(d) {
+    var here = d.keys.every(function(k) { return find(s.gpus || [], "key", k) })
     var row = { type: "slot", label: d.name, toggle: "pick|lost:" + d.id, open: ui.open === "lost:" + d.id, crashed: true, hint: "stopped",
-      dismiss: "stop|" + d.id }
+      run: here ? { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") } : null, dismiss: "stop|" + d.id }
     var rows = [row, { type: "error", label: d.error || "stopped" }]
-    if (row.open) rows.push({ type: "links", note: "", items: [{ label: "View logs", action: "log" }, { label: "Config", action: "more|" + d.id }] })
-    return { rank: 2, at: 1000 + at, lost: true, rows: rows }
-  })
+    if (row.open) rows.push({ type: "links", note: "", items: [{ label: "View logs", action: "log" }, { label: "Details ›", action: "more|" + d.id }] })
+    return rows
+  }))
 }
-function slots(s, ui, keep) {
-  return (s.gpus || []).map(function(g, at) { return slot(s, ui, g, at) }).concat(groups(s, ui), lost(s, ui)).filter(function(x) { return keep(x.rank) })
-    .sort(function(a, b) { return a.rank - b.rank || a.at - b.at })
-}
-function flat(list) { return [].concat.apply([], list.map(function(x) { return x.rows })) }
 
 // What the panel says and offers for each readiness state the backend reports (lib/access.sh). A state with no button
 // clears by itself and says so; a state this table has never heard of does the same, so none is a dead end.
@@ -194,9 +109,9 @@ var READINESS = {
   "docker-down": { note: "Docker is not ready. Local AI checks again by itself." },
   unsupported: { note: "This Omarchy is too old for Local AI. It checks again by itself once Omarchy is updated." }
 }
-function notReadyView(s) {
+function notReadyView(s, ui) {
   var r = s.readiness, t = READINESS[r.state] || { note: "Local AI is not ready. It checks again by itself." }
-  var rows = [{ type: "sec", label: "SETUP" }, { type: "links", note: t.note, items: [] }]
+  var rows = [activity(s, ui), { type: "sec", label: "SETUP" }, { type: "links", note: t.note, items: [] }]
   if (r.message) rows.push({ type: "links", note: r.message, items: [] })
   if (t.action) rows.push({ type: "acts", items: [{ label: "Set up Local AI", action: t.action, primary: true }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
@@ -210,34 +125,168 @@ function homeView(s, ui) {
   if (!s.gpus) return { title: "LOCAL AI", rows: [] }
   if (((s.readiness || {}).state || "ready") !== "ready") {
     // setup first, but a model that is already running stays reachable to open, stop or dismiss
-    var nr = notReadyView(s)
+    var nr = notReadyView(s, ui)
     ;(s.deployments || []).forEach(function(d) { nr.rows.push(card(s, d)) })
     return nr
   }
   if (!(s.kinds || []).length && !(s.deployments || []).length) return soonView(s, ui)
-  var rows = [], life = s.life || {}
-  if (life.requests > 0) rows.push(activity(s))
+  if (ui.view === "models") return { title: "LOCAL AI", version: s.version, rows: [tabs(ui)].concat(modelsTab(s, ui)) }
+  var rows = [tabs(ui), activity(s, ui)]
   ;(s.deployments || []).filter(function(d) { return d.state === "ready" })
     .concat((s.deployments || []).filter(function(d) { return working(d) })).forEach(function(d) { rows.push(card(s, d)) })
-  var free = slots(s, ui, function(r) { return r < 1 || r === 2 })
-  if (free.length) rows = rows.concat([{ type: "sec", label: "AVAILABLE" }], flat(free))
-  if (s.gpus.length > free.filter(function(x) { return !x.group && !x.lost }).length)
-    rows.push({ type: "field", icon: "gpu", label: s.gpus.some(function(g) { return g.backend === "cpu" }) ? "all hardware" : "all GPUs", value: String(s.gpus.length), action: "gpus" })
+  // a model that stopped, to run again or dismiss
+  rows = rows.concat(stopped(s, ui))
+  rows = rows.concat(pinned(s, ui))
+  rows.push({ type: "sec", label: "THIS MACHINE" })
+  rows.push({ type: "field", icon: "gpu", label: "hardware", value: String(s.gpus.length), action: "gpus" })
   if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
   rows.push({ type: "field", icon: "agent", label: "Agents", value: String((s.agents || []).length), action: "agents" })
-  rows.push({ type: "acts", items: [{ label: ui.registryBusy ? "Refreshing models…" : "Refresh models", action: ui.registryBusy ? "" : "registry" }] })
+  // a stale NVIDIA device list (a card taken out, a driver update) stops starts on NVIDIA cards: setup rewrites it
+  if (s.cdi && s.gpus.some(function(g) { return g.backend === "nvidia" }))
+    rows.push({ type: "banner", alert: true, text: "NVIDIA device list is out of date (" + s.cdi.why + ")", action: "setup", actionLabel: "Fix" })
   return { title: "LOCAL AI", version: s.version, rows: rows }
 }
 
+// Two tabs: home (your activity, what runs, your pinned models) and models (every model, to find, download, pin)
+function tabs(ui) {
+  return { type: "tabs", items: [{ label: "home", on: ui.view !== "models", action: "home" }, { label: "models", on: ui.view === "models", action: "models" }] }
+}
+
+// a card's name short enough for a table cell: RTX 3090, B70, CPU
+function short(name) {
+  return /cpu/i.test(name) ? "CPU" : (name || "").replace(/^(NVIDIA |GeForce |Intel |AMD |Arc Pro |Arc |Radeon Pro |Radeon )+/, "")
+}
+// a format short enough for a table cell: EXL3 3 bpw
+function brief(f) { return fmt(f).split(",")[0] }
+
+// Every model this machine can run, whatever card it lands on: one entry per recipe of each kind of hardware here,
+// on one card or across a group of them (when the machine has that many). Each says where it runs, whether it runs
+// now, whether it fits the machine (RAM, disk, NVMe), whether its cards are free, and whether it is pinned.
+function catalog(s) {
+  var out = [], pins = s.pins || []
+  ;(s.kinds || []).forEach(function(kd, at) {
+    var g = find(s.gpus || [], "key", kd.keys[0]), hw = g ? g.name : kd.hw
+    var rec = {}, first = best(kd.models)
+    if (first) rec[first.id] = 1
+    ;(kd.groups || []).forEach(function(gr) { if (fits(gr) && kd.keys.length >= gr.cards && !rec["n" + gr.cards]) rec["n" + gr.cards] = rec[gr.id] = 1 })
+    kd.models.concat(kd.groups || []).forEach(function(r, i) {
+      var n = r.cards || 1, short_ = kd.keys.length < n
+      var d = (s.deployments || []).filter(function(x) { return x.id === r.id || x.id.indexOf(r.id + "--") === 0 })[0]
+      // a setup across more cards than the machine has is listed as too big, saying how many it takes
+      out.push({ id: r.id, name: r.name, family: r.family, format: r.format, engine: r.engine || "", ctx: r.ctx, size: r.sizeGb, needs: r.needs || {}, hw: hw, n: n, d: d || null,
+        fits: fits(r) && !short_, unfit: short_ ? "needs " + n + " × " + hw + ", this machine has " + kd.keys.length : r.unfit || "",
+        downloaded: !!r.downloaded, dl: find(s.downloads || [], "id", r.id),
+        free: kd.free.length >= n, pin: pins.indexOf(r.id), rec: !!rec[r.id], at: at * 1000 + i,
+        on: (n > 1 ? n + "× " : "") + short(hw),
+        run: kd.free.length >= n && !short_ ? "run|" + r.id + "|" + kd.free.slice(0, n).join(",") : "",
+        action: d ? "more|" + d.id : short_ ? "" : n > 1 ? "group|" + kd.hw + "|" + n + "|" + r.id : "kind|" + kd.hw + "|" + (kd.free[0] || kd.keys[0]) + "|" + r.id })
+    })
+  })
+  return out
+}
+function matches(c, q) {
+  var hay = [c.name, c.family, brief(c.format), c.on, c.hw].join(" ").toLowerCase()
+  return q.split(/\s+/).every(function(w) { return hay.indexOf(w) >= 0 })
+}
+// one model as a table row: a dot when it runs, its name, format and hardware; dim when it cannot start now. Full
+// screen adds its engine, context, download and the RAM and NVMe it needs besides its cards.
+function trow(c, wide) {
+  var cells = [c.name, brief(c.format), c.on]
+  if (wide) cells = [c.name, brief(c.format), c.engine || "–", c.on, c.ctx ? ctx(c.ctx) : "–", c.size ? gb(c.size) : "–",
+    c.needs.host_ram_gb ? Math.ceil(c.needs.host_ram_gb) + " GB" : "–", c.needs.fast_storage === "nvme" ? "yes" : "–"]
+  // the mark before the name: running, downloading, downloaded
+  var mark = c.d ? "●" : c.dl && c.dl.state === "download" ? "↓" : c.downloaded ? "✓" : ""
+  return { type: "trow", family: c.family || "", live: !!c.d, mark: mark, dim: !c.d && (!c.fits || !c.free), cells: cells, action: c.action }
+}
+// a table of models; on the models tab each row opens in place to manage it
+function table(list, wide, ui) {
+  var rows = [{ type: "thead", cells: wide ? ["MODEL", "FORMAT", "ENGINE", "ON", "CONTEXT", "DOWNLOAD", "RAM", "NVMe"] : ["MODEL", "FORMAT", "ON"] }]
+  list.forEach(function(c) {
+    var r = trow(c, wide)
+    if (ui) {
+      r.action = "pick|m:" + c.id
+      r.open = ui.open === "m:" + c.id
+    }
+    rows.push(r)
+    if (r.open) rows.push(manage(c))
+  })
+  return rows
+}
+// what a model is doing, in one line
+function state(c) {
+  if (c.d) return c.d.state === "ready" ? "running on " + c.on : c.d.state === "error" ? "stopped: " + (c.d.error || "the engine stopped") : (c.d.detail || c.d.state)
+  if (c.dl) return c.dl.state === "error" ? "download failed: " + (c.dl.error || "try again") : "downloading · " + (c.dl.detail || "") + (c.dl.percent > 0 ? " · " + c.dl.percent + "%" : "")
+  if (!c.fits) return c.unfit
+  return (c.downloaded ? "downloaded" : "not downloaded · " + (c.size ? gb(c.size) : "")) + (c.free ? "" : " · its card is in use")
+}
+// a model's row opened on the models tab: its state, then Start or Open and Stop, Download, Cancel or Remove, Pin
+function manage(c) {
+  var items = []
+  if (c.d && c.d.state === "ready") items.push({ label: "Open ›", action: "open|" + c.d.id, primary: true }, { label: "Stop", action: stop(c.d), danger: true })
+  else if (c.d) items.push({ label: "Stop", action: stop(c.d), danger: true })
+  else if (c.fits && c.free && c.run) items.push({ label: "Start ›", action: c.run, primary: true })
+  if (!c.d) {
+    if (c.dl && c.dl.state === "download") items.push({ label: "Cancel download", action: "download|" + c.id + "|off" })
+    else if (c.downloaded) items.push({ label: "Remove download", action: "forget|" + c.id, danger: true })
+    else if (c.fits) items.push({ label: c.dl ? "Download again" : "Download", action: "download|" + c.id })
+  }
+  items.push({ label: c.pin >= 0 ? "Unpin" : "Pin", action: "pin|" + c.id + (c.pin >= 0 ? "|off" : "") }, { label: "Details ›", action: c.action })
+  return { type: "links", note: state(c), items: items.filter(function(x) { return x.action !== undefined }) }
+}
+// home's models: the ones you pinned (running or downloading one pins it), else the recommended ones
+function pinned(s, ui) {
+  var all = catalog(s), pins = all.filter(function(c) { return c.pin >= 0 }).sort(function(a, b) { return a.pin - b.pin })
+  var top = pins.length ? pins : all.filter(function(c) { return c.rec && c.fits })
+  return [{ type: "sec", label: pins.length ? "PINNED" : "RECOMMENDED" }].concat(top.length ? table(top, ui.wide)
+    : [{ type: "links", note: "Nothing fits this machine yet; the models tab says what each one needs.", items: [{ label: "Models ›", action: "models" }] }])
+}
+// the models tab: a search line (type anywhere), then the matches, or what you have downloaded, every other model
+// that fits, and those this machine is too small for; each row opens in place to start, download, remove or pin it
+function modelsTab(s, ui) {
+  var all = catalog(s), q = (ui.query || "").trim().toLowerCase(), ok = all.filter(function(c) { return c.fits })
+  var rows = [{ type: "search", query: ui.query || "", hint: "type to search " + all.length + (all.length === 1 ? " model" : " models") }]
+  if (q) {
+    var hit = all.filter(function(c) { return matches(c, q) }).sort(function(a, b) { return (b.fits - a.fits) || a.at - b.at })
+    rows.push({ type: "sec", label: "MATCHES" })
+    return rows.concat(hit.length ? table(hit, ui.wide, ui) : [{ type: "links", note: "No model here matches \u201c" + ui.query.trim() + "\u201d. New ones arrive by themselves.", items: [] }])
+  }
+  var have = all.filter(function(c) { return c.d || c.dl || c.downloaded }), rest = ok.filter(function(c) { return have.indexOf(c) < 0 })
+  var big = all.filter(function(c) { return !c.fits && have.indexOf(c) < 0 })
+  if (have.length) rows = rows.concat([{ type: "sec", label: "ON THIS MACHINE" }], table(have, ui.wide, ui))
+  if (rest.length) rows = rows.concat([{ type: "sec", label: have.length ? "MORE THAT FIT" : "FITS THIS MACHINE" }], table(rest, ui.wide, ui))
+  if (big.length) {
+    rows.push({ type: "field", label: "too big for this machine", value: String(big.length), drop: true, open: ui.big, action: "big" })
+    if (ui.big) rows = rows.concat(table(big, ui.wide, ui))
+  }
+  if (s.catalog && s.catalog.commit) rows.push({ type: "banner", text: "models from the registry at " + s.catalog.commit.slice(0, 8) + (s.catalog.at ? " · checked " + ago(Date.parse(s.catalog.at) / 1000) : "") })
+  return rows
+}
+
 // Your lifetime as an activity grid: a column a week, a row a weekday, each day shaded in four steps by its tokens
-// against your busiest day (days still to come are blank), the months under their first week, the totals above
+// against your busiest day (days still to come are blank), the months under their first week, the totals above.
+// Every home screen has it, empty before the first request: at least WEEKS weeks, ending this week.
+var WEEKS = 20
 var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-function activity(s) {
-  var life = s.life, days = (life.days || []).slice(0, Math.max(0, life.today + 1)), top = Math.max.apply(null, days.concat([1])), months = [], last = -1
+function activity(s, ui) {
+  var life = s.life || {}, days = (life.days || []).slice(0, Math.max(0, (life.today || 0) + 1)), months = [], last = -1, first
+  if (life.start && days.length) first = new Date(life.start * 1000)
+  else {
+    // nothing used yet: this week, Sunday to today
+    var now = new Date()
+    first = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay())
+    days = []
+    for (var i = 0; i <= now.getDay(); i++) days.push(0)
+  }
+  // fewer weeks than the grid holds: empty weeks before the first
+  // full screen has room for a year
+  var pad = Math.max(0, ((ui || {}).wide ? 53 : WEEKS) - Math.ceil(days.length / 7)) * 7
+  first.setDate(first.getDate() - pad)
+  for (var p = 0; p < pad; p++) days.unshift(0)
+  var top = Math.max.apply(null, days.concat([1]))
   // a week on the calendar, not 7 × 86400 s: the week a daylight-saving change ends is an hour longer
   for (var c = 0; c * 7 < days.length; c++) {
-    var w = new Date(life.start * 1000)
+    var w = new Date(first.getTime())
     w.setDate(w.getDate() + c * 7)
     var m = w.getMonth()
     if (m !== last) months.push({ col: c, label: MONTHS[m] })
@@ -246,17 +295,18 @@ function activity(s) {
   // the first, partial month keeps its name unless the next one would crowd it
   if (months.length > 1 && months[1].col < 3) months.shift()
   return { type: "life", tokens: k(s.total) + " tokens", requests: k(life.requests) + (life.requests === 1 ? " request" : " requests"),
-    since: "since " + life.since, months: months,
+    since: life.since && life.requests > 0 ? "since " + life.since : "nothing run yet", months: months,
     cells: days.map(function(v, i) { return v > 0 ? Math.ceil(v / top * 4) : 0 }),
     // what a hovered day says: its date and its tokens
     labels: days.map(function(v, i) {
-      var d = new Date(life.start * 1000)
+      var d = new Date(first.getTime())
       d.setDate(d.getDate() + i)
       return DAYS[d.getDay()] + " " + MONTHS[d.getMonth()] + " " + d.getDate() + "  " + (v > 0 ? k(v) + " tokens" : "no tokens")
     }) }
 }
 
-// A running model's card: its all-time token line, its name and cards, and Open (or Stop while it starts) and More
+// A running model's card: its all-time token line, its name and cards, and Open, More and Stop (Stop and More while
+// it starts)
 function card(s, d) {
   var all = (d.session || {}).all || {}
   var cards = (s.gpus || []).filter(function(g) { return d.keys.indexOf(g.key) >= 0 })
@@ -270,6 +320,7 @@ function card(s, d) {
   if (d.state === "ready") {
     r.chips = [all.decode ? { icon: "speed", text: all.decode + " tok/s" } : null, { icon: "tokens", text: k(all.tokens) }].filter(Boolean)
     r.primary = { label: "Open " + d.agent, action: "open|" + d.id }
+    r.stop = stop(d)
   } else {
     r.progress = d.percent > 0 && d.state !== "stopping" ? d.percent : -1
     r.sub = (d.detail || d.state) + (r.progress >= 0 && d.state !== "download" ? " · " + d.percent + "%" : "")
@@ -278,17 +329,60 @@ function card(s, d) {
   return r
 }
 
-// every GPU on the machine, as the same rows as home's, so any of them opens to its actions and Config
+// The hardware: the machine in figures first (cards, their memory, what runs, RAM, CPU threads, disk), then every
+// card with its maker, memory in use, temperature and what is on it; a running one opens its model, a free one the
+// models for it; then the CPU and the crashed models to run again or dismiss
 function gpusView(s, ui) {
-  return { back: true, rows: [{ type: "sec", label: s.gpus.some(function(g) { return g.backend === "cpu" }) ? "HARDWARE" : "GPUS" }].concat(flat(slots(s, ui, function() { return true }))) }
+  var cards = (s.gpus || []).filter(function(g) { return g.backend !== "cpu" }), h = s.host || {}
+  var vram = cards.reduce(function(a, g) { return a + (g.vramGb || 0) }, 0)
+  var known = cards.filter(function(g) { return g.usedMiB != null })
+  var used = known.reduce(function(a, g) { return a + g.usedMiB / 1024 }, 0)
+  var rows = [{ type: "sec", label: "THIS MACHINE" }, { type: "grid", cells: [
+    { v: String(cards.length), u: "", k: cards.length === 1 ? "GPU" : "GPUs" },
+    // in use only where the card says (Intel's do not)
+    { v: known.length ? Math.round(used) + "/" + vram : String(vram), u: "GB", k: known.length ? "VRAM used" : "VRAM" },
+    { v: String((s.deployments || []).filter(function(d) { return d.state === "ready" }).length), u: "", k: "running" },
+    { v: h.ramGb ? Math.floor(h.freeRamGb) + "/" + Math.floor(h.ramGb) : "–", u: "GB", k: "RAM free" },
+    { v: h.cpus ? String(h.cpus) : "–", u: "", k: "CPU threads" },
+    { v: h.diskFreeGb != null ? String(Math.floor(h.diskFreeGb)) : "–", u: "GB", k: h.disk === "nvme" ? "NVMe free" : "disk free" }] }]
+  if (cards.length) rows.push({ type: "sec", label: cards.length === 1 ? "GPU" : "GPUS" })
+  cards.forEach(function(g) {
+    var d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0], kd = find(s.kinds || [], "hw", g.hw)
+    var r = gpuRow(g)
+    r.status = d ? (d.state === "ready" ? "running " : d.state === "error" ? "stopped: " : d.state + " ") + d.name
+      : (kd && kd.taken.indexOf(g.key) >= 0) || g.held ? "in use by another program" : kd ? "free" : "no tested model yet"
+    r.warn = r.status === "in use by another program"
+    r.action = d ? "more|" + d.id : kd ? "find|" + short(g.name) : SUPPORTED
+    rows.push(r)
+  })
+  var cpu = (s.gpus || []).filter(function(g) { return g.backend === "cpu" })[0]
+  if (cpu) {
+    rows.push({ type: "sec", label: "CPU" })
+    var c = gpuRow(cpu)
+    c.name = h.cpuName || cpu.name
+    c.mem = (h.cpus ? h.cpus + " threads · " : "") + cpu.ramGb + " GB RAM"
+    c.status = find(s.kinds || [], "hw", cpu.hw) ? "runs small models" : "no tested model yet"
+    c.action = find(s.kinds || [], "hw", cpu.hw) ? "find|CPU" : ""
+    rows.push(c)
+  }
+  var crashed = stopped(s, ui)
+  if (crashed.length) rows = rows.concat([{ type: "sec", label: "STOPPED" }], crashed)
+  return { back: true, where: "hardware", rows: rows }
 }
 
-// nothing to run on: one line on what this machine has, and where the list of supported cards lives
+// nothing to run on yet: the same home, its grid and this machine's hardware, each saying it has no tested model,
+// what Local AI runs, and where the list of supported hardware lives
 function soonView(s, ui) {
-  var found = (s.gpus || []).map(function(g) { return g.name }).filter(function(n, i, a) { return a.indexOf(n) === i })
-  return { title: "LOCAL AI", version: s.version, rows: [{ type: "soon",
-    head: found.length ? "No tested model for " + found.join(", ") + " yet" : "No supported GPU on this machine",
-    action: SUPPORTED }, { type: "acts", items: [{ label: ui.registryBusy ? "Refreshing models…" : "Refresh models", action: ui.registryBusy ? "" : "registry" }] }] }
+  var names = (s.gpus || []).map(function(g) { return g.name }), rows = [activity(s, ui), { type: "sec", label: "HARDWARE" }]
+  names.filter(function(n, i) { return names.indexOf(n) === i }).forEach(function(n) {
+    var c = names.filter(function(x) { return x === n }).length
+    rows.push({ type: "field", icon: "gpu", label: (c > 1 ? c + " × " : "") + n, value: "no tested model yet" })
+  })
+  if (!names.length) rows.push({ type: "field", icon: "gpu", label: "no supported GPU found", value: "" })
+  if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
+  rows.push({ type: "links", note: "Local AI runs only models tested on your hardware. New ones arrive by themselves as they are tested.", items: [] })
+  rows.push({ type: "acts", items: [{ label: "Supported hardware ›", action: SUPPORTED }] })
+  return { title: "LOCAL AI", version: s.version, rows: rows }
 }
 
 // A model's page, the same for a running model, a free card and a group: m is the running model (d) or the chosen
@@ -299,51 +393,83 @@ function page(s, ui, m) {
   var facts = spec(run ? Object.assign({}, m, { sizeGb: 0 }) : m)
   facts.splice(m.format ? 1 : 0, 0, { icon: "gpu", text: m.cards.length + " × " + (m.cards[0] ? m.cards[0].name : "GPU") })
   if ((m.caps || {}).vision) facts.push({ icon: "vision", text: "" })
-  var v = { back: true, rows: [], hero: { name: m.name, family: m.family, chips: facts } }
-  if (run && !failed) {
-    Object.assign(v.hero, { line: line, top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: all.last ? ago(all.last) : "now" })
-    v.rows.push({ type: "grid", cells: [
-      { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
-      { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
-      { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
-      { v: k(u.tokens), u: "", k: "session" },
-      { v: k(u.week), u: "", k: "week" },
-      { v: isNaN(Date.parse(run.startedAt)) ? "–" : dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
+  var v = { back: true, where: m.name, rows: [], hero: { name: m.name, family: m.family, chips: facts } }
+  if (run && !failed) Object.assign(v.hero, { line: line, top: k(top) + " tokens", mid: k(Math.round(top / 2)), since: all.since || "", now: all.last ? ago(all.last) : "now" })
+  // one line: what it is doing, or why it cannot start
+  var dl = find(s.downloads || [], "id", run ? base(run.id) : m.id), held = (m.cards[0] || {}).status
+  var said = failed ? run.error || "the engine stopped"
+    : run ? (run.state === "ready" ? "running" + (all.decode != null ? " · " + all.decode + " tok/s" : "")
+      : (run.detail || run.state) + (run.percent > 0 && run.state !== "stopping" ? " · " + run.percent + "%" : ""))
+    : m.unfit ? m.unfit
+    : !m.action ? (held ? "its " + m.cards[0].name + " is " + held : "its cards are in use")
+    : dl && dl.state === "download" ? "downloading · " + (dl.detail || "") + (dl.percent > 0 ? " · " + dl.percent + "%" : "")
+    : m.downloaded ? "downloaded · ready to start" : "starts with a " + gb(m.sizeGb || 0) + " download"
+  v.rows.push(failed || m.unfit ? { type: "error", label: said } : { type: "links", note: said, items: [] })
+  // one action, two when it runs: Open and Stop; none for a model this machine cannot run
+  if (!m.unfit || run) v.rows.push({ type: "acts", items: failed ? [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true }, { label: "Dismiss", action: "stop|" + run.id, danger: true }]
+    : run && run.state === "ready" ? [{ label: "Open " + agentName(run.agent) + " ›", action: "open|" + run.id, primary: true }, { label: "Stop", action: stop(run), danger: true }]
+    : run ? [{ label: "Stop", action: stop(run), danger: true }]
+    : [{ label: "Start ›", action: m.action || "", primary: true }] })
+  // full screen has room for its model card, from Hugging Face at the pinned revision
+  v.cardFor = run ? base(run.id) : m.id
+  if (ui.wide) {
+    var text = (ui.cards || {})[v.cardFor]
+    v.rows.push({ type: "sec", label: "MODEL CARD" })
+    v.rows.push(text ? { type: "card", text: cardText(text) } : { type: "links", note: text === "" ? "no model card on Hugging Face" : "fetching the model card…", items: [] })
   }
-  // a card's Config: every model validated for it, the chosen one checked, each saying whether it fits (its format
-  // and context are on the page once chosen); one this machine cannot run says what it lacks and cannot be chosen
-  if ((m.models || []).length > 1) {
-    v.rows.push({ type: "sec", label: "MODEL" })
-    m.models.forEach(function(x) {
-      v.rows.push({ type: "opt", label: x.name, value: room(x), on: x.id === m.id, off: !fits(x), action: fits(x) ? "model|" + x.id : "" })
-    })
-  }
+  // the rest, one tap away: figures, what it needs, its cards, which agent and folder, its weights, where it answers
+  // full screen opens with them shown
+  if (!ui.wide) v.rows.push({ type: "field", label: "details", value: "", drop: true, open: !!ui.details, action: "details" })
+  if (!ui.details && !ui.wide) return v
+  if (run && !failed) v.rows.push({ type: "grid", cells: [
+    { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
+    { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
+    { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
+    { v: k(u.tokens), u: "", k: "session" },
+    { v: k(u.week), u: "", k: "week" },
+    { v: isNaN(Date.parse(run.startedAt)) ? "–" : dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
+  needsTable(v.rows, m)
   v.rows.push({ type: "sec", label: m.cards.some(function(g) { return g.cpu }) ? "CPU" : "GPUS" })
   m.cards.forEach(function(g) { v.rows.push(g) })
   v.rows.push({ type: "sec", label: "OPENS WITH" })
   pickers(s, v.rows, ui, run ? run.agent : (s.defaults || {}).agent, run ? run.folder : (s.defaults || {}).folder, run ? run.id : "")
-  if (run && run.state === "ready") v.rows.push({ type: "acts", items: [{ label: "Open " + agentName(run.agent) + " ›", action: "open|" + run.id, primary: true }] })
   weights(v.rows, m.weights)
-  if (failed) {
-    v.rows.push({ type: "error", label: run.error || "the engine stopped" })
-    v.rows.push({ type: "acts", items: [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true },
-      { label: "View logs", action: "log" }, { label: "Dismiss", action: "stop|" + run.id, danger: true }] })
-  } else if (run) {
+  if (run && !failed) {
     v.rows.push({ type: "sec", label: "REACH" })
-    v.rows.push({ type: "field", icon: "machine", label: "this machine", value: "127.0.0.1:" + run.port })
+    // addresses stay hidden until clicked, beside a copy
+    v.rows.push({ type: "field", icon: "machine", label: "this machine", value: "http://127.0.0.1:" + run.port, secret: true, action: "copy|http://127.0.0.1:" + run.port })
     if (s.tailnet) v.rows.push(run.shared
       ? { type: "field", icon: "tailnet", label: "tailnet", value: run.shared, secret: true, action: "copy|" + run.shared }
       : { type: "field", icon: "tailnet", label: "tailnet", value: "share", action: "share|" + run.id })
-    if (run.error) v.rows.push({ type: "error", label: run.error })
-    v.rows.push({ type: "acts", items: (run.shared ? [{ label: "Stop sharing", action: "share|" + run.id + "|off" }] : [])
-      .concat([{ label: "View logs", action: "log" }, { label: "Stop model", action: stop(run), danger: true }]) })
-  } else if (m.unfit) {
-    v.rows.push({ type: "error", label: m.unfit })
-  } else {
-    v.rows.push({ type: "acts", items: [{ label: "Run ›", action: m.action, primary: true },
-      { label: "Remove download", action: "forget|" + m.id, danger: true }] })
+    if (run.shared) v.rows.push({ type: "links", items: [{ label: "Stop sharing", action: "share|" + run.id + "|off" }] })
   }
+  v.rows.push({ type: "links", items: [{ label: "View logs", action: "log" }] })
   return v
+}
+
+// A model card as the panel draws it: its markdown without the front matter, styles, HTML or images (nothing is loaded
+// from the network to draw it), tables as rows of cells, and at most 40,000 characters
+function cardText(md) {
+  return md.replace(/^---\n[\s\S]*?\n---\n/, "").replace(/<(style|script)[\s\S]*?<\/\1>/gi, "").replace(/<!--[\s\S]*?-->/g, "")
+    // an HTML table's cells apart, a row a paragraph; a lone rule of dashes left behind is no heading
+    .replace(/<\/t[dh]>/gi, "  ·  ").replace(/<\/tr>/gi, "\n\n").replace(/^\s*[-=]{2,}\s*$/gm, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n").trim().slice(0, 40000)
+}
+
+// a second copy of a recipe runs as <recipe>--2
+function base(id) { return id.indexOf("--") >= 0 ? id.slice(0, id.lastIndexOf("--")) : id }
+// what a model takes of the machine, as a table: its format and engine, the cards it fills, system RAM besides them,
+// disk for its weights, whether they must sit on NVMe, and its context
+function needsTable(rows, m) {
+  var n = m.needs || {}, cards = m.cards || [], g = cards[0] || {}
+  rows.push({ type: "thead", cells: ["NEEDS", ""], pair: true })
+  ;[["format", fmt(m.format) || "–"], ["engine", m.engine || "–"],
+    [g.cpu ? "CPU" : "GPU", cards.length ? (cards.length > 1 ? cards.length + " × " : "") + g.name + (g.cpu ? "" : " · " + (g.mem || "").replace(/^.* \/ /, "")) : "–"],
+    ["RAM", n.host_ram_gb ? Math.ceil(n.host_ram_gb) + " GB" : "–"], ["disk", gb(n.disk_gb || m.sizeGb || 0)],
+    ["NVMe", n.fast_storage === "nvme" ? "required" : "no"], ["context", m.ctx ? ctx(m.ctx) + " tokens" : "–"]].forEach(function(x) {
+    rows.push({ type: "trow", pair: true, cells: [x[0], x[1]] })
+  })
 }
 
 function runView(s, id, ui) {
@@ -355,7 +481,7 @@ function runView(s, id, ui) {
 // a card kind's page, for the card its row was opened from (else the first free one): the models validated for it,
 // the recommended one chosen until another is, and Run when that card is free; a card another program holds says why
 function kindView(s, hw, ui) {
-  var kd = find(s.kinds, "hw", hw), models = kd ? kd.models : [], pick = find(models.filter(fits), "id", ui.model) || best(models) || models[0]
+  var kd = find(s.kinds, "hw", hw), models = kd ? kd.models : [], pick = find(models, "id", ui.model) || best(models) || models[0]
   if (!pick) return null
   var key = kd.keys.indexOf(ui.key) >= 0 ? ui.key : kd.free[0], free = kd.free.indexOf(key) >= 0, g = key && find(s.gpus, "key", key)
   return page(s, ui, Object.assign({}, pick, { models: models, action: free ? "run|" + pick.id + "|" + key : "",
@@ -365,17 +491,20 @@ function kindView(s, hw, ui) {
 // a group of free cards of a kind: the models validated for that many cards, on the cards it would run on
 function groupView(s, hw, n, ui) {
   var kd = find(s.kinds, "hw", hw), models = kd ? (kd.groups || []).filter(function(x) { return x.cards === n }) : []
-  var gr = find(models.filter(fits), "id", ui.model) || best(models) || models[0]
-  if (!gr || kd.free.length < n) return null
-  var keys = kd.free.slice(0, n)
-  return page(s, ui, Object.assign({}, gr, { models: models, action: "run|" + gr.id + "|" + keys.join(","),
+  var gr = find(models, "id", ui.model) || best(models) || models[0]
+  if (!gr || kd.keys.length < n) return null
+  // its cards: free ones to run on, else the first of the kind, with nothing to run until enough are free
+  var free = kd.free.length >= n, keys = (free ? kd.free : kd.keys).slice(0, n)
+  return page(s, ui, Object.assign({}, gr, { models: models, action: free ? "run|" + gr.id + "|" + keys.join(",") : "",
     cards: keys.map(function(key) { return gpuRow(find(s.gpus, "key", key)) }) }))
 }
 
+// the maker of a card, for its logo
+function vendor(g) { return ({ nvidia: "nvidia", "intel-xpu": "intel", "amd-rocm": "amd" })[g.backend] || "" }
 function gpuRow(g) {
   if (g.backend === "cpu") return { type: "gpu", cpu: true, name: g.name, bar: false, mem: g.ramGb + " GB RAM", temp: "" }
   var used = g.usedMiB != null ? g.usedMiB / 1024 : null
-  return { type: "gpu", name: g.name, bar: used != null, pct: used != null && g.vramGb ? Math.min(100, Math.round(used / g.vramGb * 100)) : 0,
+  return { type: "gpu", vendor: vendor(g), name: g.name, bar: used != null, pct: used != null && g.vramGb ? Math.min(100, Math.round(used / g.vramGb * 100)) : 0,
     mem: (used != null ? Math.round(used * 10) / 10 + " / " : "") + g.vramGb + " GB",
     temp: g.tempC != null ? g.tempC + "°" : "" }
 }
@@ -394,12 +523,14 @@ function agentName(a) {
   return ({ pi: "pi", claude: "Claude Code", codex: "Codex", opencode: "OpenCode", omp: "oh-my-pi",
     crush: "Crush", grok: "Grok", copilot: "GitHub Copilot", hermes: "Hermes" })[a] || a || "Choose an agent"
 }
-function pickers(s, rows, ui, agent, folder, id) {
-  rows.push({ type: "agent", agent: agent || "", label: agentName(agent), value: "Choose", action: "pick|agent" })
-  if (ui.open === "agent") (s.agents || []).forEach(function(a) {
-    rows.push({ type: "agent", agent: a, label: agentName(a), value: a === agent ? "Selected" : "Select",
-      action: "set|agent|" + encodeURIComponent(a) + "|" + id })
+// The agent: closed, one row with the one chosen; opened, every agent once, the chosen one marked (a check, an ink
+// bar), each of the others choosing itself. Then default and update for the chosen one, and the folder.
+function pickers(s, rows, ui, agent, folder, id, always) {
+  if (ui.open === "agent" || always) (s.agents || []).forEach(function(a) {
+    rows.push({ type: "agent", agent: a, label: agentName(a), on: a === agent, value: a === agent ? "selected" : "select",
+      action: a === agent ? (always ? "" : "pick|agent") : "set|agent|" + encodeURIComponent(a) + "|" + id })
   })
+  else rows.push({ type: "agent", agent: agent || "", label: agentName(agent), on: true, value: "change", drop: true, action: "pick|agent" })
   if (agent) rows.push({ type: "links", items: [
     { label: (s.defaults || {}).agent === agent ? "Default agent" : "Make default", action: (s.defaults || {}).agent === agent ? "" : "default|" + agent },
     { label: ui.updatingAgent === agent ? "Updating…" : "Update", action: ui.updatingAgent ? "" : "update|" + agent }
@@ -410,16 +541,16 @@ function pickers(s, rows, ui, agent, folder, id) {
 
 function agentsView(s, ui) {
   var rows = [{ type: "sec", label: "DEFAULT AGENT" }]
-  pickers(s, rows, Object.assign({}, ui, { open: "agent" }), (s.defaults || {}).agent, (s.defaults || {}).folder, "")
-  return { back: true, rows: rows }
+  pickers(s, rows, ui, (s.defaults || {}).agent, (s.defaults || {}).folder, "", true)
+  return { back: true, where: "agents", rows: rows }
 }
 
 function build(s, ui) {
   s = s || {}
   var v = (ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
   if (ui.problem || ui.pollProblem || s.setupError) v.rows.unshift({ type: "error", label: ui.problem || ui.pollProblem || s.setupError })
-  else if (ui.notice) v.rows.unshift({ type: "links", note: ui.notice, items: [] })
+  else if (ui.notice) v.rows.unshift({ type: "banner", text: ui.notice })
   return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })
 }
 
-if (typeof module !== "undefined") module.exports = { build: build, parse: parse, tones: tones }
+if (typeof module !== "undefined") module.exports = { build: build, parse: parse, tones: tones, catalog: catalog }
