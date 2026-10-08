@@ -112,6 +112,7 @@ case $url in
 *raw.githubusercontent.com/*/recipes.json) cat "$SHIM/registry.json" ;;
 */api/models/*) printf "[{\"type\":\"file\",\"path\":\"model.safetensors\",\"size\":4096,\"lfs\":{\"oid\":\"%s\"}}]" '"$SHA"' ;;
 */resolve/*) if [[ -n ${SHIM_CORRUPT:-} ]]; then head -c 4096 /dev/urandom >"$out"; else head -c 4096 /dev/zero >"$out"; fi ;;
+*/raw/*/README.md) printf "# Test Model card\n" ;;
 http://127.0.0.1:*)
   [[ -z ${SHIM_STOPPED:-} ]] || exit 7
   ls "$SHIM/containers" | grep -q gateway || exit 7
@@ -668,6 +669,17 @@ bash -c 'exec -a omarchy-local-ai-worker sleep 30' & ours=$!
 kill "$other" "$ours" 2>/dev/null || true
 cp "$TMP/ready.json" "$STATE/deploy/$ID/status.json"
 pass "a load cut by a restart says so, a pid that is not ours reads as stopped, and a live worker keeps loading"
+
+# The model card fetch sends a Hugging Face token from a 0600 header file, never in curl's argv
+mkdir -p "$HOME/.cache/huggingface"
+hf=hf_card${RANDOM}x${RANDOM}
+printf %s "$hf" >"$HOME/.cache/huggingface/token"
+[[ $("$CLI" card "$ID") == "# Test Model card" ]] || fail "card" "$(tail -1 "$SHIM/curl.log")"
+! grep -q "$hf" "$SHIM/curl.log" || fail "hf token leaked" "the Hugging Face token appears in curl's argv"
+grep -q -- "-H @$STATE/hf.header" "$SHIM/curl.log" || fail "card header" "$(tail -1 "$SHIM/curl.log")"
+[[ $(stat -c %a "$STATE/hf.header") == 600 ]] || fail "hf header mode" "$(stat -c %a "$STATE/hf.header")"
+rm -f "$HOME/.cache/huggingface/token"
+pass "the model card fetch keeps the Hugging Face token in a 0600 header file, out of curl's argv"
 
 "$CLI" stop "$ID"
 "$TMP/plugin/bin/omarchy-remove-ai-local"
