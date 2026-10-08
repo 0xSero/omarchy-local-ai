@@ -86,7 +86,7 @@ function spec(r) {
   return [r.format ? { text: fmt(r.format) } : null, r.ctx ? { icon: "context", text: ctx(r.ctx) } : null, r.sizeGb ? { icon: "weights", text: gb(r.sizeGb) } : null,
     ram(r) ? { icon: "memory", text: ram(r) } : null].filter(Boolean)
 }
-var SUPPORTED = "url|https://local.sybilsolutions.ai"
+var SUPPORTED = "url|https://local.sybilsolutions.ai/hardware/"
 
 // A model that stopped by itself: its row, framed, with run again (while its cards are still here) and dismiss, its
 // reason under it, and, opened, its log and its page. Dismissing clears the failed mark it raises.

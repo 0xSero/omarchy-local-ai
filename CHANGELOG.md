@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.12.4] - 2026-10-08
+
+### Fixed
+- "See supported cards" opens https://local.sybilsolutions.ai/hardware/, the card list; the site's front page is now the landing page.
+
 ## [6.12.3] - 2026-10-08
 
 ### Changed
