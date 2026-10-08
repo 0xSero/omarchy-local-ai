@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "sero.local-ai",
   "name": "Local AI",
-  "version": "6.12.2",
+  "version": "6.12.3",
   "author": "0xSero",
   "license": "MIT",
-  "description": "Run a local model on your own GPU or CPU and open a coding agent on it. Local AI picks a model tested on your card (NVIDIA, Intel Arc Pro, AMD) or AVX2 CPU, checks its weights against Hugging Face and serves it in Docker behind a keyed, OpenAI-compatible gateway on 127.0.0.1. Opens pi, Claude Code, Codex, OpenCode and five more agents without touching their config. Start: omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable",
+  "description": "Run AI on your own computer. Local AI picks a model tested on your GPU (NVIDIA, Intel Arc, AMD) or CPU, starts it with one click, and opens your coding agent on it: Claude Code, Codex, pi, OpenCode and five more. Everything runs in Docker on 127.0.0.1, so your prompts never leave the machine. Install: omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable",
   "kinds": [
     "bar-widget"
   ],

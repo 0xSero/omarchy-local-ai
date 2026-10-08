@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.12.3] - 2026-10-08
+
+### Changed
+- The marketplace listing has a new preview image (the Omarchy dot hands, with the supported cards, harnesses and models) and a shorter description that leads with what Local AI does.
+
 ## [6.12.2] - 2026-10-08
 
 ### Added
