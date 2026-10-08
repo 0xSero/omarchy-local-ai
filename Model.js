@@ -164,6 +164,8 @@ function brief(f) { return fmt(f).split(",")[0] }
 // now, whether it fits the machine (RAM, disk, NVMe), whether its cards are free, and whether it is pinned.
 function catalog(s) {
   var out = [], pins = s.pins || []
+  // two recipes that would read the same (a model, its format, its card) are told apart by what differs: the
+  // detail their format carries, e.g. "55 GB RAM" against "experts in RAM"
   ;(s.kinds || []).forEach(function(kd, at) {
     var g = find(s.gpus || [], "key", kd.keys[0]), hw = g ? g.name : kd.hw
     var rec = {}, first = best(kd.models)
@@ -182,6 +184,11 @@ function catalog(s) {
         action: d ? "more|" + d.id : short_ ? "" : n > 1 ? "group|" + kd.hw + "|" + n + "|" + r.id : "kind|" + kd.hw + "|" + (kd.free[0] || kd.keys[0]) + "|" + r.id })
     })
   })
+  out.forEach(function(c) {
+    var twin = out.some(function(o) { return o !== c && o.name === c.name && o.on === c.on && brief(o.format) === brief(c.format) })
+    var detail = ((c.format || "").match(/\(([^,)]+)/) || [])[1]
+    if (twin) c.variant = detail || (c.needs.host_ram_gb ? Math.ceil(c.needs.host_ram_gb) + " GB RAM" : brief(c.format))
+  })
   return out
 }
 function matches(c, q) {
@@ -193,8 +200,8 @@ function matches(c, q) {
 function trow(c, wide) {
   // the Artificial Analysis index, whole: a rank to compare, not a measurement to read
   var aa = c.aa != null ? String(Math.round(c.aa)) : "–"
-  var cells = [c.name, aa, brief(c.format), c.on]
-  if (wide) cells = [c.name, aa, brief(c.format), c.engine || "–", c.on, c.ctx ? ctx(c.ctx) : "–", c.size ? gb(c.size) : "–",
+  var cells = [c.name, aa, c.variant || brief(c.format), c.on]
+  if (wide) cells = [c.name, aa, c.variant || brief(c.format), c.engine || "–", c.on, c.ctx ? ctx(c.ctx) : "–", c.size ? gb(c.size) : "–",
     c.needs.host_ram_gb ? Math.ceil(c.needs.host_ram_gb) + " GB" : "–", c.needs.fast_storage === "nvme" ? "yes" : "–"]
   // the mark before the name: running, downloading, downloaded
   var mark = c.d ? "●" : c.dl && c.dl.state === "download" ? "↓" : ""
