@@ -1014,7 +1014,12 @@ cmd_card() {
   f=$STATE/cards/${repo//\//--}@$rev.md
   if [[ ! -s $f ]]; then
     mkdir -p "$STATE/cards"
-    [[ -s $HOME_DIR/.cache/huggingface/token ]] && h=(-H "Authorization: Bearer $(<"$HOME_DIR/.cache/huggingface/token")")
+    # The token goes to curl as a 0600 header file, never in its argv: another local account can read a process's
+    # arguments from /proc/<pid>/cmdline while it runs.
+    if [[ -s $HOME_DIR/.cache/huggingface/token ]]; then
+      printf 'Authorization: Bearer %s\n' "$(<"$HOME_DIR/.cache/huggingface/token")" >"$STATE/hf.header"
+      h=(-H "@$STATE/hf.header")
+    fi
     curl -fsSL --proto '=https' --connect-timeout 10 --max-time 20 --max-filesize 1048576 ${h[@]+"${h[@]}"} \
       "https://huggingface.co/$repo/raw/$rev/README.md" >"$f.$$" || { rm -f "$f.$$"; die "could not fetch the model card"; }
     mv -f "$f.$$" "$f"

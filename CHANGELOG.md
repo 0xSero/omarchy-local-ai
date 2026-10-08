@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.12.5] - 2026-10-08
+
+### Security
+- The full-screen model card fetch passed the Hugging Face token to curl on its command line, where another local account could read it from /proc/<pid>/cmdline while the request ran. It now goes to curl as a 0600 header file, like the weight downloads; a test keeps the token out of every curl argv. Reported by HANCORE-linux in the marketplace review (omacom/omarchy-plugin-marketplace#10562).
+
 ## [6.12.4] - 2026-10-08
 
 ### Added
