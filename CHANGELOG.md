@@ -4,8 +4,11 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [6.12.4] - 2026-10-08
 
+### Added
+- GLM-5.3-Flash on an RTX 3090 with only 16 GB of RAM and its experts on NVMe, as a reported recipe: the lab passed five of six checks and measured 13.1 tok/s, under the 15 tok/s speed check (registry be35808c).
+
 ### Fixed
-- "See supported cards" opens https://local.sybilsolutions.ai/hardware/, the card list; the site's front page is now the landing page.
+- "Supported hardware" opens https://local.sybilsolutions.ai/hardware/, the card list; the site's front page is now the landing page.
 
 ## [6.12.3] - 2026-10-08
 
