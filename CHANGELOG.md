@@ -2,6 +2,14 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.12.2] - 2026-10-08
+
+### Added
+- GLM-5.3-Flash on an RTX 3090 with 55 GB of RAM and its experts on NVMe, accepted by the lab at 17.3 tok/s (registry 532c73ca), beside the reported all-RAM recipe.
+
+### Changed
+- Two recipes that would read the same in a table (a model, its format, its card) show what sets them apart in the format column, e.g. "55 GB RAM" against "experts in RAM".
+
 ## [6.12.1] - 2026-10-07
 
 ### Changed

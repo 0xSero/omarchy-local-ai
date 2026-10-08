@@ -179,5 +179,13 @@ test('a recipe its publisher reported says so, on its row and its page', () => {
   assert.equal(r[r.findIndex(x => x.type === 'trow' && x.open) + 1].note, 'not downloaded · 14 GB · reported by its publisher, not yet run by the lab');
   assert.equal(m.build(st, {view: 'kind', id: 'rtx-3090-24gb', key: 'nvidia:0', model: 'gemma.3090'}).rows[0].note, 'starts with a 14 GB download · reported, not yet run by the lab');
 });
+test('two recipes that would read the same are told apart by their format detail', () => {
+  const st = {...s, kinds: s.kinds.map(k => k.hw === 'rtx-3090-24gb' ? {...k, models: k.models.concat([
+    rec('glm.nvme', 'GLM-5.3-Flash', {family: 'glm', format: 'EXL3 · 3.05 bpw (55 GB RAM, experts on NVMe)'}),
+    rec('glm.ram', 'GLM-5.3-Flash', {family: 'glm', format: 'EXL3 · 3.05 bpw (experts in RAM, CPU tier)'})])} : k)};
+  const rows = tab(st, {query: 'glm'}).filter(x => x.type === 'trow').map(x => x.cells[2]);
+  assert.deepEqual(rows, ['55 GB RAM', 'experts in RAM']);
+  assert.equal(tab(st, {query: 'gemma'}).find(x => x.type === 'trow').cells[2], 'EXL3 5.1 bpw');
+});
 process.exitCode = failed ? 1 : 0;
 JS
