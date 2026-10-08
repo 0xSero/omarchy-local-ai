@@ -1,45 +1,129 @@
 {
-  "updated": "2026-10-07",
+  "updated": "2026-10-08",
   "repo": {
-    "stars": 111,
+    "stars": 114,
     "forks": 18,
     "watchers": 1,
-    "open_issues": 30,
-    "size_kb": 39278
+    "open_issues": 4,
+    "size_kb": 38656
   },
   "clones": {
-    "days": 38,
+    "days": 39,
     "first": "2026-08-29",
-    "last": "2026-10-05",
-    "total": 4243,
+    "last": "2026-10-06",
+    "total": 4352,
     "peak_day": "2026-09-24",
     "peak": 569,
-    "daily_uniques_sum": 1823,
-    "uniques_14d": 939
+    "daily_uniques_sum": 1879,
+    "uniques_14d": 925
   },
   "views": {
-    "days": 38,
+    "days": 39,
     "first": "2026-08-29",
-    "last": "2026-10-05",
-    "total": 2339,
+    "last": "2026-10-06",
+    "total": 2393,
     "peak_day": "2026-09-24",
     "peak": 354,
-    "daily_uniques_sum": 1231,
-    "uniques_14d": 683
+    "daily_uniques_sum": 1261,
+    "uniques_14d": 695
   },
   "stars": {
-    "days": 18,
+    "days": 19,
     "first": "2026-09-20",
-    "last": "2026-10-07",
+    "last": "2026-10-08",
     "first_count": 24,
-    "last_count": 111,
-    "gained": 87
+    "last_count": 114,
+    "gained": 90
   },
   "downloads": {
-    "total": 27,
-    "release_count": 54,
-    "latest": "v6.9.0",
+    "total": 30,
+    "release_count": 61,
+    "latest": "v6.12.1",
     "by_release": [
+      {
+        "tag": "v6.12.1",
+        "name": "v6.12.1",
+        "published": "2026-10-07T22:00:01Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.12.1.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
+      {
+        "tag": "v6.12.0",
+        "name": "v6.12.0",
+        "published": "2026-10-07T21:17:47Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.12.0.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
+      {
+        "tag": "v6.11.1",
+        "name": "v6.11.1",
+        "published": "2026-10-07T16:10:41Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.11.1.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
+      {
+        "tag": "v6.11.0",
+        "name": "v6.11.0",
+        "published": "2026-10-07T15:46:35Z",
+        "downloads": 0,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.11.0.tar.gz",
+            "downloads": 0
+          }
+        ]
+      },
+      {
+        "tag": "v6.10.1",
+        "name": "v6.10.1",
+        "published": "2026-10-07T13:23:40Z",
+        "downloads": 1,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.10.1.tar.gz",
+            "downloads": 1
+          }
+        ]
+      },
+      {
+        "tag": "v6.10.0",
+        "name": "v6.10.0",
+        "published": "2026-10-07T12:29:55Z",
+        "downloads": 1,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.10.0.tar.gz",
+            "downloads": 1
+          }
+        ]
+      },
+      {
+        "tag": "v6.9.1",
+        "name": "v6.9.1",
+        "published": "2026-10-07T10:58:28Z",
+        "downloads": 1,
+        "assets": [
+          {
+            "name": "omarchy-local-ai-6.9.1.tar.gz",
+            "downloads": 1
+          }
+        ]
+      },
       {
         "tag": "v6.9.0",
         "name": "v6.9.0",
@@ -671,24 +755,24 @@
     ]
   },
   "interactions": {
-    "day": "2026-10-07",
-    "stars": 111,
+    "day": "2026-10-08",
+    "stars": 114,
     "forks": 18,
     "watchers": 1,
     "issues": {
-      "open": 29,
-      "closed": 3,
-      "total": 32
+      "open": 3,
+      "closed": 4,
+      "total": 7
     },
     "pull_requests": {
       "open": 1,
-      "merged": 53,
+      "merged": 61,
       "closed": 3,
-      "total": 57
+      "total": 65
     },
     "discussions": 0,
     "default_branch": "main",
-    "commits": 277
+    "commits": 286
   },
   "referrers": [
     {
@@ -698,23 +782,23 @@
     },
     {
       "referrer": "github.com",
-      "count": 191,
-      "uniques": 114
+      "count": 203,
+      "uniques": 123
     },
     {
       "referrer": "Google",
-      "count": 84,
-      "uniques": 51
+      "count": 81,
+      "uniques": 50
     },
     {
       "referrer": "local.sybilsolutions.ai",
-      "count": 45,
-      "uniques": 29
+      "count": 46,
+      "uniques": 30
     },
     {
       "referrer": "search.brave.com",
-      "count": 22,
-      "uniques": 10
+      "count": 18,
+      "uniques": 9
     },
     {
       "referrer": "DuckDuckGo",
@@ -735,26 +819,31 @@
       "referrer": "Bing",
       "count": 1,
       "uniques": 1
+    },
+    {
+      "referrer": "plugins.omarchy.org",
+      "count": 1,
+      "uniques": 1
     }
   ],
   "paths": [
     {
       "path": "/0xSero/omarchy-local-ai",
       "title": "Overview",
-      "count": 980,
-      "uniques": 668
+      "count": 982,
+      "uniques": 674
     },
     {
       "path": "/0xSero/omarchy-local-ai/pulls",
       "title": "/pulls",
-      "count": 58,
+      "count": 63,
       "uniques": 15
     },
     {
       "path": "/0xSero/omarchy-local-ai/issues",
       "title": "/issues",
-      "count": 47,
-      "uniques": 28
+      "count": 43,
+      "uniques": 27
     },
     {
       "path": "/0xSero/omarchy-local-ai/blob/main/preview.png",
@@ -771,14 +860,8 @@
     {
       "path": "/0xSero/omarchy-local-ai/tree/main",
       "title": "/tree/main",
-      "count": 26,
-      "uniques": 14
-    },
-    {
-      "path": "/0xSero/omarchy-local-ai/issues/12",
-      "title": "/issues/12",
-      "count": 22,
-      "uniques": 12
+      "count": 25,
+      "uniques": 13
     },
     {
       "path": "/0xSero/omarchy-local-ai/blob/main/docs/screenshots/home.png",
@@ -787,16 +870,22 @@
       "uniques": 20
     },
     {
-      "path": "/0xSero/omarchy-local-ai/releases",
-      "title": "/releases",
-      "count": 21,
-      "uniques": 7
-    },
-    {
       "path": "/0xSero/omarchy-local-ai/tree/main/docs",
       "title": "/tree/main/docs",
+      "count": 21,
+      "uniques": 15
+    },
+    {
+      "path": "/0xSero/omarchy-local-ai/tree/main/bin",
+      "title": "/tree/main/bin",
       "count": 19,
-      "uniques": 13
+      "uniques": 16
+    },
+    {
+      "path": "/0xSero/omarchy-local-ai/issues/12",
+      "title": "/issues/12",
+      "count": 19,
+      "uniques": 12
     }
   ]
 }
