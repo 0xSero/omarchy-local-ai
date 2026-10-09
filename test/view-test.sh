@@ -12,6 +12,14 @@ const s = {gpus:[gpu],kinds:[{hw:'test',keys:[gpu.key],free:[gpu.key],taken:[],m
   deployments:[{...recipe,keys:[gpu.key],state:'ready',agent:'pi',shared:'https://test:12434',session:{}}],tailnet:'test'};
 let failed = 0;
 function test(name, f) { try { f(); console.log('ok - '+name) } catch(e) { failed++; console.error('not ok - '+name+': '+e.message) } }
+test('a model card keeps no image of any form: Text.MarkdownText would fetch it without a click', () => {
+  const md = ['inline ![a](http://10.0.0.1/a.png)', 'nested ![a [b]](http://10.0.0.1/n.png)', 'reference ![a][r]',
+    'collapsed ![r][]', 'shortcut ![r]', 'html <img src="http://10.0.0.1/h.png">', '', '[r]: http://10.0.0.1/ref.png'].join('\n\n');
+  const out = m.cardText(md);
+  assert(!out.includes('!['), out);
+  assert(!/<img/i.test(out), out);
+  assert(out.includes('[a][r]') && out.includes('[r]: http://10.0.0.1/ref.png'), out); // left as links, which need a click
+});
 for (const view of ['home','run','kind','gpus']) test('action errors are visible once on '+view, () => {
   const v=m.build(s,{view,id:'test',problem:'could not change the share'});
   assert.equal(v.rows.filter(r=>r.type==='error'&&r.label==='could not change the share').length,1);

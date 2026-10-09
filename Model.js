@@ -477,6 +477,9 @@ function cardText(md) {
     // an HTML table's cells apart, a row a paragraph; a lone rule of dashes left behind is no heading
     .replace(/<\/t[dh]>/gi, "  ·  ").replace(/<\/tr>/gi, "\n\n").replace(/^\s*[-=]{2,}\s*$/gm, "")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<[^>]+>/g, "")
+    // every other image form (reference ![a][r], collapsed ![a][], shortcut ![a], nested brackets) becomes a plain
+    // link: Text.MarkdownText fetches an image's URL to draw it, but a link loads nothing until it is clicked
+    .replace(/!\[/g, "[")
     .replace(/\n{3,}/g, "\n\n").trim().slice(0, 40000)
 }
 
@@ -589,4 +592,4 @@ function build(s, ui) {
   return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })
 }
 
-if (typeof module !== "undefined") module.exports = { build: build, parse: parse, tones: tones, catalog: catalog }
+if (typeof module !== "undefined") module.exports = { build: build, parse: parse, tones: tones, catalog: catalog, cardText: cardText }
