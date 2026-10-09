@@ -1100,9 +1100,11 @@ bin() {
   fi
 }
 
-# Use the installed agent's manager. mise upgrades only this tool, from home rather than a project's config.
+# Use the installed agent's manager: mise, which is how Omarchy installs every agent, upgrades only this tool, from home
+# rather than a project's config; without mise an agent that updates itself does. The plugin never runs a package
+# manager itself, so an agent installed some other way (npm, say) is updated the way it was installed.
 cmd_update() (
-  local a=${1:-} b tool package prefix
+  local a=${1:-} b tool
   printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$a" || die "unknown agent"
   b=$(bin "$a") || die "$a is not installed"
   exec 7>"$STATE/update.lock"
@@ -1123,18 +1125,7 @@ cmd_update() (
     case $a in
       omp | hermes | claude) cmd=("$b" update) ;;
       opencode) cmd=("$b" upgrade) ;;
-      *)
-        case $a in
-          pi) package=@mariozechner/pi-coding-agent ;;
-          codex) package=@openai/codex ;;
-          copilot) package=@github/copilot ;;
-          crush) package=@charmland/crush ;;
-          grok) package=@xai-official/grok ;;
-        esac
-        prefix=$(timeout 10 npm prefix -g 2>/dev/null) || die "update $a with the package manager that installed it"
-        [[ $(readlink -f -- "$(command -v "$b")") == "$prefix"/* ]] || die "update $a with the package manager that installed it"
-        cmd=(npm install --global "$package@latest")
-        ;;
+      *) die "update $a with the package manager that installed it" ;;
     esac
   fi
   say "updating $a"
@@ -1144,33 +1135,25 @@ cmd_update() (
   printf 'Updated %s. New sessions use the updated version.\n' "$a"
 )
 
-# outdated: which installed agents have a newer version, from the managers update uses (mise, then npm), kept in
-# outdated.json for the snapshot; an agent that updates itself (claude, omp, hermes, opencode) without mise is not asked
+# outdated: which installed agents have a newer version from mise, the manager update uses, kept in outdated.json for
+# the snapshot; an agent that updates itself (claude, omp, hermes, opencode) without mise is not asked, and one installed
+# some other way is not offered an update the panel cannot run
 cmd_outdated() (
-  local a b tool package m='{}' n='{}' out='{}' cur lat
+  local a b tool m='{}' out='{}' cur lat
   cd -- "$HOME_DIR"
   omarchy-cmd-present mise && m=$(timeout 60 mise outdated --json 2>/dev/null | jq -c 'if type == "object" then . else {} end' 2>/dev/null) || m='{}'
-  omarchy-cmd-present npm && n=$(timeout 60 npm outdated --global --json 2>/dev/null | jq -c 'if type == "object" then . else {} end' 2>/dev/null) || n='{}'
   [[ -n $m ]] || m='{}'
-  [[ -n $n ]] || n='{}'
   for a in "${AGENTS[@]}"; do
     b=$(bin "$a") || continue
-    tool=$a package=""
+    tool=$a
     case $a in
-      grok) tool=npm:@xai-official/grok package=@xai-official/grok ;;
+      grok) tool=npm:@xai-official/grok ;;
       omp) tool=github:can1357/oh-my-pi ;;
       hermes) tool='pipx:hermes-agent' ;;
-      pi) package=@mariozechner/pi-coding-agent ;;
-      codex) package=@openai/codex ;;
-      copilot) package=@github/copilot ;;
-      crush) package=@charmland/crush ;;
     esac
-    IFS=$'\t' read -r cur lat < <(jq -r --arg t "$tool" --arg p "$package" --arg a "$a" '
+    IFS=$'\t' read -r cur lat < <(jq -r --arg t "$tool" --arg a "$a" '
       ([to_entries[] | select(.key == $t or .key == $a or (.key | startswith($t + "["))) | .value][0] // {}) as $x
       | [$x.current // "", $x.latest // ""] | @tsv' <<<"$m") || true
-    if [[ -z $lat && -n $package ]]; then
-      IFS=$'\t' read -r cur lat < <(jq -r --arg p "$package" '.[$p] // {} | [.current // "", .latest // ""] | @tsv' <<<"$n") || true
-    fi
     [[ -n $lat && $lat != "$cur" ]] && out=$(jq -c --arg a "$a" --arg c "$cur" --arg l "$lat" '.[$a] = {current: $c, latest: $l}' <<<"$out")
   done
   jq -nc --argjson u "$out" --arg t "$(now)" '{at: $t, updates: $u}' >"$STATE/outdated.json.$$"

@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.12.7] - 2026-10-09
+
+### Changed
+- Agent updates go through mise, which is how Omarchy installs every agent, or through the agent's own updater (claude, omp, hermes, opencode). The plugin no longer runs npm itself: an agent installed some other way says to update it the way it was installed, and is not offered an update the panel cannot run.
+
 ## [6.12.6] - 2026-10-09
 
 ### Security
