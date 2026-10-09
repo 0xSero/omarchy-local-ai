@@ -592,4 +592,4 @@ function build(s, ui) {
   return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })
 }
 
-if (typeof module !== "undefined") module.exports = { build: build, parse: parse, tones: tones, catalog: catalog, cardText: cardText }
+if (typeof module !== "undefined") module.exports = { build: build, parse: parse, tones: tones, catalog: catalog }
