@@ -20,7 +20,7 @@ files={
 'Commons/qmldir':'module qs.Commons\nsingleton Style 1.0 Style.qml\nsingleton Color 1.0 Color.qml\nsingleton Util 1.0 Util.qml\n',
 'Commons/Style.qml':'''pragma Singleton
 import QtQuick
-QtObject { property var font: ({family:"monospace",caption:12,body:14,subtitle:15}); function space(n) { return n } }
+QtObject { property var font: ({family:"monospace",caption:10,bodySmall:11,body:12,subtitle:13,title:14,heading:16}); function space(n) { return n } }
 ''',
 'Commons/Color.qml':'''pragma Singleton
 import QtQuick
@@ -38,7 +38,7 @@ function open(){opened=true} function close(){opened=false} function toggle(){op
 'Ui/KeyboardPanel.qml':'''import QtQuick
 Item { property var anchorItem; property var owner; property var bar; property bool open; property var focusTarget; property int padding
 property int contentWidth; property int contentHeight; width:contentWidth; height:contentHeight
-function fittedContentHeight(h){return h} }
+function fittedContentWidth(w){return w} function fittedContentHeight(h){return h} }
 ''',
 'Ui/BarIconButton.qml':'''import QtQuick
 Item { property var bar; property string tooltipText; property Component iconComponent; signal pressed(); implicitWidth:24; implicitHeight:24 }
@@ -52,7 +52,7 @@ ShellRoot {
   property bool failed: false
   property var modes: ["setup","kind","run","error","crash","stopped","refreshed"]
   FloatingWindow {
-    implicitWidth:340; implicitHeight:1000; color:"#121214"
+    implicitWidth:400; implicitHeight:1000; color:"#121214"
     Loader { id: ld; source:"Panel.qml"; onLoaded: { item.open(); step.start() } }
   }
   function find(o,n) {
