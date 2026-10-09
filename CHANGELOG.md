@@ -13,6 +13,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - Notification text drops `<`, `>` and `&`, so an engine log line can never be read as markup.
 
 ### Changed
+- Recipes from the registry at 1c0b68d0: GLM-5.3-Flash's fast all-RAM mode on an RTX 3090 runs the v4.4 image (a CPU-tier crash fix), accepted by the lab on all six checks at 28.6 tok/s.
 - A stale NVIDIA device list says to choose Set up Local AI, which regenerates it, instead of naming a root command.
 
 ## [6.12.5] - 2026-10-08
