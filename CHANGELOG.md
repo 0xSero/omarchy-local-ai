@@ -2,6 +2,19 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.12.6] - 2026-10-09
+
+### Security
+- A model card shows no image of any kind. Reference (`![a][r]`), collapsed, shortcut and nested-bracket images became plain links, which load nothing until clicked; before, the full-screen view could fetch a card's image URL, on the internet or the local network, by itself. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#10562).
+- The Hugging Face token reaches curl through a pipe for every request (model cards, file lists, weights): it is never in an argv and no longer kept in a header file, which is removed if an older version left one.
+- A registry refresh brings new recipes, never new code: a catalog that changes the gateway image is refused, and a recipe whose engine image comes from a repository this version's own recipes never use is left out until a plugin update.
+- A recipe's name is written into the omp config as a quoted YAML string.
+- Downloads are capped: a weight file at its listed size, a Hub file list at 10 MB.
+- Notification text drops `<`, `>` and `&`, so an engine log line can never be read as markup.
+
+### Changed
+- A stale NVIDIA device list says to choose Set up Local AI, which regenerates it, instead of naming a root command.
+
 ## [6.12.5] - 2026-10-08
 
 ### Security

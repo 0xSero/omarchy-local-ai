@@ -56,7 +56,20 @@ docker() {
   case ${1:-} in pull|wait) t=7200 ;; run) t=120 ;; logs) [[ ${2:-} != --follow ]] || t=7200 ;; esac
   timeout --foreground --kill-after=5 "$t" docker "$@"
 }
-notify() { omarchy-notification-send --app-name "Local AI" "$@" 2>/dev/null || echo 0; }
+# notify: a desktop notification; its text can carry engine log lines, so <, > and & are dropped and no notification
+# server can read them as markup
+notify() {
+  local a=() x
+  for x in "$@"; do a+=("${x//[<>&]/}"); done
+  omarchy-notification-send --app-name "Local AI" "${a[@]}" 2>/dev/null || echo 0
+}
+# hf_curl: curl with the Hugging Face token, when there is one, as a header read from a pipe: never in an argv, never
+# left on disk. In a subshell (a pipeline, or started with &) it becomes curl, so $! is curl's pid and a cancel stops it.
+hf_curl() {
+  local t=$HOME_DIR/.cache/huggingface/token e=
+  ((BASHPID == $$)) || e=exec
+  if [[ -s $t ]]; then $e curl -H @<(printf 'Authorization: Bearer %s\n' "$(<"$t")") "$@"; else $e curl "$@"; fi
+}
 valid_id() { [[ $1 =~ ^[a-z0-9][a-z0-9.-]{0,63}$ ]]; }
 valid_key() { [[ $1 =~ ^(nvidia|intel-xpu|amd-rocm):[0-9]{1,2}$ || $1 == cpu:0 ]]; }
 dir_of() { printf '%s/deploy/%s' "$STATE" "$1"; }
@@ -137,6 +150,14 @@ cmd_registry() (
   jq -e '.schemaVersion == "omarchy-local-ai/recipes/3" and (.hardware | type == "object" and length > 0)
     and all(.hardware[]; (.recipes | type == "array" and length > 0))
     and all(.hardware[].recipes[]; .id | test("^[a-z0-9][a-z0-9.-]{0,63}$"))' "$tmp" >/dev/null || die "invalid registry catalog"
+  # A refresh brings new recipes, never new code: the gateway must be the one this plugin version ships, and a recipe
+  # whose engine image comes from a repository this version's own recipes never use is left out until a plugin update
+  jq -e --slurpfile own "$RECIPES" '.gateway.image == $own[0].gateway.image' "$tmp" >/dev/null ||
+    die "the registry changed the gateway; update the plugin to get it"
+  r=$(jq --slurpfile own "$RECIPES" '([$own[0].hardware[].recipes[].image | sub("@.*$"; "")] | unique) as $known
+    | .hardware |= (map_values(.recipes |= map(select((.image | sub("@.*$"; "")) as $i | any($known[]; . == $i))))
+      | with_entries(select(.value.recipes | length > 0)))' "$tmp") || die "invalid registry catalog"
+  printf '%s\n' "$r" >"$tmp"
   while IFS= read -r r; do
     [[ $(policy "$r" "$tmp") == "ok" ]] || die "registry recipe refused: $(policy "$r" "$tmp")"
   done < <(jq -c '.hardware[].recipes[]' "$tmp")
@@ -330,7 +351,7 @@ tree() {
   local repo=$1 rev=$2 files=$3 f="$STATE/trees/${1//\//--}@$2"
   mkdir -p "$STATE/trees"
   if [[ ! -s $f ]]; then
-    timeout 60 curl -fsSL --retry 3 --retry-delay 5 --proto =https ${HF[@]+"${HF[@]}"} \
+    hf_curl -fsSL --max-time 60 --max-filesize 10485760 --retry 3 --retry-delay 5 --proto =https \
       "https://huggingface.co/api/models/$repo/tree/$rev?recursive=1" |
       jq -r '.[] | select(.type == "file") | [.path, .size, (.lfs.oid // "-")] | @tsv' >"$f.tmp" || {
       rm -f "$f.tmp"
@@ -383,7 +404,7 @@ fetch() {
       if good "$src" "$sz" "$sha"; then
         ln -f "$(readlink -f "$src")" "$d/$path" 2>/dev/null || cp -f "$(readlink -f "$src")" "$d/$path"
       else
-        curl -fsSL --connect-timeout 15 --max-time 7200 --speed-limit 1024 --speed-time 60 --retry 3 -C - --proto =https ${HF[@]+"${HF[@]}"} -o "$d/$path.part" \
+        hf_curl -fsSL --connect-timeout 15 --max-time 7200 --speed-limit 1024 --speed-time 60 --retry 3 -C - --proto =https --max-filesize "$sz" -o "$d/$path.part" \
           "https://huggingface.co/$repo/resolve/$rev/$path" &
         pid=$!
         while kill -0 "$pid" 2>/dev/null; do
@@ -610,7 +631,7 @@ phase_start() (
   fi
   if [[ $backend == "nvidia" ]] && v=$(cdi_stale) && [[ -n $v ]]; then
     say "stale NVIDIA device list ${v%%$'\t'*} (${v#*$'\t'}); regenerate it as root: nvidia-ctk cdi generate --output=${v%%$'\t'*}"
-    die "the NVIDIA device list is out of date (${v#*$'\t'}): run sudo nvidia-ctk cdi generate --output=${v%%$'\t'*}"
+    die "the NVIDIA device list is out of date (${v#*$'\t'}): choose Set up Local AI to regenerate it"
   fi
   owned "$KEY"
   owned "$STATE/usage/$id"
@@ -769,11 +790,7 @@ worker_run() {
     status "$WID" error "" 0 "$WHY"; notify -r "$NID" -u critical "$WNAME did not start" "$WHY" >/dev/null; fi' EXIT
   exec 2>>"$WD/err"
 
-  HF=()
-  if [[ -s $HOME_DIR/.cache/huggingface/token ]]; then
-    printf 'Authorization: Bearer %s\n' "$(<"$HOME_DIR/.cache/huggingface/token")" >"$STATE/hf.header"
-    HF=(-H "@$STATE/hf.header")
-  fi
+  rm -f "$STATE/hf.header" # a token file an older version kept
   status "$WID" download "checking the files" 0
   while IFS= read -r w; do
     fetch "$WID" "$w"
@@ -1007,20 +1024,14 @@ cmd_set() {
 # kept once fetched. Full screen shows it.
 cmd_card() {
   valid_id "${1:-}" || die "card <recipe>"
-  local r repo rev f h=()
+  local r repo rev f
   r=$(recipe "$1") || die "no recipe $1"
   IFS=$'\t' read -r repo rev < <(jq -r '.weights[0] | [.repository, .revision] | @tsv' <<<"$r") || die "no weights"
   [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && $rev =~ ^[0-9a-f]{40}$ ]] || die "invalid weights"
   f=$STATE/cards/${repo//\//--}@$rev.md
   if [[ ! -s $f ]]; then
     mkdir -p "$STATE/cards"
-    # The token goes to curl as a 0600 header file, never in its argv: another local account can read a process's
-    # arguments from /proc/<pid>/cmdline while it runs.
-    if [[ -s $HOME_DIR/.cache/huggingface/token ]]; then
-      printf 'Authorization: Bearer %s\n' "$(<"$HOME_DIR/.cache/huggingface/token")" >"$STATE/hf.header"
-      h=(-H "@$STATE/hf.header")
-    fi
-    curl -fsSL --proto '=https' --connect-timeout 10 --max-time 20 --max-filesize 1048576 ${h[@]+"${h[@]}"} \
+    hf_curl -fsSL --proto '=https' --connect-timeout 10 --max-time 20 --max-filesize 1048576 \
       "https://huggingface.co/$repo/raw/$rev/README.md" >"$f.$$" || { rm -f "$f.$$"; die "could not fetch the model card"; }
     mv -f "$f.$$" "$f"
   fi
@@ -1058,11 +1069,7 @@ download_run() {
   r=$(recipe "$id") || die "no recipe $id"
   trap 'rc=$?; if ((rc)) && [[ ! -f $(dir_of "$id")/cancel ]]; then status "$id" error "" 0 "$(grep "^local-ai: " "$(dir_of "$id")/err" 2>/dev/null | tail -1 | cut -c11- || true)"; fi' EXIT
   exec 2>>"$(dir_of "$id")/err"
-  HF=()
-  if [[ -s $HOME_DIR/.cache/huggingface/token ]]; then
-    printf 'Authorization: Bearer %s\n' "$(<"$HOME_DIR/.cache/huggingface/token")" >"$STATE/hf.header"
-    HF=(-H "@$STATE/hf.header")
-  fi
+  rm -f "$STATE/hf.header" # a token file an older version kept
   status "$id" download "checking the files" 0
   while IFS= read -r w; do
     fetch "$id" "$w"
@@ -1212,7 +1219,7 @@ argv() {
           cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}, compat: {supportsDeveloperRole: false}}]}}}' >"$ag/models.json"
     if [[ $a == "omp" ]]; then
       cp -f "$ag/models.json" "$ag/models.yml"
-      printf 'modelRoles:\n  default: omarchy-local/%s\nsetupVersion: 2\n' "$m" >"$ag/config.yml"
+      printf 'modelRoles:\n  default: %s\nsetupVersion: 2\n' "$(jq -nr --arg m "omarchy-local/$m" '$m | tojson')" >"$ag/config.yml"
     fi
     # omp is a fork of pi and reads either variable. SGLang and vLLM take a system message, not "developer",
     # and Qwen3.8's template takes low, medium or xhigh reasoning effort.

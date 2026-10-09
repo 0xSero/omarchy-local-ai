@@ -279,7 +279,7 @@ fi
 cdi 237
 "$CLI" run "$ID" nvidia:0
 wait_for error
-[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date (/dev/null has moved): run sudo nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" ]] ||
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date (/dev/null has moved): choose Set up Local AI to regenerate it" ]] ||
   fail "stale CDI reason" "$(cat "$STATE/deploy/$ID/status.json")"
 ! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-%s-engine' "$(id -u)" "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
 cdi 1
@@ -290,7 +290,7 @@ pass "a stale NVIDIA CDI spec stops before the engine, with the repair command i
 printf 'devices:\n  - name: GPU-x\n    containerEdits:\n      deviceNodes:\n        - path: /dev/null\n          major: 1\n          minor: 3\n  - name: all\n    containerEdits:\n      deviceNodes:\n        - path: /dev/nvidia-gone-%s\n          major: 195\n          minor: 1\n' "$$" >"$CDI_DIRS/nvidia.yaml"
 "$CLI" run "$ID" nvidia:0
 wait_for error
-[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date (/dev/nvidia-gone-$$ is gone): run sudo nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" ]] ||
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date (/dev/nvidia-gone-$$ is gone): choose Set up Local AI to regenerate it" ]] ||
   fail "removed card in CDI spec" "$(cat "$STATE/deploy/$ID/status.json")"
 pass "a CDI spec listing a removed card stops the start, saying which device is gone and how to regenerate it"
 "$CLI" stop "$ID"
@@ -670,16 +670,16 @@ kill "$other" "$ours" 2>/dev/null || true
 cp "$TMP/ready.json" "$STATE/deploy/$ID/status.json"
 pass "a load cut by a restart says so, a pid that is not ours reads as stopped, and a live worker keeps loading"
 
-# The model card fetch sends a Hugging Face token from a 0600 header file, never in curl's argv
+# The model card fetch reads a Hugging Face token from a pipe: never in curl's argv, never left in a file
 mkdir -p "$HOME/.cache/huggingface"
 hf=hf_card${RANDOM}x${RANDOM}
 printf %s "$hf" >"$HOME/.cache/huggingface/token"
 [[ $("$CLI" card "$ID") == "# Test Model card" ]] || fail "card" "$(tail -1 "$SHIM/curl.log")"
 ! grep -q "$hf" "$SHIM/curl.log" || fail "hf token leaked" "the Hugging Face token appears in curl's argv"
-grep -q -- "-H @$STATE/hf.header" "$SHIM/curl.log" || fail "card header" "$(tail -1 "$SHIM/curl.log")"
-[[ $(stat -c %a "$STATE/hf.header") == 600 ]] || fail "hf header mode" "$(stat -c %a "$STATE/hf.header")"
+tail -1 "$SHIM/curl.log" | grep -q -- "-H @/dev/fd/" || fail "card header" "$(tail -1 "$SHIM/curl.log")"
+! grep -rqs "$hf" "$STATE" || fail "hf token on disk" "$(grep -rls "$hf" "$STATE")"
 rm -f "$HOME/.cache/huggingface/token"
-pass "the model card fetch keeps the Hugging Face token in a 0600 header file, out of curl's argv"
+pass "the model card fetch reads the Hugging Face token from a pipe, never from curl's argv or a file"
 
 "$CLI" stop "$ID"
 "$TMP/plugin/bin/omarchy-remove-ai-local"
