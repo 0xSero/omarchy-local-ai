@@ -112,7 +112,7 @@ case $url in
 *raw.githubusercontent.com/*/recipes.json) cat "$SHIM/registry.json" ;;
 */api/models/*) printf "[{\"type\":\"file\",\"path\":\"model.safetensors\",\"size\":4096,\"lfs\":{\"oid\":\"%s\"}}]" '"$SHA"' ;;
 */resolve/*) if [[ -n ${SHIM_CORRUPT:-} ]]; then head -c 4096 /dev/urandom >"$out"; else head -c 4096 /dev/zero >"$out"; fi ;;
-*/raw/*/README.md) printf "# Test Model card\n" ;;
+*/raw/*/README.md) if [[ -n ${SHIM_CARD_IMAGES:-} ]]; then cat "$SHIM/card.md"; else printf "# Test Model card\n"; fi ;;
 http://127.0.0.1:*)
   [[ -z ${SHIM_STOPPED:-} ]] || exit 7
   ls "$SHIM/containers" | grep -q gateway || exit 7
@@ -643,6 +643,18 @@ grep -q "^serve --https=12434 off" "$SHIM/tailscale.log" || fail "unshare" "$(ca
 cp "$TMP/plugin/recipes.json" "$SHIM/registry.json"
 "$CLI" registry
 jq -e '.registryCommit == "0000000000000000000000000000000000000001"' "$TMP/catalog.json" >/dev/null || fail "refresh" "$(head -c 300 "$TMP/catalog.json" 2>/dev/null)"
+# A refresh brings new recipes, never new code: a new gateway is refused and the last catalog kept, and a recipe whose
+# engine image this version's own recipes never use is left out while the rest arrive
+before=$(sha256sum "$TMP/catalog.json")
+jq '.gateway.image = ("ghcr.io/x/gateway@sha256:" + ("c" * 64))' "$TMP/plugin/recipes.json" >"$SHIM/registry.json"
+! "$CLI" registry 2>"$TMP/registry.err" || fail "new gateway" "a refresh accepted a different gateway image"
+[[ $(sha256sum "$TMP/catalog.json") == "$before" ]] || fail "new gateway" "the catalog changed"
+jq '.hardware[].recipes += [.hardware[].recipes[0] | .id = "stranger" | .image = ("ghcr.io/stranger/engine@sha256:" + ("d" * 64))]' \
+  "$TMP/plugin/recipes.json" >"$SHIM/registry.json"
+"$CLI" registry >/dev/null
+jq -e --arg id "$ID" '[.hardware[].recipes[].id] == [$id]' "$TMP/catalog.json" >/dev/null ||
+  fail "unknown engine image" "$(jq -c '[.hardware[].recipes[] | {id, image}]' "$TMP/catalog.json")"
+pass "a registry refresh refuses a new gateway and leaves out a recipe whose engine image this version never uses"
 "$CLI" stop "$ID"
 # an engine that fails leaves its last lines in the log and its first error in the message, though its container is gone
 SHIM_ENGINE_LOG=1 SHIM_EMPTY=1 "$CLI" run "$ID" nvidia:0
@@ -680,6 +692,18 @@ tail -1 "$SHIM/curl.log" | grep -q -- "-H @/dev/fd/" || fail "card header" "$(ta
 ! grep -rqs "$hf" "$STATE" || fail "hf token on disk" "$(grep -rls "$hf" "$STATE")"
 rm -f "$HOME/.cache/huggingface/token"
 pass "the model card fetch reads the Hugging Face token from a pipe, never from curl's argv or a file"
+# A card as the Hub serves it reaches the panel with no image of any form: Text.MarkdownText would load one by itself
+if command -v node >/dev/null; then
+  rm -rf "$STATE/cards"
+  printf '%s\n\n' 'inline ![a](http://10.0.0.1/a.png)' 'nested ![a [b]](http://10.0.0.1/n.png)' 'reference ![a][r]' \
+    'collapsed ![r][]' 'shortcut ![r]' 'html <img src="http://10.0.0.1/h.png">' '[r]: http://10.0.0.1/ref.png' >"$SHIM/card.md"
+  SHIM_CARD_IMAGES=1 "$CLI" card "$ID" >"$TMP/card.md"
+  out=$(CARD=$TMP/card.md js 'c.cardText(fs.readFileSync(process.env.CARD, "utf8"))')
+  [[ $out != *'!['* && $out != *'<img'* && $out == *'[a][r]'* && $out == *'[r]: http://10.0.0.1/ref.png'* ]] || fail "card images" "$out"
+  pass "a model card fetched from the Hub reaches the panel with no image of any form, only links that need a click"
+else
+  echo "ok - a model card reaches the panel with no image # SKIP node is not installed"
+fi
 
 "$CLI" stop "$ID"
 "$TMP/plugin/bin/omarchy-remove-ai-local"
