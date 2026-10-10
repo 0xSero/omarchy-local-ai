@@ -207,18 +207,24 @@ nvidia() {
   grep -E '^[0-9]+, ' <<<"$out" || true
 }
 
-# Arc Pro B70 by PCI id. The xe driver gives users its temperature but not its memory use.
+# Intel GPUs the recipes know, by PCI id. The xe driver gives users its temperature but not its memory use.
+# The Arc B390 is a Panther Lake iGPU: its memory is host RAM, so it reports none (its card is unifiedMemory).
 intel() {
-  local a t f rows=()
-  for a in $(lspci -Dn -d 8086:e223 2>/dev/null | cut -d' ' -f1 | sort -u); do
+  local a d t f product mib rows=()
+  while read -r a d; do
+    case ${d#*:} in
+      e223) product="Intel Arc Pro B70" mib=32768 ;;
+      b080) product="Intel Arc B390" mib=0 ;;
+      *) continue ;;
+    esac
     [[ -e /dev/dri/by-path/pci-$a-render ]] || continue
     t=null
     f=$(grep -lx pkg /sys/bus/pci/devices/"$a"/hwmon/hwmon*/temp*_label 2>/dev/null | head -1 || true)
     [[ -n $f ]] && t=$(($(<"${f%_label}_input") / 1000))
-    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")")
-  done
-  # temperature and render node, one card a line
-  ((${#rows[@]} == 0)) || printf '%s\t%s\n' "${rows[@]}"
+    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")" "$product" "$mib")
+  done < <(lspci -Dn -d 8086: 2>/dev/null | awk '{print $1, $3}' | sort -u)
+  # temperature, render node, product and memory, one card a line
+  ((${#rows[@]} == 0)) || printf '%s\t%s\t%s\t%s\n' "${rows[@]}"
 }
 
 # amd-smi comes with ROCm; without it AMD cards are not listed.
@@ -251,7 +257,7 @@ cpu() {
 MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | split(", ") | {backend: "nvidia", index: (.[0] | tonumber),
       product: .[1], totalMiB: (.[2] | tonumber), usedMiB: (.[3] | tonumber? // null), tempC: (.[4] | tonumber? // null)}))
     + ($xe | split("\n") | map(select(length > 0) | split("\t")) | to_entries | map({backend: "intel-xpu", index: .key,
-      product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1]}))
+      product: (.value[2] // "Intel Arc Pro B70"), totalMiB: (.value[3] // "32768" | tonumber), usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1]}))
     + $am;
   def norm: ascii_downcase | gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]"; "");
   def match($r; $ram): [.[] | . as $x
