@@ -1,54 +1,68 @@
 {
-  "updated": "2026-10-10",
+  "updated": "2026-10-11",
   "installs": {
-    "installs": 0,
-    "today": 0,
+    "installs": 41,
+    "today": 40,
     "week": {
-      "versions": {},
-      "hardware": {}
+      "versions": {
+        "6.13.0": 41
+      },
+      "hardware": {
+        "x86-64-avx2-cpu": 40,
+        "rtx-3060-12gb": 4,
+        "rtx-4070-12gb": 2,
+        "rtx-3070-8gb": 1,
+        "rtx-5090-32gb": 1,
+        "rtx-5070-ti-16gb": 1,
+        "rtx-3090-24gb": 1,
+        "intel-arc-b580-12gb": 1,
+        "none": 1,
+        "rtx-5080-16gb": 1,
+        "rtx-3070-ti-8gb": 1
+      }
     },
-    "month": 0,
-    "monthRunning": 0
+    "month": 41,
+    "monthRunning": 3
   },
   "marketplace": {
-    "views": 6779,
+    "views": 6873,
     "copies": 0,
     "hearts": 73
   },
   "repo": {
-    "stars": 124,
+    "stars": 130,
     "forks": 24,
     "watchers": 1,
-    "open_issues": 7,
-    "size_kb": 38821
+    "open_issues": 8,
+    "size_kb": 38932
   },
   "clones": {
-    "days": 42,
+    "days": 43,
     "first": "2026-08-29",
-    "last": "2026-10-09",
-    "total": 4956,
+    "last": "2026-10-10",
+    "total": 5092,
     "peak_day": "2026-09-24",
     "peak": 569,
-    "daily_uniques_sum": 2144,
-    "uniques_14d": 807
+    "daily_uniques_sum": 2225,
+    "uniques_14d": 838
   },
   "views": {
-    "days": 42,
+    "days": 43,
     "first": "2026-08-29",
-    "last": "2026-10-09",
-    "total": 2597,
+    "last": "2026-10-10",
+    "total": 2648,
     "peak_day": "2026-09-24",
     "peak": 354,
-    "daily_uniques_sum": 1388,
-    "uniques_14d": 459
+    "daily_uniques_sum": 1423,
+    "uniques_14d": 453
   },
   "stars": {
-    "days": 21,
+    "days": 22,
     "first": "2026-09-20",
-    "last": "2026-10-10",
+    "last": "2026-10-11",
     "first_count": 24,
-    "last_count": 124,
-    "gained": 100
+    "last_count": 130,
+    "gained": 106
   },
   "downloads": {
     "total": 31,
@@ -854,14 +868,14 @@
     ]
   },
   "interactions": {
-    "day": "2026-10-10",
-    "stars": 124,
+    "day": "2026-10-11",
+    "stars": 130,
     "forks": 24,
     "watchers": 1,
     "issues": {
-      "open": 3,
+      "open": 4,
       "closed": 4,
-      "total": 7
+      "total": 8
     },
     "pull_requests": {
       "open": 4,
@@ -876,23 +890,23 @@
   "referrers": [
     {
       "referrer": "github.com",
-      "count": 164,
-      "uniques": 122
+      "count": 159,
+      "uniques": 118
     },
     {
       "referrer": "Google",
-      "count": 73,
-      "uniques": 45
-    },
-    {
-      "referrer": "t.co",
-      "count": 51,
-      "uniques": 34
+      "count": 65,
+      "uniques": 44
     },
     {
       "referrer": "local.sybilsolutions.ai",
       "count": 50,
-      "uniques": 32
+      "uniques": 33
+    },
+    {
+      "referrer": "t.co",
+      "count": 31,
+      "uniques": 22
     },
     {
       "referrer": "search.brave.com",
@@ -929,14 +943,14 @@
     {
       "path": "/0xSero/omarchy-local-ai",
       "title": "Overview",
-      "count": 521,
-      "uniques": 348
+      "count": 468,
+      "uniques": 319
     },
     {
       "path": "/sybil-solutions/omarchy-local-ai",
       "title": "Overview",
-      "count": 116,
-      "uniques": 94
+      "count": 149,
+      "uniques": 119
     },
     {
       "path": "/0xSero/omarchy-local-ai/pulls",
@@ -947,26 +961,14 @@
     {
       "path": "/0xSero/omarchy-local-ai/issues",
       "title": "/issues",
-      "count": 32,
-      "uniques": 21
+      "count": 30,
+      "uniques": 19
     },
     {
       "path": "/0xSero/omarchy-local-ai/pull/22",
       "title": "/pull/22",
       "count": 30,
       "uniques": 6
-    },
-    {
-      "path": "/0xSero/omarchy-local-ai/blob/main/preview.png",
-      "title": "/blob/main/preview.png",
-      "count": 13,
-      "uniques": 13
-    },
-    {
-      "path": "/0xSero/omarchy-local-ai/tree/main",
-      "title": "/tree/main",
-      "count": 13,
-      "uniques": 7
     },
     {
       "path": "/0xSero/omarchy-local-ai/releases",
@@ -977,14 +979,26 @@
     {
       "path": "/0xSero/omarchy-local-ai/commits/main",
       "title": "/commits/main",
-      "count": 13,
+      "count": 12,
       "uniques": 5
+    },
+    {
+      "path": "/0xSero/omarchy-local-ai/blob/main/preview.png",
+      "title": "/blob/main/preview.png",
+      "count": 11,
+      "uniques": 11
     },
     {
       "path": "/0xSero/omarchy-local-ai/issues/12",
       "title": "/issues/12",
       "count": 11,
       "uniques": 9
+    },
+    {
+      "path": "/sybil-solutions/omarchy-local-ai/issues",
+      "title": "/issues",
+      "count": 11,
+      "uniques": 6
     }
   ]
 }
