@@ -428,6 +428,29 @@ cp "$TMP/recipes.keep" "$TMP/plugin/recipes.json"
 cp "$TMP/config.keep" "$STATE/deploy/$ID/config.json"
 pass "open keeps working when the registry renames or drops a running model's recipe, with the engine's own context"
 
+# an engine whose cache holds less than its context (SGLang on a card with less free memory than the recipe's):
+# the start records the cache, and Open tells the agent that, less room for a full reply, so the agent compacts
+# before the engine runs out; a model started before the start recorded it reads it from the engine at Open
+window() { jq '.providers["omarchy-local"].models[0].contextWindow' "$STATE/agents/pi/models.json"; }
+kvlog() { printf 'max_total_num_tokens=%s, chunked_prefill_size=1024, context_len=131072\n' "$1" >"$TMP/kv.log"; }
+kvlog 100000
+"$CLI" stop "$ID"
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" run "$ID" nvidia:0
+wait_for ready
+[[ $(jq .serve.kv "$STATE/deploy/$ID/config.json") == 100000 ]] || fail "start records the cache" "$(cat "$STATE/deploy/$ID/config.json")"
+"$CLI" open "$ID"
+[[ $(window) == 75424 ]] || fail "open tells the agent the cache" "$(window)"
+grep -q "open pi on $ID in .* with 75424 tokens of context" "$STATE/log" || fail "open logs the context" "$(tail -1 "$STATE/log")"
+jq -c 'del(.serve.kv)' "$STATE/deploy/$ID/config.json" >"$TMP/c" && mv "$TMP/c" "$STATE/deploy/$ID/config.json"
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" open "$ID"
+[[ $(window) == 75424 ]] || fail "open reads the cache from the engine" "$(window)"
+kvlog 500000
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" open "$ID"
+[[ $(window) == 131072 ]] || fail "a cache larger than the context leaves the context" "$(window)"
+"$CLI" open "$ID"
+[[ $(window) == 131072 ]] || fail "an engine that does not say leaves the context" "$(window)"
+pass "open keeps the agent's conversations inside the engine's cache when it holds less than the context"
+
 # All supported agent adapters stay in private config or keyed environments: the gateway key reaches neither the
 # terminal's argv nor a helper's, and the keyed environments are the only place it is handed over at all.
 for agent in pi claude codex opencode omp crush grok copilot hermes; do
