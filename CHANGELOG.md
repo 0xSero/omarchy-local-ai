@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.2] - 2026-10-11
+
+### Security
+- The gateway (`org-v3`, registry at 8cc34398) closes the connection after any answer given without the key (`/health` as well as a refusal) and keeps the request deadline running until the key is checked. Every write to a client has a 30-second deadline. Before, `/health` kept its connection alive and nothing bounded a write, so another local account could pipeline health requests, leave the answers unread and hold every connection slot. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#10562).
+
 ## [6.13.1] - 2026-10-11
 
 ### Security
