@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.1] - 2026-10-11
+
+### Security
+- The gateway (`org-v2`, registry at ae3eba29) cuts any request whose headers and body haven't arrived within 10 seconds, idle keep-alive included, and serves at most 64 connections at once. Before, it started a thread per connection with neither limit before checking the key, so another local account could hold incomplete requests open without the key and use up its threads and sockets, blocking real requests. A refused request also closes its connection. A running model gets the new gateway when it is stopped and started again. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#10562).
+
 ## [6.13.0] - 2026-10-10
 
 ### Added
