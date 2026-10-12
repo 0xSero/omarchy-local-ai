@@ -3,6 +3,8 @@
 // `id` is random, made by the plugin on first run. Only those four fields and the UTC day are stored: no IP address,
 // no user agent, no headers. The caller's address is used only by the in-memory rate limit, never written.
 //   GET /v1/local-ai/stats  aggregate counts, public
+//   GET /                   the dashboard (src/page.html), which reads the stats above and the plugin's GitHub traffic
+import PAGE from "./page.html";
 const ID = /^[0-9a-f]{32}$/;
 const VERSION = /^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$/;
 const HW = /^[a-z0-9][a-z0-9-]{0,47}$/;
@@ -100,6 +102,9 @@ export default {
       const response = json(await stats(env), 200, { "cache-control": "public, max-age=300" });
       ctx.waitUntil(cache.put(key, response.clone()));
       return response;
+    }
+    if (pathname === "/" && request.method === "GET") {
+      return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300" } });
     }
     return json({ error: "not found" }, 404);
   },

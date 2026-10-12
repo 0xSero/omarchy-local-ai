@@ -30,6 +30,9 @@ Turn it off with `omarchy-local-ai set ping off`, or `DO_NOT_TRACK=1` in the env
 
 ## Reading it
 
+The dashboard is at `https://usage.sybilsolutions.ai/` (`src/page.html`): it reads the stats below and the `stats` branch's traffic files in the browser.
+
+
 `GET https://usage.sybilsolutions.ai/v1/local-ai/stats` (public, cached 5 minutes):
 
 - `installs`: `installs` ever seen, active `today`, this `week` (7 days), this `month` (30 days), and `monthRunning` (ran a model in the last 30 days).

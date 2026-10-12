@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage · Sybil AI</title>
+<meta name="description" content="How many people run the Local AI plugin, on what, and how it is growing. Counted from an anonymous ping and GitHub's own numbers.">
+<style>
+/* The Sybil AI brand: charcoal, hairlines, mono for numbers, sans for sentences, dots for every chart, crimson for today. */
+:root { --bg: #161616; --panel: #1c1c1c; --line: #2e2e2e; --text: #ecEAE6; --dim: #8c8a86; --faint: #5e5c59; --shade: #6a6865; --crimson: #dc143c;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; --sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 var(--mono); -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; } a:hover { color: #fff; }
+.nav { display: flex; align-items: center; gap: 24px; padding: 22px 48px; }
+.word { font-size: 19px; font-weight: 500; letter-spacing: -0.02em; }
+.nav nav { margin-left: auto; display: flex; gap: 28px; font-size: 13px; color: var(--dim); }
+main { max-width: 1280px; margin: 0 auto; padding: 0 48px; }
+h1 { font-size: clamp(30px, 4vw, 44px); font-weight: 500; letter-spacing: -0.04em; line-height: 1.05; margin: 56px 0 0; }
+.sub { font-family: var(--sans); font-size: 16px; color: var(--dim); margin: 14px 0 0; max-width: 60ch; }
+.label { display: block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+section { margin-top: 64px; }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin-top: 40px; }
+.tile { background: var(--bg); padding: 20px 22px; }
+.tile b { display: block; font-size: 34px; font-weight: 500; letter-spacing: -0.03em; line-height: 1.1; }
+.tile span { font-family: var(--sans); font-size: 13px; color: var(--dim); }
+.tile.hot b { color: var(--crimson); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; }
+.chart { position: relative; }
+.chart h3 { font-size: 13px; font-weight: 500; margin: 0 0 4px; }
+.chart p { font-family: var(--sans); font-size: 12px; color: var(--dim); margin: 0 0 14px; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--faint); margin-top: 6px; }
+.col:hover circle.on { fill: #fff; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font-size: 12px; white-space: nowrap; opacity: 0; transform: translate(-50%, -100%); }
+.tip b { font-weight: 500; }
+.bars { display: grid; grid-template-columns: minmax(120px, auto) 1fr auto; gap: 8px 16px; align-items: center; font-size: 13px; }
+.bars .n { color: var(--dim); text-align: right; }
+.bars svg { height: 10px; width: 100%; }
+.note { font-family: var(--sans); font-size: 12px; color: var(--faint); margin-top: 14px; }
+.foot { margin-top: 96px; padding: 28px 48px 40px; border-top: 1px solid var(--line); font-size: 13px; color: var(--dim); display: flex; gap: 24px; flex-wrap: wrap; }
+.foot span { margin-right: auto; }
+.err { color: var(--crimson); font-size: 13px; }
+@media (max-width: 860px) {
+  .nav, main { padding-left: 16px; padding-right: 16px; } .nav nav { gap: 16px; }
+  .tiles { grid-template-columns: 1fr 1fr; } .two { grid-template-columns: 1fr; gap: 48px; }
+  .foot { padding: 24px 16px 32px; }
+}
+</style>
+</head>
+<body>
+<header class="nav"><a class="word" href="https://local.sybilsolutions.ai/">Sybil AI</a>
+  <nav><a href="https://local.sybilsolutions.ai/models/">Models</a><a href="https://local.sybilsolutions.ai/hardware/">Hardware</a><a href="https://github.com/sybil-solutions/omarchy-local-ai">Plugin</a></nav></header>
+<main>
+  <h1>Usage</h1>
+  <p class="sub">Who runs the Local AI plugin, on what, and how fast it grows. Live.</p>
+  <div class="tiles" id="tiles"></div>
+
+  <section><span class="label">Installs</span>
+    <div class="two">
+      <div class="chart" id="active"></div>
+      <div class="chart" id="new"></div>
+    </div>
+  </section>
+
+  <section><span class="label">This week</span>
+    <div class="two">
+      <div class="chart"><h3>GPUs</h3><p>Installs active in the last 7 days, by the card Local AI found</p><div class="bars" id="gpus"></div><div class="note" id="cpu"></div></div>
+      <div class="chart"><h3>Versions</h3><p>The version each of those installs runs</p><div class="bars" id="versions"></div></div>
+    </div>
+  </section>
+
+  <section><span class="label">GitHub and the marketplace</span>
+    <div class="tiles" id="gh" style="margin-top:0"></div>
+    <div class="two" style="margin-top:40px">
+      <div class="chart" id="stars"></div>
+      <div class="chart" id="clones"></div>
+    </div>
+  </section>
+
+  <section><span class="label">How it is counted</span>
+    <p class="sub" style="margin:0">Every 12 hours the plugin sends a random install id, its version, the cards it found and how many models run. No address or user agent is stored. Turn it off with <code>omarchy-local-ai set ping off</code>. Counting began with 6.13.0 on 10 Oct 2026, so older installs that have not updated are not here. GitHub numbers are recorded daily by the plugin's <a href="https://github.com/sybil-solutions/omarchy-local-ai/tree/stats/traffic" style="text-decoration:underline">traffic workflow</a>.</p>
+  </section>
+</main>
+<footer class="foot"><span id="updated">Loading…</span><a href="/v1/local-ai/stats">JSON</a><a href="https://github.com/sybil-solutions/omarchy-local-ai/tree/main/usage">Source</a></footer>
+
+<script>
+const RAW = "https://raw.githubusercontent.com/sybil-solutions/omarchy-local-ai/stats/traffic/";
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => (n ?? 0).toLocaleString("en-US");
+const short = (d) => new Date(d + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : Promise.reject(new Error(u + " " + r.status))));
+
+function tiles(el, items) {
+  el.innerHTML = items.map(([n, l, hot]) => `<div class="tile${hot ? " hot" : ""}"><b>${fmt(n)}</b><span>${l}</span></div>`).join("");
+}
+
+// One column of dots per day, at least 30 days wide. A dot is worth `per`; a remainder shows as a small shading dot on
+// top; the last day is crimson. Days before the series begins are left blank, not drawn as zero.
+function columns(el, title, sub, series, value, tip) {
+  const pad = Math.max(0, 30 - series.length), first = new Date(series[0].day + "T00:00:00Z").getTime();
+  const days = [...Array.from({ length: pad }, (_, i) => ({ day: new Date(first - (pad - i) * 864e5).toISOString().slice(0, 10), blank: true })), ...series];
+  const rows = 12, max = Math.max(1, ...series.map(value)), per = Math.max(1, Math.ceil(max / rows));
+  const W = 10, H = 10, w = days.length * W, h = rows * H;
+  let svg = "";
+  days.forEach((d, i) => {
+    if (d.blank) return;
+    const v = value(d), full = Math.floor(v / per), part = v % per;
+    const last = i === days.length - 1, cx = i * W + W / 2;
+    let dots = `<rect x="${i * W}" y="0" width="${W}" height="${h}" fill="transparent"/>`;
+    for (let k = 0; k < rows; k++) {
+      const cy = h - k * H - H / 2;
+      if (k < full) dots += `<circle class="on" cx="${cx}" cy="${cy}" r="3.4" fill="${last ? "var(--crimson)" : "var(--text)"}"/>`;
+      else if (k === full && part) dots += `<circle cx="${cx}" cy="${cy}" r="1.9" fill="var(--shade)"/>`;
+      else dots += `<circle cx="${cx}" cy="${cy}" r="1" fill="var(--line)"/>`;
+    }
+    svg += `<g class="col" data-i="${i}">${dots}</g>`;
+  });
+  el.innerHTML = `<h3>${title}</h3><p>${sub} · one dot = ${fmt(per)}</p>
+    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${title}">${svg}</svg>
+    <div class="axis"><span>${pad ? "counting began " + short(series[0].day) : short(days[0].day)}</span><span>${short(days[days.length - 1].day)}</span></div><div class="tip"></div>`;
+  const t = el.querySelector(".tip"), s = el.querySelector("svg");
+  s.addEventListener("mousemove", (e) => {
+    const g = e.target.closest(".col"); if (!g) return;
+    const d = days[+g.dataset.i]; if (d.blank) return;
+    const r = s.getBoundingClientRect(), box = el.getBoundingClientRect();
+    t.innerHTML = tip(d); t.style.opacity = 1;
+    t.style.left = (r.left - box.left + ((+g.dataset.i + 0.5) / days.length) * r.width) + "px"; t.style.top = (r.top - box.top - 6) + "px";
+  });
+  s.addEventListener("mouseleave", () => (t.style.opacity = 0));
+}
+
+// A row of dots per entry, scaled to the largest.
+function bars(el, entries) {
+  const max = Math.max(1, ...entries.map((e) => e[1])), n = 40;
+  el.innerHTML = entries.map(([k, v]) => {
+    const on = Math.max(1, Math.round((v / max) * n));
+    let c = ""; for (let i = 0; i < n; i++) c += `<circle cx="${i * 10 + 5}" cy="5" r="${i < on ? 3.4 : 1}" fill="${i < on ? "var(--text)" : "var(--line)"}"/>`;
+    return `<span>${k}</span><svg viewBox="0 0 ${n * 10} 10" preserveAspectRatio="xMinYMid meet">${c}</svg><span class="n">${fmt(v)}</span>`;
+  }).join("");
+}
+
+// The plugin's hardware ids, read as names: rtx-4090-24gb -> RTX 4090 24 GB.
+const card = (id) => id.replace(/-(\d+)gb/, " $1 GB").replace(/-/g, " ").replace(/\b(rtx|rx|gb|dgx|xt|xtx|ecc)\b/gi, (m) => m.toUpperCase()).replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\bTI\b/g, "Ti");
+
+function fill90(daily) {
+  // the counter has fewer than 90 days; show from its first day, with missing days as zero
+  if (!daily.length) return [];
+  const out = [], start = new Date(daily[0].day + "T00:00:00Z"), end = new Date(daily[daily.length - 1].day + "T00:00:00Z");
+  const by = Object.fromEntries(daily.map((d) => [d.day, d]));
+  for (let t = start; t <= end; t = new Date(t.getTime() + 864e5)) { const k = t.toISOString().slice(0, 10); out.push(by[k] ?? { day: k, active: 0, running: 0, new: 0 }); }
+  return out;
+}
+
+get("/v1/local-ai/stats").then((u) => {
+  const i = u.installs;
+  tiles($("tiles"), [[i.installs, "installs counted"], [i.today, "active today", true], [i.week, "active this week"], [i.monthRunning, "ran a model, last 30 days"]]);
+  const days = fill90(u.daily);
+  columns($("active"), "Active installs per day", "Installs that checked in that day", days, (d) => d.active, (d) => `<b>${short(d.day)}</b> · ${fmt(d.active)} active · ${fmt(d.running)} running a model`);
+  columns($("new"), "New installs per day", "First check-in of an install", days, (d) => d.new, (d) => `<b>${short(d.day)}</b> · ${fmt(d.new)} new`);
+  const hw = Object.entries(u.week.hardware), cpu = u.week.hardware["x86-64-avx2-cpu"] ?? 0;
+  bars($("gpus"), hw.filter(([k]) => k !== "x86-64-avx2-cpu" && k !== "none").slice(0, 12).map(([k, v]) => [card(k), v]));
+  $("cpu").textContent = `${fmt(cpu)} installs also found an AVX2 CPU, reported next to any GPU. ${fmt(u.week.hardware.none ?? 0)} found no supported hardware.`;
+  bars($("versions"), Object.entries(u.week.versions).slice(0, 8));
+  $("updated").textContent = "Updated " + new Date(u.updated).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+}).catch((e) => { $("tiles").outerHTML = `<p class="err">Could not load the counter: ${e.message}</p>`; });
+
+Promise.all([get(RAW + "summary.json"), get(RAW + "stars-daily.json"), get(RAW + "clones-daily.json")]).then(([s, stars, clones]) => {
+  tiles($("gh"), [[s.repo.stars, "stars"], [s.clones.uniques_14d, "unique clones, 14 days"], [s.marketplace?.views, "marketplace views"], [s.marketplace?.hearts, "marketplace hearts"]]);
+  columns($("stars"), "Stars", "Total stars, each day", stars, (d) => d.count, (d) => `<b>${short(d.day)}</b> · ${fmt(d.count)} stars · ${fmt(d.forks)} forks`);
+  columns($("clones"), "Clones per day", "Each plugin add or update is a clone", clones.slice(-45), (d) => d.count, (d) => `<b>${short(d.day)}</b> · ${fmt(d.count)} clones · ${fmt(d.uniques)} unique`);
+}).catch((e) => { $("gh").outerHTML = `<p class="err">Could not load GitHub numbers: ${e.message}</p>`; });
+</script>
+</body>
+</html>
