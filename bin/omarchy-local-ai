@@ -244,8 +244,14 @@ amd() {
   local amdsmi
   amdsmi=$(command -v amd-smi || echo /opt/rocm/bin/amd-smi)
   [[ -x $amdsmi ]] || { echo '[]'; return; }
-  jq -nc --argjson s "$(timeout 10 "$amdsmi" static --json 2>/dev/null || echo '{}')" \
-    --argjson m "$(timeout 10 "$amdsmi" metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
+  # amd-smi is a `#!/usr/bin/env python3` script whose module is installed for the system Python; a mise or
+  # pyenv python3 ahead of /usr/bin on PATH (mise ships with Omarchy) lacks it and every card disappears
+  amdsmi=("$amdsmi")
+  if [[ -x ${PYTHON3:-/usr/bin/python3} ]] && head -n1 "${amdsmi[0]}" 2>/dev/null | grep -q '^#!.*python3'; then
+    amdsmi=("${PYTHON3:-/usr/bin/python3}" "$(readlink -f "${amdsmi[0]}")")
+  fi
+  jq -nc --argjson s "$(timeout 10 "${amdsmi[@]}" static --json 2>/dev/null || echo '{}')" \
+    --argjson m "$(timeout 10 "${amdsmi[@]}" metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
     [($s.gpu_data // [])[] | . as $g | ([($m.gpu_data // [])[] | select(.gpu == $g.gpu)][0] // {}) as $u
      | select(($g.asic.market_name // "") != "")
      | {backend: "amd-rocm", index: ($g.gpu | tonumber), product: $g.asic.market_name, totalMiB: ($g.vram.size.value // 0),
@@ -274,8 +280,10 @@ MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | sp
     | ([$r.hardware | to_entries[] | select((.value.match.backend | sub("amd-vulkan"; "amd-rocm")) == $x.backend
         and (.value.match.names | index($x.product | norm)) != null
         # a unified-memory APU reports only its BIOS carve-out as VRAM, so the card is judged by host
-        # RAM covering its stated memory once the carve-out (up to 8 GiB) is added back
-        and (if .value.match.unifiedMemory // false then ($ram + 8192) >= .value.match.vramGb * 1024
+        # RAM covering its stated memory once the carve-out is added back (amd-smi reports it as VRAM: a Strix
+        # Halo set to 32 GiB has 94 GiB MemTotal), with up to 8 GiB more for firmware and kernel reservations
+        and (if .value.match.unifiedMemory // false
+          then ($ram + (if $x.backend == "amd-rocm" then $x.totalMiB else 0 end) + 8192) >= .value.match.vramGb * 1024
           else (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024 end)) | .key][0] // "") as $hw
     | ($hw != "" and ($r.hardware[$hw].match.unifiedMemory // false)) as $uni
     | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw,
