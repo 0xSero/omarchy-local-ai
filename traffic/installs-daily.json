@@ -7,8 +7,14 @@
   },
   {
     "day": "2026-10-11",
-    "active": 40,
-    "running": 3,
-    "new": 40
+    "active": 84,
+    "running": 5,
+    "new": 84
+  },
+  {
+    "day": "2026-10-12",
+    "active": 47,
+    "running": 10,
+    "new": 9
   }
 ]
