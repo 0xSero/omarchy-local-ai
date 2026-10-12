@@ -108,8 +108,9 @@ checks the registry for new models (every 12 hours while the bar runs) to
 `~/.local/state/omarchy/local-ai/install-id`; it is not derived from the machine
 or you, and Remove deletes it. `hw` lists the card kinds Local AI has recipes for
 that it found, `running` how many models run. The server keeps those four fields
-and the day, and no IP address or other header. Its code and the public totals:
-[local-ai-usage](https://github.com/sybil-solutions/local-ai-usage).
+and the day, and no IP address or other header. Its code, the D1 migrations and the
+deploy config are in [`usage/`](usage) (the worker `local-ai-usage` and its `usage.sybilsolutions.ai` route), folded in
+from the former `local-ai-usage` repository; the public totals are the same worker's `GET /v1/local-ai/stats`.
 
 Turn it off with `omarchy-local-ai set ping off` (or `DO_NOT_TRACK=1` in the
 bar's environment). A failed or refused message changes nothing.

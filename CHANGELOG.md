@@ -15,7 +15,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 ## [6.13.0] - 2026-10-10
 
 ### Added
-- An install count. When it checks the registry for new models (every 12 hours while the bar runs), Local AI sends `usage.sybilsolutions.ai` a random id made on first run, the plugin version, the card kinds it has recipes for and how many models run. Nothing else: no prompts, no paths, no hostname, and the server keeps no IP address. README, "What Local AI sends", has the details; the counter's code and public totals are at [local-ai-usage](https://github.com/sybil-solutions/local-ai-usage). Turn it off with `omarchy-local-ai set ping off` or `DO_NOT_TRACK=1`; a failed send changes nothing.
+- An install count. When it checks the registry for new models (every 12 hours while the bar runs), Local AI sends `usage.sybilsolutions.ai` a random id made on first run, the plugin version, the card kinds it has recipes for and how many models run. Nothing else: no prompts, no paths, no hostname, and the server keeps no IP address. README, "What Local AI sends", has the details; the counter's code and public totals are in [`usage/`](usage), folded in from the former `local-ai-usage` repository. Turn it off with `omarchy-local-ai set ping off` or `DO_NOT_TRACK=1`; a failed send changes nothing.
 
 ### Changed
 - Recipes from the registry at 0801f2ec: GLM-5.3-Flash with experts on NVMe (55 GB and 16 GB RAM) on an RTX 3090 runs the v4.6-nvme image; the lab accepted the 55 GB recipe at 20.0 tok/s.

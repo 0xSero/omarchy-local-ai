@@ -1,5 +1,14 @@
 # local-ai-usage
 
+Folded in from the former [sybil-solutions/local-ai-usage](https://github.com/sybil-solutions/local-ai-usage) repository
+(archived): the worker source, the D1 migration and the deploy config live here, and the plugin repository owns the counter it
+serves. The deployed worker keeps the name `local-ai-usage` and the `usage.sybilsolutions.ai` route, so a deploy from this
+directory updates the same worker:
+
+```bash
+cd usage && npx wrangler@4 deploy
+```
+
 Counts installs of the [Local AI](https://github.com/sybil-solutions/omarchy-local-ai) Omarchy plugin. A Cloudflare Worker with one D1 table, at `https://usage.sybilsolutions.ai`.
 
 ## What an install sends
