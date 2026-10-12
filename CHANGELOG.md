@@ -2,6 +2,14 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.3] - 2026-10-12
+
+### Added
+- Recipes from registry c65b8dee: five new card kinds (Apple M1 8 GB, Intel Arc B390, RTX 3070 Laptop 8 GB, RTX 5080 Laptop 16 GB, Radeon RX 6700 XT 12 GB) and updated lists for the RTX 3090 (Qwen3.8-27B-pi added), RTX 5070 (four llama.cpp and SGLang recipes in place of the TabbyAPI one) and RTX 5080 (Underdog Saluki 27B added): 156 recipes, up from 145. The gateway image is unchanged.
+
+### Changed
+- The install counter's worker source lives in `usage/` (folded from local-ai-usage with its history); `CODEOWNERS` puts `bin/`, `lib/`, `usage/` and workflows under a maintainer's review.
+
 ## [6.13.2] - 2026-10-11
 
 ### Security
