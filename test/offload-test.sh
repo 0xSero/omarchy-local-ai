@@ -21,6 +21,11 @@ for change in '.launch.resources.privileged=true' '.launch.resources.memoryBytes
   [[ $(policy "$(jq "$change" <<<"$R")") != ok ]]
 done
 echo 'ok - offload policy rejects arbitrary flags, invalid resources and masked/unverified output'
+[[ $(policy "$(jq '.launch.environment.NEOReadDebugKeys="1"|.launch.environment.TreatNonUsmForTransfersAsSharedSystem="0"|.launch.environment.EnableSharedSystemUsmSupport="0"' <<<"$R")") == ok ]]
+for key in '1NOTE' 'NOTE --privileged' 'NOTE=other' $'NOTE\nother'; do
+  [[ $(policy "$(jq --arg key "$key" '.launch.environment[$key]="1"' <<<"$R")") != ok ]]
+done
+echo 'ok - mixed-case Intel environment names are accepted while malformed names remain refused'
 owned() { [[ -d $1 || -f $1 ]]; }
 say() { :; }
 ours() { return 1; }
