@@ -787,16 +787,18 @@ phase_purge() {
     grep . | sort -u | xargs -r timeout --kill-after=5 30 docker rmi >/dev/null 2>&1 || true
 }
 
-# fail <message>: keep the engine's last lines in the log (taking the containers down deletes them), name its first
-# error in the message, take the containers down and stop
+# fail <message>: keep the engine's last 400 lines in the log (taking the containers down deletes them; a vLLM engine
+# core's cause sits above two tracebacks, past the last 60), name its exception in the message, take the containers
+# down and stop
 fail() {
-  local e hint=""
+  local e hint="" out
   e=$(engine "$WID")
   if docker inspect "$e" >/dev/null 2>&1; then
-    docker logs --tail 60 "$e" >>"$WD/err" 2>&1 || true
+    out=$(docker logs --tail 400 "$e" 2>&1 || true)
+    printf '%s\n' "$out" >>"$WD/err"
     # the exception itself ("ValueError: Free memory on device ..."), not the first traceback line that says "error"
-    hint=$(docker logs --tail 200 "$e" 2>&1 | grep -oE '[A-Za-z]+(Error|Exception): .*' | grep -v 'Engine core initialization failed' | head -1 | cut -c1-200 || true)
-    [[ -n $hint ]] || hint=$(docker logs --tail 200 "$e" 2>&1 | grep -i -m1 -e error -e 'out of' -e exception | cut -c1-160 || true)
+    hint=$(grep -oE '[A-Za-z]+(Error|Exception): .*' <<<"$out" | grep -v 'Engine core initialization failed' | head -1 | cut -c1-200 || true)
+    [[ -n $hint ]] || hint=$(grep -i -m1 -e error -e 'out of' -e exception <<<"$out" | cut -c1-160 || true)
   fi
   phase_stop "$WID" || true
   die "$*${hint:+: $hint}"
