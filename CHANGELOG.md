@@ -2,6 +2,160 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.3] - 2026-10-12
+
+### Added
+- Recipes from registry c65b8dee: five new card kinds (Apple M1 8 GB, Intel Arc B390, RTX 3070 Laptop 8 GB, RTX 5080 Laptop 16 GB, Radeon RX 6700 XT 12 GB) and updated lists for the RTX 3090 (Qwen3.8-27B-pi added), RTX 5070 (four llama.cpp and SGLang recipes in place of the TabbyAPI one) and RTX 5080 (Underdog Saluki 27B added): 156 recipes, up from 145. The gateway image is unchanged.
+
+### Changed
+- The install counter's worker source lives in `usage/` (folded from local-ai-usage with its history); `CODEOWNERS` puts `bin/`, `lib/`, `usage/` and workflows under a maintainer's review.
+
+## [6.13.2] - 2026-10-11
+
+### Security
+- The gateway (`org-v3`, registry at 8cc34398) closes the connection after any answer given without the key (`/health` as well as a refusal) and keeps the request deadline running until the key is checked. Every write to a client has a 30-second deadline. Before, `/health` kept its connection alive and nothing bounded a write, so another local account could pipeline health requests, leave the answers unread and hold every connection slot. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#10562).
+
+## [6.13.1] - 2026-10-11
+
+### Security
+- The gateway (`org-v2`, registry at ae3eba29) cuts any request whose headers and body haven't arrived within 10 seconds, idle keep-alive included, and serves at most 64 connections at once. Before, it started a thread per connection with neither limit before checking the key, so another local account could hold incomplete requests open without the key and use up its threads and sockets, blocking real requests. A refused request also closes its connection. A running model gets the new gateway when it is stopped and started again. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#10562).
+
+## [6.13.0] - 2026-10-10
+
+### Added
+- An install count. When it checks the registry for new models (every 12 hours while the bar runs), Local AI sends `usage.sybilsolutions.ai` a random id made on first run, the plugin version, the card kinds it has recipes for and how many models run. Nothing else: no prompts, no paths, no hostname, and the server keeps no IP address. README, "What Local AI sends", has the details; the counter's code and public totals are in [`usage/`](usage), folded in from the former `local-ai-usage` repository. Turn it off with `omarchy-local-ai set ping off` or `DO_NOT_TRACK=1`; a failed send changes nothing.
+
+### Changed
+- Recipes from the registry at 0801f2ec: GLM-5.3-Flash with experts on NVMe (55 GB and 16 GB RAM) on an RTX 3090 runs the v4.6-nvme image; the lab accepted the 55 GB recipe at 20.0 tok/s.
+
+## [6.12.7] - 2026-10-09
+
+### Changed
+- Agent updates go through mise, which is how Omarchy installs every agent, or through the agent's own updater (claude, omp, hermes, opencode). The plugin no longer runs npm itself: an agent installed some other way says to update it the way it was installed, and is not offered an update the panel cannot run.
+
+## [6.12.6] - 2026-10-09
+
+### Security
+- A model card shows no image of any kind. Reference (`![a][r]`), collapsed, shortcut and nested-bracket images became plain links, which load nothing until clicked; before, the full-screen view could fetch a card's image URL, on the internet or the local network, by itself. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#10562).
+- The Hugging Face token reaches curl through a pipe for every request (model cards, file lists, weights): it is never in an argv and no longer kept in a header file, which is removed if an older version left one.
+- A registry refresh brings new recipes, never new code: a catalog that changes the gateway image is refused, and a recipe whose engine image comes from a repository this version's own recipes never use is left out until a plugin update.
+- A recipe's name is written into the omp config as a quoted YAML string.
+- Downloads are capped: a weight file at its listed size, a Hub file list at 10 MB.
+- Notification text drops `<`, `>` and `&`, so an engine log line can never be read as markup.
+
+### Changed
+- Recipes from the registry at 1c0b68d0: GLM-5.3-Flash's fast all-RAM mode on an RTX 3090 runs the v4.4 image (a CPU-tier crash fix), accepted by the lab on all six checks at 28.6 tok/s.
+- A stale NVIDIA device list says to choose Set up Local AI, which regenerates it, instead of naming a root command.
+
+## [6.12.5] - 2026-10-08
+
+### Security
+- The full-screen model card fetch passed the Hugging Face token to curl on its command line, where another local account could read it from /proc/<pid>/cmdline while the request ran. It now goes to curl as a 0600 header file, like the weight downloads; a test keeps the token out of every curl argv. Reported by HANCORE-linux in the marketplace review (omacom/omarchy-plugin-marketplace#10562).
+
+## [6.12.4] - 2026-10-08
+
+### Added
+- GLM-5.3-Flash on an RTX 3090 with only 16 GB of RAM and its experts on NVMe, as a reported recipe: the lab passed five of six checks and measured 13.1 tok/s, under the 15 tok/s speed check (registry be35808c).
+
+### Fixed
+- "Supported hardware" opens https://local.sybilsolutions.ai/hardware/, the card list; the site's front page is now the landing page.
+
+## [6.12.3] - 2026-10-08
+
+### Changed
+- The marketplace listing has a new preview image (the Omarchy dot hands, with the supported cards, harnesses and models) and a shorter description that leads with what Local AI does.
+
+## [6.12.2] - 2026-10-08
+
+### Added
+- GLM-5.3-Flash on an RTX 3090 with 55 GB of RAM and its experts on NVMe, accepted by the lab at 17.3 tok/s (registry 532c73ca), beside the reported all-RAM recipe.
+
+### Changed
+- Two recipes that would read the same in a table (a model, its format, its card) show what sets them apart in the format column, e.g. "55 GB RAM" against "experts in RAM".
+
+## [6.12.1] - 2026-10-07
+
+### Changed
+- A model row says what tapping it does: ⌄ (⌃ while open) on the models tab, where it opens in place, and › on home, where it opens the model's page. An open row is shaded.
+- Home lists your models: what is on this machine (running first, then by AA) and the ones you pinned to try. Pin is offered only for a model not on this machine; running or downloading a model no longer pins it.
+
+## [6.12.0] - 2026-10-07
+
+### Added
+- AA: every model's Artificial Analysis Intelligence Index, as a column in every model table, and the models tab ranked by it, highest first (from the registry at d414b407).
+- Agent updates are looked up by themselves (backend verb `outdated`: mise, then npm; every 6 hours at most hourly). **Update to <version>** appears only when there is one, and the agents page lists the agents that have one.
+- GLM's mark is Z.ai's.
+
+### Changed
+- A model's page shows its name once, in the top line with its maker's logo.
+- Stop is outlined: no fill, a strong alert border and alert text.
+- Agents: the chosen one is checked, the others show nothing; on the agents page choosing an agent makes it the default (no Default agent button).
+- Hardware: a line a card (maker, name, temperature, running or free), opening to its memory and where it leads; full screen opens them all. The CPU is its name, threads and RAM.
+- The activity grid has no month names or date line under it; a hovered day shows in its top line.
+- Full screen and a running model's More are icons. Pinned models carry no downloaded check.
+
+## [6.11.1] - 2026-10-07
+
+### Added
+- GLM-5.3-Flash and DeepSeek-V4.1-Flash on an RTX 3090 (with experts in system RAM and an NVMe drive), from the registry at 56621dc9. A recipe its publisher reported but the lab has not yet run says so on its row and its page.
+
+### Fixed
+- The panel is never taller than its screen, even when the shell does not say how much room there is; the rest scrolls. A list that gets shorter while scrolled down (a search, a section folded) slides back into view.
+
+## [6.11.0] - 2026-10-07
+
+### Added
+- Two tabs. **Home**: your activity grid (always, empty before first use), running models with Open, More and Stop, your pinned models (else the recommended ones) and this machine. **Models**: every model this machine can run, on whichever of its cards or across several, as one table; type anywhere to search it. A row opens in place to Start or Open and Stop, Download, Cancel or Remove the download, Pin or Unpin, and see Details. Running or downloading a model pins it.
+- Multi-card recipes (2×, 4× on one machine). A setup across more cards than the machine has, or one needing more RAM, disk, NVMe or CPU threads, is listed as too big with the reason.
+- New backend verbs `download <recipe> [off]`, `pin <recipe> [off]` and `card <recipe>`. The snapshot carries `downloads`, `pins`, each model's `downloaded`, the catalog's commit and age, the CPU's name and threads, and a stale NVIDIA device list (`cdi`).
+- `needs.cpus`: the CPU threads a recipe's engine pins work to.
+- Full screen: the same views over the whole screen, a year of activity, the model table with engine, context, download, RAM and NVMe columns, and a model's Hugging Face card (pinned revision, cached; no HTML, styles or remote images drawn) with its details open.
+- Hardware: the machine in figures (GPUs, VRAM, what runs, RAM, CPU threads, disk), then each card with its maker, memory, temperature and what is on it, and the CPU by name.
+- Makers' logos beside every model name (Qwen, Gemma, DeepSeek, GLM, LFM, Hunyuan, Mistral, Nemotron, Step, MiMo; an initial for others) and every card (NVIDIA, Intel, AMD), drawn in the panel's ink (`Logos.js`).
+- Back and forward in the top line, Alt+Left/Right and a mouse's buttons; the top line names where you are.
+- Keyboard: Up and Down (or Tab) move a ring through everything clickable in screen order, scrolled into view; Enter clicks it. Escape clears the search, steps back home, then closes.
+
+### Changed
+- A model's page is its name, one line of what it is doing or why it cannot start, one action (Start; Open and Stop while it runs; Run again and Dismiss after a crash), and the rest under details.
+- New models arrive by themselves: the catalog is checked against the registry once it is 12 hours old, at most hourly, and says so only when it brought new ones.
+- Stop is a solid alert button everywhere. The agent picker lists each agent once, the chosen one checked.
+- A running model's address is hidden until clicked, beside a copy. The registry line, notices and warnings are small banners.
+- The no-tested-model screen is a plain home page with this machine's hardware and the supported list.
+- A stale NVIDIA device list (a card taken out, a driver update), which makes Docker refuse every start, is named on home with Fix; setup writes it again by reinstalling the toolkit with Omarchy's own commands, and a start through it fails with that reason.
+- Recipes: the registry's export now includes every validated model a card lacks and multi-card setups.
+
+### Removed
+- The per-card model picker and Config, the AVAILABLE GPU rows, the Refresh button and the Coming soon wave; `qwen.svg`.
+
+## [6.10.1] - 2026-10-07
+
+### Fixed
+- Withdraw the Qwen3.8-27B SC3bpw/131k/MTP configuration from eight 16 GB NVIDIA catalog entries after a reported RTX 4070 Ti SUPER load failure with desktop VRAM in use. Sibling cards are held as a precaution until requalified with desktop headroom.
+- Existing deployments and their weights remain available. Historical proof records stay in the registry; no untested replacement configuration is offered.
+
+## [6.10.0] - 2026-10-07
+
+### Added
+- Schema-3 recipes can prepare generated model packs with the serving image, typed memory/IPC limits and explicit disk budgets. Preparation writes into private staging, verifies output before publishing and checks every reuse.
+- Completed packs survive Stop. Remove download protects the frozen paths of running models, including models removed from the refreshed catalog.
+
+### Changed
+- Catalog refresh and release sync use a separate v3 export/cache. Older plugins keep their v2 catalog; recipes requiring preparation or typed resources are excluded from v2.
+- The gateway uses the public sybil-solutions build, verified against all 42 protocol checks. Existing recipe IDs and model image pins remain stable.
+- Registry catalog updates require a normal reviewed release PR; the manual workflow supplies a checked patch instead of writing to main.
+
+### Fixed
+- Reject malformed environment values and arguments before building Docker options.
+- Cancellation and failed preparation clean up owned containers and staging. Long conversions reserve their selected cards while allowing unrelated cards to start.
+
+No new CPU/NVMe research recipe is promoted by this release. Exact-image hardware, fidelity and speed acceptance remain separate gates.
+
+## [6.9.1] - 2026-10-07
+
+### Changed
+- Local AI and its registry now live in the sybil-solutions organization. Installation, model refresh and release checks use the canonical repositories.
+- Existing installations retain the sero.local-ai identity, recipe IDs and pinned container images.
+
 ## [6.9.0] - 2026-10-03
 
 ### Added

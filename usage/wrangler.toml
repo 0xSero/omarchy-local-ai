@@ -1,0 +1,17 @@
+name = "local-ai-usage"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+routes = [{ pattern = "usage.sybilsolutions.ai", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "local-ai-usage"
+database_id = "cfc57bc7-92eb-4c01-9d94-ec8a444a7675"
+migrations_dir = "migrations"
+
+# per caller address, in memory only; an install pings at most twice a day
+[[ratelimits]]
+name = "LIMIT"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }

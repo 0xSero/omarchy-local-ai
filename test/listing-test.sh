@@ -21,7 +21,7 @@ echo "ok - name (${#name}) and description (${#description} of 500 characters) a
 
 # A listing with a manual-setup override shows its description but no install command, so the description
 # carries the start command; the README shows it at the top.
-START='omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable'
+START='omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable'
 [[ $description == *"$START"* ]] || fail "the description does not carry the start command: $START"
 head -n 15 "$ROOT/README.md" | grep -qF -- "$START" || fail "README.md does not show the start command in its first 15 lines"
 echo "ok - the start command is in the description and at the top of the README"

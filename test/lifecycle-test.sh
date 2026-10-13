@@ -38,3 +38,26 @@ if (phase_start test 12434 nvidia:0) >"$TMP/output" 2>&1; then exit 1; fi
 grep -q 'nvidia:0 is in use by another program' "$TMP/output"
 [[ ! -f $TMP/launched ]]
 echo 'ok - launch rechecks allocations after downloads and before creating containers'
+
+# Preparation may release allocation while its labelled container reserves a GPU.
+rm "$TMP/removed"
+gpus() {
+  if [[ -f $TMP/prepared ]]; then
+    echo '[{"key":"nvidia:0","hw":"test","held":true,"usedMiB":1}]'
+  else echo '[{"key":"nvidia:0","hw":"test","held":false,"usedMiB":1}]'; fi
+}
+remove() { rm -rf "$(rundir "$1")"; }
+prepare_model() { touch "$TMP/prepared"; flock -u 8; }
+launch_options() { :; }
+docker() {
+  case $1 in
+    image) return 0 ;;
+    info) echo '{}' ;;
+    run) touch "$TMP/launched"; return 99 ;;
+    *) return 0 ;;
+  esac
+}
+if (phase_start test 12434 nvidia:0) >"$TMP/output" 2>&1; then exit 1; fi
+grep -q 'nvidia:0 is in use by another program' "$TMP/output"
+[[ ! -f $TMP/launched && ! -d $(rundir test) ]]
+echo 'ok - launch reacquires allocation after preparation, refuses a claimed card and cleans transient assets'

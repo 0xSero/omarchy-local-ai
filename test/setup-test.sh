@@ -15,13 +15,15 @@ shim() { printf '#!/bin/bash\n%s\n' "$2" >"$1"; chmod +x "$1"; }
 shim "$TMP/bin/sudo" 'echo "sudo $*" >>"$SETUP_TEST/calls"; exit 1'
 shim "$TMP/bin/omarchy-hw-nvidia" '[[ ${NVIDIA:-1} == 1 ]]'
 shim "$TMP/bin/omarchy-pkg-add" 'echo "pkg $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"; [[ ${FAIL_INSTALL:-0} == 0 ]]'
+shim "$TMP/bin/omarchy-pkg-drop" 'echo "drop $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"'
 # Omarchy's Sudoless Docker: yes adds the account to the group, DECLINE answers no
 shim "$TMP/bin/omarchy-setup-security-sudoless-docker" 'echo "sudoless ${OMARCHY_DEFER_REBOOT:-now} | $SUDO_PROMPT" >>"$SETUP_TEST/calls"
 [[ -n ${DECLINE:-} ]] || touch "$SETUP_TEST/group"'
 shim "$TMP/bin/getent" 'if [[ $1 == group ]]; then echo "docker:x:998:$([[ -f $SETUP_TEST/group ]] && id -un)"
 else echo "$2:x:1000:1000::/home/$2:/bin/bash"; fi'
 # the backend's verdict after setup: READINESS, ready by default
-shim "$TMP/plugin/bin/omarchy-local-ai" '[[ $1 == readiness ]] && printf "%s\t%s\n" "${READINESS:-ready}" "${READINESS_MSG:-}"'
+shim "$TMP/plugin/bin/omarchy-local-ai" '[[ $1 == cdi ]] && { [[ -z ${STALE:-} ]] || printf "/etc/cdi/nvidia.yaml\t%s\n" "$STALE"; exit 0; }
+[[ $1 == readiness ]] && printf "%s\t%s\n" "${READINESS:-ready}" "${READINESS_MSG:-}"'
 shim "$TMP/bin/tailscale" '[[ ${FAIL_PREFS:-0} == 0 ]] || exit 1
 jq -nc --arg user "${TEST_OPERATOR-$(id -un)}" "{OperatorUser:\$user}"'
 export PATH=$TMP/bin:$PATH
@@ -74,6 +76,13 @@ setup
 grep -q 'Delete them as root' "$TMP/out"
 echo 'ok - leftover polkit files from earlier versions are named'
 
+# a stale NVIDIA device list (a card taken out): the toolkit is reinstalled with Omarchy's commands, whose hook writes it
+STALE="/dev/nvidia1 is gone" setup
+grep -q 'out of date (/dev/nvidia1 is gone)' "$TMP/out"
+[[ $(grep -E '^(drop|pkg)' "$TMP/calls" | tail -2 | cut -d'|' -f1 | xargs) == "drop nvidia-container-toolkit pkg nvidia-container-toolkit" ]]
+grep -q 'drop nvidia-container-toolkit | Password for %u to reinstall NVIDIA container support for Local AI: ' "$TMP/calls"
+setup; ! grep -q '^drop' "$TMP/calls"
+echo 'ok - a stale NVIDIA device list is written again by reinstalling the toolkit with Omarchy commands, and only then'
 if grep -q '^sudo' "$TMP/calls"; then exit 1; fi
 if grep -qE '(^|[^-])\bsudo\b|systemctl|pkexec' "$ROOT/bin/omarchy-install-ai-local"; then exit 1; fi
 echo 'ok - setup itself runs nothing as root'

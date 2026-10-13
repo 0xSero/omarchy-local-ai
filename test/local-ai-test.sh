@@ -20,7 +20,7 @@ mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
 sed -i "s|ALLOCATION_LOCK=/run|ALLOCATION_LOCK=$TMP/docker.pid|" "$CLI"
 : >"$TMP/docker.pid"
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
 : >"$OMARCHY_DOCKER_SOCKET"
@@ -31,7 +31,7 @@ PIN=ghcr.io/x/engine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 # recipes <image>: one card kind, one recipe, in the vendored schema
 recipes() {
-  jq -nc --arg id "$ID" --arg img "$1" '{schemaVersion: "omarchy-local-ai/recipes/2", registryCommit: ("d" * 40),
+  jq -nc --arg id "$ID" --arg img "$1" '{schemaVersion: "omarchy-local-ai/recipes/3", registryCommit: ("d" * 40),
     gateway: {image: ("ghcr.io/x/gateway@sha256:" + ("b" * 64))},
     hardware: {"rtx-4090-24gb": {match: {backend: "nvidia", vramGb: 24, names: ["rtx4090"]}, recipes: [{id: $id,
       name: "Test Model", family: "qwen", format: "EXL3", sizeGb: 0.004, cards: 1, image: $img, servedName: "served",
@@ -112,6 +112,7 @@ case $url in
 *raw.githubusercontent.com/*/recipes.json) cat "$SHIM/registry.json" ;;
 */api/models/*) printf "[{\"type\":\"file\",\"path\":\"model.safetensors\",\"size\":4096,\"lfs\":{\"oid\":\"%s\"}}]" '"$SHA"' ;;
 */resolve/*) if [[ -n ${SHIM_CORRUPT:-} ]]; then head -c 4096 /dev/urandom >"$out"; else head -c 4096 /dev/zero >"$out"; fi ;;
+*/raw/*/README.md) printf "# Test Model card\n" ;;
 http://127.0.0.1:*)
   [[ -z ${SHIM_STOPPED:-} ]] || exit 7
   ls "$SHIM/containers" | grep -q gateway || exit 7
@@ -225,15 +226,15 @@ js() {
     const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " sec,slot,slot,field,field,field,acts" ]] || fail "home view" "$(view home 2>&1)"
-  [[ $(view kind rtx-4090-24gb) == " sec,gpu,sec,agent,links,field,sec,field,acts" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
+  [[ $(view home) == " tabs,life,sec,thead,trow,sec,field,field,field" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view kind rtx-4090-24gb) == " links,acts,field" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
   # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
   # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
-    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed sec,slot,slot,slot:M:stop|m,error:gone,field,field,field,acts" &&
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed tabs,life,slot:M:stop|m,error:gone,sec,thead,trow,sec,field,field,field" &&
     $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
-    c.build(s, ui({open: "lost:m"})).rows.map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "sec:AVAILABLE,slot:M,error:gone,links:View logs,field:RAM,field:Agents,acts:Refresh models" &&
+    c.build(s, ui({open: "lost:m"})).rows.filter(r => r.label || r.items).map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "tabs:home,slot:M,error:gone,links:View logs,sec:RECOMMENDED,sec:THIS MACHINE,field:hardware,field:RAM,field:Agents" &&
     $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
     fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
@@ -243,19 +244,18 @@ if command -v node >/dev/null; then
   [[ $(js '[c.k(999950), c.k(950000), c.k(999), c.gb(0.004), c.gb(13.84)].join(" ")') == "1M 950K 999 <0.1 GB 14 GB" ]] || fail "rounding" "$(js '[c.k(999950), c.gb(0.004)]')"
   # the weeks after daylight saving ends (Sydney, April 5 2026) are an hour longer: June still starts at its first week
   [[ $(TZ=Australia/Sydney js 's.total = 1; s.life = {requests: 1, since: "Feb 3", start: Date.parse("2026-02-02T00:00:00+11:00") / 1000, today: 138,
-    days: Array(140).fill(1)}; c.build(s, ui()).rows[0].months.map(m => m.label + m.col).join(" ")') == "Feb0 Mar4 Apr9 May13 Jun17" ]] || fail "months after a DST end"
+    days: Array(140).fill(1)}; c.build(s, ui()).rows.find(r => r.type === "life").months.map(m => m.label + m.col).join(" ")') == "Feb0 Mar4 Apr9 May13 Jun17" ]] || fail "months after a DST end"
   # a model whose recipe is gone and whose config has no start: no empty chip, no NaN; one stopping has no Stop
   [[ $(js 's.deployments = [{id: "gone--2", name: "gone", keys: ["nvidia:0"], state: "ready", port: 1, agent: "pi"}];
-    var v = c.build(s, ui({view: "run", id: "gone--2"})); v.hero.chips.map(x => x.text).join(",") + " " + v.rows[0].cells[5].v') == "1 × RTX 4090 –" ]] ||
+    var v = c.build(s, ui({view: "run", id: "gone--2", details: true})); v.hero.chips.map(x => x.text).join(",") + " " + v.rows.find(r => r.type === "grid").cells[5].v') == "1 × RTX 4090 –" ]] ||
     fail "a model with no recipe or start" "$(js 's.deployments = [{id: "gone--2", keys: ["nvidia:0"], state: "ready"}]; c.build(s, ui({view: "run", id: "gone--2"}))')"
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "stopping"}];
-    [c.build(s, ui()).rows.find(r => r.type === "run").primary.action, c.build(s, ui({view: "run", id: "m"})).rows.pop().items.pop().action,
-      c.build(s, ui({view: "gpus", open: "gpu:nvidia:0"})).rows.find(r => r.type === "links").items.pop().action].join(",")') == ",," ]] ||
+    [c.build(s, ui()).rows.find(r => r.type === "run").primary.action, c.build(s, ui({view: "run", id: "m"})).rows.find(r => r.type === "acts").items.pop().action].join(",")') == "," ]] ||
     fail "Stop while stopping"
   pass "the view model rounds before picking a unit, keeps months on their weeks across DST, and shows a model with no recipe or start"
   # Panel.qml: a refresh asked for while a snapshot runs (the one after a verb) runs once that one ends
   [[ $(js 'var q = fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8"), p = {Model: c, snap: {}, ui: {}, poll: {running: true},
-    pollOut: {text: fs.readFileSync(process.argv[2], "utf8")}, Qt: {callLater: f => f()}}; p.root = p; vm.createContext(p)
+    pollOut: {text: fs.readFileSync(process.argv[2], "utf8")}, Qt: {callLater: f => f()}, autoRefresh() {}, autoOutdated() {}}; p.root = p; vm.createContext(p)
     ;[q.match(/function refresh\(\) \{.*\}/)[0], q.match(/function polled\([^]*?\n  \}/)[0], "var exited = " + q.match(/id: poll\n[^]*?onExited: (function\(code\) \{.*\})/)[1]].forEach(f => vm.runInContext(f, p))
     p.refresh(); p.poll.running = false; p.exited(0); p.poll.running + " " + p.snap.gpus.length') == "true 3" ]] || fail "a refresh while a snapshot runs"
   # the plugin's path as Qt's URL gives it, for a folder named a%25b#c: its "%" and "#" stay encoded
@@ -263,7 +263,7 @@ if command -v node >/dev/null; then
     {Qt: {resolvedUrl: u => "file:///home/a%2525b%23c/" + u}})') == "/home/a%25b#c/bin/omarchy-local-ai" ]] || fail "the backend's path"
   pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
   # The folder dialog preserves reserved characters through its URL and sends one path argument.
-  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw})).rows.find(r => r.icon === "folder").action
+  [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw, details: true})).rows.find(r => r.icon === "folder").action
     var p = {ui: {}, nav() {}, close() {}, run(x) { p.args = x }, Qt: {callLater: f => f()}, folderDialog: {open() {}}, Quickshell: {env() {return "/home/x"}}}; p.root = p; vm.createContext(p)
     var q=fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
     for(var name of ["activate", "pickedFolder"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0],p);
@@ -279,19 +279,28 @@ fi
 cdi 237
 "$CLI" run "$ID" nvidia:0
 wait_for error
-[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date; see the log for the repair command" ]] ||
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date (/dev/null has moved): choose Set up Local AI to regenerate it" ]] ||
   fail "stale CDI reason" "$(cat "$STATE/deploy/$ID/status.json")"
 ! grep -q "^run .*--name $(printf 'omarchy-local-ai-%s-%s-engine' "$(id -u)" "$ID")" "$SHIM/docker.log" 2>/dev/null || fail "an engine started on a stale CDI spec" "$(cat "$SHIM/docker.log")"
 cdi 1
 grep -q "regenerate it as root: nvidia-ctk cdi generate --output=$CDI_DIRS/nvidia.yaml" "$STATE/log" || fail "CDI repair log"
 pass "a stale NVIDIA CDI spec stops before the engine, with the repair command in the log"
 "$CLI" stop "$ID"
+# a card taken out of the machine leaves its /dev/nvidiaN in the spec: Docker refuses every start through it
+printf 'devices:\n  - name: GPU-x\n    containerEdits:\n      deviceNodes:\n        - path: /dev/null\n          major: 1\n          minor: 3\n  - name: all\n    containerEdits:\n      deviceNodes:\n        - path: /dev/nvidia-gone-%s\n          major: 195\n          minor: 1\n' "$$" >"$CDI_DIRS/nvidia.yaml"
+"$CLI" run "$ID" nvidia:0
+wait_for error
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the NVIDIA device list is out of date (/dev/nvidia-gone-$$ is gone): choose Set up Local AI to regenerate it" ]] ||
+  fail "removed card in CDI spec" "$(cat "$STATE/deploy/$ID/status.json")"
+pass "a CDI spec listing a removed card stops the start, saying which device is gone and how to regenerate it"
+"$CLI" stop "$ID"
+cdi 1
 
 "$CLI" run "$ID" nvidia:0
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready run,sec,slot,field,field,field,acts" && $(view run "$ID") == "ready grid,sec,gpu,sec,agent,links,field,acts,sec,field,sec,field"*",acts" ]] ||
+  [[ $(view home) == "ready tabs,life,run,sec,thead,trow,sec,field,field,field" && $(view run "$ID") == "ready links,acts,field" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi
@@ -378,7 +387,7 @@ usage "$ID--2" 49990
 "$CLI" snapshot >"$TMP/snap.json"
 [[ $(jq -r '"\(.week) \(.deployments[0].session.week)"' "$TMP/snap.json") == "51000 1000" ]] || fail "week per model" "$(jq -c '{week, d: .deployments}' "$TMP/snap.json")"
 if command -v node >/dev/null; then
-  [[ $(js 'c.build(s, ui({view: "run", id: s.deployments[0].id})).rows[0].cells[4].v') == 1K ]] || fail "week on the model's page" "$(js 'c.build(s, ui({view: "run", id: s.deployments[0].id})).rows[0]')"
+  [[ $(js 'c.build(s, ui({view: "run", id: s.deployments[0].id, details: true})).rows.find(r => r.type === "grid").cells[4].v') == 1K ]] || fail "week on the model's page" "$(js 'c.build(s, ui({view: "run", id: s.deployments[0].id})).rows[0]')"
 fi
 rm -rf "$STATE/usage/$ID--2"
 pass "a model's page counts its own week, not every model's on the machine"
@@ -611,7 +620,7 @@ mkdir -p "${fresh%/*}" "$TMP/fresh/lib"
 cp "$ROOT/bin/omarchy-local-ai" "$fresh"
 cp "$ROOT/lib/access.sh" "$TMP/fresh/lib/"
 cp "$TMP/plugin/recipes.json" "$TMP/plugin/manifest.json" "$TMP/fresh/"
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
 [[ $(SHIM_NOGROUP=1 "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup"
 [[ $(SHIM_NOGROUP=1 OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup, socket out of reach"
 [[ $("$fresh" snapshot | jq -r .readiness.state) == ready ]] || fail "setup after setup"
@@ -660,6 +669,17 @@ bash -c 'exec -a omarchy-local-ai-worker sleep 30' & ours=$!
 kill "$other" "$ours" 2>/dev/null || true
 cp "$TMP/ready.json" "$STATE/deploy/$ID/status.json"
 pass "a load cut by a restart says so, a pid that is not ours reads as stopped, and a live worker keeps loading"
+
+# The model card fetch reads a Hugging Face token from a pipe: never in curl's argv, never left in a file
+mkdir -p "$HOME/.cache/huggingface"
+hf=hf_card${RANDOM}x${RANDOM}
+printf %s "$hf" >"$HOME/.cache/huggingface/token"
+[[ $("$CLI" card "$ID") == "# Test Model card" ]] || fail "card" "$(tail -1 "$SHIM/curl.log")"
+! grep -q "$hf" "$SHIM/curl.log" || fail "hf token leaked" "the Hugging Face token appears in curl's argv"
+tail -1 "$SHIM/curl.log" | grep -q -- "-H @/dev/fd/" || fail "card header" "$(tail -1 "$SHIM/curl.log")"
+! grep -rqs "$hf" "$STATE" || fail "hf token on disk" "$(grep -rls "$hf" "$STATE")"
+rm -f "$HOME/.cache/huggingface/token"
+pass "the model card fetch reads the Hugging Face token from a pipe, never from curl's argv or a file"
 
 "$CLI" stop "$ID"
 "$TMP/plugin/bin/omarchy-remove-ai-local"
