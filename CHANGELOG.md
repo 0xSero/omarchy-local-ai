@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.6] - 2026-10-13
+
+### Fixed
+- A failed start keeps the engine's last 400 log lines (it kept 60). vLLM prints an engine core's cause above two tracebacks, so the Qwen3.8-27B `ValueError` on the display card was not in the kept log; the reason shown and the kept log now come from the same lines.
+
 ## [6.13.5] - 2026-10-13
 
 ### Fixed

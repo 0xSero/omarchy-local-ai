@@ -87,7 +87,9 @@ pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer
 network) : ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
-logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || printf "loading shards\nRuntimeError: XPU out of memory. Tried to allocate 2.00 GiB\n"
+logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || { printf "loading shards\n(EngineCore pid=5) ERROR [core.py:1330] EngineCore failed to start.\n(EngineCore pid=5) ERROR [core.py:1330] ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization\n"
+    for i in $(seq 70); do echo "(APIServer pid=1)   File \"core.py\", line $i"; done
+    echo "(APIServer pid=1) RuntimeError: Engine core initialization failed. See root cause above."; } | if [[ $2 == --tail ]]; then tail -n "$3"; else cat; fi
   [[ -z ${SHIM_LOAD_LOG:-} ]] || cat "$SHIM_LOAD_LOG" ;;
 rm) if [[ ${@: -1} == *-engine ]]; then
       if [[ -n ${SHIM_RM_ALWAYS:-} ]]; then exit 1; fi
@@ -644,14 +646,15 @@ cp "$TMP/plugin/recipes.json" "$SHIM/registry.json"
 "$CLI" registry
 jq -e '.registryCommit == "0000000000000000000000000000000000000001"' "$TMP/catalog.json" >/dev/null || fail "refresh" "$(head -c 300 "$TMP/catalog.json" 2>/dev/null)"
 "$CLI" stop "$ID"
-# an engine that fails leaves its last lines in the log and its first error in the message, though its container is gone
+# an engine that fails leaves its log in ours, though its container is gone, and its exception in the message: vLLM's
+# cause sits above a long traceback that ends in a generic RuntimeError
 SHIM_ENGINE_LOG=1 SHIM_EMPTY=1 "$CLI" run "$ID" nvidia:0
 wait_for error
-[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer: RuntimeError: XPU out of memory. Tried to allocate 2.00 GiB" ]] ||
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer: ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization" ]] ||
   fail "crash reason" "$(cat "$STATE/deploy/$ID/status.json")"
-grep -q "^loading shards" "$STATE/deploy/$ID/err" || fail "engine log kept" "$(cat "$STATE/deploy/$ID/err")"
+grep -q "^loading shards" "$STATE/deploy/$ID/err" && grep -q "ValueError: Free memory" "$STATE/deploy/$ID/err" || fail "engine log kept" "$(cat "$STATE/deploy/$ID/err")"
 ! compgen -G "$SHIM/containers/*engine" >/dev/null || fail "engine left running" "$(ls "$SHIM/containers")"
-pass "a failed engine's last lines stay in the log and its first error is the reason shown"
+pass "a failed engine's log stays in ours, its cause included, and its exception is the reason shown"
 "$CLI" stop "$ID"
 "$CLI" run "$ID" nvidia:0
 wait_for ready
