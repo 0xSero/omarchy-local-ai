@@ -207,7 +207,8 @@ function trow(c, wide) {
   var mark = c.d ? "●" : c.dl && c.dl.state === "download" ? "↓" : ""
   return { type: "trow", family: c.family || "", live: !!c.d, mark: mark, dim: !c.d && (!c.fits || !c.free), cells: cells, action: c.action }
 }
-// a table of models; on the models tab each row opens in place to manage it
+// a table of models; on the models tab each row opens in place to manage it. Its rows, an opened row's actions
+// included, sit on one raised surface with a border: the first row draws its top, the last its bottom
 function table(list, wide, ui) {
   var rows = [{ type: "thead", cells: wide ? ["MODEL", "AA", "FORMAT", "ENGINE", "ON", "CONTEXT", "DOWNLOAD", "RAM", "NVMe"] : ["MODEL", "AA", "FORMAT", "ON"] }]
   list.forEach(function(c) {
@@ -220,6 +221,9 @@ function table(list, wide, ui) {
     rows.push(r)
     if (r.open) rows.push(manage(c))
   })
+  rows.forEach(function(r) { r.framed = true })
+  rows[0].first = true
+  rows[rows.length - 1].last = true
   return rows
 }
 // what a model is doing, in one line

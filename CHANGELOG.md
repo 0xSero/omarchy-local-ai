@@ -2,6 +2,19 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.4] - 2026-10-13
+
+### Added
+- Recipes from registry 4ab018df: Qwen3.8-Flash-Next EXL3 3.05 bpw on one Intel Arc Pro B70, with routed experts and the full n-gram table in host RAM, a 64K context window, and 128 GB available host RAM required (157 recipes, up from 156; the gateway image is unchanged). The lab accepted it on all six checks at 30.4 tok/s with the plugin's Intel runtime guards. The v3 recipe preserves the pinned image, weights and container resources; no host IPC, unconfined seccomp, privileged container or NVMe tier is needed. Image input is supported; video is not.
+
+### Fixed
+- The B70 RAM-offload image repository is included in the bundled catalog, so the automatic registry refresh can retain this recipe. Older bundles correctly refused a new engine repository; they need this plugin update once, not a manual engine installation.
+- Recipe validation accepts standard case-sensitive environment names, including Intel's mixed-case runtime guards. Malformed names, non-string/NUL values, arbitrary Docker flags and unpinned images remain refused.
+- A weight download rides out a short Hugging Face outage: each file retries a server error, a rate limit or a timeout for about four minutes with a doubling delay (it gave up after about seven seconds), and the file list retries for a minute. Before, Hugging Face answering HTTP 500 for one small file (`model.safetensors.index.json`) for under a minute failed a Qwen3.8-27B start on an Arc Pro B70 whose 15 GB of shards had already downloaded.
+
+### Changed
+- A models table sits on one raised surface with a border around it, an opened row's actions included, on home and on the models tab.
+
 ## [6.13.3] - 2026-10-12
 
 ### Added

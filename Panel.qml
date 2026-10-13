@@ -527,6 +527,20 @@ Panel {
           width: content.width
           height: gap + row.height
 
+          // a models table: one raised surface at the edge with a rule around it, so its text keeps the gutter
+          Rectangle {
+            visible: !!r.framed
+            x: root.edge
+            y: parent.gap
+            width: parent.width - 2 * root.edge
+            height: row.height
+            color: root.surface
+            Rectangle { width: 1; height: parent.height; color: root.ruleTone }
+            Rectangle { x: parent.width - 1; width: 1; height: parent.height; color: root.ruleTone }
+            Rectangle { visible: !!r.first; width: parent.width; height: 1; color: root.ruleTone }
+            Rectangle { visible: !!r.last; y: parent.height - 1; width: parent.width; height: 1; color: root.ruleTone }
+          }
+
           // A Loader sizes its item, so a surface's inset lives on the Loader; other rows keep their own gutter
           Loader {
             id: row
@@ -994,7 +1008,7 @@ Panel {
               readonly property real tail: r.pair ? 0 : Style.space(16)
               readonly property real inner: width - 2 * root.gutter - lead - tail
               height: head ? root.headH + Style.space(4) : root.rowH
-              Rectangle { visible: !!r.open; anchors.fill: parent; color: Util.alpha(root.theme, 0.06) }
+              Rectangle { visible: !!r.open; x: r.framed ? root.edge + 1 : 0; width: parent.width - (r.framed ? 2 * root.edge + 2 : 0); height: parent.height; color: Util.alpha(root.theme, 0.06) }
               Label {
                 visible: !head && !r.pair
                 anchors.right: parent.right

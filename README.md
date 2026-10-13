@@ -33,6 +33,15 @@ Setup ends by checking what the panel will show. Sharing a model on your tailnet
 - Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
 - Network access to `huggingface.co` (weights), `ghcr.io/sybil-solutions`, historical `ghcr.io/0xsero` pins, and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (the automatic catalog check), `huggingface.co` again for model cards in full screen, and `usage.sybilsolutions.ai` (the install count, below).
 
+Qwen3.8-Flash-Next on one **Intel Arc Pro B70 32 GB** can keep its routed experts
+and complete n-gram table in host RAM. This recipe needs **128 GB available RAM**
+and **85.14 GB disk**, has a 64K context window, and does not require NVMe.
+It supports images, not video. Its memory and private shared-memory limits are
+carried by the v3 catalog; the panel checks host RAM before starting it.
+Update to **6.13.4 or newer** to get this engine repository in the bundled
+catalog. Automatic catalog refreshes intentionally cannot introduce an engine
+repository an older plugin version has never shipped.
+
 ## What it does
 
 - **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended. The models tab lists every model this machine can run, on whichever of its cards it lands, as one searchable table; home shows the ones you pinned (running or downloading one pins it). A machine with no tested model says so and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
