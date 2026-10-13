@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.7] - 2026-10-13
+
+### Fixed
+- When an agent gives up on an answer, the engine stops generating it. The gateway (`org-v4`, registry at 7c15d9ca) watches the client's connection while it waits on the engine and closes the engine request the moment the client is gone. Before, a non-streamed request, or a streamed one between chunks, ran to its end behind a client that had timed out; on a recipe that runs one request at a time (Qwen3.8-Flash-Next on an Arc Pro B70), the agent's retry then queued behind it and timed out as well. A running model gets the new gateway when it is stopped and started again.
+
 ## [6.13.6] - 2026-10-13
 
 ### Fixed
