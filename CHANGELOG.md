@@ -2,6 +2,12 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.5] - 2026-10-13
+
+### Fixed
+- On a machine with several Arc Pro B70s, Start no longer picks the card that drives the desktop when another is free. The compositor, Xwayland and browsers hold about 1.7 GiB on the display card, less than vLLM's 96.5% request leaves, so Qwen3.8-27B failed to start there ("the engine keeps crashing") while it loads on the other card. A card with a connected monitor is offered last, and the hardware page marks it "display".
+- When an engine fails, the message names its exception (for example `ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization`) instead of the first traceback line, which read `raise RuntimeError(`.
+
 ## [6.13.4] - 2026-10-13
 
 ### Added

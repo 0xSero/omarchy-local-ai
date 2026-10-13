@@ -223,18 +223,23 @@ nvidia() {
   grep -E '^[0-9]+, ' <<<"$out" || true
 }
 
-# Arc Pro B70 by PCI id. The xe driver gives users its temperature but not its memory use.
+# Arc Pro B70 by PCI id. The xe driver gives users its temperature but not its memory use. A card with a connected
+# monitor drives the desktop, whose compositor and browsers hold part of its memory, so it is offered last.
 intel() {
-  local a t f rows=()
+  local a t f c s rows=()
   for a in $(lspci -Dn -d 8086:e223 2>/dev/null | cut -d' ' -f1 | sort -u); do
     [[ -e /dev/dri/by-path/pci-$a-render ]] || continue
     t=null
     f=$(grep -lx pkg /sys/bus/pci/devices/"$a"/hwmon/hwmon*/temp*_label 2>/dev/null | head -1 || true)
     [[ -n $f ]] && t=$(($(<"${f%_label}_input") / 1000))
-    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")")
+    s=0
+    for c in "$SYS"/bus/pci/devices/"$a"/drm/card*; do
+      for f in "$SYS"/class/drm/"${c##*/}"-*/status; do [[ $(cat "$f" 2>/dev/null) == connected ]] && s=1; done
+    done
+    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")" "$s")
   done
-  # temperature and render node, one card a line
-  ((${#rows[@]} == 0)) || printf '%s\t%s\n' "${rows[@]}"
+  # temperature, render node and whether it drives a display, one card a line
+  ((${#rows[@]} == 0)) || printf '%s\t%s\t%s\n' "${rows[@]}"
 }
 
 # amd-smi comes with ROCm; without it AMD cards are not listed.
@@ -267,7 +272,8 @@ cpu() {
 MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | split(", ") | {backend: "nvidia", index: (.[0] | tonumber),
       product: .[1], totalMiB: (.[2] | tonumber), usedMiB: (.[3] | tonumber? // null), tempC: (.[4] | tonumber? // null)}))
     + ($xe | split("\n") | map(select(length > 0) | split("\t")) | to_entries | map({backend: "intel-xpu", index: .key,
-      product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1]}))
+      product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1],
+      display: ((.value[2] // "") == "1")}))
     + $am;
   def norm: ascii_downcase | gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]"; "");
   def match($r; $ram): [.[] | . as $x
@@ -788,7 +794,9 @@ fail() {
   e=$(engine "$WID")
   if docker inspect "$e" >/dev/null 2>&1; then
     docker logs --tail 60 "$e" >>"$WD/err" 2>&1 || true
-    hint=$(docker logs --tail 200 "$e" 2>&1 | grep -i -m1 -e error -e 'out of' -e exception | cut -c1-160 || true)
+    # the exception itself ("ValueError: Free memory on device ..."), not the first traceback line that says "error"
+    hint=$(docker logs --tail 200 "$e" 2>&1 | grep -oE '[A-Za-z]+(Error|Exception): .*' | grep -v 'Engine core initialization failed' | head -1 | cut -c1-200 || true)
+    [[ -n $hint ]] || hint=$(docker logs --tail 200 "$e" 2>&1 | grep -i -m1 -e error -e 'out of' -e exception | cut -c1-160 || true)
   fi
   phase_stop "$WID" || true
   die "$*${hint:+: $hint}"
@@ -1506,7 +1514,8 @@ cmd_snapshot() {
        downloads: $downloads, updates: $outdated.updates, updatesAt: $outdated.at, catalog: {commit: ($rec[0].registryCommit // ""), at: ($rec[0].refreshedAt // "")},
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
-         free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
+         # a card that drives a display comes last, so Start picks a card the desktop is not using
+         free: ([.[] | select(.key as $k | ($busy + $taken) | index($k) == null)] | sort_by(.display // false) | map(.key)),
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
          # the registry lists the recipes of a kind best first: the first on one card is its recommended model
          models: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1) | summary($host)],

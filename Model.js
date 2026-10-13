@@ -376,7 +376,7 @@ function gpusView(s, ui) {
     var status = d ? (d.state === "ready" ? "running " : d.state === "error" ? "stopped: " : d.state + " ") + d.name
       : held ? "in use by another program" : kd ? "free" : "no tested model yet"
     var open = ui.open === "hw:" + g.key || ui.wide
-    rows.push({ type: "field", logo: vendor(g), label: g.name, value: (g.tempC != null ? g.tempC + "°  " : "") + (d ? (d.state === "ready" ? "running" : d.state) : held ? "in use" : kd ? "free" : "–"),
+    rows.push({ type: "field", logo: vendor(g), label: g.name, value: (g.display ? "display  " : "") + (g.tempC != null ? g.tempC + "°  " : "") + (d ? (d.state === "ready" ? "running" : d.state) : held ? "in use" : kd ? "free" : "–"),
       warn: held, drop: !ui.wide, open: open, action: ui.wide ? "" : "pick|hw:" + g.key })
     if (open) {
       var mem = gpuRow(g)
