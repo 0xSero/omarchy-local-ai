@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. `main` carries releases only; work lands on `dev` (see `docs/releases.md`).
 
+## [Unreleased]
+
+### Fixed
+- An amd-smi that crashes its Python (a segfault in `libpython3.14`, issue #118) is no longer run again on every poll. A subcommand that died of a signal is skipped for a day; the card stays listed from `amd-smi static`, with memory use and temperature unknown.
+
 ## [6.15.0] - 2026-10-14
 
 ### Added

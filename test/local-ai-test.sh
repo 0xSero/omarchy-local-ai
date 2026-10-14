@@ -183,6 +183,21 @@ cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
   fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"
 jq -e '[.kinds[] | select(.hw == "rx-7600-xt-16gb") | .free[0], (.models | length > 0)] == ["amd-rocm:0", true]' "$TMP/snap-amd.json" >/dev/null ||
   fail "the RX 7600 XT kind" "$(jq -c .kinds "$TMP/snap-amd.json")"
+# amd-smi's Python can segfault (issue #118): the card still lists from static, without readings, and the
+# subcommand that crashed is not run again on the next poll
+shim amd-smi 'case $1 in
+static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 7600 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) echo run >>"$(dirname "$0")/metric-runs"; kill -SEGV $$ ;;
+esac'
+rm -f "$TMP/bin/metric-runs" "$STATE"/amd-smi-*.crashed
+"$CLI" snapshot >"$TMP/snap-segv.json" || fail "a crashing amd-smi broke the snapshot"
+"$CLI" snapshot >"$TMP/snap-segv.json" || fail "a crashing amd-smi broke the second snapshot"
+[[ $(jq -r '.gpus | map(select(.backend == "amd-rocm") | "\(.hw)=\(.tempC)") | join(" ")' "$TMP/snap-segv.json") == "rx-7600-xt-16gb=null" ]] ||
+  fail "a crashing amd-smi metric hid the card" "$(jq -c .gpus "$TMP/snap-segv.json")"
+[[ $(wc -l <"$TMP/bin/metric-runs") == 1 && -f $STATE/amd-smi-metric.crashed ]] ||
+  fail "a crashed amd-smi metric ran again" "$(cat "$TMP/bin/metric-runs")"
+rm -f "$TMP/bin/metric-runs" "$STATE"/amd-smi-*.crashed
+pass "an amd-smi that segfaults lists the card without readings and is not run again for a day"
 # A Vulkan recipe uses the same physical AMD detector, without requiring ROCm at launch.
 shim amd-smi 'case $1 in
 static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 9070 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;

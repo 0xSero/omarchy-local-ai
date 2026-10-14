@@ -271,6 +271,17 @@ intel() {
   ((${#rows[@]} == 0)) || printf '%s\t%s\t%s\n' "${rows[@]}"
 }
 
+# smi <amd-smi> <subcommand> [args]: its JSON, or {} when it fails. amd-smi can crash its Python on some builds
+# (a segfault in libpython3.14, issue #118); a subcommand that died of a signal is not run again for a day, so the
+# panel's polling does not crash it every few seconds, and its readings show as unknown until then.
+smi() {
+  local mark=$STATE/amd-smi-$2.crashed out rc=0
+  [[ -n $(find "$mark" -mmin -1440 2>/dev/null) ]] && { echo '{}'; return; }
+  out=$(timeout 10 "$@" 2>/dev/null) || rc=$?
+  ((rc > 128)) && { touch "$mark" 2>/dev/null || true; }
+  ((rc == 0)) && printf '%s\n' "$out" || echo '{}'
+}
+
 # amd-smi comes with ROCm; without it AMD cards are not listed.
 amd() {
   # ROCm installs amd-smi in /opt/rocm/bin, which a session started before the
@@ -278,8 +289,8 @@ amd() {
   local amdsmi
   amdsmi=$(command -v amd-smi || echo /opt/rocm/bin/amd-smi)
   [[ -x $amdsmi ]] || { echo '[]'; return; }
-  jq -nc --argjson s "$(timeout 10 "$amdsmi" static --json 2>/dev/null || echo '{}')" \
-    --argjson m "$(timeout 10 "$amdsmi" metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
+  jq -nc --argjson s "$(smi "$amdsmi" static --json)" \
+    --argjson m "$(smi "$amdsmi" metric --mem-usage --temperature --json)" '
     [($s.gpu_data // [])[] | . as $g | ([($m.gpu_data // [])[] | select(.gpu == $g.gpu)][0] // {}) as $u
      | select(($g.asic.market_name // "") != "")
      | {backend: "amd-rocm", index: ($g.gpu | tonumber), product: $g.asic.market_name, totalMiB: ($g.vram.size.value // 0),
