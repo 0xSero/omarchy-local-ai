@@ -1,6 +1,14 @@
 # Changelog
 
-Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
+Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. `main` carries releases only; work lands on `dev` (see `docs/releases.md`).
+
+## [Unreleased]
+
+### Added
+- **Update Local AI** on the home page when `main` has a release this copy lacks. The agent update check (every 6 hours) also asks the plugin's origin for its default branch's commit with `git ls-remote` (nothing is fetched), and the button runs Omarchy's `omarchy plugin update`. A checkout that already contains that commit is not offered it, and a copy that is not a git checkout is never offered an update.
+
+### Changed
+- `main` carries releases only and development lands on `dev`, so the commit Omarchy installs and the marketplace reviews stays still between releases. Recipes reach installed copies through the panel's registry check and do not need a release. The release workflow merges each release back into `dev`; pull requests into `main` must come from `dev`.
 
 ## [6.13.8] - 2026-10-14
 

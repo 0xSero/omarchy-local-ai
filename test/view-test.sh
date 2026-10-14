@@ -27,6 +27,15 @@ for (const view of ['home','run','kind','gpus']) test('action errors are visible
 for (const state of [{gpus:[],kinds:[]},{...s,readiness:{state:'needs-setup'}},{...s,readiness:{state:'docker-down',message:'Docker is not running'}},{...s,readiness:{state:'unsupported'}}]) test('setup, docker-down and unsupported pages retain errors', () => {
   assert(m.build(state,{view:'home',problem:'refresh failed'}).rows.some(r=>r.label==='refresh failed'));
 });
+test('a plugin release is offered on the home page only, and once', () => {
+  const home=m.build({...s,pluginUpdate:true},{view:'home'});
+  const rows=home.rows.filter(r=>r.type==='links'&&r.items.some(i=>i.action==='update|plugin'));
+  assert.equal(rows.length,1);
+  assert(!m.build({...s,pluginUpdate:true},{view:'agents'}).rows.some(r=>r.type==='links'&&r.items.some(i=>i.action==='update|plugin')));
+  assert(!m.build(s,{view:'home'}).rows.some(r=>r.type==='links'&&r.items.some(i=>i.action==='update|plugin')));
+  const busy=m.build({...s,pluginUpdate:true},{view:'home',updatingAgent:'plugin'}).rows.find(r=>r.type==='links'&&r.note);
+  assert.equal(busy.items[0].label,'Updating…'); assert.equal(busy.items[0].action,'');
+});
 test('a card kind with only multi-card models renders instead of breaking the panel', () => {
   const v=m.build({...s,deployments:[],kinds:[{...s.kinds[0],models:[]}]},{view:'home'});
   assert(!v.rows.some(r=>r.type==='error'));

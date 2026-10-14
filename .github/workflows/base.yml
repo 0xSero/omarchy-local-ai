@@ -1,0 +1,16 @@
+name: base
+# main carries releases only (docs/releases.md): a pull request into it comes from dev.
+on:
+  pull_request:
+    branches: [main]
+permissions: {}
+jobs:
+  base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: pull requests into main come from dev
+        env: {HEAD: "${{ github.head_ref }}", SAME: "${{ github.event.pull_request.head.repo.full_name == github.repository }}"}
+        run: |
+          [[ $HEAD == dev && $SAME == true ]] && exit 0
+          echo "::error::Open this pull request against dev; main carries releases only (docs/releases.md)."
+          exit 1

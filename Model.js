@@ -591,6 +591,10 @@ function agentsView(s, ui) {
 function build(s, ui) {
   s = s || {}
   var v = (ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
+  // a plugin release, on the home page: Omarchy's own update installs it and reloads the panel
+  if (s.pluginUpdate && (!ui.view || ui.view === "home"))
+    v.rows.unshift({ type: "links", note: "A new version of Local AI is out.",
+      items: [{ label: ui.updatingAgent === "plugin" ? "Updating…" : "Update Local AI", action: ui.updatingAgent ? "" : "update|plugin" }] })
   if (ui.problem || ui.pollProblem || s.setupError) v.rows.unshift({ type: "error", label: ui.problem || ui.pollProblem || s.setupError })
   else if (ui.notice) v.rows.unshift({ type: "banner", text: ui.notice })
   return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })
