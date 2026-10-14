@@ -33,6 +33,15 @@ Setup ends by checking what the panel will show. Sharing a model on your tailnet
 - Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
 - Network access to `huggingface.co` (weights), `ghcr.io/sybil-solutions`, historical `ghcr.io/0xsero` pins, and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (the automatic catalog check), `huggingface.co` again for model cards in full screen, and `usage.sybilsolutions.ai` (the install count, below).
 
+Qwen3.8-Flash-Next on one **Intel Arc Pro B70 32 GB** can keep its routed experts
+and complete n-gram table in host RAM. This recipe needs **128 GB available RAM**
+and **85.14 GB disk**, has a 64K context window, and does not require NVMe.
+It supports images, not video. Its memory and private shared-memory limits are
+carried by the v3 catalog; the panel checks host RAM before starting it.
+Update to **6.13.4 or newer** to get this engine repository in the bundled
+catalog. Automatic catalog refreshes intentionally cannot introduce an engine
+repository an older plugin version has never shipped.
+
 ## What it does
 
 - **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended. The models tab lists every model this machine can run, on whichever of its cards it lands, as one searchable table; home shows the ones you pinned (running or downloading one pins it). A machine with no tested model says so and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
@@ -63,7 +72,7 @@ bin/omarchy-local-ai log
 
 CPU recipes use system RAM and start without GPU devices. Recipes that offload GPU work into RAM or NVMe remain hardware-specific and list their requirements.
 
-Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); the key is in `~/.local/state/omarchy/local-ai/gateway.key`.
+Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); the key is in `~/.local/state/omarchy/local-ai/gateway.key`. Local AI itself, and the agents it opens, send the key only to the gateway's address on the model's private Docker network, which no other account on the machine can take over.
 
 ## Remove
 
@@ -101,19 +110,28 @@ checks the registry for new models (every 12 hours while the bar runs) to
 `https://usage.sybilsolutions.ai/v1/local-ai/ping`:
 
 ```json
-{"id": "9f2c…", "version": "6.13.0", "hw": ["rtx-3090"], "running": 1}
+{"id": "9f2c…", "version": "6.15.0", "hw": ["rtx-3090"], "running": 1, "launched": true,
+ "actions": {"started": 2, "failed": 0, "opened": 1, "downloaded": 1}}
 ```
 
 `id` is a random number made on first run and kept in
 `~/.local/state/omarchy/local-ai/install-id`; it is not derived from the machine
 or you, and Remove deletes it. `hw` lists the card kinds Local AI has recipes for
-that it found, `running` how many models run. The server keeps those four fields
-and the day, and no IP address or other header. Its code, the D1 migrations and the
-deploy config are in [`usage/`](usage) (the worker `local-ai-usage` and its `usage.sybilsolutions.ai` route), folded in
-from the former `local-ai-usage` repository; the public totals are the same worker's `GET /v1/local-ai/stats`.
+that it found, `running` how many models run, `launched` whether a model has ever
+answered on this machine. `actions` are how many models started, starts that
+failed, agents opened and models downloaded since the last message that arrived:
+totals only, never which model, agent or folder. They wait in
+`~/.local/state/omarchy/local-ai/counts.json` until a message arrives, so no
+action is lost or sent twice, and nothing extra is sent when you use Local AI.
+The server keeps those fields and the day, and no IP address or other header.
+Its code, the D1 migrations and the deploy config are in [`usage/`](usage) (the
+worker `local-ai-usage` and its `usage.sybilsolutions.ai` route); the public
+totals are the same worker's `GET /v1/local-ai/stats`.
 
-Turn it off with `omarchy-local-ai set ping off` (or `DO_NOT_TRACK=1` in the
-bar's environment). A failed or refused message changes nothing.
+Turn it off in the panel under **Settings** (send usage reports), with
+`omarchy-local-ai set ping off`, or `DO_NOT_TRACK=1` in the
+bar's environment. Turning it off also deletes the actions not yet sent, and
+nothing is counted while it is off. A failed or refused message changes nothing.
 
 ### New models, downloads and removal
 

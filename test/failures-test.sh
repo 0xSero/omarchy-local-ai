@@ -39,6 +39,7 @@ echo '{"id":"test","port":12434,"shared":true}' >"$STATE/deploy/test/config.json
 echo '{"state":"ready"}' >"$STATE/deploy/test/status.json"
 serve() { return 1; }
 tailscale() { echo '{"OperatorUser":"another-account"}'; }
+gw_addr() { echo http://172.30.0.5:12434; }
 # timeout normally execs a binary; this fixture invokes the shell function instead.
 timeout() { shift; "$@"; }
 check 'share reports that another account manages Tailscale' 1 cmd_share test

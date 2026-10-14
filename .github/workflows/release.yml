@@ -34,3 +34,12 @@ jobs:
       - name: publish
         env: {GH_TOKEN: "${{ github.token }}"}
         run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+      # dev carries on from the release, so the next release pull request shows only what is new
+      - name: merge the release into dev
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin dev
+          git checkout -B dev origin/dev
+          git merge --no-edit "$GITHUB_SHA"
+          git push origin dev

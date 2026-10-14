@@ -63,6 +63,13 @@ section { margin-top: 64px; }
     </div>
   </section>
 
+  <section><span class="label">Last 30 days</span>
+    <div class="tiles" id="acts" style="margin-top:0"></div>
+    <div class="two" style="margin-top:40px">
+      <div class="chart" id="starts"></div>
+    </div>
+  </section>
+
   <section><span class="label">This week</span>
     <div class="two">
       <div class="chart"><h3>GPUs</h3><p>Installs active in the last 7 days, by the card Local AI found</p><div class="bars" id="gpus"></div><div class="note" id="cpu"></div></div>
@@ -79,7 +86,7 @@ section { margin-top: 64px; }
   </section>
 
   <section><span class="label">How it is counted</span>
-    <p class="sub" style="margin:0">Every 12 hours the plugin sends a random install id, its version, the cards it found and how many models run. No address or user agent is stored. Turn it off with <code>omarchy-local-ai set ping off</code>. Counting began with 6.13.0 on 10 Oct 2026, so older installs that have not updated are not here. GitHub numbers are recorded daily by the plugin's <a href="https://github.com/sybil-solutions/omarchy-local-ai/tree/stats/traffic" style="text-decoration:underline">traffic workflow</a>.</p>
+    <p class="sub" style="margin:0">Every 12 hours the plugin sends a random install id, its version, the cards it found, how many models run, whether a model has ever answered on it, and since its last check-in how many models it started, how many starts failed, how many agents it opened and how many models it downloaded. Totals only: never which model, agent or folder. Actions wait on the machine until a check-in arrives, so none are lost or sent twice. No address or user agent is stored. "Ran a model, ever" counts installs where a model has answered (6.15.0 and later, including models run before updating) or one was running at a check-in. Turn it off with <code>omarchy-local-ai set ping off</code>. Counting began with 6.13.0 on 10 Oct 2026, so older installs that have not updated are not here. GitHub numbers are recorded daily by the plugin's <a href="https://github.com/sybil-solutions/omarchy-local-ai/tree/stats/traffic" style="text-decoration:underline">traffic workflow</a>.</p>
   </section>
 </main>
 <footer class="foot"><span id="updated">Loading…</span><a href="/v1/local-ai/stats">JSON</a><a href="https://github.com/sybil-solutions/omarchy-local-ai/tree/main/usage">Source</a></footer>
@@ -148,15 +155,17 @@ function fill90(daily) {
   if (!daily.length) return [];
   const out = [], start = new Date(daily[0].day + "T00:00:00Z"), end = new Date(daily[daily.length - 1].day + "T00:00:00Z");
   const by = Object.fromEntries(daily.map((d) => [d.day, d]));
-  for (let t = start; t <= end; t = new Date(t.getTime() + 864e5)) { const k = t.toISOString().slice(0, 10); out.push(by[k] ?? { day: k, active: 0, running: 0, new: 0 }); }
+  for (let t = start; t <= end; t = new Date(t.getTime() + 864e5)) { const k = t.toISOString().slice(0, 10); out.push(by[k] ?? { day: k, active: 0, running: 0, new: 0, started: 0, failed: 0, opened: 0 }); }
   return out;
 }
 
 get("/v1/local-ai/stats").then((u) => {
   const i = u.installs;
-  tiles($("tiles"), [[i.installs, "installs counted"], [i.today, "active today", true], [i.week, "active this week"], [i.monthRunning, "ran a model, last 30 days"]]);
+  tiles($("tiles"), [[i.installs, "installs counted"], [i.launched, "ran a model, ever"], [i.today, "active today", true], [i.week, "active this week"]]);
+  tiles($("acts"), [[i.monthStarted, "models started"], [i.monthFailed, "starts that failed"], [i.monthOpened, "agents opened"], [i.monthDownloaded, "models downloaded"]]);
   const days = fill90(u.daily);
   columns($("active"), "Active installs per day", "Installs that checked in that day", days, (d) => d.active, (d) => `<b>${short(d.day)}</b> · ${fmt(d.active)} active · ${fmt(d.running)} running a model`);
+  columns($("starts"), "Models started per day", "Starts that finished, from 6.15.0", days, (d) => d.started ?? 0, (d) => `<b>${short(d.day)}</b> · ${fmt(d.started)} started · ${fmt(d.failed)} failed · ${fmt(d.opened)} agents opened`);
   columns($("new"), "New installs per day", "First check-in of an install", days, (d) => d.new, (d) => `<b>${short(d.day)}</b> · ${fmt(d.new)} new`);
   const hw = Object.entries(u.week.hardware), cpu = u.week.hardware["x86-64-avx2-cpu"] ?? 0;
   bars($("gpus"), hw.filter(([k]) => k !== "x86-64-avx2-cpu" && k !== "none").slice(0, 12).map(([k, v]) => [card(k), v]));

@@ -50,7 +50,7 @@ ShellRoot {
   id: runner
   property int at: 0
   property bool failed: false
-  property var modes: ["setup","kind","run","error","crash","stopped","refreshed"]
+  property var modes: ["setup","kind","run","error","crash","stopped","refreshed","settings"]
   FloatingWindow {
     implicitWidth:340; implicitHeight:1000; color:"#121214"
     Loader { id: ld; source:"Panel.qml"; onLoaded: { item.open(); step.start() } }
@@ -68,7 +68,7 @@ ShellRoot {
       if(!p.snap.gpus){step.start();return}
       p.snap=Object.assign({},p.snap,{readiness:{state:mode==="setup"?"needs-setup":"ready"}})
       if(mode==="crash" || mode==="stopped")p.snap=Object.assign({},p.snap,{deployments:p.snap.deployments.map(function(d){return Object.assign({},d,{state:"error",error:"the engine stopped"})})})
-      p.ui={view:mode==="crash"?"home":mode==="setup"?"home":mode==="kind"?"models":"run",id:"test",problem:mode==="error"?"Could not open the agent terminal; try again.":""}
+      p.ui={view:mode==="crash"?"home":mode==="setup"?"home":mode==="kind"?"models":mode==="settings"?"settings":"run",id:"test",problem:mode==="error"?"Could not open the agent terminal; try again.":""}
       if(mode==="refreshed"){p.ui={view:"home"};p.snap=Object.assign({},p.snap,{catalog:{commit:"00000000",at:""}});p.autoAt=0;p.autoBusy=false;p.autoRefresh(p.snap)}
       capture.start()
     }
@@ -117,13 +117,13 @@ if ! env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u DBUS_SE
   exit 1
 fi
 if grep -Eq 'FAIL|ReferenceError|TypeError|Unable to assign|Binding loop' "$TMP/log" ||
-  [[ $(grep -c 'PASS rendered' "$TMP/log") != 7 ]] || ! grep -q 'PASS model name and fit do not overlap' "$TMP/log"; then
+  [[ $(grep -c 'PASS rendered' "$TMP/log") != 8 ]] || ! grep -q 'PASS model name and fit do not overlap' "$TMP/log"; then
   cat "$TMP/log"
   exit 1
 fi
-for name in setup kind run error crash stopped refreshed; do test -s "$TMP/output/$name.png"; done
+for name in setup kind run error crash stopped refreshed settings; do test -s "$TMP/output/$name.png"; done
 if [[ -n ${PANEL_ARTIFACTS:-} ]]; then
   mkdir -p "$PANEL_ARTIFACTS"
   cp "$TMP/output/"*.png "$TMP/log" "$PANEL_ARTIFACTS/"
 fi
-echo 'ok - real panel renders setup, choices, sharing, errors, stopped models and refresh results offscreen without overlap'
+echo 'ok - real panel renders setup, choices, sharing, errors, stopped models, refresh results and settings offscreen without overlap'
