@@ -472,6 +472,16 @@ network() {
 }
 engine() { printf '%s-engine' "$(network "$1")"; }
 gateway() { printf '%s-gateway' "$(network "$1")"; }
+# gw_addr <id>: the gateway's URL on the model's own Docker network. Only Docker assigns addresses on that bridge and
+# no host interface holds them, so another account can never listen there: every keyed request this plugin makes,
+# and every agent and tailnet share it sets up, goes to this address and never to 127.0.0.1:<port>, which another
+# account could take over the moment the gateway exits.
+gw_addr() {
+  local ip
+  ip=$(docker inspect -f "{{with index .NetworkSettings.Networks \"$(network "$1")\"}}{{.IPAddress}}{{end}}" "$(gateway "$1")" 2>/dev/null) || return 1
+  [[ $ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  printf 'http://%s:12434' "$ip"
+}
 preparer() { printf '%s-prepare' "$(network "$1")"; }
 prepared_contract() { jq -cS "$PREP_CONTRACT prepared_contract" <<<"$1"; }
 prepared_path() { printf '%s/prepared/%s' "$MODELS" "$(prepared_contract "$1" | sha256sum | cut -c1-64)"; }
@@ -762,10 +772,10 @@ phase_stop() {
   remove "$1"
 }
 
-# serve <port> on|off
+# serve <port> on|off [target URL]: the tailnet's https://<host>:<port> forwards to target (the gateway's bridge address)
 serve() {
   if [[ $2 == "on" ]]; then
-    timeout 20 tailscale serve --bg --https="$1" "http://127.0.0.1:$1" >/dev/null 2>&1
+    timeout 20 tailscale serve --bg --https="$1" "$3" >/dev/null 2>&1
   else
     timeout 20 tailscale serve --https="$1" off >/dev/null 2>&1
   fi
@@ -841,8 +851,9 @@ worker_run() {
   done
   seen=$(resets ${nodes[@]+"${nodes[@]}"})
   quiet=$SECONDS last="" top=1
+  GW=$(gw_addr "$WID") || fail "the gateway has no address on the model's network"
   while :; do
-    code=$(curl -s -m 5 -o "$WD/models.json" -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$PORTNUM/v1/models" || true)
+    code=$(curl -s --noproxy '*' -m 5 -o "$WD/models.json" -w '%{http_code}' -H "@$AUTH" "$GW/v1/models" || true)
     served=$(jq -r '.data[0].id // empty' "$WD/models.json" 2>/dev/null || true)
     [[ $code == "200" && -n $served ]] && break
     [[ $code == "401" ]] && fail "the gateway refuses this install's key"
@@ -866,10 +877,10 @@ worker_run() {
   rm -f "$WD/models.json"
 
   status "$WID" starting "checking it answers" 99
-  if curl -fsS --max-time 5 "http://127.0.0.1:$PORTNUM/v1/models" >/dev/null 2>&1; then
+  if curl -fsS --noproxy '*' --max-time 5 "http://127.0.0.1:$PORTNUM/v1/models" >/dev/null 2>&1; then
     fail "the gateway answers without the key"
   fi
-  reply=$(curl -fsS --max-time 600 -H "@$AUTH" -H 'Content-Type: application/json' "http://127.0.0.1:$PORTNUM/v1/chat/completions" \
+  reply=$(curl -fsS --noproxy '*' --max-time 600 -H "@$AUTH" -H 'Content-Type: application/json' "$GW/v1/chat/completions" \
     -d "$(jq -nc --arg m "$served" '{model: $m, max_tokens: 200, messages: [{role: "user", content: "Count from 1 to 60. Nothing else."}]}')") ||
     fail "the model did not answer"
   # A cold first request can include compilation or queueing, so its wall time is not GPU decode speed.
@@ -1274,16 +1285,17 @@ argv() {
 # open <id>: the model's agent in its folder, in a terminal
 cmd_open() {
   valid_id "${1:-}" || die "open <recipe>"
-  local d c s a b ag dir cmd=() v launcher
+  local d c s a b ag dir cmd=() v launcher gw
   d=$(dir_of "$1")
   [[ $(jq -r .state "$d/status.json" 2>/dev/null) == "ready" ]] || die "the model is not ready"
   c=$(<"$d/config.json")
+  gw=$(gw_addr "$1") || die "the model's gateway is not running; start the model again"
   # a model started before its config kept this reads it from its recipe; one whose recipe is gone since opens under
   # its id (the gateway maps any model name onto the served one) with the context its engine reports: an agent told
   # less than the engine holds cuts its own replies short once a conversation outgrows it
   s=$(jq -ce '.serve // empty' <<<"$c") ||
     s=$(recipe "$1" | jq -ce '{name, ctx: (.serving.ctxTokens // 32768), vision: (.capabilities.vision // false)}') ||
-    s=$(curl -fsS -m 5 -o /dev/stdout -H "@$AUTH" "http://127.0.0.1:$(jq -r .port <<<"$c")/v1/models" 2>/dev/null |
+    s=$(curl -fsS --noproxy '*' -m 5 -o /dev/stdout -H "@$AUTH" "$gw/v1/models" 2>/dev/null |
       jq -ce --arg n "${1%--*}" '{name: $n, ctx: (.data[0].max_model_len // empty), vision: false}') ||
     s=$(jq -nc --arg n "${1%--*}" '{name: $n, ctx: 32768, vision: false}')
   a=$(jq -r .agent <<<"$c")
@@ -1295,9 +1307,13 @@ cmd_open() {
   # the gateway maps any model name onto the served one, so agents see the recipe's name
   while IFS= read -r -d '' v; do
     cmd+=("$v")
-  done < <(argv "$a" "$b" "http://127.0.0.1:$(jq -r .port <<<"$c")" "$(jq -r .name <<<"$s")" \
+  done < <(argv "$a" "$b" "$gw" "$(jq -r .name <<<"$s")" \
     "$(jq -r .ctx <<<"$s")" "$(jq -r .vision <<<"$s")" "$ag")
   [[ $a == "omp" && $dir -ef $HOME_DIR ]] && cmd+=(--allow-home)
+  # an inherited HTTP(S)_PROXY usually exempts 127.0.0.1 but not the bridge address: the agent must reach the gateway
+  # directly, or the key would go to the proxy
+  v=${gw#http://}; v=${v%:*}
+  cmd=(env "NO_PROXY=$v${NO_PROXY:+,$NO_PROXY}" "no_proxy=$v${no_proxy:+,$no_proxy}" "${cmd[@]}")
   say "open $a on $1 in $dir"
   # Some terminals keep their launcher alive for the whole session. Release the panel after startup,
   # or its action timeout would kill a healthy agent two minutes later.
@@ -1313,13 +1329,16 @@ cmd_open() {
 
 # share <id> [off]: tailscale serve as you; never take over another account's operator.
 cmd_share() {
-  local f on=${2:-on} p operator
+  local f on=${2:-on} p operator t=""
   f=$(dir_of "${1:-}")/config.json
   valid_id "${1:-}" && [[ -f $f ]] || die "the model is not running"
   [[ $on == on || $on == off ]] || die "share <recipe> [off]"
   [[ $on == off || $(jq -r .state "${f%/*}/status.json") == ready ]] || die "the model is not ready to share"
   p=$(jq -r .port "$f")
-  if ! serve "$p" "$on"; then
+  if [[ $on == on ]]; then
+    t=$(gw_addr "$1") || die "the model's gateway is not running; start the model again"
+  fi
+  if ! serve "$p" "$on" "$t"; then
     operator=$(timeout 10 tailscale debug prefs 2>/dev/null | jq -r '.OperatorUser // ""') || operator=""
     [[ -z $operator || $operator == "$USER" ]] || die "another account manages Tailscale; ask that account to change the share"
     die "Tailscale could not change the share; check that it is running and ask its operator for access"
@@ -1485,10 +1504,11 @@ cmd_snapshot() {
       fi
       ;;
     ready)
-      # refused or an empty reply means the engine is gone; a slow answer only means it is busy
+      # liveness from the keyless /health (200 engine up, 503 engine gone): the poll never sends the key, so a
+      # listener that took over a vacated port learns nothing; refused or an empty reply means the gateway is gone
       rc=0
-      code=$(curl -s -m 2 -o /dev/null -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$port/v1/models") || rc=$?
-      if ((rc == 7 || rc == 52)) || [[ $code == "502" ]]; then why="the engine stopped"; fi
+      code=$(curl -s --noproxy '*' -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/health") || rc=$?
+      if ((rc == 7 || rc == 52)) || [[ $code == "502" || $code == "503" ]]; then why="the engine stopped"; fi
       ;;
     esac
     deps+=("{\"d\":$obj,\"u\":$(session "$id" "$(date -d "$at" +%s)"),\"why\":\"$why\"}")
@@ -1531,7 +1551,7 @@ paths "$HOME"
 . "$PANEL/lib/access.sh"
 mkdir -p "$STATE"
 # the verbs that use Docker run under the docker group, whatever groups this login began with
-case ${1:-} in snapshot | run | stop | remove | readiness | download) docker_group_reexec "$TARGET" "$@" ;; esac
+case ${1:-} in snapshot | run | stop | remove | readiness | download | open | share) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
 setup | registry | forget | snapshot | readiness | run | stop | open | update | outdated | set | share | pin | download | card) "cmd_$1" "${@:2}" ;;
 # the stale NVIDIA device list, if any, as "<spec>\t<why>" (setup rewrites it)
