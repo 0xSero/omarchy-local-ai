@@ -8,3 +8,4 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    target-branch: dev
