@@ -530,6 +530,11 @@ gw_addr() {
   printf 'http://%s:12434' "$ip"
 }
 preparer() { printf '%s-prepare' "$(network "$1")"; }
+# kv <id>: the tokens the engine's cache holds, from its start log (SGLang's max_total_num_tokens, vLLM's GPU KV cache
+# size), or nothing when it does not say. SGLang starts with a cache smaller than its context when the card is short.
+kv() {
+  docker logs "$(engine "$1")" 2>&1 | grep -m1 -oE 'max_total_num_tokens=[0-9]+|GPU KV cache size: [0-9,]+ tokens' | tr -dc 0-9 || true
+}
 prepared_contract() { jq -cS "$PREP_CONTRACT prepared_contract" <<<"$1"; }
 prepared_path() { printf '%s/prepared/%s' "$MODELS" "$(prepared_contract "$1" | sha256sum | cut -c1-64)"; }
 managed_paths() {
@@ -863,7 +868,7 @@ fail() {
 
 # __worker <id> <key>: download, start, wait for the model, check it answers; status.json tells the widget each step
 worker_run() {
-  local r t0 w reply served="" code nodes seen quiet last top step pct line
+  local r t0 w reply served="" code nodes seen quiet last top step pct line k
   WID=$1
   shift
   r=$(jq -ce '.recipe // empty' "$(dir_of "$WID")/config.json" 2>/dev/null || recipe "$WID")
@@ -943,6 +948,11 @@ worker_run() {
   # vLLM puts thinking in `reasoning`, older engines in `reasoning_content`; 200 tokens can all be thinking
   jq -e '.choices[0].message | any(.content, .reasoning, .reasoning_content; type == "string" and length > 0)' <<<"$reply" >/dev/null ||
     fail "the model returned no answer"
+  # what the cache holds, so Open keeps the agent's conversations inside it
+  k=$(kv "$WID")
+  if [[ -n $k ]]; then
+    jq -c --argjson k "$k" '.serve.kv = $k' "$WD/config.json" >"$WD/config.json.$$" && mv -f "$WD/config.json.$$" "$WD/config.json"
+  fi
   status "$WID" ready "" 100
   trap - EXIT
   count started
@@ -1369,7 +1379,7 @@ argv() {
 # open <id>: the model's agent in its folder, in a terminal
 cmd_open() {
   valid_id "${1:-}" || die "open <recipe>"
-  local d c s a b ag dir cmd=() v launcher gw
+  local d c s k a b ag dir cmd=() v launcher gw
   d=$(dir_of "$1")
   [[ $(jq -r .state "$d/status.json" 2>/dev/null) == "ready" ]] || die "the model is not ready"
   c=$(<"$d/config.json")
@@ -1382,6 +1392,14 @@ cmd_open() {
     s=$(curl -fsS --noproxy '*' -m 5 -o /dev/stdout -H "@$AUTH" "$gw/v1/models" 2>/dev/null |
       jq -ce --arg n "${1%--*}" '{name: $n, ctx: (.data[0].max_model_len // empty), vision: false}') ||
     s=$(jq -nc --arg n "${1%--*}" '{name: $n, ctx: 32768, vision: false}')
+  # a cache smaller than the context is what the agent gets, less room for a full reply (32768) beyond the 16384 an
+  # agent keeps back for one, and for its own estimate of the conversation: one that outgrows the cache is aborted
+  # mid-reply ("out of memory") before the agent compacts it
+  k=$(jq -r '.kv // empty' <<<"$s")
+  [[ -n $k ]] || k=$(kv "$1")
+  if [[ -n $k ]]; then
+    s=$(jq -c --argjson k "$k" '([$k - 24576, ($k / 2 | floor)] | max) as $w | if $w < .ctx then .ctx = $w else . end' <<<"$s")
+  fi
   a=$(jq -r .agent <<<"$c")
   dir=$(jq -r .folder <<<"$c")
   b=$(bin "$a") || die "$a is not installed"
@@ -1398,7 +1416,7 @@ cmd_open() {
   # directly, or the key would go to the proxy
   v=${gw#http://}; v=${v%:*}
   cmd=(env "NO_PROXY=$v${NO_PROXY:+,$NO_PROXY}" "no_proxy=$v${no_proxy:+,$no_proxy}" "${cmd[@]}")
-  say "open $a on $1 in $dir"
+  say "open $a on $1 in $dir with $(jq -r .ctx <<<"$s") tokens of context"
   # Some terminals keep their launcher alive for the whole session. Release the panel after startup,
   # or its action timeout would kill a healthy agent two minutes later.
   omarchy-launch-tui --app-id=org.omarchy.local-ai bash -c 'cd -- "$1" && shift && exec "$@"' local-ai "$dir" "${cmd[@]}" \
