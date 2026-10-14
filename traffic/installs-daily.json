@@ -19,8 +19,14 @@
   },
   {
     "day": "2026-10-13",
-    "active": 59,
-    "running": 7,
-    "new": 15
+    "active": 97,
+    "running": 13,
+    "new": 34
+  },
+  {
+    "day": "2026-10-14",
+    "active": 53,
+    "running": 9,
+    "new": 5
   }
 ]
