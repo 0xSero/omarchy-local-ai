@@ -8,6 +8,7 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - **Settings** on home, with one setting for now: **send usage reports**, on or off, and what reporting sends in plain words (minimal and anonymous: no user or account ID, a random number made on this computer, version, card kinds, model and action counts; never prompts, files, folders, model names or agents; the IP address is not stored). Turning it off deletes counts not yet sent. With `DO_NOT_TRACK` set it shows as off, without a switch.
 
 ### Security
+- The gateway key is written whole to a temporary file and linked into place, never truncated, so two first starts at once share one key and a running gateway never reads it empty (marketplace review #11207). The gateway image that refuses every request when its key file is empty or unreadable is pinned separately once built.
 - The usage server (`usage/`) keeps no request logs and has no `workers.dev` or preview address, so only `usage.sybilsolutions.ai` answers and Cloudflare stores no caller addresses for it. It accepts only JSON pings of at most 1 KB (refused before reading), sends `nosniff`, `no-referrer`, HSTS and `DENY` framing on every response, serves the dashboard under a CSP that allows only its own script (by hash) and the plugin's traffic files, allows other sites to read the public stats only, and answers any internal error with a bare 503.
 
 ### Changed
