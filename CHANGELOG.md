@@ -2,10 +2,25 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. `main` carries releases only; work lands on `dev` (see `docs/releases.md`).
 
-## [Unreleased]
+## [6.16.0] - 2026-10-14
+
+### Security
+- The agent's folder is chosen in the panel's own folder browser: the folder row opens the current folder, a click enters a subfolder or goes up, recent folders are one click away, and **Use this folder** sets it. The panel no longer opens Qt's native file dialog, which ran GTK3's chooser inside the shell; a paste there made the shell read another program's clipboard without a size limit, so a hostile clipboard owner could exhaust the shell's memory. Nothing in the browser is typed or pasted. The backend's new `dirs <folder>` lists a folder's visible subfolders (at most 400) and falls back to home for anything that is not a folder. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#11207). This also ends the shell crash the native chooser caused on some machines (`gmem.c: failed to allocate`, #108).
+
+### Added
+- The Intel Arc B390 (Panther Lake iGPU, `8086:b080`) is detected alongside the Arc Pro B70, so its registry recipes are offered (#106, thanks @rados10).
+- Apple Silicon under Asahi Linux is offered its CPU recipes, sized by unified RAM (#62, thanks @mstrelko).
+
+### Changed
+- Panel text and width follow Omarchy's type scale (#103, thanks @Zeus-Deus).
+- Open tells the agent how much the engine's cache holds, not just its context, so a long conversation is compacted before the engine runs out (#109, thanks @maralcbr).
 
 ### Fixed
+- AMD cards are found when a mise or pyenv `python3` comes first on PATH (amd-smi runs under the system Python), and a Strix Halo's BIOS carve-out counts toward its unified memory, so a 128 GB machine matches its card at any carve-out (#116, thanks @joonsp; #63).
 - An amd-smi that crashes its Python (a segfault in `libpython3.14`, issue #118) is no longer run again on every poll. A subcommand that died of a signal is skipped for a day; the card stays listed from `amd-smi static`, with memory use and temperature unknown.
+
+### Usage dashboard
+- usage.sybilsolutions.ai leads with **Work**: bounties against the $1,000 monthly cap, open PRs and issues, the marketplace listing, and supported card and recipe counts, from the registry's hourly `ops.json` (#131).
 
 ## [6.15.0] - 2026-10-14
 

@@ -300,13 +300,28 @@ if command -v node >/dev/null; then
   [[ $(js 'vm.runInNewContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/property string cli: (.*)/)[1],
     {Qt: {resolvedUrl: u => "file:///home/a%2525b%23c/" + u}})') == "/home/a%25b#c/bin/omarchy-local-ai" ]] || fail "the backend's path"
   pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
-  # The folder dialog preserves reserved characters through its URL and sends one path argument.
+  # The agent's folder is chosen in the panel's own browser (no native dialog in the shell): the folder row opens it on
+  # the current folder, a subfolder is entered by clicking, and "Use this folder" sends one path argument, reserved
+  # characters intact.
   [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw, details: true})).rows.find(r => r.icon === "folder").action
-    var p = {ui: {}, nav() {}, close() {}, run(x) { p.args = x }, Qt: {callLater: f => f()}, folderDialog: {open() {}}, Quickshell: {env() {return "/home/x"}}}; p.root = p; vm.createContext(p)
-    var q=fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
-    for(var name of ["activate", "pickedFolder"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0],p);
-    p.activate(a); p.pickedFolder(p.folderDialog.currentFolder,p.folderDialog.recipe); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b#c?d%" ]] || fail "folder dialog URL round trip"
-  pass "folder dialog preserves spaces, pipes, hashes, question marks and percent signs"
+    var p = {ui: {}, sent: [], topTick: 0, nav(x) { p.ui = Object.assign({}, p.ui, x) }, run(x) { p.sent.push(x.join(",")) }, next() {}}; p.root = p; vm.createContext(p)
+    var q = fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
+    for (var name of ["activate", "finished"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0], p);
+    p.activate(a)
+    p.finished(0, "dirs", JSON.stringify({path: "/home/x/My Projects/a|b#c?d%", parent: "/home/x/My Projects", dirs: ["sub #1"]}), "")
+    var v = c.build(s, p.ui), sub = v.rows.find(r => r.label === "sub #1"); p.activate(sub.action)
+    p.finished(0, "dirs", JSON.stringify({path: "/home/x/My Projects/a|b#c?d%/sub #1", parent: "/home/x/My Projects/a|b#c?d%", dirs: []}), "")
+    p.activate(c.build(s, p.ui).rows.flatMap(r => r.items || []).find(i => i.label === "Use this folder").action)
+    p.sent.join(" ; ") + " @ " + p.ui.view') == "dirs,/home/x/My Projects/a|b#c?d% ; dirs,/home/x/My Projects/a|b#c?d%/sub #1 ; set,folder,/home/x/My Projects/a|b#c?d%/sub #1 @ agents" ]] ||
+    fail "folder browser round trip"
+  grep -q 'FolderDialog\|QtQuick.Dialogs' "$ROOT/Panel.qml" && fail "the panel opens a native file dialog inside the shell"
+  pass "the folder browser walks folders by clicking and sends one path, spaces, pipes, hashes, question marks and percent signs intact"
+  # dirs: the resolved folder, its parent, its visible subfolders by name; a folder that is not one falls back to home
+  mkdir -p "$TMP/browse/b b" "$TMP/browse/a|#?%" "$TMP/browse/.hidden" && : >"$TMP/browse/file"
+  [[ $("$CLI" dirs "$TMP/browse" | jq -c --arg t "$(cd "$TMP" && pwd -P)" '[.path == $t + "/browse", .parent == $t, .dirs]') == '[true,true,["a|#?%","b b"]]' ]] ||
+    fail "dirs lists visible subfolders" "$("$CLI" dirs "$TMP/browse")"
+  [[ $("$CLI" dirs "relative/nowhere" | jq -r .path) == "$(cd "$HOME" && pwd -P)" ]] || fail "dirs falls back to home"
+  pass "dirs lists a folder's visible subfolders and falls back to home for anything that is not a folder"
 
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
