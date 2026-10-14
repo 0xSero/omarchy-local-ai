@@ -589,6 +589,27 @@ function agentsView(s, ui) {
   return { back: true, where: "agents", rows: rows }
 }
 
+// The agent's folder: the folder being looked at, a button to use it, recent folders, then its parent and subfolders
+// (the backend's dirs). Clicking only, nothing is typed or pasted.
+function folderView(s, ui) {
+  var b = ui.browse, id = ui.id || "", rows = []
+  if (!b) return { back: true, where: "folder", rows: [{ type: "field", label: "reading folders", value: "…" }] }
+  var go = function(p) { return "browse|" + encodeURIComponent(p) }
+  rows.push({ type: "sec", label: "THE AGENT'S FOLDER" })
+  rows.push({ type: "field", icon: "folder", label: "this folder", value: home(b.path) })
+  rows.push({ type: "links", items: [{ label: "Use this folder", action: "usefolder|" + id + "|" + encodeURIComponent(b.path) }] })
+  var recent = (s.folders || []).filter(function(f) { return f !== b.path }).slice(0, 4)
+  if (recent.length) {
+    rows.push({ type: "sec", label: "RECENT" })
+    recent.forEach(function(f) { rows.push({ type: "field", icon: "folder", label: home(f), value: "", action: go(f) }) })
+  }
+  rows.push({ type: "sec", label: "FOLDERS" })
+  if (b.parent) rows.push({ type: "field", icon: "up", label: "up to " + home(b.parent), value: "", action: go(b.parent) })
+  b.dirs.forEach(function(d) { rows.push({ type: "field", icon: "folder", label: d, value: "", action: go(b.path.replace(/\/$/, "") + "/" + d) }) })
+  if (!b.dirs.length) rows.push({ type: "field", label: "no folders inside", value: "" })
+  return { back: true, where: "folder", rows: rows }
+}
+
 // Settings: usage reporting, on unless turned off here or by DO_NOT_TRACK, and exactly what it sends
 var REPORTING = "Reporting is minimal and anonymous. There is no user or account ID: at most twice a day Local AI sends " +
   "a random number made on this computer, its version, the kinds of graphics card it found, how many models are running, " +
@@ -606,7 +627,7 @@ function settingsView(s, ui) {
 
 function build(s, ui) {
   s = s || {}
-  var v = (ui.view === "settings" ? settingsView(s, ui) : ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
+  var v = (ui.view === "settings" ? settingsView(s, ui) : ui.view === "folder" ? folderView(s, ui) : ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
   // a plugin release, on the home page: Omarchy's own update installs it and reloads the panel
   if (s.pluginUpdate && (!ui.view || ui.view === "home"))
     v.rows.unshift({ type: "links", note: "A new version of Local AI is out.",

@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Dialogs
 import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
@@ -210,13 +209,10 @@ Panel {
     case "setup": run(["setup"]); break
     case "default": run(["set", "agent", a[1]]); break
     case "update": ui = Object.assign({}, ui, { updatingAgent: a[1] }); run(["update", a[1]]); break
-    case "folder":
-      folderDialog.recipe = a[1]
-      folderDialog.currentFolder = "file://" + encodeURI(decodeURIComponent(a[2]) || Quickshell.env("HOME")).replace(/#/g, "%23").replace(/\?/g, "%3F")
-      folderDialog.selectedFolder = folderDialog.currentFolder
-      root.close()
-      Qt.callLater(function() { folderDialog.open() })
-      break
+    // the agent's folder, chosen in the panel's own browser (dirs): no native dialog runs inside the shell
+    case "folder": nav({ view: "folder", id: a[1] }); ui = Object.assign({}, ui, { browse: null }); run(["dirs", decodeURIComponent(a[2] || "")]); break
+    case "browse": run(["dirs", decodeURIComponent(a[1])]); break
+    case "usefolder": run(["set", "folder", decodeURIComponent(a[2])].concat(a[1] ? [a[1]] : [])); nav({ view: a[1] ? "run" : "agents", id: a[1] }); break
     case "run": run(["run", a[1], a[2]]); home(); break
     case "again": run(["stop", a[1]]); run(["run", a[1], a[2]]); home(); break
     case "stop": run(["stop", a[1]]); home(); break
@@ -284,6 +280,10 @@ Panel {
   // A verb that fails says why on its last "local-ai:" line; the panel opens to show it.
   function finished(code, operation, output, error) {
     if (operation === "outdated") return next()
+    if (operation === "dirs" && code === 0) {
+      try { ui = Object.assign({}, ui, { browse: JSON.parse(output) }); topTick++ } catch (e) {}
+      return next()
+    }
     if (operation === "registry") {
       // said only when it brought new models
       var was = ((snap.catalog || {}).commit || "").slice(0, 8)
@@ -311,20 +311,6 @@ Panel {
     stdout: StdioCollector { id: verbOut; waitForEnd: true }
     stderr: StdioCollector { id: verbErr; waitForEnd: true }
     onExited: function(code) { root.finished(code, operation, verbOut.text, verbErr.text) }
-  }
-  function pickedFolder(url, id) {
-    run(["set", "folder", decodeURIComponent(String(url).replace(/^file:\/\//, ""))].concat(id ? [id] : []))
-  }
-  FolderDialog {
-    id: folderDialog
-    property string recipe: ""
-    title: "Choose the agent's folder"
-    function returnToSettings() {
-      root.open()
-      root.nav({ view: recipe ? "run" : "agents", id: recipe })
-    }
-    onAccepted: { root.pickedFolder(selectedFolder, recipe); returnToSettings() }
-    onRejected: returnToSettings()
   }
   Process { id: copy }
   Timer { id: copiedTimer; interval: 1500; onTriggered: root.copied = false }

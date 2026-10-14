@@ -50,7 +50,7 @@ ShellRoot {
   id: runner
   property int at: 0
   property bool failed: false
-  property var modes: ["setup","kind","run","error","crash","stopped","refreshed","settings"]
+  property var modes: ["setup","kind","run","error","crash","stopped","refreshed","settings","folder"]
   FloatingWindow {
     implicitWidth:400; implicitHeight:1000; color:"#121214"
     Loader { id: ld; source:"Panel.qml"; onLoaded: { item.open(); step.start() } }
@@ -68,7 +68,7 @@ ShellRoot {
       if(!p.snap.gpus){step.start();return}
       p.snap=Object.assign({},p.snap,{readiness:{state:mode==="setup"?"needs-setup":"ready"}})
       if(mode==="crash" || mode==="stopped")p.snap=Object.assign({},p.snap,{deployments:p.snap.deployments.map(function(d){return Object.assign({},d,{state:"error",error:"the engine stopped"})})})
-      p.ui={view:mode==="crash"?"home":mode==="setup"?"home":mode==="kind"?"models":mode==="settings"?"settings":"run",id:"test",problem:mode==="error"?"Could not open the agent terminal; try again.":""}
+      p.ui={view:mode==="crash"?"home":mode==="setup"?"home":mode==="kind"?"models":mode==="settings"?"settings":mode==="folder"?"folder":"run",id:"test",browse:mode==="folder"?{path:"/home/x/projects",parent:"/home/x",dirs:["local-ai","omarchy","a folder with a long name that has to fit"]}:null,problem:mode==="error"?"Could not open the agent terminal; try again.":""}
       if(mode==="refreshed"){p.ui={view:"home"};p.snap=Object.assign({},p.snap,{catalog:{commit:"00000000",at:""}});p.autoAt=0;p.autoBusy=false;p.autoRefresh(p.snap)}
       capture.start()
     }
@@ -121,9 +121,9 @@ if grep -Eq 'FAIL|ReferenceError|TypeError|Unable to assign|Binding loop' "$TMP/
   cat "$TMP/log"
   exit 1
 fi
-for name in setup kind run error crash stopped refreshed settings; do test -s "$TMP/output/$name.png"; done
+for name in setup kind run error crash stopped refreshed settings folder; do test -s "$TMP/output/$name.png"; done
 if [[ -n ${PANEL_ARTIFACTS:-} ]]; then
   mkdir -p "$PANEL_ARTIFACTS"
   cp "$TMP/output/"*.png "$TMP/log" "$PANEL_ARTIFACTS/"
 fi
-echo 'ok - real panel renders setup, choices, sharing, errors, stopped models, refresh results and settings offscreen without overlap'
+echo 'ok - real panel renders setup, choices, sharing, errors, stopped models, refresh results, settings and the folder browser offscreen without overlap'

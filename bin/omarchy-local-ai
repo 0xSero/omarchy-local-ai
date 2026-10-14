@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent>|plugin | set agent|folder <value> [recipe] | set ping on|off | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | outdated | cdi | log | remove
+# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent>|plugin | set agent|folder <value> [recipe] | set ping on|off | dirs <folder> | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | outdated | cdi | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -1121,6 +1121,18 @@ get() {
   echo "$a"
 }
 
+# dirs <folder>: the folder (absolute, links resolved), its parent and its subfolders, for the panel's own folder
+# browser. The panel never opens a native file dialog: one runs inside the shell, and its paste could make the shell
+# read any amount from another program's clipboard. Hidden folders are left out; at most 400, by name.
+cmd_dirs() {
+  local d=${1:-$HOME}
+  [[ $d == /* && -d $d && -r $d && -x $d ]] || d=$HOME
+  d=$(cd -- "$d" && pwd -P)
+  find "$d" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -readable -printf '%f\0' 2>/dev/null | sort -z | head -z -n 400 |
+    jq -Rsc --arg d "$d" '{path: $d, parent: (if $d == "/" then "" else ($d | sub("/[^/]*$"; "") | if . == "" then "/" else . end) end),
+      dirs: (split("\u0000") | map(select(length > 0)))}'
+}
+
 # set agent|folder <value> [recipe]: a model choice or the default. Recent folders are kept for next time.
 # set ping on|off: whether this install is counted (ping)
 cmd_set() {
@@ -1678,7 +1690,7 @@ mkdir -p "$STATE"
 # the verbs that use Docker run under the docker group, whatever groups this login began with
 case ${1:-} in snapshot | run | stop | remove | readiness | download | open | share) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
-setup | registry | forget | snapshot | readiness | run | stop | open | update | outdated | set | share | pin | download | card) "cmd_$1" "${@:2}" ;;
+setup | registry | forget | snapshot | readiness | run | stop | open | update | outdated | set | dirs | share | pin | download | card) "cmd_$1" "${@:2}" ;;
 # the stale NVIDIA device list, if any, as "<spec>\t<why>" (setup rewrites it)
 cdi) cdi_stale ;;
 log) exec omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G "$LOG" ;;
