@@ -72,7 +72,7 @@ bin/omarchy-local-ai log
 
 CPU recipes use system RAM and start without GPU devices. Recipes that offload GPU work into RAM or NVMe remain hardware-specific and list their requirements.
 
-Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); the key is in `~/.local/state/omarchy/local-ai/gateway.key`.
+Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); the key is in `~/.local/state/omarchy/local-ai/gateway.key`. Local AI itself, and the agents it opens, send the key only to the gateway's address on the model's private Docker network, which no other account on the machine can take over.
 
 ## Remove
 

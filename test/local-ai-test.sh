@@ -86,7 +86,7 @@ image) exit 1 ;;
 pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 network) : ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
-inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
+inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; if [[ $* == *IPAddress* ]]; then echo 172.30.0.5; elif [[ $* == *RestartCount* ]]; then echo 0; else cat "$c/$n"; fi ;;
 logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || { printf "loading shards\n(EngineCore pid=5) ERROR [core.py:1330] EngineCore failed to start.\n(EngineCore pid=5) ERROR [core.py:1330] ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization\n"
     for i in $(seq 70); do echo "(APIServer pid=1)   File \"core.py\", line $i"; done
     echo "(APIServer pid=1) RuntimeError: Engine core initialization failed. See root cause above."; } | if [[ $2 == --tail ]]; then tail -n "$3"; else cat; fi
@@ -115,7 +115,11 @@ case $url in
 */api/models/*) printf "[{\"type\":\"file\",\"path\":\"model.safetensors\",\"size\":4096,\"lfs\":{\"oid\":\"%s\"}}]" '"$SHA"' ;;
 */resolve/*) if [[ -n ${SHIM_CORRUPT:-} ]]; then head -c 4096 /dev/urandom >"$out"; else head -c 4096 /dev/zero >"$out"; fi ;;
 */raw/*/README.md) printf "# Test Model card\n" ;;
-http://127.0.0.1:*)
+http://127.0.0.1:*/health)
+  [[ -z ${SHIM_STOPPED:-} ]] || exit 7
+  ls "$SHIM/containers" | grep -q gateway || exit 7
+  [[ $* == *http_code* ]] && printf 200 ;;
+http://127.0.0.1:*|http://172.30.0.5:*)
   [[ -z ${SHIM_STOPPED:-} ]] || exit 7
   ls "$SHIM/containers" | grep -q gateway || exit 7
   [[ $key == "$(cat "$HOME/.local/state/omarchy/local-ai/gateway.key")" ]] || { [[ $* == *http_code* ]] && printf 401; exit 22; }
@@ -334,8 +338,15 @@ key=$(cat "$STATE/gateway.key")
 ! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$SHIM/jq.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
 [[ $(stat -c %a "$STATE/gateway.key") == 600 ]] || fail "key mode"
 pass "the gateway key stays in a 0600 file, out of every argv and the log"
-grep -q -- "-fsS --max-time 5 http://127.0.0.1:12434/v1/models" "$SHIM/curl.log" || fail "keyless check" "$(cat "$SHIM/curl.log")"
+grep -qF -- "-fsS --noproxy * --max-time 5 http://127.0.0.1:12434/v1/models" "$SHIM/curl.log" || fail "keyless check" "$(cat "$SHIM/curl.log")"
 pass "a gateway that answers without the key would be refused"
+# the key goes only to the gateway's address on the model's Docker network, never to 127.0.0.1:<port>, which another
+# account could take over once the gateway exits; the snapshot poll uses the keyless /health
+"$CLI" snapshot >/dev/null
+grep -q "127.0.0.1:12434/health" "$SHIM/curl.log" || fail "health poll" "$(tail -3 "$SHIM/curl.log")"
+! grep -F "gateway.auth" "$SHIM/curl.log" | grep -q "127\.0\.0\.1" || fail "keyed loopback request" "$(grep -F gateway.auth "$SHIM/curl.log" | grep 127.0.0.1)"
+grep -F "gateway.auth" "$SHIM/curl.log" | grep -q "http://172.30.0.5:12434/v1/chat/completions" || fail "keyed bridge request" "$(grep -F gateway.auth "$SHIM/curl.log")"
+pass "the key is only ever sent to the gateway's bridge address; the poll sends none"
 
 "$CLI" run "$ID" nvidia:0 2>"$TMP/err" && fail "second run"
 grep -q "nvidia:0 is in use" "$TMP/err" || fail "second run reason" "$(cat "$TMP/err")"
@@ -397,7 +408,7 @@ pass "a model's page counts its own week, not every model's on the machine"
 "$CLI" set agent pi "$ID"
 "$CLI" open "$ID"
 sleep 0.5
-[[ -f $STATE/agents/pi/models.json && $(jq -r '.providers["omarchy-local"].baseUrl' "$STATE/agents/pi/models.json") == "http://127.0.0.1:12434/v1" ]] ||
+[[ -f $STATE/agents/pi/models.json && $(jq -r '.providers["omarchy-local"].baseUrl' "$STATE/agents/pi/models.json") == "http://172.30.0.5:12434/v1" ]] ||
   fail "pi config" "$(cat "$STATE/agents/pi/models.json" 2>/dev/null)"
 grep -q -- "--provider omarchy-local --model Test Model" "$SHIM/tui.log" && ! grep -q "$key" "$SHIM/tui.log" || fail "open argv" "$(cat "$SHIM/tui.log")"
 "$CLI" set agent pi
@@ -407,7 +418,7 @@ pass "open starts the chosen agent on the gateway in a terminal, with the key on
 "$CLI" set agent hermes "$ID"
 "$CLI" open "$ID"
 sleep 0.5
-grep -q -- "CUSTOM_BASE_URL=http://127.0.0.1:12434/v1 OPENAI_BASE_URL=http://127.0.0.1:12434/v1 .*hermes chat --provider custom --model Test Model" "$SHIM/tui.log" &&
+grep -q -- "CUSTOM_BASE_URL=http://172.30.0.5:12434/v1 OPENAI_BASE_URL=http://172.30.0.5:12434/v1 .*hermes chat --provider custom --model Test Model" "$SHIM/tui.log" &&
   ! grep -q "$key" "$SHIM/tui.log" || fail "hermes argv" "$(tail -1 "$SHIM/tui.log")"
 pass "Hermes opens on the gateway through --provider custom, without its own config.yaml, the key only in the environment"
 
@@ -639,7 +650,7 @@ rm -f "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" # the syml
 "$CLI" run "$ID" nvidia:0
 wait_for ready
 "$CLI" share "$ID"
-grep -q "^serve --bg --https=12434 http://127.0.0.1:12434" "$SHIM/tailscale.log" || fail "share" "$(cat "$SHIM/tailscale.log" 2>/dev/null)"
+grep -q "^serve --bg --https=12434 http://172.30.0.5:12434" "$SHIM/tailscale.log" || fail "share" "$(cat "$SHIM/tailscale.log" 2>/dev/null)"
 "$CLI" share "$ID" off
 grep -q "^serve --https=12434 off" "$SHIM/tailscale.log" || fail "unshare" "$(cat "$SHIM/tailscale.log")"
 cp "$TMP/plugin/recipes.json" "$SHIM/registry.json"

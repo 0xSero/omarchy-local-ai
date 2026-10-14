@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
 
+## [6.13.8] - 2026-10-14
+
+### Security
+- The gateway key never goes to `127.0.0.1:<port>` any more. The panel's status poll sent it there every few seconds while a model ran; if the gateway exited outside Stop, another local account could bind the vacated port and receive the key. The poll now reads the gateway's keyless `/health`, and every keyed request (the start's readiness and answer checks, the agents `open` starts, a tailnet share) goes to the gateway's address on the model's own Docker network, which only Docker assigns and no other account can listen on, with proxies bypassed. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#11207).
+
 ## [6.13.7] - 2026-10-13
 
 ### Fixed
