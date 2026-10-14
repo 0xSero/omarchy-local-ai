@@ -183,6 +183,21 @@ cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
   fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"
 jq -e '[.kinds[] | select(.hw == "rx-7600-xt-16gb") | .free[0], (.models | length > 0)] == ["amd-rocm:0", true]' "$TMP/snap-amd.json" >/dev/null ||
   fail "the RX 7600 XT kind" "$(jq -c .kinds "$TMP/snap-amd.json")"
+# amd-smi's Python can segfault (issue #118): the card still lists from static, without readings, and the
+# subcommand that crashed is not run again on the next poll
+shim amd-smi 'case $1 in
+static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 7600 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) echo run >>"$(dirname "$0")/metric-runs"; kill -SEGV $$ ;;
+esac'
+rm -f "$TMP/bin/metric-runs" "$STATE"/amd-smi-*.crashed
+"$CLI" snapshot >"$TMP/snap-segv.json" || fail "a crashing amd-smi broke the snapshot"
+"$CLI" snapshot >"$TMP/snap-segv.json" || fail "a crashing amd-smi broke the second snapshot"
+[[ $(jq -r '.gpus | map(select(.backend == "amd-rocm") | "\(.hw)=\(.tempC)") | join(" ")' "$TMP/snap-segv.json") == "rx-7600-xt-16gb=null" ]] ||
+  fail "a crashing amd-smi metric hid the card" "$(jq -c .gpus "$TMP/snap-segv.json")"
+[[ $(wc -l <"$TMP/bin/metric-runs") == 1 && -f $STATE/amd-smi-metric.crashed ]] ||
+  fail "a crashed amd-smi metric ran again" "$(cat "$TMP/bin/metric-runs")"
+rm -f "$TMP/bin/metric-runs" "$STATE"/amd-smi-*.crashed
+pass "an amd-smi that segfaults lists the card without readings and is not run again for a day"
 # A Vulkan recipe uses the same physical AMD detector, without requiring ROCm at launch.
 shim amd-smi 'case $1 in
 static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 9070 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
@@ -210,6 +225,23 @@ printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((130 * 1024 * 1024)) $((120 * 
 printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((64 * 1024 * 1024)) $((60 * 1024 * 1024)) >"$MEMINFO"
 "$CLI" snapshot >"$TMP/snap-strix.json"
 [[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "" ]] || fail "a 64 GB host matched the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
+# the same 128 GB machine with a 32 GiB carve-out: MemTotal is ~94 GiB, which amd-smi's VRAM size makes up
+shim amd-smi 'case $1 in
+static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon 8060S Graphics\"},\"vram\":{\"size\":{\"value\":32768}},\"bus\":{\"bdf\":\"0000:c3:00.0\"}}]}" ;;
+metric) echo "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210}}}]}" ;;
+esac'
+printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((94 * 1024 * 1024)) $((54 * 1024 * 1024)) >"$MEMINFO"
+"$CLI" snapshot >"$TMP/snap-strix.json"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "ryzen-ai-max-365-128gb" ]] ||
+  fail "a 32 GiB carve-out hid the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
+# amd-smi is a `#!/usr/bin/env python3` script: a mise python3 first on PATH lacks its module, so the system one runs it
+shim python3 'exit 1'
+printf '#!/usr/bin/env python3\n%s\n' "$(sed 1d "$TMP/bin/amd-smi")" >"$TMP/r2" && mv "$TMP/r2" "$TMP/bin/amd-smi" && chmod +x "$TMP/bin/amd-smi"
+printf '#!/bin/bash\nexec bash "$@"\n' >"$TMP/syspython" && chmod +x "$TMP/syspython"
+PYTHON3=$TMP/syspython "$CLI" snapshot >"$TMP/snap-strix.json"
+rm -f "$TMP/bin/python3"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "ryzen-ai-max-365-128gb" ]] ||
+  fail "a mise python3 on PATH hid the AMD card" "$(jq -c .gpus "$TMP/snap-strix.json")"
 unset MEMINFO; rm -f "$TMP/meminfo"
 pass "a unified-memory card matches by host RAM, not the BIOS carve-out"
 shim amd-smi 'echo "{\"gpu_data\":[]}"'
@@ -268,13 +300,28 @@ if command -v node >/dev/null; then
   [[ $(js 'vm.runInNewContext(fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8").match(/property string cli: (.*)/)[1],
     {Qt: {resolvedUrl: u => "file:///home/a%2525b%23c/" + u}})') == "/home/a%25b#c/bin/omarchy-local-ai" ]] || fail "the backend's path"
   pass "the panel refreshes once a running snapshot ends when a verb asked meanwhile, and finds its backend in any folder"
-  # The folder dialog preserves reserved characters through its URL and sends one path argument.
+  # The agent's folder is chosen in the panel's own browser (no native dialog in the shell): the folder row opens it on
+  # the current folder, a subfolder is entered by clicking, and "Use this folder" sends one path argument, reserved
+  # characters intact.
   [[ $(js 's.defaults.folder = "/home/x/My Projects/a|b#c?d%"; var a = c.build(s, ui({view: "kind", id: s.kinds[0].hw, details: true})).rows.find(r => r.icon === "folder").action
-    var p = {ui: {}, nav() {}, close() {}, run(x) { p.args = x }, Qt: {callLater: f => f()}, folderDialog: {open() {}}, Quickshell: {env() {return "/home/x"}}}; p.root = p; vm.createContext(p)
-    var q=fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
-    for(var name of ["activate", "pickedFolder"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0],p);
-    p.activate(a); p.pickedFolder(p.folderDialog.currentFolder,p.folderDialog.recipe); p.args.join(",")') == "set,folder,/home/x/My Projects/a|b#c?d%" ]] || fail "folder dialog URL round trip"
-  pass "folder dialog preserves spaces, pipes, hashes, question marks and percent signs"
+    var p = {ui: {}, sent: [], topTick: 0, nav(x) { p.ui = Object.assign({}, p.ui, x) }, run(x) { p.sent.push(x.join(",")) }, next() {}}; p.root = p; vm.createContext(p)
+    var q = fs.readFileSync(process.argv[1].replace(/Model\.js$/, "Panel.qml"), "utf8");
+    for (var name of ["activate", "finished"]) vm.runInContext(q.match(new RegExp("function " + name + "\\([^]*?\\n  \\}"))[0], p);
+    p.activate(a)
+    p.finished(0, "dirs", JSON.stringify({path: "/home/x/My Projects/a|b#c?d%", parent: "/home/x/My Projects", dirs: ["sub #1"]}), "")
+    var v = c.build(s, p.ui), sub = v.rows.find(r => r.label === "sub #1"); p.activate(sub.action)
+    p.finished(0, "dirs", JSON.stringify({path: "/home/x/My Projects/a|b#c?d%/sub #1", parent: "/home/x/My Projects/a|b#c?d%", dirs: []}), "")
+    p.activate(c.build(s, p.ui).rows.flatMap(r => r.items || []).find(i => i.label === "Use this folder").action)
+    p.sent.join(" ; ") + " @ " + p.ui.view') == "dirs,/home/x/My Projects/a|b#c?d% ; dirs,/home/x/My Projects/a|b#c?d%/sub #1 ; set,folder,/home/x/My Projects/a|b#c?d%/sub #1 @ agents" ]] ||
+    fail "folder browser round trip"
+  grep -q 'FolderDialog\|QtQuick.Dialogs' "$ROOT/Panel.qml" && fail "the panel opens a native file dialog inside the shell"
+  pass "the folder browser walks folders by clicking and sends one path, spaces, pipes, hashes, question marks and percent signs intact"
+  # dirs: the resolved folder, its parent, its visible subfolders by name; a folder that is not one falls back to home
+  mkdir -p "$TMP/browse/b b" "$TMP/browse/a|#?%" "$TMP/browse/.hidden" && : >"$TMP/browse/file"
+  [[ $("$CLI" dirs "$TMP/browse" | jq -c --arg t "$(cd "$TMP" && pwd -P)" '[.path == $t + "/browse", .parent == $t, .dirs]') == '[true,true,["a|#?%","b b"]]' ]] ||
+    fail "dirs lists visible subfolders" "$("$CLI" dirs "$TMP/browse")"
+  [[ $("$CLI" dirs "relative/nowhere" | jq -r .path) == "$(cd "$HOME" && pwd -P)" ]] || fail "dirs falls back to home"
+  pass "dirs lists a folder's visible subfolders and falls back to home for anything that is not a folder"
 
 else
   echo "ok - the view model builds from the backend's snapshot # SKIP node is not installed"
@@ -441,6 +488,29 @@ tail -1 "$SHIM/tui.log" | grep -q -- "--provider omarchy-local --model $ID " || 
 cp "$TMP/recipes.keep" "$TMP/plugin/recipes.json"
 cp "$TMP/config.keep" "$STATE/deploy/$ID/config.json"
 pass "open keeps working when the registry renames or drops a running model's recipe, with the engine's own context"
+
+# an engine whose cache holds less than its context (SGLang on a card with less free memory than the recipe's):
+# the start records the cache, and Open tells the agent that, less room for a full reply, so the agent compacts
+# before the engine runs out; a model started before the start recorded it reads it from the engine at Open
+window() { jq '.providers["omarchy-local"].models[0].contextWindow' "$STATE/agents/pi/models.json"; }
+kvlog() { printf 'max_total_num_tokens=%s, chunked_prefill_size=1024, context_len=131072\n' "$1" >"$TMP/kv.log"; }
+kvlog 100000
+"$CLI" stop "$ID"
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" run "$ID" nvidia:0
+wait_for ready
+[[ $(jq .serve.kv "$STATE/deploy/$ID/config.json") == 100000 ]] || fail "start records the cache" "$(cat "$STATE/deploy/$ID/config.json")"
+"$CLI" open "$ID"
+[[ $(window) == 75424 ]] || fail "open tells the agent the cache" "$(window)"
+grep -q "open pi on $ID in .* with 75424 tokens of context" "$STATE/log" || fail "open logs the context" "$(tail -1 "$STATE/log")"
+jq -c 'del(.serve.kv)' "$STATE/deploy/$ID/config.json" >"$TMP/c" && mv "$TMP/c" "$STATE/deploy/$ID/config.json"
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" open "$ID"
+[[ $(window) == 75424 ]] || fail "open reads the cache from the engine" "$(window)"
+kvlog 500000
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" open "$ID"
+[[ $(window) == 131072 ]] || fail "a cache larger than the context leaves the context" "$(window)"
+"$CLI" open "$ID"
+[[ $(window) == 131072 ]] || fail "an engine that does not say leaves the context" "$(window)"
+pass "open keeps the agent's conversations inside the engine's cache when it holds less than the context"
 
 # All supported agent adapters stay in private config or keyed environments: the gateway key reaches neither the
 # terminal's argv nor a helper's, and the keyed environments are the only place it is handed over at all.

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent>|plugin | set agent|folder <value> [recipe] | set ping on|off | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | outdated | cdi | log | remove
+# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent>|plugin | set agent|folder <value> [recipe] | set ping on|off | dirs <folder> | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | outdated | cdi | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -252,11 +252,17 @@ nvidia() {
   grep -E '^[0-9]+, ' <<<"$out" || true
 }
 
-# Arc Pro B70 by PCI id. The xe driver gives users its temperature but not its memory use. A card with a connected
-# monitor drives the desktop, whose compositor and browsers hold part of its memory, so it is offered last.
+# Intel GPUs the recipes know, by PCI id. The xe driver gives users its temperature but not its memory use. A card with
+# a connected monitor drives the desktop, whose compositor and browsers hold part of its memory, so it is offered last.
+# The Arc B390 is a Panther Lake iGPU: its memory is host RAM, so it reports none (its card is unifiedMemory).
 intel() {
-  local a t f c s rows=()
-  for a in $(lspci -Dn -d 8086:e223 2>/dev/null | cut -d' ' -f1 | sort -u); do
+  local a d t f c s product mib rows=()
+  while read -r a d; do
+    case ${d#*:} in
+      e223) product="Intel Arc Pro B70" mib=32768 ;;
+      b080) product="Intel Arc B390" mib=0 ;;
+      *) continue ;;
+    esac
     [[ -e /dev/dri/by-path/pci-$a-render ]] || continue
     t=null
     f=$(grep -lx pkg /sys/bus/pci/devices/"$a"/hwmon/hwmon*/temp*_label 2>/dev/null | head -1 || true)
@@ -265,10 +271,22 @@ intel() {
     for c in "$SYS"/bus/pci/devices/"$a"/drm/card*; do
       for f in "$SYS"/class/drm/"${c##*/}"-*/status; do [[ $(cat "$f" 2>/dev/null) == connected ]] && s=1; done
     done
-    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")" "$s")
-  done
-  # temperature, render node and whether it drives a display, one card a line
-  ((${#rows[@]} == 0)) || printf '%s\t%s\t%s\n' "${rows[@]}"
+    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")" "$s" "$product" "$mib")
+  done < <(lspci -Dn -d 8086: 2>/dev/null | awk '{print $1, $3}' | sort -u)
+  # temperature, render node, whether it drives a display, product and memory, one card a line
+  ((${#rows[@]} == 0)) || printf '%s\t%s\t%s\t%s\t%s\n' "${rows[@]}"
+}
+
+# smi <name> <amd-smi command...>: its JSON, or {} when it fails. amd-smi can crash its Python on some builds
+# (a segfault in libpython3.14, issue #118); a subcommand that died of a signal is not run again for a day, so the
+# panel's polling does not crash it every few seconds, and its readings show as unknown until then.
+smi() {
+  local mark=$STATE/amd-smi-$1.crashed out rc=0
+  shift
+  [[ -n $(find "$mark" -mmin -1440 2>/dev/null) ]] && { echo '{}'; return; }
+  out=$(timeout 10 "$@" 2>/dev/null) || rc=$?
+  ((rc > 128)) && { touch "$mark" 2>/dev/null || true; }
+  ((rc == 0)) && printf '%s\n' "$out" || echo '{}'
 }
 
 # amd-smi comes with ROCm; without it AMD cards are not listed.
@@ -278,8 +296,14 @@ amd() {
   local amdsmi
   amdsmi=$(command -v amd-smi || echo /opt/rocm/bin/amd-smi)
   [[ -x $amdsmi ]] || { echo '[]'; return; }
-  jq -nc --argjson s "$(timeout 10 "$amdsmi" static --json 2>/dev/null || echo '{}')" \
-    --argjson m "$(timeout 10 "$amdsmi" metric --mem-usage --temperature --json 2>/dev/null || echo '{}')" '
+  # amd-smi is a `#!/usr/bin/env python3` script whose module is installed for the system Python; a mise or
+  # pyenv python3 ahead of /usr/bin on PATH (mise ships with Omarchy) lacks it and every card disappears
+  amdsmi=("$amdsmi")
+  if [[ -x ${PYTHON3:-/usr/bin/python3} ]] && head -n1 "${amdsmi[0]}" 2>/dev/null | grep -q '^#!.*python3'; then
+    amdsmi=("${PYTHON3:-/usr/bin/python3}" "$(readlink -f "${amdsmi[0]}")")
+  fi
+  jq -nc --argjson s "$(smi static "${amdsmi[@]}" static --json)" \
+    --argjson m "$(smi metric "${amdsmi[@]}" metric --mem-usage --temperature --json)" '
     [($s.gpu_data // [])[] | . as $g | ([($m.gpu_data // [])[] | select(.gpu == $g.gpu)][0] // {}) as $u
      | select(($g.asic.market_name // "") != "")
      | {backend: "amd-rocm", index: ($g.gpu | tonumber), product: $g.asic.market_name, totalMiB: ($g.vram.size.value // 0),
@@ -288,11 +312,21 @@ amd() {
 }
 
 # CPU recipes use host RAM and no device passthrough. Offer only the architecture/ISA in the catalog.
+# Apple Silicon under Asahi Linux has no nvidia-smi/amd-smi node: one CPU entry named after the chip in
+# the device tree ("M1", "M4 Pro", …) and sized by its unified RAM, so the catalog's memory test sorts an
+# 8 GB M1 from a 16 GB one exactly as it sorts GPU cards by VRAM.
 cpu() {
   if [[ $(uname -m) == x86_64 ]] && grep -qw avx2 "${CPUINFO:-/proc/cpuinfo}" &&
     jq -e 'any(.hardware[]; .match.backend == "cpu" and (.match.names | index("x8664avx2cpu") != null))' "$RECIPES" >/dev/null; then
     jq -nc --argjson ram "$(awk '/^MemTotal:/{print int($2 * 1024 / 1e9)}' "${MEMINFO:-/proc/meminfo}")" \
       '[{backend:"cpu",index:0,product:"x86-64 AVX2 CPU",totalMiB:0,usedMiB:null,tempC:null,ramGb:$ram}]'
+  elif [[ $(uname -m) == aarch64 && -r ${APPLEMODEL:-/proc/device-tree/model} ]] &&
+    chip=$(tr -d '\0' <"${APPLEMODEL:-/proc/device-tree/model}" | grep -oE '\bM[0-9]( (Pro|Max|Ultra))?\b' | head -1) &&
+    name="apple${chip,,}" && name=${name// /} && [[ -n $name ]] &&
+    jq -e --arg n "$name" 'any(.hardware[]; .match.backend == "cpu" and (.match.names | index($n) != null))' "$RECIPES" >/dev/null; then
+    jq -nc --arg product "Apple $chip" \
+      --argjson ram "$(awk '/^MemTotal:/{print int($2 / 1024)}' "${MEMINFO:-/proc/meminfo}")" \
+      '[{backend:"cpu",index:0,product:$product,totalMiB:$ram,usedMiB:null,tempC:null,ramGb:($ram / 1024 | round)}]'
   else echo '[]'; fi
 }
 
@@ -301,16 +335,18 @@ cpu() {
 MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | split(", ") | {backend: "nvidia", index: (.[0] | tonumber),
       product: .[1], totalMiB: (.[2] | tonumber), usedMiB: (.[3] | tonumber? // null), tempC: (.[4] | tonumber? // null)}))
     + ($xe | split("\n") | map(select(length > 0) | split("\t")) | to_entries | map({backend: "intel-xpu", index: .key,
-      product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1],
-      display: ((.value[2] // "") == "1")}))
+      product: (.value[3] // "Intel Arc Pro B70"), totalMiB: (.value[4] // "32768" | tonumber), usedMiB: null,
+      tempC: (.value[0] | tonumber? // null), node: .value[1], display: ((.value[2] // "") == "1")}))
     + $am;
   def norm: ascii_downcase | gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]"; "");
   def match($r; $ram): [.[] | . as $x
     | ([$r.hardware | to_entries[] | select((.value.match.backend | sub("amd-vulkan"; "amd-rocm")) == $x.backend
         and (.value.match.names | index($x.product | norm)) != null
         # a unified-memory APU reports only its BIOS carve-out as VRAM, so the card is judged by host
-        # RAM covering its stated memory once the carve-out (up to 8 GiB) is added back
-        and (if .value.match.unifiedMemory // false then ($ram + 8192) >= .value.match.vramGb * 1024
+        # RAM covering its stated memory once the carve-out is added back (amd-smi reports it as VRAM: a Strix
+        # Halo set to 32 GiB has 94 GiB MemTotal), with up to 8 GiB more for firmware and kernel reservations
+        and (if .value.match.unifiedMemory // false
+          then ($ram + (if $x.backend == "amd-rocm" then $x.totalMiB else 0 end) + 8192) >= .value.match.vramGb * 1024
           else (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024 end)) | .key][0] // "") as $hw
     | ($hw != "" and ($r.hardware[$hw].match.unifiedMemory // false)) as $uni
     | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw,
@@ -512,6 +548,11 @@ gw_addr() {
   printf 'http://%s:12434' "$ip"
 }
 preparer() { printf '%s-prepare' "$(network "$1")"; }
+# kv <id>: the tokens the engine's cache holds, from its start log (SGLang's max_total_num_tokens, vLLM's GPU KV cache
+# size), or nothing when it does not say. SGLang starts with a cache smaller than its context when the card is short.
+kv() {
+  docker logs "$(engine "$1")" 2>&1 | grep -m1 -oE 'max_total_num_tokens=[0-9]+|GPU KV cache size: [0-9,]+ tokens' | tr -dc 0-9 || true
+}
 prepared_contract() { jq -cS "$PREP_CONTRACT prepared_contract" <<<"$1"; }
 prepared_path() { printf '%s/prepared/%s' "$MODELS" "$(prepared_contract "$1" | sha256sum | cut -c1-64)"; }
 managed_paths() {
@@ -845,7 +886,7 @@ fail() {
 
 # __worker <id> <key>: download, start, wait for the model, check it answers; status.json tells the widget each step
 worker_run() {
-  local r t0 w reply served="" code nodes seen quiet last top step pct line
+  local r t0 w reply served="" code nodes seen quiet last top step pct line k
   WID=$1
   shift
   r=$(jq -ce '.recipe // empty' "$(dir_of "$WID")/config.json" 2>/dev/null || recipe "$WID")
@@ -925,6 +966,11 @@ worker_run() {
   # vLLM puts thinking in `reasoning`, older engines in `reasoning_content`; 200 tokens can all be thinking
   jq -e '.choices[0].message | any(.content, .reasoning, .reasoning_content; type == "string" and length > 0)' <<<"$reply" >/dev/null ||
     fail "the model returned no answer"
+  # what the cache holds, so Open keeps the agent's conversations inside it
+  k=$(kv "$WID")
+  if [[ -n $k ]]; then
+    jq -c --argjson k "$k" '.serve.kv = $k' "$WD/config.json" >"$WD/config.json.$$" && mv -f "$WD/config.json.$$" "$WD/config.json"
+  fi
   status "$WID" ready "" 100
   trap - EXIT
   count started
@@ -1073,6 +1119,18 @@ get() {
     done
   fi
   echo "$a"
+}
+
+# dirs <folder>: the folder (absolute, links resolved), its parent and its subfolders, for the panel's own folder
+# browser. The panel never opens a native file dialog: one runs inside the shell, and its paste could make the shell
+# read any amount from another program's clipboard. Hidden folders are left out; at most 400, by name.
+cmd_dirs() {
+  local d=${1:-$HOME}
+  [[ $d == /* && -d $d && -r $d && -x $d ]] || d=$HOME
+  d=$(cd -- "$d" && pwd -P)
+  find "$d" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -readable -printf '%f\0' 2>/dev/null | sort -z | head -z -n 400 |
+    jq -Rsc --arg d "$d" '{path: $d, parent: (if $d == "/" then "" else ($d | sub("/[^/]*$"; "") | if . == "" then "/" else . end) end),
+      dirs: (split("\u0000") | map(select(length > 0)))}'
 }
 
 # set agent|folder <value> [recipe]: a model choice or the default. Recent folders are kept for next time.
@@ -1351,7 +1409,7 @@ argv() {
 # open <id>: the model's agent in its folder, in a terminal
 cmd_open() {
   valid_id "${1:-}" || die "open <recipe>"
-  local d c s a b ag dir cmd=() v launcher gw
+  local d c s k a b ag dir cmd=() v launcher gw
   d=$(dir_of "$1")
   [[ $(jq -r .state "$d/status.json" 2>/dev/null) == "ready" ]] || die "the model is not ready"
   c=$(<"$d/config.json")
@@ -1364,6 +1422,14 @@ cmd_open() {
     s=$(curl -fsS --noproxy '*' -m 5 -o /dev/stdout -H "@$AUTH" "$gw/v1/models" 2>/dev/null |
       jq -ce --arg n "${1%--*}" '{name: $n, ctx: (.data[0].max_model_len // empty), vision: false}') ||
     s=$(jq -nc --arg n "${1%--*}" '{name: $n, ctx: 32768, vision: false}')
+  # a cache smaller than the context is what the agent gets, less room for a full reply (32768) beyond the 16384 an
+  # agent keeps back for one, and for its own estimate of the conversation: one that outgrows the cache is aborted
+  # mid-reply ("out of memory") before the agent compacts it
+  k=$(jq -r '.kv // empty' <<<"$s")
+  [[ -n $k ]] || k=$(kv "$1")
+  if [[ -n $k ]]; then
+    s=$(jq -c --argjson k "$k" '([$k - 24576, ($k / 2 | floor)] | max) as $w | if $w < .ctx then .ctx = $w else . end' <<<"$s")
+  fi
   a=$(jq -r .agent <<<"$c")
   dir=$(jq -r .folder <<<"$c")
   b=$(bin "$a") || die "$a is not installed"
@@ -1380,7 +1446,7 @@ cmd_open() {
   # directly, or the key would go to the proxy
   v=${gw#http://}; v=${v%:*}
   cmd=(env "NO_PROXY=$v${NO_PROXY:+,$NO_PROXY}" "no_proxy=$v${no_proxy:+,$no_proxy}" "${cmd[@]}")
-  say "open $a on $1 in $dir"
+  say "open $a on $1 in $dir with $(jq -r .ctx <<<"$s") tokens of context"
   # Some terminals keep their launcher alive for the whole session. Release the panel after startup,
   # or its action timeout would kill a healthy agent two minutes later.
   omarchy-launch-tui --app-id=org.omarchy.local-ai bash -c 'cd -- "$1" && shift && exec "$@"' local-ai "$dir" "${cmd[@]}" \
@@ -1624,7 +1690,7 @@ mkdir -p "$STATE"
 # the verbs that use Docker run under the docker group, whatever groups this login began with
 case ${1:-} in snapshot | run | stop | remove | readiness | download | open | share) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
-setup | registry | forget | snapshot | readiness | run | stop | open | update | outdated | set | share | pin | download | card) "cmd_$1" "${@:2}" ;;
+setup | registry | forget | snapshot | readiness | run | stop | open | update | outdated | set | dirs | share | pin | download | card) "cmd_$1" "${@:2}" ;;
 # the stale NVIDIA device list, if any, as "<spec>\t<why>" (setup rewrites it)
 cdi) cdi_stale ;;
 log) exec omarchy-launch-tui --app-id=org.omarchy.local-ai-log less +G "$LOG" ;;

@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Dialogs
 import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
@@ -210,13 +209,10 @@ Panel {
     case "setup": run(["setup"]); break
     case "default": run(["set", "agent", a[1]]); break
     case "update": ui = Object.assign({}, ui, { updatingAgent: a[1] }); run(["update", a[1]]); break
-    case "folder":
-      folderDialog.recipe = a[1]
-      folderDialog.currentFolder = "file://" + encodeURI(decodeURIComponent(a[2]) || Quickshell.env("HOME")).replace(/#/g, "%23").replace(/\?/g, "%3F")
-      folderDialog.selectedFolder = folderDialog.currentFolder
-      root.close()
-      Qt.callLater(function() { folderDialog.open() })
-      break
+    // the agent's folder, chosen in the panel's own browser (dirs): no native dialog runs inside the shell
+    case "folder": nav({ view: "folder", id: a[1] }); ui = Object.assign({}, ui, { browse: null }); run(["dirs", decodeURIComponent(a[2] || "")]); break
+    case "browse": run(["dirs", decodeURIComponent(a[1])]); break
+    case "usefolder": run(["set", "folder", decodeURIComponent(a[2])].concat(a[1] ? [a[1]] : [])); nav({ view: a[1] ? "run" : "agents", id: a[1] }); break
     case "run": run(["run", a[1], a[2]]); home(); break
     case "again": run(["stop", a[1]]); run(["run", a[1], a[2]]); home(); break
     case "stop": run(["stop", a[1]]); home(); break
@@ -284,6 +280,10 @@ Panel {
   // A verb that fails says why on its last "local-ai:" line; the panel opens to show it.
   function finished(code, operation, output, error) {
     if (operation === "outdated") return next()
+    if (operation === "dirs" && code === 0) {
+      try { ui = Object.assign({}, ui, { browse: JSON.parse(output) }); topTick++ } catch (e) {}
+      return next()
+    }
     if (operation === "registry") {
       // said only when it brought new models
       var was = ((snap.catalog || {}).commit || "").slice(0, 8)
@@ -311,20 +311,6 @@ Panel {
     stdout: StdioCollector { id: verbOut; waitForEnd: true }
     stderr: StdioCollector { id: verbErr; waitForEnd: true }
     onExited: function(code) { root.finished(code, operation, verbOut.text, verbErr.text) }
-  }
-  function pickedFolder(url, id) {
-    run(["set", "folder", decodeURIComponent(String(url).replace(/^file:\/\//, ""))].concat(id ? [id] : []))
-  }
-  FolderDialog {
-    id: folderDialog
-    property string recipe: ""
-    title: "Choose the agent's folder"
-    function returnToSettings() {
-      root.open()
-      root.nav({ view: recipe ? "run" : "agents", id: recipe })
-    }
-    onAccepted: { root.pickedFolder(selectedFolder, recipe); returnToSettings() }
-    onRejected: returnToSettings()
   }
   Process { id: copy }
   Timer { id: copiedTimer; interval: 1500; onTriggered: root.copied = false }
@@ -376,7 +362,8 @@ Panel {
     open: root.opened
     focusTarget: keys
     padding: 0
-    contentWidth: Style.space(340)
+    // as wide as Omarchy's own panels (380) plus room for the models table; fitted so a small screen still holds it
+    contentWidth: panel.fittedContentWidth(Style.space(400))
     // never taller than its screen, whether or not the shell says how much room there is: the rest scrolls
     contentHeight: panel.fittedContentHeight(body.contentHeight, panel.screen ? panel.screen.height - Style.space(96) : 0)
 
@@ -461,7 +448,7 @@ Panel {
               horizontalAlignment: Text.AlignHCenter
               text: modelData.t
               color: modelData.on ? root.ink : Util.alpha(root.labelTone, 0.35)
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.title
               Click { action: modelData.on ? modelData.a : "" }
             }
           }
@@ -490,7 +477,7 @@ Panel {
           anchors.baseline: head.baseline
           text: flick.view.version || ""
           color: Util.alpha(root.labelTone, 0.55)
-          font.pixelSize: Style.font.caption - 2
+          font.pixelSize: Style.font.caption
         }
         Click { anchors.fill: head; action: flick.view.back ? "home" : "" }
         Label {
@@ -500,7 +487,7 @@ Panel {
           anchors.verticalCenter: parent.verticalCenter
           text: root.glyph(flick.wide ? "unfull" : "full")
           color: root.valueTone
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.title
         }
         Click { anchors.fill: fullToggle; action: flick.wide ? "full|off" : "full" }
       }
@@ -560,7 +547,7 @@ Panel {
               id: life
               objectName: "local-ai-life"
               readonly property int cols: Math.ceil((r.cells || []).length / 7)
-              readonly property real cell: Math.min(Style.space(12), (width - 2 * root.gutter - (cols - 1) * Style.space(3)) / cols)
+              readonly property real cell: Math.min(Style.space(16), (width - 2 * root.gutter - (cols - 1) * Style.space(3)) / cols)
               // Day details stay beneath the chart; the totals never move on hover.
               property int hover: -1
               spacing: Style.space(10)
@@ -616,7 +603,7 @@ Panel {
           Component {
             id: runC
             Rectangle {
-              height: Style.space(156)
+              height: Style.space(172)
               // a little above the page: a lighter surface, and a light border that glows slowly
               color: Util.alpha(root.theme, 0.08)
               border.width: 1
@@ -632,7 +619,7 @@ Panel {
                   width: parent.width
                   spacing: Style.space(10)
                   Logo { id: cardLogo; family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
-                  Label { width: parent.width - (cardLogo.visible ? cardLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
+                  Label { width: parent.width - (cardLogo.visible ? cardLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: r.name; color: root.ink; font.pixelSize: Style.font.heading }
                 }
                 // its card and memory on the left; speed and tokens on the right of the same line, clear of the buttons
                 Item {
@@ -650,7 +637,7 @@ Panel {
                     width: Math.max(0, parent.width - cardLine.width - Style.space(12))
                     layoutDirection: Qt.RightToLeft
                     items: r.chips || []
-                    size: Style.font.caption - 1
+                    size: Style.font.bodySmall
                   }
                 }
                 Item { width: 1; height: Style.space(4) }
@@ -831,7 +818,7 @@ Panel {
               Logo { id: gpuLogo; x: root.gutter; anchors.verticalCenter: parent.verticalCenter; family: r.vendor || ""; size: 12 }
               Column {
                 x: root.gutter + (gpuLogo.visible ? Style.space(20) : 0)
-                width: Style.space(gpuLogo.visible ? 112 : 132)
+                width: Style.space(gpuLogo.visible ? 134 : 158)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Style.space(2)
                 Label { width: parent.width; text: r.name; elide: Text.ElideRight }
@@ -839,7 +826,7 @@ Panel {
               }
               Click { action: r.action || "" }
               Rectangle {
-                x: root.gutter + Style.space(140)
+                x: root.gutter + Style.space(168)
                 visible: r.bar
                 width: Math.max(0, gpuMem.x - x - Style.space(12))
                 height: 3
@@ -888,7 +875,7 @@ Panel {
                 elide: Text.ElideMiddle
                 text: !r.secret ? "" : root.revealed ? r.value : r.value.replace(/[^.:\/]+/g, "•••")
                 color: Util.alpha(root.labelTone, root.revealed ? 1 : 0.55)
-                font.pixelSize: Style.font.caption - 2
+                font.pixelSize: Style.font.caption
               }
               Click { visible: !r.secret; action: r.action || "" }
               Click { visible: !!r.secret; anchors.fill: fieldValue; action: r.action || "" }
@@ -909,7 +896,7 @@ Panel {
               color: root.valueTone
               linkColor: root.ink
               font.family: root.mono
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
               onLinkActivated: function(link) { if (/^https:\/\//.test(link)) root.activate("url|" + link) }
             }
           }
@@ -936,7 +923,7 @@ Panel {
                 wrapMode: Text.WordWrap
                 text: r.text || ""
                 color: r.alert ? root.alertTone : root.labelTone
-                font.pixelSize: Style.font.caption - 2
+                font.pixelSize: Style.font.caption
               }
               Label {
                 id: bannerAct
@@ -946,7 +933,7 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 text: (r.actionLabel || "") + " ›"
                 color: r.alert ? root.alertTone : root.ink
-                font.pixelSize: Style.font.caption - 2
+                font.pixelSize: Style.font.caption
               }
               Click { visible: !!r.action; action: r.action || "" }
             }
@@ -1025,7 +1012,7 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 text: r.mark || ""
                 color: root.ink
-                font.pixelSize: Style.font.caption - 4
+                font.pixelSize: Math.round(Style.font.caption * 0.8)
               }
               Logo {
                 x: root.gutter + Style.space(12)
@@ -1048,7 +1035,7 @@ Panel {
                     horizontalAlignment: !r.pair && index === cols.length - 1 ? Text.AlignRight : Text.AlignLeft
                     elide: Text.ElideRight
                     text: modelData
-                    font.pixelSize: head || !r.pair ? Style.font.caption - 1 : Style.font.caption
+                    font.pixelSize: head || !r.pair ? Style.font.bodySmall : Style.font.body
                     color: head ? root.labelTone : r.pair ? (index ? root.valueTone : root.labelTone)
                       : r.dim ? Util.alpha(root.labelTone, 0.7) : index === 0 ? (r.live ? root.ink : root.valueTone) : root.labelTone
                   }
@@ -1103,7 +1090,7 @@ Panel {
     textFormat: Text.PlainText
     color: root.valueTone
     font.family: root.mono
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Style.font.body
   }
 
   // Facts as small icon-and-text pairs, spaced instead of joined with dots
@@ -1111,7 +1098,7 @@ Panel {
     id: chips
     property var items: []
     property color tone: root.labelTone
-    property int size: Style.font.caption
+    property int size: Style.font.body
     spacing: Style.space(12)
     Repeater {
       model: chips.items
@@ -1269,7 +1256,7 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
         Logo { id: heroLogo; family: h.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
-        Label { width: parent.width - (heroLogo.visible ? heroLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: h.name; color: root.ink; font.pixelSize: Style.font.body }
+        Label { width: parent.width - (heroLogo.visible ? heroLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: h.name; color: root.ink; font.pixelSize: Style.font.title }
       }
       Chips { width: parent.width; items: h.chips || []; tone: root.valueTone }
     }
