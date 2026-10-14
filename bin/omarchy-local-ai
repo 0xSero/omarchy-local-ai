@@ -863,8 +863,17 @@ worker_run() {
     fetch "$WID" "$w"
   done < <(jq -c '.weights[]?' <<<"$r")
 
-  [[ -s $KEY ]] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$KEY"
-  printf 'Authorization: Bearer %s\n' "$(<"$KEY")" >"$AUTH"
+  # The key is written whole to a temporary file and linked into place, never truncated: two first starts at once
+  # both make one, the first link wins and the second start uses it. A running gateway never sees it empty.
+  if [[ ! -s $KEY ]]; then
+    w=$(mktemp "$KEY.XXXXXX")
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$w"
+    ln "$w" "$KEY" 2>/dev/null || [[ -s $KEY ]] || mv -f "$w" "$KEY"
+    rm -f "$w"
+  fi
+  w=$(mktemp "$AUTH.XXXXXX")
+  printf 'Authorization: Bearer %s\n' "$(<"$KEY")" >"$w"
+  mv -f "$w" "$AUTH"
   mkdir -p "$STATE/usage/$WID"
   PORTNUM=$(jq -r .port "$WD/config.json")
   status "$WID" starting "checking the engine" 0
