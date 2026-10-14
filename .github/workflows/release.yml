@@ -9,7 +9,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {fetch-depth: 0}
       - name: tag is on main and matches the manifest
         run: |
@@ -18,7 +18,7 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag is not on main"; exit 1; }
       # The registry authors recipes.json, so the release runs the same checks CI runs: the suite,
       # the file's schema, and the currency of the copy vendored here.
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: sybil-solutions/local-ai-registry
           path: registry
@@ -34,3 +34,12 @@ jobs:
       - name: publish
         env: {GH_TOKEN: "${{ github.token }}"}
         run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+      # dev carries on from the release, so the next release pull request shows only what is new
+      - name: merge the release into dev
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin dev
+          git checkout -B dev origin/dev
+          git merge --no-edit "$GITHUB_SHA"
+          git push origin dev

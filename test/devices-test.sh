@@ -82,6 +82,21 @@ check 'privileged containers reserve every exposed GPU' reserved '["nvidia:0","n
 CLAIMS='{"devices":[],"requests":null}'
 check 'a container without GPUs leaves all cards free' reserved '[]'
 EMPTY=1 check 'an empty daemon leaves all cards free' reserved '[]'
+# The card with a monitor holds the desktop's buffers (on a B70, about 1.7 GiB): vLLM then refuses the 96.5% it asks
+# for, so a start must pick the other card first and the display card only when it is the last one free
+display_last() {
+  local expected=$1
+  cmd_snapshot >"$TMP/snapshot"
+  jq -e --argjson expected "$expected" '.kinds[] | select(.hw == "xe") | .free == $expected' "$TMP/snapshot" >/dev/null
+}
+intel() { printf 'null\t/dev/dri/renderD128\t1\nnull\t/dev/dri/renderD129\t0\n'; }
+CLAIMS='{"devices":[],"requests":null}'
+check 'a card that drives a display is offered after the one that does not' display_last '["intel-xpu:1","intel-xpu:0"]'
+CLAIMS='{"devices":[{"PathOnHost":"/dev/dri/renderD129"}],"requests":null}'
+check 'the display card is still offered when it is the only one free' display_last '["intel-xpu:0"]'
+intel() { printf 'null\t/dev/dri/renderD128\nnull\t/dev/dri/renderD129\n'; }
+CLAIMS='{"devices":[],"requests":null}'
+check 'without display information the cards keep their order' display_last '["intel-xpu:0","intel-xpu:1"]'
 unavailable() {
   local rc
   set +e
