@@ -2,6 +2,18 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. `main` carries releases only; work lands on `dev` (see `docs/releases.md`).
 
+## [6.15.0] - 2026-10-14
+
+### Added
+- **Settings** on home, with one setting for now: **send usage reports**, on or off, and what reporting sends in plain words (minimal and anonymous: no user or account ID, a random number made on this computer, version, card kinds, model and action counts; never prompts, files, folders, model names or agents; the IP address is not stored). Turning it off deletes counts not yet sent. With `DO_NOT_TRACK` set it shows as off, without a switch.
+
+### Security
+- Two first starts at once could leave a running gateway with an empty key: both passed the key-existence check and the second truncated the shared key file, and the gateway treated an empty key as "no key required". The key is now written whole to a temporary file and linked into place, never truncated, so concurrent starts share one key. The gateway (`org-v5`, `sha256:9ab834c2…`) refuses every request while its key file is missing, unreadable or empty, and compares the key in constant time. A running model gets the new gateway when it is stopped and started again. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#11207).
+- The usage server (`usage/`) keeps no request logs and has no `workers.dev` or preview address, so only `usage.sybilsolutions.ai` answers and Cloudflare stores no caller addresses for it. It accepts only JSON pings of at most 1 KB (refused before reading), sends `nosniff`, `no-referrer`, HSTS and `DENY` framing on every response, serves the dashboard under a CSP that allows only its own script (by hash) and the plugin's traffic files, allows other sites to read the public stats only, and answers any internal error with a bare 503.
+
+### Changed
+- The install count measures use, not a moment. Each ping also says whether a model has ever answered on this machine (`launched`, read from the gateway's usage log, so models run before updating count) and how many models started, how many starts failed, how many agents opened and how many models were downloaded since the last ping that arrived. Totals only, never which model, agent or folder. They wait in `counts.json` until a ping arrives, so none are lost or sent twice, and using Local AI sends nothing extra: pings stay at most twice a day. Turning counting off deletes what was not sent. The dashboard shows "ran a model, ever" and the 30-day actions instead of "running at a check-in".
+
 ## [6.14.0] - 2026-10-14
 
 ### Added
