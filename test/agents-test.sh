@@ -37,3 +37,29 @@ if (cmd_update 'pi;touch bad') >/dev/null 2>&1; then echo 'not ok - unknown upda
 mise() { [[ $1 == ls ]] && echo '[{"installed":true}]' || return 1; }
 if (cmd_update pi) >/dev/null 2>&1; then echo 'not ok - updater failure reported success'; exit 1; fi
 echo 'ok - all nine update routes are scoped and updater failures stay failures'
+# The plugin's own update: offered only for a release this checkout lacks, and run by Omarchy's update.
+PANEL=$TMP/plugin
+mkdir -p "$PANEL/.git"
+printf '{"id":"sero.local-ai","version":"1.0.0"}\n' >"$PANEL/manifest.json"
+omarchy-cmd-present() { [[ $1 == omarchy-plugin-update ]]; }
+REMOTE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb CONTAINS=1
+git() {
+  case $3 in
+    rev-parse) echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+    ls-remote) printf '%s\tHEAD\n' "$REMOTE" ;;
+    merge-base) return "$CONTAINS" ;;
+  esac
+}
+[[ $(plugin_latest | jq -r .latest) == "$REMOTE" ]] || { echo 'not ok - a newer release was not found'; exit 1; }
+CONTAINS=0
+[[ -z $(plugin_latest) ]] || { echo 'not ok - a checkout ahead of the release was offered it'; exit 1; }
+REMOTE=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+[[ -z $(plugin_latest) ]] || { echo 'not ok - the current release was offered'; exit 1; }
+rm -rf "$PANEL/.git"; CONTAINS=1 REMOTE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+[[ -z $(plugin_latest) ]] || { echo 'not ok - a copy Omarchy cannot update was offered an update'; exit 1; }
+omarchy-plugin-update() { printf 'plugin-update %s\n' "$*" >>"$UPDATE_ARGS"; }
+cmd_update plugin >/dev/null
+grep -qx -- 'plugin-update sero.local-ai --yes' "$UPDATE_ARGS"
+omarchy-plugin-update() { return 1; }
+if (cmd_update plugin) >/dev/null 2>&1; then echo 'not ok - a failed plugin update reported success'; exit 1; fi
+echo 'ok - the plugin update is offered for a newer release only and runs Omarchy''s update'
