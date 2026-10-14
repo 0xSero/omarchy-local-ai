@@ -411,6 +411,7 @@ sleep 0.5
 [[ -f $STATE/agents/pi/models.json && $(jq -r '.providers["omarchy-local"].baseUrl' "$STATE/agents/pi/models.json") == "http://172.30.0.5:12434/v1" ]] ||
   fail "pi config" "$(cat "$STATE/agents/pi/models.json" 2>/dev/null)"
 grep -q -- "--provider omarchy-local --model Test Model" "$SHIM/tui.log" && ! grep -q "$key" "$SHIM/tui.log" || fail "open argv" "$(cat "$SHIM/tui.log")"
+grep -qE -- "env NO_PROXY=172\.30\.0\.5[ ,].* no_proxy=172\.30\.0\.5[ ,]" "$SHIM/tui.log" || fail "agent proxy exemption" "$(tail -1 "$SHIM/tui.log")"
 "$CLI" set agent pi
 [[ $(jq -r .agent "$STATE/settings.json") == pi ]] || fail "explicit default agent"
 pass "open starts the chosen agent on the gateway in a terminal, with the key only in its private config; the default is explicitly selected"

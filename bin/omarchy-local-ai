@@ -1310,6 +1310,10 @@ cmd_open() {
   done < <(argv "$a" "$b" "$gw" "$(jq -r .name <<<"$s")" \
     "$(jq -r .ctx <<<"$s")" "$(jq -r .vision <<<"$s")" "$ag")
   [[ $a == "omp" && $dir -ef $HOME_DIR ]] && cmd+=(--allow-home)
+  # an inherited HTTP(S)_PROXY usually exempts 127.0.0.1 but not the bridge address: the agent must reach the gateway
+  # directly, or the key would go to the proxy
+  v=${gw#http://}; v=${v%:*}
+  cmd=(env "NO_PROXY=$v${NO_PROXY:+,$NO_PROXY}" "no_proxy=$v${no_proxy:+,$no_proxy}" "${cmd[@]}")
   say "open $a on $1 in $dir"
   # Some terminals keep their launcher alive for the whole session. Release the panel after startup,
   # or its action timeout would kill a healthy agent two minutes later.
