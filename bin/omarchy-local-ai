@@ -131,19 +131,48 @@ policy() {
     else "ok" end' <<<"$1"
 }
 
+# counted: whether this install is counted at all; off with `set ping off` or DO_NOT_TRACK, and then nothing is kept either
+counted() { [[ ${DO_NOT_TRACK:-0} == 0 && $(jq -r '.ping // "on"' "$STATE/settings.json" 2>/dev/null) != off ]]; }
+# count <action>: one more started, failed (a start that did not finish), opened (an agent) or downloaded, kept in
+# counts.json until a ping delivers it: totals only, never which model, agent or folder. It never fails its caller.
+count() {
+  [[ $1 =~ ^(started|failed|opened|downloaded)$ ]] && counted || return 0
+  (
+    exec 6>>"$STATE/counts.lock"
+    flock -w 5 6 || exit 0
+    { jq -c . "$STATE/counts.json" 2>/dev/null || echo '{}'; } | jq -c --arg a "$1" '.[$a] = ((.[$a] // 0) + 1)' >"$STATE/counts.json.$$" &&
+      mv -f "$STATE/counts.json.$$" "$STATE/counts.json"
+  ) 2>/dev/null || true
+}
+
 # ping: count this install (README, "What Local AI sends"): a random id made on first run, the version, the card kinds
-# it has recipes for and how many models run. Off with `set ping off` or DO_NOT_TRACK; it never fails its caller.
+# it has recipes for, how many models run, whether a model has ever answered here, and the actions since the last ping
+# that arrived. A ping that does not arrive keeps them for the next. It never fails its caller.
 ping() {
-  local f=$STATE/install-id hw n=0 d v=""
-  [[ ${DO_NOT_TRACK:-0} == 0 && $(jq -r '.ping // "on"' "$STATE/settings.json" 2>/dev/null) != off ]] || return 0
+  local f=$STATE/install-id hw n=0 d v="" sent launched=false
+  counted || return 0
   [[ $(cat "$f" 2>/dev/null) =~ ^[0-9a-f]{32}$ ]] || (umask 077 && od -An -tx1 -N16 /dev/urandom | tr -d ' \n' >"$f") || return 0
   [[ $(<"$f") =~ ^[0-9a-f]{32}$ ]] || return 0
   [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
   hw=$(gpus none 2>/dev/null | jq -c '[.[].hw | select(. != "")] | unique') || hw='[]'
   for d in "$STATE"/deploy/*/config.json; do n=$((n + 1)); done
-  jq -nc --arg id "$(<"$f")" --arg v "$v" --argjson hw "${hw:-[]}" --argjson n "$n" '{id: $id, version: $v, hw: $hw, running: $n}' |
+  # every start that finished asked the model through the gateway, which logs each answer
+  for d in "$STATE"/usage/*/usage.jsonl; do [[ -s $d ]] && { launched=true; break; }; done
+  sent=$(jq -c 'with_entries(select((.key | IN("started", "failed", "opened", "downloaded")) and (.value | type == "number" and . > 0)))' \
+    "$STATE/counts.json" 2>/dev/null) || sent=
+  [[ -n $sent ]] || sent='{}'
+  jq -nc --arg id "$(<"$f")" --arg v "$v" --argjson hw "${hw:-[]}" --argjson n "$n" --argjson l "$launched" --argjson a "$sent" \
+    '{id: $id, version: $v, hw: $hw, running: $n, launched: $l, actions: $a}' |
     curl -fsS --proto '=https' --connect-timeout 5 --max-time 10 -o /dev/null -H 'Content-Type: application/json' \
-      --data-binary @- https://usage.sybilsolutions.ai/v1/local-ai/ping 2>/dev/null || true
+      --data-binary @- https://usage.sybilsolutions.ai/v1/local-ai/ping 2>/dev/null || return 0
+  [[ $sent != '{}' ]] || return 0
+  # take off what arrived; actions counted while it was on its way stay
+  (
+    exec 6>>"$STATE/counts.lock"
+    flock -w 5 6 || exit 0
+    jq -c --argjson s "$sent" 'with_entries(.value -= ($s[.key] // 0)) | with_entries(select(.value > 0))' "$STATE/counts.json" >"$STATE/counts.json.$$" &&
+      mv -f "$STATE/counts.json.$$" "$STATE/counts.json"
+  ) 2>/dev/null || true
 }
 
 # Fetch only the registry's data, pinned to the commit resolved before downloading; every recipe checked before it
@@ -825,7 +854,7 @@ worker_run() {
   NID=0
   trap 'rc=$?; if ((rc)) && [[ ! -f $WD/cancel ]]; then WHY=$(grep "^local-ai: " "$WD/err" | tail -1 | cut -c11- || true);
     WHY=${WHY:-"the model could not start; see the log and try again"};
-    status "$WID" error "" 0 "$WHY"; notify -r "$NID" -u critical "$WNAME did not start" "$WHY" >/dev/null; fi' EXIT
+    status "$WID" error "" 0 "$WHY"; count failed; notify -r "$NID" -u critical "$WNAME did not start" "$WHY" >/dev/null; fi' EXIT
   exec 2>>"$WD/err"
 
   rm -f "$STATE/hf.header" # a token file an older version kept
@@ -889,6 +918,7 @@ worker_run() {
     fail "the model returned no answer"
   status "$WID" ready "" 100
   trap - EXIT
+  count started
   notify -r "$NID" "$WNAME is ready" "Open your agent on it from Local AI." >/dev/null
 }
 
@@ -1059,6 +1089,8 @@ cmd_set() {
       '.[$k] = $v | if $k == "folder" then .folders = ([$v] + ((.folders // []) - [$v]))[:6] else . end' >"$f.$$"
     mv -f "$f.$$" "$f"
   done
+  # counting turned off drops the actions not yet sent
+  [[ $k != ping || $v != off ]] || rm -f -- "$STATE/counts.json"
 }
 
 # card <recipe>: the model card (README.md) of the recipe's first weights, at the pinned revision, from Hugging Face;
@@ -1121,6 +1153,7 @@ download_run() {
     pull "$img" engine >/dev/null || die "could not pull $img"
   fi
   rm -rf -- "$(dir_of "$id")"
+  count downloaded
 }
 
 # pin <recipe> [off]: a model not on this machine, kept on home to try later, the latest first
@@ -1349,6 +1382,7 @@ cmd_open() {
     wait "$launcher" || die "could not open the agent terminal; try again"
   fi
   disown "$launcher" 2>/dev/null || true
+  count opened
 }
 
 # share <id> [off]: tailscale serve as you; never take over another account's operator.

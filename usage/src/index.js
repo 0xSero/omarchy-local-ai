@@ -1,7 +1,9 @@
 // Counts Local AI installs. The plugin sends, at most twice a day:
-//   POST /v1/local-ai/ping  {"id": "<32 hex>", "version": "6.13.0", "hw": ["rtx-3090"], "running": 1}
-// `id` is random, made by the plugin on first run. Only those four fields and the UTC day are stored: no IP address,
-// no user agent, no headers. The caller's address is used only by the in-memory rate limit, never written.
+//   POST /v1/local-ai/ping  {"id": "<32 hex>", "version": "6.15.0", "hw": ["rtx-3090"], "running": 1,
+//                            "launched": true, "actions": {"started": 2, "failed": 0, "opened": 1, "downloaded": 1}}
+// `id` is random, made by the plugin on first run. `actions` are totals since the install's last delivered ping, never
+// which model or agent; versions before 6.15.0 send neither field. Only those fields and the UTC day are stored: no IP
+// address, no user agent, no headers. The caller's address is used only by the in-memory rate limit, never written.
 //   GET /v1/local-ai/stats  aggregate counts, public
 //   GET /                   the dashboard (src/page.html), which reads the stats above and the plugin's GitHub traffic
 import PAGE from "./page.html";
@@ -9,6 +11,7 @@ const ID = /^[0-9a-f]{32}$/;
 const VERSION = /^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$/;
 const HW = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const DAY = 86400000;
+const ACTIONS = ["started", "failed", "opened", "downloaded"];
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), {
@@ -19,12 +22,18 @@ const day = (offset = 0) => new Date(Date.now() - offset * DAY).toISOString().sl
 
 function valid(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
-  const { id, version, hw = [], running = 0 } = body;
+  const { id, version, hw = [], running = 0, launched = false, actions = {} } = body;
   if (typeof id !== "string" || !ID.test(id)) return null;
   if (typeof version !== "string" || !VERSION.test(version)) return null;
   if (!Array.isArray(hw) || hw.length > 8 || !hw.every((h) => typeof h === "string" && HW.test(h))) return null;
   if (!Number.isInteger(running) || running < 0 || running > 64) return null;
-  return { id, version, hw: [...new Set(hw)].sort().join(","), running };
+  if (typeof launched !== "boolean") return null;
+  if (!actions || typeof actions !== "object" || Array.isArray(actions)) return null;
+  for (const [k, v] of Object.entries(actions)) {
+    if (!ACTIONS.includes(k) || !Number.isInteger(v) || v < 0 || v > 1000) return null;
+  }
+  const a = Object.fromEntries(ACTIONS.map((k) => [k, actions[k] ?? 0]));
+  return { id, version, hw: [...new Set(hw)].sort().join(","), running, launched: launched ? 1 : 0, ...a };
 }
 
 async function ping(request, env) {
@@ -42,10 +51,14 @@ async function ping(request, env) {
   }
   if (!body) return json({ error: "invalid ping" }, 400);
   await env.DB.prepare(
-    `INSERT INTO pings (day, id, version, hw, running) VALUES (?1, ?2, ?3, ?4, ?5)
+    `INSERT INTO pings (day, id, version, hw, running, launched, started, failed, opened, downloaded)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
      ON CONFLICT (day, id) DO UPDATE SET version = excluded.version, hw = excluded.hw,
-       running = MAX(pings.running, excluded.running)`,
-  ).bind(day(), body.id, body.version, body.hw, body.running).run();
+       running = MAX(pings.running, excluded.running), launched = MAX(pings.launched, excluded.launched),
+       started = pings.started + excluded.started, failed = pings.failed + excluded.failed,
+       opened = pings.opened + excluded.opened, downloaded = pings.downloaded + excluded.downloaded`,
+  ).bind(day(), body.id, body.version, body.hw, body.running, body.launched,
+    body.started, body.failed, body.opened, body.downloaded).run();
   return new Response(null, { status: 204 });
 }
 
@@ -56,18 +69,26 @@ function tally(rows, key) {
 }
 
 async function stats(env) {
+  // launched: ran a model here, ever: a model has answered on it (6.15.0+), a start finished, or one ran at a check-in
   const [totals, daily, latest] = await env.DB.batch([
     env.DB.prepare(
       `SELECT COUNT(DISTINCT id) AS installs,
          COUNT(DISTINCT CASE WHEN day = ?1 THEN id END) AS today,
          COUNT(DISTINCT CASE WHEN day >= ?2 THEN id END) AS week,
          COUNT(DISTINCT CASE WHEN day >= ?3 THEN id END) AS month,
-         COUNT(DISTINCT CASE WHEN day >= ?3 AND running > 0 THEN id END) AS monthRunning
+         COUNT(DISTINCT CASE WHEN day >= ?3 AND running > 0 THEN id END) AS monthRunning,
+         COUNT(DISTINCT CASE WHEN launched > 0 OR started > 0 OR running > 0 THEN id END) AS launched,
+         COUNT(DISTINCT CASE WHEN day >= ?3 AND (started > 0 OR opened > 0 OR running > 0) THEN id END) AS monthUsed,
+         COALESCE(SUM(CASE WHEN day >= ?3 THEN started END), 0) AS monthStarted,
+         COALESCE(SUM(CASE WHEN day >= ?3 THEN failed END), 0) AS monthFailed,
+         COALESCE(SUM(CASE WHEN day >= ?3 THEN opened END), 0) AS monthOpened,
+         COALESCE(SUM(CASE WHEN day >= ?3 THEN downloaded END), 0) AS monthDownloaded
        FROM pings`,
     ).bind(day(), day(6), day(29)),
     env.DB.prepare(
       `WITH first AS (SELECT id, MIN(day) AS d FROM pings GROUP BY id)
-       SELECT p.day AS day, COUNT(*) AS active, SUM(p.running > 0) AS running, SUM(f.d = p.day) AS new
+       SELECT p.day AS day, COUNT(*) AS active, SUM(p.running > 0) AS running, SUM(f.d = p.day) AS new,
+         SUM(p.started) AS started, SUM(p.failed) AS failed, SUM(p.opened) AS opened
        FROM pings p JOIN first f ON f.id = p.id WHERE p.day >= ?1 GROUP BY p.day ORDER BY p.day`,
     ).bind(day(89)),
     // each install's newest ping of the last 7 days
