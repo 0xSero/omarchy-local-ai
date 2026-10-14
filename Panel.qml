@@ -28,7 +28,7 @@ Panel {
   readonly property string mono: bar ? bar.fontFamily : Style.font.family
   // Nerd Font glyphs for the icon names Model.js uses
   readonly property var glyphs: ({ gpu: 0xf08ae, memory: 0xf035b, temp: 0xf050f, context: 0xf09aa, weights: 0xf01a7, vision: 0xf06d0,
-    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf07b7, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140, up: 0xf0143, full: 0xf0293, unfull: 0xf0294, more: 0xf01d8 })
+    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf07b7, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140, up: 0xf0143, full: 0xf0293, unfull: 0xf0294, more: 0xf01d8, settings: 0xf0493 })
   function glyph(name) { return glyphs[name] ? String.fromCodePoint(glyphs[name]) : "" }
 
   // Four tones, each picked by the APCA contrast it must reach on a card (Model.tones): ink for what matters
@@ -237,6 +237,7 @@ Panel {
     case "model": nav({ model: a[1] }); break
     case "gpus": nav({ view: "gpus", id: "" }); break
     case "agents": nav({ view: "agents", id: "" }); break
+    case "settings": nav({ view: "settings", id: "" }); break
     case "pick": nav({ open: ui.open === a[1] ? "" : a[1] }); break
     case "home": home(); break
     case "back": back(); break
@@ -527,6 +528,20 @@ Panel {
           readonly property int gap: root.gapBefore(flick.view, index)
           width: content.width
           height: gap + row.height
+
+          // a models table: one raised surface at the edge with a rule around it, so its text keeps the gutter
+          Rectangle {
+            visible: !!r.framed
+            x: root.edge
+            y: parent.gap
+            width: parent.width - 2 * root.edge
+            height: row.height
+            color: root.surface
+            Rectangle { width: 1; height: parent.height; color: root.ruleTone }
+            Rectangle { x: parent.width - 1; width: 1; height: parent.height; color: root.ruleTone }
+            Rectangle { visible: !!r.first; width: parent.width; height: 1; color: root.ruleTone }
+            Rectangle { visible: !!r.last; y: parent.height - 1; width: parent.width; height: 1; color: root.ruleTone }
+          }
 
           // A Loader sizes its item, so a surface's inset lives on the Loader; other rows keep their own gutter
           Loader {
@@ -995,7 +1010,7 @@ Panel {
               readonly property real tail: r.pair ? 0 : Style.space(16)
               readonly property real inner: width - 2 * root.gutter - lead - tail
               height: head ? root.headH + Style.space(4) : root.rowH
-              Rectangle { visible: !!r.open; anchors.fill: parent; color: Util.alpha(root.theme, 0.06) }
+              Rectangle { visible: !!r.open; x: r.framed ? root.edge + 1 : 0; width: parent.width - (r.framed ? 2 * root.edge + 2 : 0); height: parent.height; color: Util.alpha(root.theme, 0.06) }
               Label {
                 visible: !head && !r.pair
                 anchors.right: parent.right
