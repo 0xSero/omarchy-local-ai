@@ -29,7 +29,15 @@ When the plugin checks the registry for new models (every 12 hours while the bar
 
 The Worker stores those fields and the UTC day, one row per install per day; actions in the same day add up. It stores no IP address, user agent or other header. The caller's address is used only by Cloudflare's in-memory rate limit.
 
-Turn it off with `omarchy-local-ai set ping off`, or `DO_NOT_TRACK=1` in the environment the bar runs in.
+Turn it off in the panel (Settings, send usage reports), with `omarchy-local-ai set ping off`, or `DO_NOT_TRACK=1` in the environment the bar runs in.
+
+## Security
+
+- Cloudflare Worker `local-ai-usage` and D1 database `local-ai-usage` (Western Europe), reachable only through the Cloudflare account; no `workers.dev` or preview address (`workers_dev = false`, `preview_urls = false`).
+- No request logs (`[observability]` off), so Cloudflare keeps no caller address for this worker; the worker writes none either. The rate limit (20 a minute per address) is in memory.
+- Pings must be JSON and at most 1 KB, refused by `Content-Length` before the body is read; every field is checked against a fixed shape, and anything else is a 400 that writes nothing.
+- Every response sends `nosniff`, `no-referrer`, HSTS and `X-Frame-Options: DENY`; the dashboard has a CSP allowing only its own inline script (by SHA-256, computed from `page.html` at start), inline styles, this worker and the plugin's traffic files. Only the stats allow other origins to read them. Internal errors return a bare 503.
+- Pings are not authenticated (any key in an open-source plugin would be public), so totals can be inflated by someone sending made-up pings; nothing can be read or changed that way.
 
 ## Reading it
 

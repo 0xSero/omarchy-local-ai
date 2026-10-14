@@ -1580,6 +1580,7 @@ cmd_snapshot() {
     --arg cdi "$(cdi_stale 2>/dev/null || true)" --argjson downloads "$(downloads)" \
     --argjson outdated "$(jq -c '{at, updates, plugin}' "$STATE/outdated.json" 2>/dev/null || echo '{"at":"","updates":{}}')" \
     --arg head "$(git -C "$PANEL" rev-parse HEAD 2>/dev/null || true)" \
+    --arg reporting "$(if [[ ${DO_NOT_TRACK:-0} != 0 ]]; then echo env; else jq -r '.ping // "on"' "$STATE/settings.json" 2>/dev/null || echo on; fi)" \
     --argjson folders "${sfs:-[]}" --argjson pins "$(jq -c '.pins // [] | map(strings)' "$STATE/settings.json" 2>/dev/null || echo '[]')" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
     ($agents | split("\n") | map(select(length > 0))) as $agents
@@ -1590,7 +1591,7 @@ cmd_snapshot() {
       | {name: $rid} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, pins: $pins, tailnet: $ts,
+    | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, reporting: $reporting, agents: $agents, folders: $folders, pins: $pins, tailnet: $ts,
        cdi: (if $cdi == "" then null else ($cdi | split("\t") | {spec: .[0], why: .[1]}) end),
        downloads: $downloads, updates: $outdated.updates, updatesAt: $outdated.at,
        # a plugin release found by the last check, while this checkout is still the one that check saw

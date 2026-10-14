@@ -128,8 +128,9 @@ Its code, the D1 migrations and the deploy config are in [`usage/`](usage) (the
 worker `local-ai-usage` and its `usage.sybilsolutions.ai` route); the public
 totals are the same worker's `GET /v1/local-ai/stats`.
 
-Turn it off with `omarchy-local-ai set ping off` (or `DO_NOT_TRACK=1` in the
-bar's environment); turning it off also deletes the actions not yet sent, and
+Turn it off in the panel under **Settings** (send usage reports), with
+`omarchy-local-ai set ping off`, or `DO_NOT_TRACK=1` in the
+bar's environment. Turning it off also deletes the actions not yet sent, and
 nothing is counted while it is off. A failed or refused message changes nothing.
 
 ### New models, downloads and removal
