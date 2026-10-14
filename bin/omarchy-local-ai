@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Run the model validated for your GPU and open a coding agent on it
-# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent> | set agent|folder <value> [recipe] | set ping on|off | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | outdated | cdi | log | remove
+# omarchy:args=setup | registry | forget <recipe> | snapshot | readiness | run <recipe> <gpu>[,<gpu>...] | stop <recipe> | open <recipe> | update <agent>|plugin | set agent|folder <value> [recipe] | set ping on|off | share <recipe> [off] | pin <recipe> [off] | download <recipe> [off] | card <recipe> | outdated | cdi | log | remove
 # omarchy:hidden=true
 
 # The backend of the Local AI bar widget. One running model is one folder, $STATE/deploy/<recipe>:
@@ -115,7 +115,7 @@ policy() {
         or (.dir // "" | name | not) or (.files // "" | names | not))] | length) > 0 then "invalid weights"
     elif (.asset != null and ((.asset.name | test("^[A-Za-z0-9_-][A-Za-z0-9_.-]*$") | not) or (.asset.mountPath | abs | not))) then "invalid asset"
     elif ((.launch.port | type) != "number") then "invalid port"
-    elif ((.launch.environment | type) != "object" or any(.launch.environment | to_entries[]; (.key | test("^[A-Z_][A-Z0-9_]*$") | not) or (.value | type != "string" or contains("\u0000")))) then "invalid environment"
+    elif ((.launch.environment | type) != "object" or any(.launch.environment | to_entries[]; (.key | test("^[A-Za-z_][A-Za-z0-9_]*$") | not) or (.value | type != "string" or contains("\u0000")))) then "invalid environment"
     elif ([.launch.arguments[]? | select(type != "string" or contains("\u0000"))] | length) > 0 then "invalid arguments"
     elif (.launch.entrypoint // "" | test("^[A-Za-z0-9_./-]*$") | not) then "invalid entrypoint"
     elif (.launch.shm // "" | test("^([0-9]+[kmg]?)?$") | not) then "invalid shm size"
@@ -131,19 +131,48 @@ policy() {
     else "ok" end' <<<"$1"
 }
 
+# counted: whether this install is counted at all; off with `set ping off` or DO_NOT_TRACK, and then nothing is kept either
+counted() { [[ ${DO_NOT_TRACK:-0} == 0 && $(jq -r '.ping // "on"' "$STATE/settings.json" 2>/dev/null) != off ]]; }
+# count <action>: one more started, failed (a start that did not finish), opened (an agent) or downloaded, kept in
+# counts.json until a ping delivers it: totals only, never which model, agent or folder. It never fails its caller.
+count() {
+  [[ $1 =~ ^(started|failed|opened|downloaded)$ ]] && counted || return 0
+  (
+    exec 6>>"$STATE/counts.lock"
+    flock -w 5 6 || exit 0
+    { jq -c . "$STATE/counts.json" 2>/dev/null || echo '{}'; } | jq -c --arg a "$1" '.[$a] = ((.[$a] // 0) + 1)' >"$STATE/counts.json.$$" &&
+      mv -f "$STATE/counts.json.$$" "$STATE/counts.json"
+  ) 2>/dev/null || true
+}
+
 # ping: count this install (README, "What Local AI sends"): a random id made on first run, the version, the card kinds
-# it has recipes for and how many models run. Off with `set ping off` or DO_NOT_TRACK; it never fails its caller.
+# it has recipes for, how many models run, whether a model has ever answered here, and the actions since the last ping
+# that arrived. A ping that does not arrive keeps them for the next. It never fails its caller.
 ping() {
-  local f=$STATE/install-id hw n=0 d v=""
-  [[ ${DO_NOT_TRACK:-0} == 0 && $(jq -r '.ping // "on"' "$STATE/settings.json" 2>/dev/null) != off ]] || return 0
+  local f=$STATE/install-id hw n=0 d v="" sent launched=false
+  counted || return 0
   [[ $(cat "$f" 2>/dev/null) =~ ^[0-9a-f]{32}$ ]] || (umask 077 && od -An -tx1 -N16 /dev/urandom | tr -d ' \n' >"$f") || return 0
   [[ $(<"$f") =~ ^[0-9a-f]{32}$ ]] || return 0
   [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
   hw=$(gpus none 2>/dev/null | jq -c '[.[].hw | select(. != "")] | unique') || hw='[]'
   for d in "$STATE"/deploy/*/config.json; do n=$((n + 1)); done
-  jq -nc --arg id "$(<"$f")" --arg v "$v" --argjson hw "${hw:-[]}" --argjson n "$n" '{id: $id, version: $v, hw: $hw, running: $n}' |
+  # every start that finished asked the model through the gateway, which logs each answer
+  for d in "$STATE"/usage/*/usage.jsonl; do [[ -s $d ]] && { launched=true; break; }; done
+  sent=$(jq -c 'with_entries(select((.key | IN("started", "failed", "opened", "downloaded")) and (.value | type == "number" and . > 0)))' \
+    "$STATE/counts.json" 2>/dev/null) || sent=
+  [[ -n $sent ]] || sent='{}'
+  jq -nc --arg id "$(<"$f")" --arg v "$v" --argjson hw "${hw:-[]}" --argjson n "$n" --argjson l "$launched" --argjson a "$sent" \
+    '{id: $id, version: $v, hw: $hw, running: $n, launched: $l, actions: $a}' |
     curl -fsS --proto '=https' --connect-timeout 5 --max-time 10 -o /dev/null -H 'Content-Type: application/json' \
-      --data-binary @- https://usage.sybilsolutions.ai/v1/local-ai/ping 2>/dev/null || true
+      --data-binary @- https://usage.sybilsolutions.ai/v1/local-ai/ping 2>/dev/null || return 0
+  [[ $sent != '{}' ]] || return 0
+  # take off what arrived; actions counted while it was on its way stay
+  (
+    exec 6>>"$STATE/counts.lock"
+    flock -w 5 6 || exit 0
+    jq -c --argjson s "$sent" 'with_entries(.value -= ($s[.key] // 0)) | with_entries(select(.value > 0))' "$STATE/counts.json" >"$STATE/counts.json.$$" &&
+      mv -f "$STATE/counts.json.$$" "$STATE/counts.json"
+  ) 2>/dev/null || true
 }
 
 # Fetch only the registry's data, pinned to the commit resolved before downloading; every recipe checked before it
@@ -223,18 +252,23 @@ nvidia() {
   grep -E '^[0-9]+, ' <<<"$out" || true
 }
 
-# Arc Pro B70 by PCI id. The xe driver gives users its temperature but not its memory use.
+# Arc Pro B70 by PCI id. The xe driver gives users its temperature but not its memory use. A card with a connected
+# monitor drives the desktop, whose compositor and browsers hold part of its memory, so it is offered last.
 intel() {
-  local a t f rows=()
+  local a t f c s rows=()
   for a in $(lspci -Dn -d 8086:e223 2>/dev/null | cut -d' ' -f1 | sort -u); do
     [[ -e /dev/dri/by-path/pci-$a-render ]] || continue
     t=null
     f=$(grep -lx pkg /sys/bus/pci/devices/"$a"/hwmon/hwmon*/temp*_label 2>/dev/null | head -1 || true)
     [[ -n $f ]] && t=$(($(<"${f%_label}_input") / 1000))
-    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")")
+    s=0
+    for c in "$SYS"/bus/pci/devices/"$a"/drm/card*; do
+      for f in "$SYS"/class/drm/"${c##*/}"-*/status; do [[ $(cat "$f" 2>/dev/null) == connected ]] && s=1; done
+    done
+    rows+=("$t" "$(readlink -f "/dev/dri/by-path/pci-$a-render")" "$s")
   done
-  # temperature and render node, one card a line
-  ((${#rows[@]} == 0)) || printf '%s\t%s\n' "${rows[@]}"
+  # temperature, render node and whether it drives a display, one card a line
+  ((${#rows[@]} == 0)) || printf '%s\t%s\t%s\n' "${rows[@]}"
 }
 
 # amd-smi comes with ROCm; without it AMD cards are not listed.
@@ -277,7 +311,8 @@ cpu() {
 MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | split(", ") | {backend: "nvidia", index: (.[0] | tonumber),
       product: .[1], totalMiB: (.[2] | tonumber), usedMiB: (.[3] | tonumber? // null), tempC: (.[4] | tonumber? // null)}))
     + ($xe | split("\n") | map(select(length > 0) | split("\t")) | to_entries | map({backend: "intel-xpu", index: .key,
-      product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1]}))
+      product: "Intel Arc Pro B70", totalMiB: 32768, usedMiB: null, tempC: (.value[0] | tonumber? // null), node: .value[1],
+      display: ((.value[2] // "") == "1")}))
     + $am;
   def norm: ascii_downcase | gsub("nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]"; "");
   def match($r; $ram): [.[] | . as $x
@@ -377,7 +412,7 @@ tree() {
   local repo=$1 rev=$2 files=$3 f="$STATE/trees/${1//\//--}@$2"
   mkdir -p "$STATE/trees"
   if [[ ! -s $f ]]; then
-    hf_curl -fsSL --max-time 60 --max-filesize 10485760 --retry 3 --retry-delay 5 --proto =https \
+    hf_curl -fsSL --max-time 60 --max-filesize 10485760 --retry 6 --retry-delay 10 --proto =https \
       "https://huggingface.co/api/models/$repo/tree/$rev?recursive=1" |
       jq -r '.[] | select(.type == "file") | [.path, .size, (.lfs.oid // "-")] | @tsv' >"$f.tmp" || {
       rm -f "$f.tmp"
@@ -430,7 +465,9 @@ fetch() {
       if good "$src" "$sz" "$sha"; then
         ln -f "$(readlink -f "$src")" "$d/$path" 2>/dev/null || cp -f "$(readlink -f "$src")" "$d/$path"
       else
-        hf_curl -fsSL --connect-timeout 15 --max-time 7200 --speed-limit 1024 --speed-time 60 --retry 3 -C - --proto =https --max-filesize "$sz" -o "$d/$path.part" \
+        # curl retries a 5xx, a 429 or a timeout with a doubling delay (1 s to 2 min, about 4 minutes in all): a short
+        # Hugging Face outage on one small file must not end a start whose large files are already here
+        hf_curl -fsSL --connect-timeout 15 --max-time 7200 --speed-limit 1024 --speed-time 60 --retry 8 -C - --proto =https --max-filesize "$sz" -o "$d/$path.part" \
           "https://huggingface.co/$repo/resolve/$rev/$path" &
         pid=$!
         while kill -0 "$pid" 2>/dev/null; do
@@ -474,6 +511,16 @@ network() {
 }
 engine() { printf '%s-engine' "$(network "$1")"; }
 gateway() { printf '%s-gateway' "$(network "$1")"; }
+# gw_addr <id>: the gateway's URL on the model's own Docker network. Only Docker assigns addresses on that bridge and
+# no host interface holds them, so another account can never listen there: every keyed request this plugin makes,
+# and every agent and tailnet share it sets up, goes to this address and never to 127.0.0.1:<port>, which another
+# account could take over the moment the gateway exits.
+gw_addr() {
+  local ip
+  ip=$(docker inspect -f "{{with index .NetworkSettings.Networks \"$(network "$1")\"}}{{.IPAddress}}{{end}}" "$(gateway "$1")" 2>/dev/null) || return 1
+  [[ $ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  printf 'http://%s:12434' "$ip"
+}
 preparer() { printf '%s-prepare' "$(network "$1")"; }
 prepared_contract() { jq -cS "$PREP_CONTRACT prepared_contract" <<<"$1"; }
 prepared_path() { printf '%s/prepared/%s' "$MODELS" "$(prepared_contract "$1" | sha256sum | cut -c1-64)"; }
@@ -764,10 +811,10 @@ phase_stop() {
   remove "$1"
 }
 
-# serve <port> on|off
+# serve <port> on|off [target URL]: the tailnet's https://<host>:<port> forwards to target (the gateway's bridge address)
 serve() {
   if [[ $2 == "on" ]]; then
-    timeout 20 tailscale serve --bg --https="$1" "http://127.0.0.1:$1" >/dev/null 2>&1
+    timeout 20 tailscale serve --bg --https="$1" "$3" >/dev/null 2>&1
   else
     timeout 20 tailscale serve --https="$1" off >/dev/null 2>&1
   fi
@@ -789,14 +836,18 @@ phase_purge() {
     grep . | sort -u | xargs -r timeout --kill-after=5 30 docker rmi >/dev/null 2>&1 || true
 }
 
-# fail <message>: keep the engine's last lines in the log (taking the containers down deletes them), name its first
-# error in the message, take the containers down and stop
+# fail <message>: keep the engine's last 400 lines in the log (taking the containers down deletes them; a vLLM engine
+# core's cause sits above two tracebacks, past the last 60), name its exception in the message, take the containers
+# down and stop
 fail() {
-  local e hint=""
+  local e hint="" out
   e=$(engine "$WID")
   if docker inspect "$e" >/dev/null 2>&1; then
-    docker logs --tail 60 "$e" >>"$WD/err" 2>&1 || true
-    hint=$(docker logs --tail 200 "$e" 2>&1 | grep -i -m1 -e error -e 'out of' -e exception | cut -c1-160 || true)
+    out=$(docker logs --tail 400 "$e" 2>&1 || true)
+    printf '%s\n' "$out" >>"$WD/err"
+    # the exception itself ("ValueError: Free memory on device ..."), not the first traceback line that says "error"
+    hint=$(grep -oE '[A-Za-z]+(Error|Exception): .*' <<<"$out" | grep -v 'Engine core initialization failed' | head -1 | cut -c1-200 || true)
+    [[ -n $hint ]] || hint=$(grep -i -m1 -e error -e 'out of' -e exception <<<"$out" | cut -c1-160 || true)
   fi
   phase_stop "$WID" || true
   die "$*${hint:+: $hint}"
@@ -813,7 +864,7 @@ worker_run() {
   NID=0
   trap 'rc=$?; if ((rc)) && [[ ! -f $WD/cancel ]]; then WHY=$(grep "^local-ai: " "$WD/err" | tail -1 | cut -c11- || true);
     WHY=${WHY:-"the model could not start; see the log and try again"};
-    status "$WID" error "" 0 "$WHY"; notify -r "$NID" -u critical "$WNAME did not start" "$WHY" >/dev/null; fi' EXIT
+    status "$WID" error "" 0 "$WHY"; count failed; notify -r "$NID" -u critical "$WNAME did not start" "$WHY" >/dev/null; fi' EXIT
   exec 2>>"$WD/err"
 
   rm -f "$STATE/hf.header" # a token file an older version kept
@@ -822,8 +873,17 @@ worker_run() {
     fetch "$WID" "$w"
   done < <(jq -c '.weights[]?' <<<"$r")
 
-  [[ -s $KEY ]] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$KEY"
-  printf 'Authorization: Bearer %s\n' "$(<"$KEY")" >"$AUTH"
+  # The key is written whole to a temporary file and linked into place, never truncated: two first starts at once
+  # both make one, the first link wins and the second start uses it. A running gateway never sees it empty.
+  if [[ ! -s $KEY ]]; then
+    w=$(mktemp "$KEY.XXXXXX")
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$w"
+    ln "$w" "$KEY" 2>/dev/null || [[ -s $KEY ]] || mv -f "$w" "$KEY"
+    rm -f "$w"
+  fi
+  w=$(mktemp "$AUTH.XXXXXX")
+  printf 'Authorization: Bearer %s\n' "$(<"$KEY")" >"$w"
+  mv -f "$w" "$AUTH"
   mkdir -p "$STATE/usage/$WID"
   PORTNUM=$(jq -r .port "$WD/config.json")
   status "$WID" starting "checking the engine" 0
@@ -839,8 +899,9 @@ worker_run() {
   done
   seen=$(resets ${nodes[@]+"${nodes[@]}"})
   quiet=$SECONDS last="" top=1
+  GW=$(gw_addr "$WID") || fail "the gateway has no address on the model's network"
   while :; do
-    code=$(curl -s -m 5 -o "$WD/models.json" -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$PORTNUM/v1/models" || true)
+    code=$(curl -s --noproxy '*' -m 5 -o "$WD/models.json" -w '%{http_code}' -H "@$AUTH" "$GW/v1/models" || true)
     served=$(jq -r '.data[0].id // empty' "$WD/models.json" 2>/dev/null || true)
     [[ $code == "200" && -n $served ]] && break
     [[ $code == "401" ]] && fail "the gateway refuses this install's key"
@@ -864,10 +925,10 @@ worker_run() {
   rm -f "$WD/models.json"
 
   status "$WID" starting "checking it answers" 99
-  if curl -fsS --max-time 5 "http://127.0.0.1:$PORTNUM/v1/models" >/dev/null 2>&1; then
+  if curl -fsS --noproxy '*' --max-time 5 "http://127.0.0.1:$PORTNUM/v1/models" >/dev/null 2>&1; then
     fail "the gateway answers without the key"
   fi
-  reply=$(curl -fsS --max-time 600 -H "@$AUTH" -H 'Content-Type: application/json' "http://127.0.0.1:$PORTNUM/v1/chat/completions" \
+  reply=$(curl -fsS --noproxy '*' --max-time 600 -H "@$AUTH" -H 'Content-Type: application/json' "$GW/v1/chat/completions" \
     -d "$(jq -nc --arg m "$served" '{model: $m, max_tokens: 200, messages: [{role: "user", content: "Count from 1 to 60. Nothing else."}]}')") ||
     fail "the model did not answer"
   # A cold first request can include compilation or queueing, so its wall time is not GPU decode speed.
@@ -876,6 +937,7 @@ worker_run() {
     fail "the model returned no answer"
   status "$WID" ready "" 100
   trap - EXIT
+  count started
   notify -r "$NID" "$WNAME is ready" "Open your agent on it from Local AI." >/dev/null
 }
 
@@ -1046,6 +1108,8 @@ cmd_set() {
       '.[$k] = $v | if $k == "folder" then .folders = ([$v] + ((.folders // []) - [$v]))[:6] else . end' >"$f.$$"
     mv -f "$f.$$" "$f"
   done
+  # counting turned off drops the actions not yet sent
+  [[ $k != ping || $v != off ]] || rm -f -- "$STATE/counts.json"
 }
 
 # card <recipe>: the model card (README.md) of the recipe's first weights, at the pinned revision, from Hugging Face;
@@ -1108,6 +1172,7 @@ download_run() {
     pull "$img" engine >/dev/null || die "could not pull $img"
   fi
   rm -rf -- "$(dir_of "$id")"
+  count downloaded
 }
 
 # pin <recipe> [off]: a model not on this machine, kept on home to try later, the latest first
@@ -1133,6 +1198,7 @@ bin() {
 # manager itself, so an agent installed some other way (npm, say) is updated the way it was installed.
 cmd_update() (
   local a=${1:-} b tool
+  [[ $a != plugin ]] || { update_plugin; exit; }
   printf '%s\n' "${AGENTS[@]}" | grep -qx -- "$a" || die "unknown agent"
   b=$(bin "$a") || die "$a is not installed"
   exec 7>"$STATE/update.lock"
@@ -1163,11 +1229,33 @@ cmd_update() (
   printf 'Updated %s. New sessions use the updated version.\n' "$a"
 )
 
+# The plugin itself: Omarchy installs it as a git checkout and `omarchy plugin update` moves it to the origin's default
+# branch, which only ever carries releases. The check reads that branch's commit and fetches nothing; an update is one
+# when this checkout does not already contain it (a checkout ahead of the release is not offered the older one).
+plugin_latest() {
+  local head remote
+  [[ -d $PANEL/.git ]] && omarchy-cmd-present omarchy-plugin-update || return 0
+  head=$(git -C "$PANEL" rev-parse HEAD 2>/dev/null) || return 0
+  remote=$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -oBatchMode=yes" timeout 20 git -C "$PANEL" ls-remote origin HEAD 2>/dev/null | cut -f1) || return 0
+  [[ $remote =~ ^[0-9a-f]{40}$ && $remote != "$head" ]] || return 0
+  git -C "$PANEL" merge-base --is-ancestor "$remote" HEAD 2>/dev/null && return 0
+  jq -nc --arg h "$head" --arg l "$remote" '{head: $h, latest: $l}'
+}
+# Omarchy's own update does the work and reloads the panel; it already shows what changes when run in a terminal.
+update_plugin() {
+  local id
+  id=$(jq -er .id "$PANEL/manifest.json") || die "this plugin has no manifest id"
+  say "updating the plugin"
+  timeout 300 omarchy-plugin-update "$id" --yes >>"$LOG" 2>&1 || die "could not update Local AI; see the Local AI log"
+  say "updated the plugin"
+  printf 'Updated Local AI.\n'
+}
+
 # outdated: which installed agents have a newer version from mise, the manager update uses, kept in outdated.json for
 # the snapshot; an agent that updates itself (claude, omp, hermes, opencode) without mise is not asked, and one installed
 # some other way is not offered an update the panel cannot run
 cmd_outdated() (
-  local a b tool m='{}' out='{}' cur lat
+  local a b tool m='{}' out='{}' cur lat p
   cd -- "$HOME_DIR"
   omarchy-cmd-present mise && m=$(timeout 60 mise outdated --json 2>/dev/null | jq -c 'if type == "object" then . else {} end' 2>/dev/null) || m='{}'
   [[ -n $m ]] || m='{}'
@@ -1184,7 +1272,8 @@ cmd_outdated() (
       | [$x.current // "", $x.latest // ""] | @tsv' <<<"$m") || true
     [[ -n $lat && $lat != "$cur" ]] && out=$(jq -c --arg a "$a" --arg c "$cur" --arg l "$lat" '.[$a] = {current: $c, latest: $l}' <<<"$out")
   done
-  jq -nc --argjson u "$out" --arg t "$(now)" '{at: $t, updates: $u}' >"$STATE/outdated.json.$$"
+  p=$(plugin_latest) || p=
+  jq -nc --argjson u "$out" --arg t "$(now)" --argjson p "${p:-null}" '{at: $t, updates: $u, plugin: $p}' >"$STATE/outdated.json.$$"
   mv -f "$STATE/outdated.json.$$" "$STATE/outdated.json"
 )
 
@@ -1272,16 +1361,17 @@ argv() {
 # open <id>: the model's agent in its folder, in a terminal
 cmd_open() {
   valid_id "${1:-}" || die "open <recipe>"
-  local d c s a b ag dir cmd=() v launcher
+  local d c s a b ag dir cmd=() v launcher gw
   d=$(dir_of "$1")
   [[ $(jq -r .state "$d/status.json" 2>/dev/null) == "ready" ]] || die "the model is not ready"
   c=$(<"$d/config.json")
+  gw=$(gw_addr "$1") || die "the model's gateway is not running; start the model again"
   # a model started before its config kept this reads it from its recipe; one whose recipe is gone since opens under
   # its id (the gateway maps any model name onto the served one) with the context its engine reports: an agent told
   # less than the engine holds cuts its own replies short once a conversation outgrows it
   s=$(jq -ce '.serve // empty' <<<"$c") ||
     s=$(recipe "$1" | jq -ce '{name, ctx: (.serving.ctxTokens // 32768), vision: (.capabilities.vision // false)}') ||
-    s=$(curl -fsS -m 5 -o /dev/stdout -H "@$AUTH" "http://127.0.0.1:$(jq -r .port <<<"$c")/v1/models" 2>/dev/null |
+    s=$(curl -fsS --noproxy '*' -m 5 -o /dev/stdout -H "@$AUTH" "$gw/v1/models" 2>/dev/null |
       jq -ce --arg n "${1%--*}" '{name: $n, ctx: (.data[0].max_model_len // empty), vision: false}') ||
     s=$(jq -nc --arg n "${1%--*}" '{name: $n, ctx: 32768, vision: false}')
   a=$(jq -r .agent <<<"$c")
@@ -1293,9 +1383,13 @@ cmd_open() {
   # the gateway maps any model name onto the served one, so agents see the recipe's name
   while IFS= read -r -d '' v; do
     cmd+=("$v")
-  done < <(argv "$a" "$b" "http://127.0.0.1:$(jq -r .port <<<"$c")" "$(jq -r .name <<<"$s")" \
+  done < <(argv "$a" "$b" "$gw" "$(jq -r .name <<<"$s")" \
     "$(jq -r .ctx <<<"$s")" "$(jq -r .vision <<<"$s")" "$ag")
   [[ $a == "omp" && $dir -ef $HOME_DIR ]] && cmd+=(--allow-home)
+  # an inherited HTTP(S)_PROXY usually exempts 127.0.0.1 but not the bridge address: the agent must reach the gateway
+  # directly, or the key would go to the proxy
+  v=${gw#http://}; v=${v%:*}
+  cmd=(env "NO_PROXY=$v${NO_PROXY:+,$NO_PROXY}" "no_proxy=$v${no_proxy:+,$no_proxy}" "${cmd[@]}")
   say "open $a on $1 in $dir"
   # Some terminals keep their launcher alive for the whole session. Release the panel after startup,
   # or its action timeout would kill a healthy agent two minutes later.
@@ -1307,17 +1401,21 @@ cmd_open() {
     wait "$launcher" || die "could not open the agent terminal; try again"
   fi
   disown "$launcher" 2>/dev/null || true
+  count opened
 }
 
 # share <id> [off]: tailscale serve as you; never take over another account's operator.
 cmd_share() {
-  local f on=${2:-on} p operator
+  local f on=${2:-on} p operator t=""
   f=$(dir_of "${1:-}")/config.json
   valid_id "${1:-}" && [[ -f $f ]] || die "the model is not running"
   [[ $on == on || $on == off ]] || die "share <recipe> [off]"
   [[ $on == off || $(jq -r .state "${f%/*}/status.json") == ready ]] || die "the model is not ready to share"
   p=$(jq -r .port "$f")
-  if ! serve "$p" "$on"; then
+  if [[ $on == on ]]; then
+    t=$(gw_addr "$1") || die "the model's gateway is not running; start the model again"
+  fi
+  if ! serve "$p" "$on" "$t"; then
     operator=$(timeout 10 tailscale debug prefs 2>/dev/null | jq -r '.OperatorUser // ""') || operator=""
     [[ -z $operator || $operator == "$USER" ]] || die "another account manages Tailscale; ask that account to change the share"
     die "Tailscale could not change the share; check that it is running and ask its operator for access"
@@ -1483,10 +1581,11 @@ cmd_snapshot() {
       fi
       ;;
     ready)
-      # refused or an empty reply means the engine is gone; a slow answer only means it is busy
+      # liveness from the keyless /health (200 engine up, 503 engine gone): the poll never sends the key, so a
+      # listener that took over a vacated port learns nothing; refused or an empty reply means the gateway is gone
       rc=0
-      code=$(curl -s -m 2 -o /dev/null -w '%{http_code}' -H "@$AUTH" "http://127.0.0.1:$port/v1/models") || rc=$?
-      if ((rc == 7 || rc == 52)) || [[ $code == "502" ]]; then why="the engine stopped"; fi
+      code=$(curl -s --noproxy '*' -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/health") || rc=$?
+      if ((rc == 7 || rc == 52)) || [[ $code == "502" || $code == "503" ]]; then why="the engine stopped"; fi
       ;;
     esac
     deps+=("{\"d\":$obj,\"u\":$(session "$id" "$(date -d "$at" +%s)"),\"why\":\"$why\"}")
@@ -1498,7 +1597,9 @@ cmd_snapshot() {
     --arg rstate "$rstate" --arg rmsg "$rmsg" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg setupError "$(cat "$STATE/setup-error" 2>/dev/null || true)" --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --arg cdi "$(cdi_stale 2>/dev/null || true)" --argjson downloads "$(downloads)" \
-    --argjson outdated "$(jq -c '{at, updates}' "$STATE/outdated.json" 2>/dev/null || echo '{"at":"","updates":{}}')" \
+    --argjson outdated "$(jq -c '{at, updates, plugin}' "$STATE/outdated.json" 2>/dev/null || echo '{"at":"","updates":{}}')" \
+    --arg head "$(git -C "$PANEL" rev-parse HEAD 2>/dev/null || true)" \
+    --arg reporting "$(if [[ ${DO_NOT_TRACK:-0} != 0 ]]; then echo env; else jq -r '.ping // "on"' "$STATE/settings.json" 2>/dev/null || echo on; fi)" \
     --argjson folders "${sfs:-[]}" --argjson pins "$(jq -c '.pins // [] | map(strings)' "$STATE/settings.json" 2>/dev/null || echo '[]')" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
     ($agents | split("\n") | map(select(length > 0))) as $agents
@@ -1509,12 +1610,15 @@ cmd_snapshot() {
       | {name: $rid} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
     | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
-    | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, agents: $agents, folders: $folders, pins: $pins, tailnet: $ts,
+    | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, reporting: $reporting, agents: $agents, folders: $folders, pins: $pins, tailnet: $ts,
        cdi: (if $cdi == "" then null else ($cdi | split("\t") | {spec: .[0], why: .[1]}) end),
-       downloads: $downloads, updates: $outdated.updates, updatesAt: $outdated.at, catalog: {commit: ($rec[0].registryCommit // ""), at: ($rec[0].refreshedAt // "")},
+       downloads: $downloads, updates: $outdated.updates, updatesAt: $outdated.at,
+       # a plugin release found by the last check, while this checkout is still the one that check saw
+       pluginUpdate: ($outdated.plugin != null and $outdated.plugin.head == $head), catalog: {commit: ($rec[0].registryCommit // ""), at: ($rec[0].refreshedAt // "")},
        gpus: [$g[] | . + {busy: (.key as $k | $busy | index($k) != null)}],
        kinds: [$g | map(select(.hw != "")) | group_by(.hw)[] | {hw: .[0].hw, keys: map(.key),
-         free: [.[] | select(.key as $k | ($busy + $taken) | index($k) == null) | .key],
+         # a card that drives a display comes last, so Start picks a card the desktop is not using
+         free: ([.[] | select(.key as $k | ($busy + $taken) | index($k) == null)] | sort_by(.display // false) | map(.key)),
          taken: [.[] | select(.key as $k | $taken | index($k) != null) | .key],
          # the registry lists the recipes of a kind best first: the first on one card is its recommended model
          models: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) == 1) | summary($host)],
@@ -1528,7 +1632,7 @@ paths "$HOME"
 . "$PANEL/lib/access.sh"
 mkdir -p "$STATE"
 # the verbs that use Docker run under the docker group, whatever groups this login began with
-case ${1:-} in snapshot | run | stop | remove | readiness | download) docker_group_reexec "$TARGET" "$@" ;; esac
+case ${1:-} in snapshot | run | stop | remove | readiness | download | open | share) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
 setup | registry | forget | snapshot | readiness | run | stop | open | update | outdated | set | share | pin | download | card) "cmd_$1" "${@:2}" ;;
 # the stale NVIDIA device list, if any, as "<spec>\t<why>" (setup rewrites it)

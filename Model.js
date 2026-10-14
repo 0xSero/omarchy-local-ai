@@ -141,6 +141,7 @@ function homeView(s, ui) {
   rows.push({ type: "field", icon: "gpu", label: "hardware", value: String(s.gpus.length), action: "gpus" })
   if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
   rows.push({ type: "field", icon: "agent", label: "Agents", value: String((s.agents || []).length), action: "agents" })
+  rows.push({ type: "field", icon: "settings", label: "Settings", value: "", action: "settings" })
   // a stale NVIDIA device list (a card taken out, a driver update) stops starts on NVIDIA cards: setup rewrites it
   if (s.cdi && s.gpus.some(function(g) { return g.backend === "nvidia" }))
     rows.push({ type: "banner", alert: true, text: "NVIDIA device list is out of date (" + s.cdi.why + ")", action: "setup", actionLabel: "Fix" })
@@ -207,7 +208,8 @@ function trow(c, wide) {
   var mark = c.d ? "●" : c.dl && c.dl.state === "download" ? "↓" : ""
   return { type: "trow", family: c.family || "", live: !!c.d, mark: mark, dim: !c.d && (!c.fits || !c.free), cells: cells, action: c.action }
 }
-// a table of models; on the models tab each row opens in place to manage it
+// a table of models; on the models tab each row opens in place to manage it. Its rows, an opened row's actions
+// included, sit on one raised surface with a border: the first row draws its top, the last its bottom
 function table(list, wide, ui) {
   var rows = [{ type: "thead", cells: wide ? ["MODEL", "AA", "FORMAT", "ENGINE", "ON", "CONTEXT", "DOWNLOAD", "RAM", "NVMe"] : ["MODEL", "AA", "FORMAT", "ON"] }]
   list.forEach(function(c) {
@@ -220,6 +222,9 @@ function table(list, wide, ui) {
     rows.push(r)
     if (r.open) rows.push(manage(c))
   })
+  rows.forEach(function(r) { r.framed = true })
+  rows[0].first = true
+  rows[rows.length - 1].last = true
   return rows
 }
 // what a model is doing, in one line
@@ -372,7 +377,7 @@ function gpusView(s, ui) {
     var status = d ? (d.state === "ready" ? "running " : d.state === "error" ? "stopped: " : d.state + " ") + d.name
       : held ? "in use by another program" : kd ? "free" : "no tested model yet"
     var open = ui.open === "hw:" + g.key || ui.wide
-    rows.push({ type: "field", logo: vendor(g), label: g.name, value: (g.tempC != null ? g.tempC + "°  " : "") + (d ? (d.state === "ready" ? "running" : d.state) : held ? "in use" : kd ? "free" : "–"),
+    rows.push({ type: "field", logo: vendor(g), label: g.name, value: (g.display ? "display  " : "") + (g.tempC != null ? g.tempC + "°  " : "") + (d ? (d.state === "ready" ? "running" : d.state) : held ? "in use" : kd ? "free" : "–"),
       warn: held, drop: !ui.wide, open: open, action: ui.wide ? "" : "pick|hw:" + g.key })
     if (open) {
       var mem = gpuRow(g)
@@ -584,9 +589,28 @@ function agentsView(s, ui) {
   return { back: true, where: "agents", rows: rows }
 }
 
+// Settings: usage reporting, on unless turned off here or by DO_NOT_TRACK, and exactly what it sends
+var REPORTING = "Reporting is minimal and anonymous. There is no user or account ID: at most twice a day Local AI sends " +
+  "a random number made on this computer, its version, the kinds of graphics card it found, how many models are running, " +
+  "and how many models it started, failed to start, opened in an agent or downloaded since the last report. It never " +
+  "sends your prompts, files, folders, model names or agents, and your IP address is not stored. Turned off, nothing " +
+  "is sent and counts not yet sent are deleted."
+function settingsView(s, ui) {
+  var r = s.reporting || "on", rows = [{ type: "sec", label: "USAGE REPORTING" }]
+  if (r === "env") rows.push({ type: "field", label: "send usage reports", value: "off (DO_NOT_TRACK is set)" })
+  else rows.push({ type: "field", icon: r === "off" ? "" : "check", label: "send usage reports", value: r === "off" ? "off" : "on",
+    action: "set|ping|" + (r === "off" ? "on" : "off") })
+  rows.push({ type: "links", note: REPORTING, items: [{ label: "See the public totals", action: "url|https://usage.sybilsolutions.ai/" }] })
+  return { back: true, where: "settings", rows: rows }
+}
+
 function build(s, ui) {
   s = s || {}
-  var v = (ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
+  var v = (ui.view === "settings" ? settingsView(s, ui) : ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
+  // a plugin release, on the home page: Omarchy's own update installs it and reloads the panel
+  if (s.pluginUpdate && (!ui.view || ui.view === "home"))
+    v.rows.unshift({ type: "links", note: "A new version of Local AI is out.",
+      items: [{ label: ui.updatingAgent === "plugin" ? "Updating…" : "Update Local AI", action: ui.updatingAgent ? "" : "update|plugin" }] })
   if (ui.problem || ui.pollProblem || s.setupError) v.rows.unshift({ type: "error", label: ui.problem || ui.pollProblem || s.setupError })
   else if (ui.notice) v.rows.unshift({ type: "banner", text: ui.notice })
   return Object.assign(v, { mark: ui.problem || ui.pollProblem || s.setupError ? "failed" : mark(s) })

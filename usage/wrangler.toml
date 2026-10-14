@@ -2,6 +2,8 @@ name = "local-ai-usage"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 workers_dev = false
+# no *.workers.dev address and no per-version preview addresses: only usage.sybilsolutions.ai answers
+preview_urls = false
 routes = [{ pattern = "usage.sybilsolutions.ai", custom_domain = true }]
 
 [[d1_databases]]
@@ -15,3 +17,10 @@ migrations_dir = "migrations"
 name = "LIMIT"
 namespace_id = "1001"
 simple = { limit = 20, period = 60 }
+
+# no request logs: Cloudflare would keep each request's address and headers, which the worker itself never stores
+[observability]
+enabled = false
+[observability.logs]
+enabled = false
+invocation_logs = false
