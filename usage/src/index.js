@@ -13,11 +13,41 @@ const HW = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const DAY = 86400000;
 const ACTIONS = ["started", "failed", "opened", "downloaded"];
 
+// Every response: no sniffing, no referrer, HTTPS only, never framed.
+const SECURE = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "strict-transport-security": "max-age=31536000; includeSubDomains",
+  "x-frame-options": "DENY",
+  "permissions-policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+};
+// Only the stats are read by browsers on other sites; the ping is sent by the plugin, never by a page.
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json", "access-control-allow-origin": "*", ...headers },
+    headers: { "content-type": "application/json", "cache-control": "no-store", ...SECURE, ...headers },
   });
+
+// The dashboard may run only its own inline script (by hash, worked out once per isolate) and read only this worker
+// and the plugin's traffic files.
+let csp;
+async function policy() {
+  if (csp) return csp;
+  const script = PAGE.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(script));
+  const hash = btoa(String.fromCharCode(...new Uint8Array(digest)));
+  csp = [
+    "default-src 'none'",
+    `script-src 'sha256-${hash}'`,
+    "style-src 'unsafe-inline'",
+    "img-src 'self' data:",
+    "connect-src 'self' https://raw.githubusercontent.com",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+  return csp;
+}
 const day = (offset = 0) => new Date(Date.now() - offset * DAY).toISOString().slice(0, 10);
 
 function valid(body) {
@@ -41,6 +71,9 @@ async function ping(request, env) {
   if (!ip) return json({ error: "no address" }, 400);
   const { success } = await env.LIMIT.limit({ key: ip });
   if (!success) return json({ error: "slow down" }, 429);
+  if (!(request.headers.get("content-type") || "").startsWith("application/json")) return json({ error: "send JSON" }, 415);
+  // refuse a large body before reading it, then check what was actually sent
+  if (Number(request.headers.get("content-length") || 0) > 1024) return json({ error: "too large" }, 413);
   const text = await request.text();
   if (text.length > 1024) return json({ error: "too large" }, 413);
   let body;
@@ -111,22 +144,34 @@ async function stats(env) {
 
 export default {
   async fetch(request, env, ctx) {
-    const { pathname } = new URL(request.url);
-    if (pathname === "/v1/local-ai/ping") {
-      return request.method === "POST" ? ping(request, env) : json({ error: "use POST" }, 405);
+    try {
+      return await route(request, env, ctx);
+    } catch {
+      // nothing about the database or the code reaches the caller
+      return json({ error: "unavailable" }, 503);
     }
-    if (pathname === "/v1/local-ai/stats" && request.method === "GET") {
-      const cache = caches.default;
-      const key = new Request(new URL(pathname, request.url));
-      const hit = await cache.match(key);
-      if (hit) return hit;
-      const response = json(await stats(env), 200, { "cache-control": "public, max-age=300" });
-      ctx.waitUntil(cache.put(key, response.clone()));
-      return response;
-    }
-    if (pathname === "/" && request.method === "GET") {
-      return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300" } });
-    }
-    return json({ error: "not found" }, 404);
   },
 };
+
+async function route(request, env, ctx) {
+  const { pathname } = new URL(request.url);
+  if (pathname === "/v1/local-ai/ping") {
+    return request.method === "POST" ? ping(request, env) : json({ error: "use POST" }, 405);
+  }
+  if (pathname === "/v1/local-ai/stats" && request.method === "GET") {
+    const cache = caches.default;
+    const key = new Request(new URL(pathname, request.url));
+    const hit = await cache.match(key);
+    if (hit) return hit;
+    const response = json(await stats(env), 200, { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });
+    ctx.waitUntil(cache.put(key, response.clone()));
+    return response;
+  }
+  if (pathname === "/" && request.method === "GET") {
+    return new Response(PAGE, {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300",
+        "content-security-policy": await policy(), ...SECURE },
+    });
+  }
+  return json({ error: "not found" }, 404);
+}

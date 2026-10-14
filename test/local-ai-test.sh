@@ -232,15 +232,15 @@ js() {
     const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " tabs,life,sec,thead,trow,sec,field,field,field" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view home) == " tabs,life,sec,thead,trow,sec,field,field,field,field" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " links,acts,field" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
   # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
   # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
-    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed tabs,life,slot:M:stop|m,error:gone,sec,thead,trow,sec,field,field,field" &&
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed tabs,life,slot:M:stop|m,error:gone,sec,thead,trow,sec,field,field,field,field" &&
     $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
-    c.build(s, ui({open: "lost:m"})).rows.filter(r => r.label || r.items).map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "tabs:home,slot:M,error:gone,links:View logs,sec:RECOMMENDED,sec:THIS MACHINE,field:hardware,field:RAM,field:Agents" &&
+    c.build(s, ui({open: "lost:m"})).rows.filter(r => r.label || r.items).map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "tabs:home,slot:M,error:gone,links:View logs,sec:RECOMMENDED,sec:THIS MACHINE,field:hardware,field:RAM,field:Agents,field:Settings" &&
     $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
     fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
@@ -306,7 +306,7 @@ cdi 1
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready tabs,life,run,sec,thead,trow,sec,field,field,field" && $(view run "$ID") == "ready links,acts,field" ]] ||
+  [[ $(view home) == "ready tabs,life,run,sec,thead,trow,sec,field,field,field,field" && $(view run "$ID") == "ready links,acts,field" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi
