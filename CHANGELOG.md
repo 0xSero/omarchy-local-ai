@@ -2,7 +2,7 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. `main` carries releases only; work lands on `dev` (see `docs/releases.md`).
 
-## [Unreleased]
+## [6.14.0] - 2026-10-14
 
 ### Added
 - **Update Local AI** on the home page when `main` has a release this copy lacks. The agent update check (every 6 hours) also asks the plugin's origin for its default branch's commit with `git ls-remote` (nothing is fetched), and the button runs Omarchy's `omarchy plugin update`. A checkout that already contains that commit is not offered it, and a copy that is not a git checkout is never offered an update.
