@@ -86,8 +86,10 @@ image) exit 1 ;;
 pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 network) : ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
-inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; [[ $* == *RestartCount* ]] && echo 0 || cat "$c/$n" ;;
-logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || printf "loading shards\nRuntimeError: XPU out of memory. Tried to allocate 2.00 GiB\n"
+inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; if [[ $* == *IPAddress* ]]; then echo 172.30.0.5; elif [[ $* == *RestartCount* ]]; then echo 0; else cat "$c/$n"; fi ;;
+logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || { printf "loading shards\n(EngineCore pid=5) ERROR [core.py:1330] EngineCore failed to start.\n(EngineCore pid=5) ERROR [core.py:1330] ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization\n"
+    for i in $(seq 70); do echo "(APIServer pid=1)   File \"core.py\", line $i"; done
+    echo "(APIServer pid=1) RuntimeError: Engine core initialization failed. See root cause above."; } | if [[ $2 == --tail ]]; then tail -n "$3"; else cat; fi
   [[ -z ${SHIM_LOAD_LOG:-} ]] || cat "$SHIM_LOAD_LOG" ;;
 rm) if [[ ${@: -1} == *-engine ]]; then
       if [[ -n ${SHIM_RM_ALWAYS:-} ]]; then exit 1; fi
@@ -113,7 +115,11 @@ case $url in
 */api/models/*) printf "[{\"type\":\"file\",\"path\":\"model.safetensors\",\"size\":4096,\"lfs\":{\"oid\":\"%s\"}}]" '"$SHA"' ;;
 */resolve/*) if [[ -n ${SHIM_CORRUPT:-} ]]; then head -c 4096 /dev/urandom >"$out"; else head -c 4096 /dev/zero >"$out"; fi ;;
 */raw/*/README.md) printf "# Test Model card\n" ;;
-http://127.0.0.1:*)
+http://127.0.0.1:*/health)
+  [[ -z ${SHIM_STOPPED:-} ]] || exit 7
+  ls "$SHIM/containers" | grep -q gateway || exit 7
+  [[ $* == *http_code* ]] && printf 200 ;;
+http://127.0.0.1:*|http://172.30.0.5:*)
   [[ -z ${SHIM_STOPPED:-} ]] || exit 7
   ls "$SHIM/containers" | grep -q gateway || exit 7
   [[ $key == "$(cat "$HOME/.local/state/omarchy/local-ai/gateway.key")" ]] || { [[ $* == *http_code* ]] && printf 401; exit 22; }
@@ -177,6 +183,21 @@ cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
   fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"
 jq -e '[.kinds[] | select(.hw == "rx-7600-xt-16gb") | .free[0], (.models | length > 0)] == ["amd-rocm:0", true]' "$TMP/snap-amd.json" >/dev/null ||
   fail "the RX 7600 XT kind" "$(jq -c .kinds "$TMP/snap-amd.json")"
+# amd-smi's Python can segfault (issue #118): the card still lists from static, without readings, and the
+# subcommand that crashed is not run again on the next poll
+shim amd-smi 'case $1 in
+static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 7600 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
+metric) echo run >>"$(dirname "$0")/metric-runs"; kill -SEGV $$ ;;
+esac'
+rm -f "$TMP/bin/metric-runs" "$STATE"/amd-smi-*.crashed
+"$CLI" snapshot >"$TMP/snap-segv.json" || fail "a crashing amd-smi broke the snapshot"
+"$CLI" snapshot >"$TMP/snap-segv.json" || fail "a crashing amd-smi broke the second snapshot"
+[[ $(jq -r '.gpus | map(select(.backend == "amd-rocm") | "\(.hw)=\(.tempC)") | join(" ")' "$TMP/snap-segv.json") == "rx-7600-xt-16gb=null" ]] ||
+  fail "a crashing amd-smi metric hid the card" "$(jq -c .gpus "$TMP/snap-segv.json")"
+[[ $(wc -l <"$TMP/bin/metric-runs") == 1 && -f $STATE/amd-smi-metric.crashed ]] ||
+  fail "a crashed amd-smi metric ran again" "$(cat "$TMP/bin/metric-runs")"
+rm -f "$TMP/bin/metric-runs" "$STATE"/amd-smi-*.crashed
+pass "an amd-smi that segfaults lists the card without readings and is not run again for a day"
 # A Vulkan recipe uses the same physical AMD detector, without requiring ROCm at launch.
 shim amd-smi 'case $1 in
 static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon RX 9070 XT\"},\"vram\":{\"size\":{\"value\":16368}},\"bus\":{\"bdf\":\"0000:03:00.0\"}}]}" ;;
@@ -204,6 +225,23 @@ printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((130 * 1024 * 1024)) $((120 * 
 printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((64 * 1024 * 1024)) $((60 * 1024 * 1024)) >"$MEMINFO"
 "$CLI" snapshot >"$TMP/snap-strix.json"
 [[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "" ]] || fail "a 64 GB host matched the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
+# the same 128 GB machine with a 32 GiB carve-out: MemTotal is ~94 GiB, which amd-smi's VRAM size makes up
+shim amd-smi 'case $1 in
+static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon 8060S Graphics\"},\"vram\":{\"size\":{\"value\":32768}},\"bus\":{\"bdf\":\"0000:c3:00.0\"}}]}" ;;
+metric) echo "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210}}}]}" ;;
+esac'
+printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((94 * 1024 * 1024)) $((54 * 1024 * 1024)) >"$MEMINFO"
+"$CLI" snapshot >"$TMP/snap-strix.json"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "ryzen-ai-max-365-128gb" ]] ||
+  fail "a 32 GiB carve-out hid the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
+# amd-smi is a `#!/usr/bin/env python3` script: a mise python3 first on PATH lacks its module, so the system one runs it
+shim python3 'exit 1'
+printf '#!/usr/bin/env python3\n%s\n' "$(sed 1d "$TMP/bin/amd-smi")" >"$TMP/r2" && mv "$TMP/r2" "$TMP/bin/amd-smi" && chmod +x "$TMP/bin/amd-smi"
+printf '#!/bin/bash\nexec bash "$@"\n' >"$TMP/syspython" && chmod +x "$TMP/syspython"
+PYTHON3=$TMP/syspython "$CLI" snapshot >"$TMP/snap-strix.json"
+rm -f "$TMP/bin/python3"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "ryzen-ai-max-365-128gb" ]] ||
+  fail "a mise python3 on PATH hid the AMD card" "$(jq -c .gpus "$TMP/snap-strix.json")"
 unset MEMINFO; rm -f "$TMP/meminfo"
 pass "a unified-memory card matches by host RAM, not the BIOS carve-out"
 shim amd-smi 'echo "{\"gpu_data\":[]}"'
@@ -226,15 +264,15 @@ js() {
     const x = eval(process.argv[3]); console.log(typeof x === "string" ? x : JSON.stringify(x))' "$ROOT/Model.js" "$TMP/snap.json" "$1"
 }
 if command -v node >/dev/null; then
-  [[ $(view home) == " tabs,life,sec,thead,trow,sec,field,field,field" ]] || fail "home view" "$(view home 2>&1)"
+  [[ $(view home) == " tabs,life,sec,thead,trow,sec,field,field,field,field" ]] || fail "home view" "$(view home 2>&1)"
   [[ $(view kind rtx-4090-24gb) == " links,acts,field" ]] || fail "kind view" "$(view kind rtx-4090-24gb 2>&1)"
   pass "the view model builds home and the free card's page from the backend's own snapshot"
   # a crashed model whose card no GPU row shows (nvidia-smi failing after a driver update, a card taken out, a card
   # with no kind) is a row of its own with its reason and dismiss; a state the panel does not know yet still shows
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error", error: "gone"}]; var v = c.build(s, ui())
-    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed tabs,life,slot:M:stop|m,error:gone,sec,thead,trow,sec,field,field,field" &&
+    v.mark + " " + v.rows.map(r => r.type + (r.crashed ? ":" + r.label + ":" + r.dismiss : r.type === "error" ? ":" + r.label : "")).join(",")') == "failed tabs,life,slot:M:stop|m,error:gone,sec,thead,trow,sec,field,field,field,field" &&
     $(js 's.gpus = []; s.deployments = [{id: "m", name: "M", keys: ["nvidia:0"], state: "error", error: "gone"}];
-    c.build(s, ui({open: "lost:m"})).rows.filter(r => r.label || r.items).map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "tabs:home,slot:M,error:gone,links:View logs,sec:RECOMMENDED,sec:THIS MACHINE,field:hardware,field:RAM,field:Agents" &&
+    c.build(s, ui({open: "lost:m"})).rows.filter(r => r.label || r.items).map(r => r.type + ":" + (r.label || r.items[0].label)).join(",")') == "tabs:home,slot:M,error:gone,links:View logs,sec:RECOMMENDED,sec:THIS MACHINE,field:hardware,field:RAM,field:Agents,field:Settings" &&
     $(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:1"], state: "error", error: "gone"}]; c.build(s, ui()).rows.filter(r => r.crashed).length') == 1 ]] ||
     fail "a crashed model on no listed card" "$(js 's.deployments = [{id: "m", name: "M", keys: ["nvidia:9"], state: "error"}]; c.build(s, ui())')"
   [[ $(js 's.deployments = [{id: "m", name: "M", keys: [], state: "pulling", detail: "pulling image"}]; var v = c.build(s, ui())
@@ -300,7 +338,7 @@ cdi 1
 wait_for ready
 "$CLI" snapshot >"$TMP/snap.json"
 if command -v node >/dev/null; then
-  [[ $(view home) == "ready tabs,life,run,sec,thead,trow,sec,field,field,field" && $(view run "$ID") == "ready links,acts,field" ]] ||
+  [[ $(view home) == "ready tabs,life,run,sec,thead,trow,sec,field,field,field,field" && $(view run "$ID") == "ready links,acts,field" ]] ||
     fail "running views" "$(view home 2>&1; view run "$ID" 2>&1)"
   pass "the view model builds home and the model's page for a running model"
 fi
@@ -332,8 +370,15 @@ key=$(cat "$STATE/gateway.key")
 ! grep -q "$key" "$SHIM/curl.log" "$SHIM/docker.log" "$SHIM/jq.log" "$STATE/log" || fail "key leaked" "the key appears in an argv or the log"
 [[ $(stat -c %a "$STATE/gateway.key") == 600 ]] || fail "key mode"
 pass "the gateway key stays in a 0600 file, out of every argv and the log"
-grep -q -- "-fsS --max-time 5 http://127.0.0.1:12434/v1/models" "$SHIM/curl.log" || fail "keyless check" "$(cat "$SHIM/curl.log")"
+grep -qF -- "-fsS --noproxy * --max-time 5 http://127.0.0.1:12434/v1/models" "$SHIM/curl.log" || fail "keyless check" "$(cat "$SHIM/curl.log")"
 pass "a gateway that answers without the key would be refused"
+# the key goes only to the gateway's address on the model's Docker network, never to 127.0.0.1:<port>, which another
+# account could take over once the gateway exits; the snapshot poll uses the keyless /health
+"$CLI" snapshot >/dev/null
+grep -q "127.0.0.1:12434/health" "$SHIM/curl.log" || fail "health poll" "$(tail -3 "$SHIM/curl.log")"
+! grep -F "gateway.auth" "$SHIM/curl.log" | grep -q "127\.0\.0\.1" || fail "keyed loopback request" "$(grep -F gateway.auth "$SHIM/curl.log" | grep 127.0.0.1)"
+grep -F "gateway.auth" "$SHIM/curl.log" | grep -q "http://172.30.0.5:12434/v1/chat/completions" || fail "keyed bridge request" "$(grep -F gateway.auth "$SHIM/curl.log")"
+pass "the key is only ever sent to the gateway's bridge address; the poll sends none"
 
 "$CLI" run "$ID" nvidia:0 2>"$TMP/err" && fail "second run"
 grep -q "nvidia:0 is in use" "$TMP/err" || fail "second run reason" "$(cat "$TMP/err")"
@@ -395,9 +440,10 @@ pass "a model's page counts its own week, not every model's on the machine"
 "$CLI" set agent pi "$ID"
 "$CLI" open "$ID"
 sleep 0.5
-[[ -f $STATE/agents/pi/models.json && $(jq -r '.providers["omarchy-local"].baseUrl' "$STATE/agents/pi/models.json") == "http://127.0.0.1:12434/v1" ]] ||
+[[ -f $STATE/agents/pi/models.json && $(jq -r '.providers["omarchy-local"].baseUrl' "$STATE/agents/pi/models.json") == "http://172.30.0.5:12434/v1" ]] ||
   fail "pi config" "$(cat "$STATE/agents/pi/models.json" 2>/dev/null)"
 grep -q -- "--provider omarchy-local --model Test Model" "$SHIM/tui.log" && ! grep -q "$key" "$SHIM/tui.log" || fail "open argv" "$(cat "$SHIM/tui.log")"
+grep -qE -- "env NO_PROXY=172\.30\.0\.5(,[^ ]*)? no_proxy=172\.30\.0\.5(,[^ ]*)? " "$SHIM/tui.log" || fail "agent proxy exemption" "$(tail -1 "$SHIM/tui.log")"
 "$CLI" set agent pi
 [[ $(jq -r .agent "$STATE/settings.json") == pi ]] || fail "explicit default agent"
 pass "open starts the chosen agent on the gateway in a terminal, with the key only in its private config; the default is explicitly selected"
@@ -405,7 +451,7 @@ pass "open starts the chosen agent on the gateway in a terminal, with the key on
 "$CLI" set agent hermes "$ID"
 "$CLI" open "$ID"
 sleep 0.5
-grep -q -- "CUSTOM_BASE_URL=http://127.0.0.1:12434/v1 OPENAI_BASE_URL=http://127.0.0.1:12434/v1 .*hermes chat --provider custom --model Test Model" "$SHIM/tui.log" &&
+grep -q -- "CUSTOM_BASE_URL=http://172.30.0.5:12434/v1 OPENAI_BASE_URL=http://172.30.0.5:12434/v1 .*hermes chat --provider custom --model Test Model" "$SHIM/tui.log" &&
   ! grep -q "$key" "$SHIM/tui.log" || fail "hermes argv" "$(tail -1 "$SHIM/tui.log")"
 pass "Hermes opens on the gateway through --provider custom, without its own config.yaml, the key only in the environment"
 
@@ -427,6 +473,29 @@ tail -1 "$SHIM/tui.log" | grep -q -- "--provider omarchy-local --model $ID " || 
 cp "$TMP/recipes.keep" "$TMP/plugin/recipes.json"
 cp "$TMP/config.keep" "$STATE/deploy/$ID/config.json"
 pass "open keeps working when the registry renames or drops a running model's recipe, with the engine's own context"
+
+# an engine whose cache holds less than its context (SGLang on a card with less free memory than the recipe's):
+# the start records the cache, and Open tells the agent that, less room for a full reply, so the agent compacts
+# before the engine runs out; a model started before the start recorded it reads it from the engine at Open
+window() { jq '.providers["omarchy-local"].models[0].contextWindow' "$STATE/agents/pi/models.json"; }
+kvlog() { printf 'max_total_num_tokens=%s, chunked_prefill_size=1024, context_len=131072\n' "$1" >"$TMP/kv.log"; }
+kvlog 100000
+"$CLI" stop "$ID"
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" run "$ID" nvidia:0
+wait_for ready
+[[ $(jq .serve.kv "$STATE/deploy/$ID/config.json") == 100000 ]] || fail "start records the cache" "$(cat "$STATE/deploy/$ID/config.json")"
+"$CLI" open "$ID"
+[[ $(window) == 75424 ]] || fail "open tells the agent the cache" "$(window)"
+grep -q "open pi on $ID in .* with 75424 tokens of context" "$STATE/log" || fail "open logs the context" "$(tail -1 "$STATE/log")"
+jq -c 'del(.serve.kv)' "$STATE/deploy/$ID/config.json" >"$TMP/c" && mv "$TMP/c" "$STATE/deploy/$ID/config.json"
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" open "$ID"
+[[ $(window) == 75424 ]] || fail "open reads the cache from the engine" "$(window)"
+kvlog 500000
+SHIM_LOAD_LOG=$TMP/kv.log "$CLI" open "$ID"
+[[ $(window) == 131072 ]] || fail "a cache larger than the context leaves the context" "$(window)"
+"$CLI" open "$ID"
+[[ $(window) == 131072 ]] || fail "an engine that does not say leaves the context" "$(window)"
+pass "open keeps the agent's conversations inside the engine's cache when it holds less than the context"
 
 # All supported agent adapters stay in private config or keyed environments: the gateway key reaches neither the
 # terminal's argv nor a helper's, and the keyed environments are the only place it is handed over at all.
@@ -637,21 +706,22 @@ rm -f "$HOME/.cache/omarchy/local-ai/models/test--model@000000000000" # the syml
 "$CLI" run "$ID" nvidia:0
 wait_for ready
 "$CLI" share "$ID"
-grep -q "^serve --bg --https=12434 http://127.0.0.1:12434" "$SHIM/tailscale.log" || fail "share" "$(cat "$SHIM/tailscale.log" 2>/dev/null)"
+grep -q "^serve --bg --https=12434 http://172.30.0.5:12434" "$SHIM/tailscale.log" || fail "share" "$(cat "$SHIM/tailscale.log" 2>/dev/null)"
 "$CLI" share "$ID" off
 grep -q "^serve --https=12434 off" "$SHIM/tailscale.log" || fail "unshare" "$(cat "$SHIM/tailscale.log")"
 cp "$TMP/plugin/recipes.json" "$SHIM/registry.json"
 "$CLI" registry
 jq -e '.registryCommit == "0000000000000000000000000000000000000001"' "$TMP/catalog.json" >/dev/null || fail "refresh" "$(head -c 300 "$TMP/catalog.json" 2>/dev/null)"
 "$CLI" stop "$ID"
-# an engine that fails leaves its last lines in the log and its first error in the message, though its container is gone
+# an engine that fails leaves its log in ours, though its container is gone, and its exception in the message: vLLM's
+# cause sits above a long traceback that ends in a generic RuntimeError
 SHIM_ENGINE_LOG=1 SHIM_EMPTY=1 "$CLI" run "$ID" nvidia:0
 wait_for error
-[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer: RuntimeError: XPU out of memory. Tried to allocate 2.00 GiB" ]] ||
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "the model returned no answer: ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization" ]] ||
   fail "crash reason" "$(cat "$STATE/deploy/$ID/status.json")"
-grep -q "^loading shards" "$STATE/deploy/$ID/err" || fail "engine log kept" "$(cat "$STATE/deploy/$ID/err")"
+grep -q "^loading shards" "$STATE/deploy/$ID/err" && grep -q "ValueError: Free memory" "$STATE/deploy/$ID/err" || fail "engine log kept" "$(cat "$STATE/deploy/$ID/err")"
 ! compgen -G "$SHIM/containers/*engine" >/dev/null || fail "engine left running" "$(ls "$SHIM/containers")"
-pass "a failed engine's last lines stay in the log and its first error is the reason shown"
+pass "a failed engine's log stays in ours, its cause included, and its exception is the reason shown"
 "$CLI" stop "$ID"
 "$CLI" run "$ID" nvidia:0
 wait_for ready

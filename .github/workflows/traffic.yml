@@ -3,8 +3,9 @@ name: traffic
 # is a rolling snapshot with no daily buckets. This records all four daily on the `stats` branch, so
 # installs (every `omarchy plugin add` is a clone), views, and where they came from accumulate instead
 # of rolling off. It also snapshots the repo counts (stars, forks, watchers), the release asset
-# downloads, and one GraphQL interaction tally (issues, PRs, discussions, commits) per day. Never
-# touches main: `stats` is the only branch written here.
+# downloads, one GraphQL interaction tally (issues, PRs, discussions, commits), the install count
+# (usage.sybilsolutions.ai, README "What Local AI sends") and the marketplace's views and hearts
+# per day. Never touches main: `stats` is the only branch written here.
 on:
   schedule: [{cron: "17 3 * * *"}]
   workflow_dispatch:
@@ -13,7 +14,7 @@ jobs:
   record:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {ref: stats}
         continue-on-error: true
       - name: record
@@ -68,6 +69,12 @@ jobs:
                  default_branch: $r.defaultBranchRef.name,
                  commits: $r.defaultBranchRef.target.history.totalCount}' >"traffic/interactions.$today.json"
 
+          # Installs: the plugin's own count (active today, 7 and 30 days, ever; 90 days by day), and
+          # the marketplace's cumulative detail views and hearts for this plugin.
+          curl -fsS --max-time 30 https://usage.sybilsolutions.ai/v1/local-ai/stats >"traffic/installs.$today.json"
+          curl -fsS --max-time 30 https://api.omarchyplugins.com/v1/stats \
+            | jq -e --arg d "$today" '.plugins["sero.local-ai"] + {day: $d}' >"traffic/marketplace.$today.json"
+
           # GitHub revises the last day or two as data settles, so the newest reading of a day wins.
           for series in clones views; do
             jq -s --arg k "$series" '
@@ -80,6 +87,8 @@ jobs:
                  | map({day, count: .stargazers_count, forks: .forks_count})
                  | group_by(.day) | map(.[-1]) | sort_by(.day)' \
                  traffic/repo.*.json >"traffic/stars-daily.json"
+          jq -s '[.[].daily[]] | group_by(.day) | map(.[-1]) | sort_by(.day)' \
+                 traffic/installs.2*.json >"traffic/installs-daily.json"
 
           # Every counter GitHub exposes, in one file: totals and peak over the full archived history,
           # plus the rolling 14-day unique counts, the current referrer/path breakdown, the download
@@ -91,7 +100,9 @@ jobs:
              --slurpfile repo "traffic/repo.$today.json" \
              --slurpfile referrers "traffic/referrers.$today.json" --slurpfile paths "traffic/paths.$today.json" \
              --slurpfile releases "traffic/releases.$today.json" \
-             --slurpfile interactions "traffic/interactions.$today.json" '
+             --slurpfile interactions "traffic/interactions.$today.json" \
+             --slurpfile installs "traffic/installs.$today.json" \
+             --slurpfile marketplace "traffic/marketplace.$today.json" '
             def span($x): {days: ($x|length), first: $x[0].day, last: $x[-1].day,
                            total: ($x|map(.count)|add), peak_day: ($x|max_by(.count)|.day),
                            peak: ($x|max_by(.count)|.count), daily_uniques_sum: ($x|map(.uniques)|add)};
@@ -102,6 +113,8 @@ jobs:
                       downloads: ([.assets[].download_count] | add // 0),
                       assets: [.assets[] | {name: .name, downloads: .download_count}]};
             {updated: $today,
+             installs: ($installs[0].installs + {week: $installs[0].week}),
+             marketplace: ($marketplace[0] | del(.day)),
              repo: {stars: $repo[0].stargazers_count, forks: $repo[0].forks_count,
                     watchers: $repo[0].subscribers_count, open_issues: $repo[0].open_issues_count,
                     size_kb: $repo[0].size},

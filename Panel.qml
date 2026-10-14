@@ -28,7 +28,7 @@ Panel {
   readonly property string mono: bar ? bar.fontFamily : Style.font.family
   // Nerd Font glyphs for the icon names Model.js uses
   readonly property var glyphs: ({ gpu: 0xf08ae, memory: 0xf035b, temp: 0xf050f, context: 0xf09aa, weights: 0xf01a7, vision: 0xf06d0,
-    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf07b7, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140, up: 0xf0143, full: 0xf0293, unfull: 0xf0294, more: 0xf01d8 })
+    speed: 0xf140c, tokens: 0xf04a0, agent: 0xf07b7, folder: 0xf0256, machine: 0xf0379, tailnet: 0xf0317, check: 0xf012c, down: 0xf0140, up: 0xf0143, full: 0xf0293, unfull: 0xf0294, more: 0xf01d8, settings: 0xf0493 })
   function glyph(name) { return glyphs[name] ? String.fromCodePoint(glyphs[name]) : "" }
 
   // Four tones, each picked by the APCA contrast it must reach on a card (Model.tones): ink for what matters
@@ -237,6 +237,7 @@ Panel {
     case "model": nav({ model: a[1] }); break
     case "gpus": nav({ view: "gpus", id: "" }); break
     case "agents": nav({ view: "agents", id: "" }); break
+    case "settings": nav({ view: "settings", id: "" }); break
     case "pick": nav({ open: ui.open === a[1] ? "" : a[1] }); break
     case "home": home(); break
     case "back": back(); break
@@ -375,7 +376,8 @@ Panel {
     open: root.opened
     focusTarget: keys
     padding: 0
-    contentWidth: Style.space(340)
+    // as wide as Omarchy's own panels (380) plus room for the models table; fitted so a small screen still holds it
+    contentWidth: panel.fittedContentWidth(Style.space(400))
     // never taller than its screen, whether or not the shell says how much room there is: the rest scrolls
     contentHeight: panel.fittedContentHeight(body.contentHeight, panel.screen ? panel.screen.height - Style.space(96) : 0)
 
@@ -460,7 +462,7 @@ Panel {
               horizontalAlignment: Text.AlignHCenter
               text: modelData.t
               color: modelData.on ? root.ink : Util.alpha(root.labelTone, 0.35)
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.title
               Click { action: modelData.on ? modelData.a : "" }
             }
           }
@@ -489,7 +491,7 @@ Panel {
           anchors.baseline: head.baseline
           text: flick.view.version || ""
           color: Util.alpha(root.labelTone, 0.55)
-          font.pixelSize: Style.font.caption - 2
+          font.pixelSize: Style.font.caption
         }
         Click { anchors.fill: head; action: flick.view.back ? "home" : "" }
         Label {
@@ -499,7 +501,7 @@ Panel {
           anchors.verticalCenter: parent.verticalCenter
           text: root.glyph(flick.wide ? "unfull" : "full")
           color: root.valueTone
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.title
         }
         Click { anchors.fill: fullToggle; action: flick.wide ? "full|off" : "full" }
       }
@@ -527,6 +529,20 @@ Panel {
           width: content.width
           height: gap + row.height
 
+          // a models table: one raised surface at the edge with a rule around it, so its text keeps the gutter
+          Rectangle {
+            visible: !!r.framed
+            x: root.edge
+            y: parent.gap
+            width: parent.width - 2 * root.edge
+            height: row.height
+            color: root.surface
+            Rectangle { width: 1; height: parent.height; color: root.ruleTone }
+            Rectangle { x: parent.width - 1; width: 1; height: parent.height; color: root.ruleTone }
+            Rectangle { visible: !!r.first; width: parent.width; height: 1; color: root.ruleTone }
+            Rectangle { visible: !!r.last; y: parent.height - 1; width: parent.width; height: 1; color: root.ruleTone }
+          }
+
           // A Loader sizes its item, so a surface's inset lives on the Loader; other rows keep their own gutter
           Loader {
             id: row
@@ -545,7 +561,7 @@ Panel {
               id: life
               objectName: "local-ai-life"
               readonly property int cols: Math.ceil((r.cells || []).length / 7)
-              readonly property real cell: Math.min(Style.space(12), (width - 2 * root.gutter - (cols - 1) * Style.space(3)) / cols)
+              readonly property real cell: Math.min(Style.space(16), (width - 2 * root.gutter - (cols - 1) * Style.space(3)) / cols)
               // Day details stay beneath the chart; the totals never move on hover.
               property int hover: -1
               spacing: Style.space(10)
@@ -601,7 +617,7 @@ Panel {
           Component {
             id: runC
             Rectangle {
-              height: Style.space(156)
+              height: Style.space(172)
               // a little above the page: a lighter surface, and a light border that glows slowly
               color: Util.alpha(root.theme, 0.08)
               border.width: 1
@@ -617,7 +633,7 @@ Panel {
                   width: parent.width
                   spacing: Style.space(10)
                   Logo { id: cardLogo; family: r.family; size: 18; anchors.verticalCenter: parent.verticalCenter }
-                  Label { width: parent.width - (cardLogo.visible ? cardLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: r.name; color: root.ink; font.pixelSize: Style.font.subtitle }
+                  Label { width: parent.width - (cardLogo.visible ? cardLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: r.name; color: root.ink; font.pixelSize: Style.font.heading }
                 }
                 // its card and memory on the left; speed and tokens on the right of the same line, clear of the buttons
                 Item {
@@ -635,7 +651,7 @@ Panel {
                     width: Math.max(0, parent.width - cardLine.width - Style.space(12))
                     layoutDirection: Qt.RightToLeft
                     items: r.chips || []
-                    size: Style.font.caption - 1
+                    size: Style.font.bodySmall
                   }
                 }
                 Item { width: 1; height: Style.space(4) }
@@ -816,7 +832,7 @@ Panel {
               Logo { id: gpuLogo; x: root.gutter; anchors.verticalCenter: parent.verticalCenter; family: r.vendor || ""; size: 12 }
               Column {
                 x: root.gutter + (gpuLogo.visible ? Style.space(20) : 0)
-                width: Style.space(gpuLogo.visible ? 112 : 132)
+                width: Style.space(gpuLogo.visible ? 134 : 158)
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Style.space(2)
                 Label { width: parent.width; text: r.name; elide: Text.ElideRight }
@@ -824,7 +840,7 @@ Panel {
               }
               Click { action: r.action || "" }
               Rectangle {
-                x: root.gutter + Style.space(140)
+                x: root.gutter + Style.space(168)
                 visible: r.bar
                 width: Math.max(0, gpuMem.x - x - Style.space(12))
                 height: 3
@@ -873,7 +889,7 @@ Panel {
                 elide: Text.ElideMiddle
                 text: !r.secret ? "" : root.revealed ? r.value : r.value.replace(/[^.:\/]+/g, "•••")
                 color: Util.alpha(root.labelTone, root.revealed ? 1 : 0.55)
-                font.pixelSize: Style.font.caption - 2
+                font.pixelSize: Style.font.caption
               }
               Click { visible: !r.secret; action: r.action || "" }
               Click { visible: !!r.secret; anchors.fill: fieldValue; action: r.action || "" }
@@ -894,7 +910,7 @@ Panel {
               color: root.valueTone
               linkColor: root.ink
               font.family: root.mono
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
               onLinkActivated: function(link) { if (/^https:\/\//.test(link)) root.activate("url|" + link) }
             }
           }
@@ -921,7 +937,7 @@ Panel {
                 wrapMode: Text.WordWrap
                 text: r.text || ""
                 color: r.alert ? root.alertTone : root.labelTone
-                font.pixelSize: Style.font.caption - 2
+                font.pixelSize: Style.font.caption
               }
               Label {
                 id: bannerAct
@@ -931,7 +947,7 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 text: (r.actionLabel || "") + " ›"
                 color: r.alert ? root.alertTone : root.ink
-                font.pixelSize: Style.font.caption - 2
+                font.pixelSize: Style.font.caption
               }
               Click { visible: !!r.action; action: r.action || "" }
             }
@@ -994,7 +1010,7 @@ Panel {
               readonly property real tail: r.pair ? 0 : Style.space(16)
               readonly property real inner: width - 2 * root.gutter - lead - tail
               height: head ? root.headH + Style.space(4) : root.rowH
-              Rectangle { visible: !!r.open; anchors.fill: parent; color: Util.alpha(root.theme, 0.06) }
+              Rectangle { visible: !!r.open; x: r.framed ? root.edge + 1 : 0; width: parent.width - (r.framed ? 2 * root.edge + 2 : 0); height: parent.height; color: Util.alpha(root.theme, 0.06) }
               Label {
                 visible: !head && !r.pair
                 anchors.right: parent.right
@@ -1010,7 +1026,7 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 text: r.mark || ""
                 color: root.ink
-                font.pixelSize: Style.font.caption - 4
+                font.pixelSize: Math.round(Style.font.caption * 0.8)
               }
               Logo {
                 x: root.gutter + Style.space(12)
@@ -1033,7 +1049,7 @@ Panel {
                     horizontalAlignment: !r.pair && index === cols.length - 1 ? Text.AlignRight : Text.AlignLeft
                     elide: Text.ElideRight
                     text: modelData
-                    font.pixelSize: head || !r.pair ? Style.font.caption - 1 : Style.font.caption
+                    font.pixelSize: head || !r.pair ? Style.font.bodySmall : Style.font.body
                     color: head ? root.labelTone : r.pair ? (index ? root.valueTone : root.labelTone)
                       : r.dim ? Util.alpha(root.labelTone, 0.7) : index === 0 ? (r.live ? root.ink : root.valueTone) : root.labelTone
                   }
@@ -1088,7 +1104,7 @@ Panel {
     textFormat: Text.PlainText
     color: root.valueTone
     font.family: root.mono
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Style.font.body
   }
 
   // Facts as small icon-and-text pairs, spaced instead of joined with dots
@@ -1096,7 +1112,7 @@ Panel {
     id: chips
     property var items: []
     property color tone: root.labelTone
-    property int size: Style.font.caption
+    property int size: Style.font.body
     spacing: Style.space(12)
     Repeater {
       model: chips.items
@@ -1254,7 +1270,7 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
         Logo { id: heroLogo; family: h.family; size: 14; anchors.verticalCenter: parent.verticalCenter }
-        Label { width: parent.width - (heroLogo.visible ? heroLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: h.name; color: root.ink; font.pixelSize: Style.font.body }
+        Label { width: parent.width - (heroLogo.visible ? heroLogo.width + parent.spacing : 0); elide: Text.ElideRight; text: h.name; color: root.ink; font.pixelSize: Style.font.title }
       }
       Chips { width: parent.width; items: h.chips || []; tone: root.valueTone }
     }

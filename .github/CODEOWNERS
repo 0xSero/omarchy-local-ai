@@ -1,0 +1,6 @@
+# A maintainer reviews every change; these paths run on people's machines or hold the install counter.
+*            @0xSero
+/bin/        @0xSero
+/lib/        @0xSero
+/usage/      @0xSero
+/.github/    @0xSero

@@ -1,6 +1,91 @@
 # Changelog
 
-Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. See "Releasing" in `docs/design.md`.
+Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. `main` carries releases only; work lands on `dev` (see `docs/releases.md`).
+
+## [Unreleased]
+
+### Fixed
+- An amd-smi that crashes its Python (a segfault in `libpython3.14`, issue #118) is no longer run again on every poll. A subcommand that died of a signal is skipped for a day; the card stays listed from `amd-smi static`, with memory use and temperature unknown.
+
+## [6.15.0] - 2026-10-14
+
+### Added
+- **Settings** on home, with one setting for now: **send usage reports**, on or off, and what reporting sends in plain words (minimal and anonymous: no user or account ID, a random number made on this computer, version, card kinds, model and action counts; never prompts, files, folders, model names or agents; the IP address is not stored). Turning it off deletes counts not yet sent. With `DO_NOT_TRACK` set it shows as off, without a switch.
+
+### Security
+- Two first starts at once could leave a running gateway with an empty key: both passed the key-existence check and the second truncated the shared key file, and the gateway treated an empty key as "no key required". The key is now written whole to a temporary file and linked into place, never truncated, so concurrent starts share one key. The gateway (`org-v5`, `sha256:9ab834c2…`) refuses every request while its key file is missing, unreadable or empty, and compares the key in constant time. A running model gets the new gateway when it is stopped and started again. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#11207).
+- The usage server (`usage/`) keeps no request logs and has no `workers.dev` or preview address, so only `usage.sybilsolutions.ai` answers and Cloudflare stores no caller addresses for it. It accepts only JSON pings of at most 1 KB (refused before reading), sends `nosniff`, `no-referrer`, HSTS and `DENY` framing on every response, serves the dashboard under a CSP that allows only its own script (by hash) and the plugin's traffic files, allows other sites to read the public stats only, and answers any internal error with a bare 503.
+
+### Changed
+- The install count measures use, not a moment. Each ping also says whether a model has ever answered on this machine (`launched`, read from the gateway's usage log, so models run before updating count) and how many models started, how many starts failed, how many agents opened and how many models were downloaded since the last ping that arrived. Totals only, never which model, agent or folder. They wait in `counts.json` until a ping arrives, so none are lost or sent twice, and using Local AI sends nothing extra: pings stay at most twice a day. Turning counting off deletes what was not sent. The dashboard shows "ran a model, ever" and the 30-day actions instead of "running at a check-in".
+
+## [6.14.0] - 2026-10-14
+
+### Added
+- **Update Local AI** on the home page when `main` has a release this copy lacks. The agent update check (every 6 hours) also asks the plugin's origin for its default branch's commit with `git ls-remote` (nothing is fetched), and the button runs Omarchy's `omarchy plugin update`. A checkout that already contains that commit is not offered it, and a copy that is not a git checkout is never offered an update.
+
+### Changed
+- `main` carries releases only and development lands on `dev`, so the commit Omarchy installs and the marketplace reviews stays still between releases. Recipes reach installed copies through the panel's registry check and do not need a release. The release workflow merges each release back into `dev`; pull requests into `main` must come from `dev`.
+
+## [6.13.8] - 2026-10-14
+
+### Security
+- The gateway key never goes to `127.0.0.1:<port>` any more. The panel's status poll sent it there every few seconds while a model ran; if the gateway exited outside Stop, another local account could bind the vacated port and receive the key. The poll now reads the gateway's keyless `/health`, and every keyed request (the start's readiness and answer checks, the agents `open` starts, a tailnet share) goes to the gateway's address on the model's own Docker network, which only Docker assigns and no other account can listen on. Keyed requests bypass proxies, and agents start with that address in `NO_PROXY`/`no_proxy`, so an inherited `HTTP_PROXY` cannot receive the key either. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#11207).
+
+## [6.13.7] - 2026-10-13
+
+### Fixed
+- When an agent gives up on an answer, the engine stops generating it. The gateway (`org-v4`, registry at 7c15d9ca) watches the client's connection while it waits on the engine and closes the engine request the moment the client is gone. Before, a non-streamed request, or a streamed one between chunks, ran to its end behind a client that had timed out; on a recipe that runs one request at a time (Qwen3.8-Flash-Next on an Arc Pro B70), the agent's retry then queued behind it and timed out as well. A running model gets the new gateway when it is stopped and started again.
+
+## [6.13.6] - 2026-10-13
+
+### Fixed
+- A failed start keeps the engine's last 400 log lines (it kept 60). vLLM prints an engine core's cause above two tracebacks, so the Qwen3.8-27B `ValueError` on the display card was not in the kept log; the reason shown and the kept log now come from the same lines.
+
+## [6.13.5] - 2026-10-13
+
+### Fixed
+- On a machine with several Arc Pro B70s, Start no longer picks the card that drives the desktop when another is free. The compositor, Xwayland and browsers hold about 1.7 GiB on the display card, less than vLLM's 96.5% request leaves, so Qwen3.8-27B failed to start there ("the engine keeps crashing") while it loads on the other card. A card with a connected monitor is offered last, and the hardware page marks it "display".
+- When an engine fails, the message names its exception (for example `ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization`) instead of the first traceback line, which read `raise RuntimeError(`.
+
+## [6.13.4] - 2026-10-13
+
+### Added
+- Recipes from registry 4ab018df: Qwen3.8-Flash-Next EXL3 3.05 bpw on one Intel Arc Pro B70, with routed experts and the full n-gram table in host RAM, a 64K context window, and 128 GB available host RAM required (157 recipes, up from 156; the gateway image is unchanged). The lab accepted it on all six checks at 30.4 tok/s with the plugin's Intel runtime guards. The v3 recipe preserves the pinned image, weights and container resources; no host IPC, unconfined seccomp, privileged container or NVMe tier is needed. Image input is supported; video is not.
+
+### Fixed
+- The B70 RAM-offload image repository is included in the bundled catalog, so the automatic registry refresh can retain this recipe. Older bundles correctly refused a new engine repository; they need this plugin update once, not a manual engine installation.
+- Recipe validation accepts standard case-sensitive environment names, including Intel's mixed-case runtime guards. Malformed names, non-string/NUL values, arbitrary Docker flags and unpinned images remain refused.
+- A weight download rides out a short Hugging Face outage: each file retries a server error, a rate limit or a timeout for about four minutes with a doubling delay (it gave up after about seven seconds), and the file list retries for a minute. Before, Hugging Face answering HTTP 500 for one small file (`model.safetensors.index.json`) for under a minute failed a Qwen3.8-27B start on an Arc Pro B70 whose 15 GB of shards had already downloaded.
+
+### Changed
+- A models table sits on one raised surface with a border around it, an opened row's actions included, on home and on the models tab.
+
+## [6.13.3] - 2026-10-12
+
+### Added
+- Recipes from registry c65b8dee: five new card kinds (Apple M1 8 GB, Intel Arc B390, RTX 3070 Laptop 8 GB, RTX 5080 Laptop 16 GB, Radeon RX 6700 XT 12 GB) and updated lists for the RTX 3090 (Qwen3.8-27B-pi added), RTX 5070 (four llama.cpp and SGLang recipes in place of the TabbyAPI one) and RTX 5080 (Underdog Saluki 27B added): 156 recipes, up from 145. The gateway image is unchanged.
+
+### Changed
+- The install counter's worker source lives in `usage/` (folded from local-ai-usage with its history); `CODEOWNERS` puts `bin/`, `lib/`, `usage/` and workflows under a maintainer's review.
+
+## [6.13.2] - 2026-10-11
+
+### Security
+- The gateway (`org-v3`, registry at 8cc34398) closes the connection after any answer given without the key (`/health` as well as a refusal) and keeps the request deadline running until the key is checked. Every write to a client has a 30-second deadline. Before, `/health` kept its connection alive and nothing bounded a write, so another local account could pipeline health requests, leave the answers unread and hold every connection slot. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#10562).
+
+## [6.13.1] - 2026-10-11
+
+### Security
+- The gateway (`org-v2`, registry at ae3eba29) cuts any request whose headers and body haven't arrived within 10 seconds, idle keep-alive included, and serves at most 64 connections at once. Before, it started a thread per connection with neither limit before checking the key, so another local account could hold incomplete requests open without the key and use up its threads and sockets, blocking real requests. A refused request also closes its connection. A running model gets the new gateway when it is stopped and started again. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#10562).
+
+## [6.13.0] - 2026-10-10
+
+### Added
+- An install count. When it checks the registry for new models (every 12 hours while the bar runs), Local AI sends `usage.sybilsolutions.ai` a random id made on first run, the plugin version, the card kinds it has recipes for and how many models run. Nothing else: no prompts, no paths, no hostname, and the server keeps no IP address. README, "What Local AI sends", has the details; the counter's code and public totals are in [`usage/`](usage), folded in from the former `local-ai-usage` repository. Turn it off with `omarchy-local-ai set ping off` or `DO_NOT_TRACK=1`; a failed send changes nothing.
+
+### Changed
+- Recipes from the registry at 0801f2ec: GLM-5.3-Flash with experts on NVMe (55 GB and 16 GB RAM) on an RTX 3090 runs the v4.6-nvme image; the lab accepted the 55 GB recipe at 20.0 tok/s.
 
 ## [6.12.7] - 2026-10-09
 
