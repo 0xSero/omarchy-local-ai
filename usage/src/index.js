@@ -5,7 +5,8 @@
 // which model or agent; versions before 6.15.0 send neither field. Only those fields and the UTC day are stored: no IP
 // address, no user agent, no headers. The caller's address is used only by the in-memory rate limit, never written.
 //   GET /v1/local-ai/stats  aggregate counts, public
-//   GET /                   the dashboard (src/page.html), which reads the stats above and the plugin's GitHub traffic
+//   GET /                   the dashboard (src/page.html): open work from the registry's ops branch, the stats above, and the
+//                           plugin's GitHub traffic
 import PAGE from "./page.html";
 const ID = /^[0-9a-f]{32}$/;
 const VERSION = /^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$/;
