@@ -210,6 +210,23 @@ printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((130 * 1024 * 1024)) $((120 * 
 printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((64 * 1024 * 1024)) $((60 * 1024 * 1024)) >"$MEMINFO"
 "$CLI" snapshot >"$TMP/snap-strix.json"
 [[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "" ]] || fail "a 64 GB host matched the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
+# the same 128 GB machine with a 32 GiB carve-out: MemTotal is ~94 GiB, which amd-smi's VRAM size makes up
+shim amd-smi 'case $1 in
+static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon 8060S Graphics\"},\"vram\":{\"size\":{\"value\":32768}},\"bus\":{\"bdf\":\"0000:c3:00.0\"}}]}" ;;
+metric) echo "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210}}}]}" ;;
+esac'
+printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((94 * 1024 * 1024)) $((54 * 1024 * 1024)) >"$MEMINFO"
+"$CLI" snapshot >"$TMP/snap-strix.json"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "ryzen-ai-max-365-128gb" ]] ||
+  fail "a 32 GiB carve-out hid the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
+# amd-smi is a `#!/usr/bin/env python3` script: a mise python3 first on PATH lacks its module, so the system one runs it
+shim python3 'exit 1'
+printf '#!/usr/bin/env python3\n%s\n' "$(sed 1d "$TMP/bin/amd-smi")" >"$TMP/r2" && mv "$TMP/r2" "$TMP/bin/amd-smi" && chmod +x "$TMP/bin/amd-smi"
+printf '#!/bin/bash\nexec bash "$@"\n' >"$TMP/syspython" && chmod +x "$TMP/syspython"
+PYTHON3=$TMP/syspython "$CLI" snapshot >"$TMP/snap-strix.json"
+rm -f "$TMP/bin/python3"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "ryzen-ai-max-365-128gb" ]] ||
+  fail "a mise python3 on PATH hid the AMD card" "$(jq -c .gpus "$TMP/snap-strix.json")"
 unset MEMINFO; rm -f "$TMP/meminfo"
 pass "a unified-memory card matches by host RAM, not the BIOS carve-out"
 shim amd-smi 'echo "{\"gpu_data\":[]}"'
