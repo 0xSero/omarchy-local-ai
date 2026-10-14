@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. `main` carries releases only; work lands on `dev` (see `docs/releases.md`).
 
+## [Unreleased]
+
+### Changed
+- The install count measures use, not a moment. Each ping also says whether a model has ever answered on this machine (`launched`, read from the gateway's usage log, so models run before updating count) and how many models started, how many starts failed, how many agents opened and how many models were downloaded since the last ping that arrived. Totals only, never which model, agent or folder. They wait in `counts.json` until a ping arrives, so none are lost or sent twice, and using Local AI sends nothing extra: pings stay at most twice a day. Turning counting off deletes what was not sent. The dashboard shows "ran a model, ever" and the 30-day actions instead of "running at a check-in".
+
 ## [6.14.0] - 2026-10-14
 
 ### Added

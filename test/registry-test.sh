@@ -29,8 +29,9 @@ echo "ok - registry refresh reports the published revision"
 jq -e '.registryCommit == "0000000000000000000000000000000000000001" and (.hardware|length > 0)' "$CATALOG" >/dev/null
 
 # The install count: one ping per refresh, a random id, the version, the card kinds with recipes, the running models
-jq -e --arg v "$(jq -r .version "$ROOT/manifest.json")" 'keys == ["hw", "id", "running", "version"]
-  and (.id | test("^[0-9a-f]{32}$")) and .version == $v and .hw == ["rtx-3090"] and .running == 0' "$TMP/pings" >/dev/null ||
+jq -e --arg v "$(jq -r .version "$ROOT/manifest.json")" 'keys == ["actions", "hw", "id", "launched", "running", "version"]
+  and (.id | test("^[0-9a-f]{32}$")) and .version == $v and .hw == ["rtx-3090"] and .running == 0
+  and .launched == false and .actions == {}' "$TMP/pings" >/dev/null ||
   { echo "not ok - the ping: $(cat "$TMP/pings")"; exit 1; }
 [[ $(stat -c %a "$STATE/install-id") == 600 ]] || { echo "not ok - install-id is readable by others"; exit 1; }
 echo "ok - a refresh sends the install count: a random id, the version, the card kinds, the running models"
@@ -66,3 +67,25 @@ DO_NOT_TRACK=1 cmd_registry >/dev/null
 (( $(wc -l <"$TMP/pings") == n )) || { echo "not ok - a ping was sent while turned off"; exit 1; }
 [[ $(PINGDOWN=1 cmd_registry) == "models up to date · 00000000" ]] || { echo "not ok - an unreachable counter failed the refresh"; exit 1; }
 echo "ok - the same id every time; set ping off and DO_NOT_TRACK send nothing; an unreachable counter fails nothing"
+
+# Actions: totals only, delivered once; a ping that does not arrive keeps them; a model that ever answered is launched
+last() { tail -1 "$TMP/pings"; }
+rm -f "$STATE/counts.json"
+count started; count started; count opened; count failed; count downloaded; count bogus
+PINGDOWN=1 cmd_registry >/dev/null
+jq -e '.started == 2 and .opened == 1 and .failed == 1 and .downloaded == 1' "$STATE/counts.json" >/dev/null ||
+  { echo "not ok - a ping that did not arrive lost the actions"; exit 1; }
+cmd_registry >/dev/null
+last | jq -e '.actions == {started: 2, opened: 1, failed: 1, downloaded: 1} and .launched == false' >/dev/null ||
+  { echo "not ok - the actions ping: $(last)"; exit 1; }
+[[ $(jq -c . "$STATE/counts.json") == '{}' ]] || { echo "not ok - delivered actions were kept: $(cat "$STATE/counts.json")"; exit 1; }
+cmd_registry >/dev/null
+last | jq -e '.actions == {}' >/dev/null || { echo "not ok - actions were sent twice"; exit 1; }
+mkdir -p "$STATE/usage/m"; echo '{"tokens":1}' >"$STATE/usage/m/usage.jsonl"
+cmd_registry >/dev/null
+last | jq -e '.launched == true' >/dev/null || { echo "not ok - a model that answered is not launched"; exit 1; }
+echo '{"ping": "off"}' >"$STATE/settings.json"
+rm -f "$STATE/counts.json"; count started
+[[ ! -e $STATE/counts.json ]] || { echo "not ok - an action was kept while counting is off"; exit 1; }
+rm "$STATE/settings.json"
+echo "ok - actions are totals, sent once, kept when a ping fails, never kept when off; launched means a model answered here"

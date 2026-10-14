@@ -16,15 +16,18 @@ Counts installs of the [Local AI](https://github.com/sybil-solutions/omarchy-loc
 When the plugin checks the registry for new models (every 12 hours while the bar runs), it sends:
 
 ```json
-{"id": "9f2c…32 hex", "version": "6.13.0", "hw": ["rtx-3090"], "running": 1}
+{"id": "9f2c…32 hex", "version": "6.15.0", "hw": ["rtx-3090"], "running": 1, "launched": true,
+ "actions": {"started": 2, "failed": 0, "opened": 1, "downloaded": 1}}
 ```
 
 - `id`: a random number the plugin made on first run, kept in `~/.local/state/omarchy/local-ai/install-id`. It is not derived from the machine or the user.
 - `version`: the plugin version.
 - `hw`: the card kinds Local AI has recipes for that it found (the registry's hardware ids), or none.
 - `running`: how many models are running.
+- `launched` (6.15.0+): whether a model has ever answered on this install (the gateway's usage log is not empty).
+- `actions` (6.15.0+): models started, starts that failed, agents opened and models downloaded since the install's last delivered ping. Totals only. The plugin keeps them until a ping arrives, then subtracts what it sent.
 
-The Worker stores those four fields and the UTC day, one row per install per day. It stores no IP address, user agent or other header. The caller's address is used only by Cloudflare's in-memory rate limit.
+The Worker stores those fields and the UTC day, one row per install per day; actions in the same day add up. It stores no IP address, user agent or other header. The caller's address is used only by Cloudflare's in-memory rate limit.
 
 Turn it off with `omarchy-local-ai set ping off`, or `DO_NOT_TRACK=1` in the environment the bar runs in.
 
@@ -35,8 +38,8 @@ The dashboard is at `https://usage.sybilsolutions.ai/` (`src/page.html`): it rea
 
 `GET https://usage.sybilsolutions.ai/v1/local-ai/stats` (public, cached 5 minutes):
 
-- `installs`: `installs` ever seen, active `today`, this `week` (7 days), this `month` (30 days), and `monthRunning` (ran a model in the last 30 days).
-- `daily`: the last 90 days: `active`, `running`, `new`.
+- `installs`: `installs` ever seen; `launched`, installs that ever ran a model (a model answered, a start finished, or one ran at a check-in); active `today`, this `week` (7 days), this `month` (30 days); `monthRunning` (running at a check-in in the last 30 days); `monthUsed` (started, opened or ran a model in the last 30 days); and the 30-day totals `monthStarted`, `monthFailed`, `monthOpened`, `monthDownloaded`.
+- `daily`: the last 90 days: `active`, `running`, `new`, `started`, `failed`, `opened`.
 - `week`: versions and hardware of the installs active in the last 7 days.
 
 The plugin repository's `traffic` workflow records this daily on its `stats` branch, next to GitHub traffic.
