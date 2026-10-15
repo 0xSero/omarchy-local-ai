@@ -2,6 +2,11 @@
 
 Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y.Z` on `main` and a GitHub release. The marketplace listing only ever targets a tagged release commit. `main` carries releases only; work lands on `dev` (see `docs/releases.md`).
 
+## [Unreleased]
+
+### Added
+- The Intel Arc Pro B65 (`8086:e222`, 32 GB) is detected, with its three llama.cpp SYCL recipes (Qwen3.8-27B, Gemma 4 31B QAT and Muse Glimmer 30B; registry #260, thanks @snowopsdev). Recipes are at registry `1eecf510`.
+
 ## [6.16.0] - 2026-10-14
 
 ### Security
