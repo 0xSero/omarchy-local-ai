@@ -541,6 +541,26 @@ network() {
   printf 'omarchy-local-ai-%s%s' "${uid:+$uid-}" "$1"
 }
 engine() { printf '%s-engine' "$(network "$1")"; }
+# private <id>: the network only the engine and its gateway share. Internal (no route out) and isolated (no address on
+# the host), so nothing on the machine reaches the engine but the gateway, whatever the engine binds or authenticates:
+# Docker otherwise routes every bridge address from the host, published or not, and any local account could talk to
+# an engine that has no key of its own (TabbyAPI with disable_auth, llama-server without --api-key).
+private() { printf '%s-private' "$(network "$1")"; }
+# docker_private: Docker 28 is the first to isolate a network from the host; an older one keeps the option it does not
+# know and gives the bridge a host address anyway, so private_net checks the network after making it as well
+docker_private() {
+  local v
+  v=$(docker version --format '{{.Server.Version}}' 2>/dev/null) || v=""
+  [[ ${v%%.*} =~ ^[0-9]+$ ]] && ((${v%%.*} >= 28)) && return 0
+  echo "Docker 28 or newer is needed to keep the engine private (this is ${v:-unknown})"
+  return 1
+}
+# private_net <id>: make the model's private network, or keep the one an earlier attempt made
+private_net() {
+  docker network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated \
+    --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" "$(private "$1")" >/dev/null 2>&1 || true
+  [[ $(docker network inspect -f '{{.Internal}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}}' "$(private "$1")" 2>/dev/null) == "true isolated" ]]
+}
 gateway() { printf '%s-gateway' "$(network "$1")"; }
 # gw_addr <id>: the gateway's URL on the model's own Docker network. Only Docker assigns addresses on that bridge and
 # no host interface holds them, so another account can never listen there: every keyed request this plugin makes,
@@ -691,6 +711,7 @@ remove() {
     fi
   done
   docker network rm "$(network "$1")" >/dev/null 2>&1 || true
+  docker network rm "$(private "$1")" >/dev/null 2>&1 || true
   rm -rf -- "$(rundir "$1")" 2>/dev/null || say "$1: $(rundir "$1") holds files Docker created as root; delete it as root"
 }
 
@@ -742,6 +763,7 @@ phase_start() (
     say "stale NVIDIA device list ${v%%$'\t'*} (${v#*$'\t'}); regenerate it as root: nvidia-ctk cdi generate --output=${v%%$'\t'*}"
     die "the NVIDIA device list is out of date (${v#*$'\t'}): choose Set up Local AI to regenerate it"
   fi
+  v=$(docker_private) || die "$v"
   owned "$KEY"
   owned "$STATE/usage/$id"
   # each line on stdout is the widget's next step: the worker reads them, so a long download never shows a still line
@@ -760,7 +782,7 @@ phase_start() (
   run=$(rundir "$id")
   mkdir -p "$run/by-path"
   a=(docker run -d --name "$(engine "$id")" --restart unless-stopped --security-opt no-new-privileges
-    --network "$(network "$id")" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=$(id -u)")
+    --network "$(private "$id")" --network-alias engine --label "$LABEL=1" --label "$LABEL.uid=$(id -u)")
   if [[ $backend == "nvidia" ]]; then
     # Through CDI (the toolkit's /etc/cdi/nvidia.yaml, which Docker reads without a restart) each card goes by its UUID:
     # CDI's own numbering need not match nvidia-smi's. An install with the nvidia runtime and no CDI list uses --gpus.
@@ -804,6 +826,7 @@ phase_start() (
   allocation_lock
   cards_free "$@"
   docker network create --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" "$(network "$id")" >/dev/null
+  private_net "$id" || die "Docker did not make the engine's network private"
   a+=(${devices[@]+"${devices[@]}"})
   if [[ $(jq -r '.prepare // empty' <<<"$r") ]]; then
     a+=(--volume "$(prepared_path "$r"):$(jq -r .prepare.at <<<"$r"):ro")
@@ -829,7 +852,7 @@ phase_start() (
   [[ ! -e $(dir_of "$id")/cancel ]] || die "start cancelled"
   if ! docker run -d --name "$(gateway "$id")" --restart unless-stopped --security-opt no-new-privileges \
     --cap-drop ALL --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --dns 127.0.0.1 \
-    --network "$(network "$id")" --user "$(id -u):$(id -g)" --publish "127.0.0.1:$port:12434" \
+    --network "$(network "$id")" --network "$(private "$id")" --user "$(id -u):$(id -g)" --publish "127.0.0.1:$port:12434" \
     --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" \
     --env "UPSTREAM=http://engine:$(jq -r .launch.port <<<"$r")" --env "MODEL=$(jq -r '.servedName // ""' <<<"$r")" \
     --env GATEWAY_KEY_FILE=/run/gateway.key --volume "$KEY:/run/gateway.key:ro" \
@@ -838,6 +861,7 @@ phase_start() (
     remove "$id"
     die "the gateway did not start"
   fi
+  touch "$(dir_of "$id")/private" 2>/dev/null || true
 )
 
 # phase_stop <id>: returns non-zero instead of exiting, so the caller records why the stop failed
@@ -1578,6 +1602,36 @@ session() {
 }
 
 
+# privatize: a model an older version started has its engine on the gateway's bridge, where the host and so every local
+# account can reach it. Move it, while it runs, to its own private network, where the gateway finds it by the same
+# name; Docker keeps the change across restarts. Once per model: a marker says it is done, or that it could not be
+# done (an old Docker), which the log says once, with the remedy.
+privatize() {
+  local d id why
+  for d in "$STATE"/deploy/*/; do
+    id=$(basename "$d")
+    valid_id "$id" && [[ -f $d/config.json && ! -f $d/private && ! -f $d/private-failed ]] || continue
+    ours "$(engine "$id")" && ours "$(gateway "$id")" || continue
+    joined "$(engine "$id")" "$(network "$id")" || { touch "$d/private"; continue; }
+    if why=$(docker_private) && private_net "$id" &&
+      { joined "$(engine "$id")" "$(private "$id")" ||
+        docker network connect --alias engine "$(private "$id")" "$(engine "$id")" >/dev/null 2>&1; } &&
+      { joined "$(gateway "$id")" "$(private "$id")" ||
+        docker network connect "$(private "$id")" "$(gateway "$id")" >/dev/null 2>&1; } &&
+      docker network disconnect "$(network "$id")" "$(engine "$id")" >/dev/null 2>&1; then
+      touch "$d/private"
+      say "$id: its engine moved to a private network"
+    else
+      touch "$d/private-failed"
+      say "$id: could not move its engine to a private network${why:+ ($why)}; stop and start it"
+    fi
+  done
+}
+# joined <container> <network>: whether the container is on that network
+joined() {
+  [[ " $(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$1" 2>/dev/null)" == *" $2 "* ]]
+}
+
 # adopt: the models a 5.x install left running (its ledger.json) become deployments here, once
 adopt() {
   local id c
@@ -1618,6 +1672,7 @@ cmd_snapshot() {
   # whether a model can start, and if not what the panel offers (lib/access.sh); Docker is asked only when it can answer
   IFS=$'\t' read -r rstate rmsg < <(readiness) || true
   [[ -n $rstate ]] || { rstate=docker-down; rmsg="could not check whether Docker is ready"; }
+  [[ $rstate != ready ]] || privatize
   omarchy-cmd-present tailscale && ts=$(timeout 3 tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // "" | rtrimstr(".")' || true)
   # each running model: its config and status in one read, then whether its worker or engine is gone; the final
   # step joins its recipe

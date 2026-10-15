@@ -26,6 +26,8 @@ gpus() { printf '[{"key":"nvidia:0","hw":"test","held":%s,"usedMiB":1}]\n' "$([[
 docker() {
   case $1 in
     info) echo NVIDIA ;;
+    version) echo 29.0.0 ;;
+    network) if [[ $2 == inspect ]]; then echo 'true isolated'; fi ;;
     run) if [[ $* == *-engine* ]]; then sleep 1; echo "$PKEXEC_UID" >>"$TMP/starts"; touch "$TMP/allocated"; fi ;;
   esac
 }
