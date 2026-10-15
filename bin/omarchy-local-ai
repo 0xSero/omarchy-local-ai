@@ -252,7 +252,7 @@ nvidia() {
   grep -E '^[0-9]+, ' <<<"$out" || true
 }
 
-# Intel GPUs the recipes know, by PCI id. The xe driver gives users its temperature but not its memory use. A card with
+# Intel GPUs the recipes know, by PCI id (Arc Pro B70, Arc Pro B65, Arc B390). The xe driver gives users its temperature but not its memory use. A card with
 # a connected monitor drives the desktop, whose compositor and browsers hold part of its memory, so it is offered last.
 # The Arc B390 is a Panther Lake iGPU: its memory is host RAM, so it reports none (its card is unifiedMemory).
 intel() {
@@ -260,6 +260,7 @@ intel() {
   while read -r a d; do
     case ${d#*:} in
       e223) product="Intel Arc Pro B70" mib=32768 ;;
+      e222) product="Intel Arc Pro B65" mib=32768 ;;
       b080) product="Intel Arc B390" mib=0 ;;
       *) continue ;;
     esac
