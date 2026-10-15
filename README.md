@@ -29,7 +29,7 @@ Setup ends by checking what the panel will show. Sharing a model on your tailnet
 
 - Omarchy with the Quattro shell and its bar. Local AI calls Omarchy's own commands: `omarchy-setup-security-sudoless-docker`, `omarchy-pkg-add`, `omarchy-hw-nvidia`, `omarchy-launch-tui`, `omarchy-launch-browser`, `omarchy-notification-send` and `omarchy-cmd-present`.
 - Docker, `jq`, `curl`, `flock` and `sha256sum`.
-- A supported GPU (below), or an x86-64 CPU with AVX2 and enough RAM for its recipe. NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. Docker 25 or later (Omarchy ships 29). AMD needs ROCm's `amd-smi`.
+- A supported GPU (below), or an x86-64 CPU with AVX2 and enough RAM for its recipe. NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. Docker 28 or later (Omarchy ships 29). AMD needs ROCm's `amd-smi`.
 - Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
 - Network access to `huggingface.co` (weights), `ghcr.io/sybil-solutions`, historical `ghcr.io/0xsero` pins, and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (the automatic catalog check), `huggingface.co` again for model cards in full screen, and `usage.sybilsolutions.ai` (the install count, below).
 
@@ -47,7 +47,7 @@ repository an older plugin version has never shipped.
 - **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended. The models tab lists every model this machine can run, on whichever of its cards it lands, as one searchable table; home shows the ones you pinned (running or downloading one pins it). A machine with no tested model says so and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
 - **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them; the others are listed as too big, saying what is missing. A recipe may also name the CPU threads its engine pins work to.
 - **Weights** are downloaded as you, from the pinned revision, and every file's size is checked against Hugging Face, and the SHA-256 of every large (LFS) file, before it is used. A matching copy in your Hugging Face cache is reused.
-- **Containers.** The engine runs on a private network with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
+- **Containers.** The engine runs on its own internal Docker network that the host has no address on, shared only with its gateway, with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
 - **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. A model's details list the agents once, the chosen one checked; on the agents page the chosen one is the default for new models. **Update to <version>** appears when mise or npm has a newer version of the agent. Click the folder row to browse folders inside the panel (click into a folder, or up, then **Use this folder**; recent folders are listed too). **Open** launches the chosen agent from home or the model's page. Agent choices on a running model do not change the default; the last folder picked remains the folder default. Updates use mise when it manages that agent, the native updater for standalone omp, Hermes, Claude Code and OpenCode, or npm for an existing npm installation. Existing sessions keep running.
 - **Share** a running model on your tailnet with `tailscale serve` (tailnet only, still keyed). **Stop sharing** on its page removes that share. Tailscale must be running and logged in. Setup preserves another account’s operator; ask that account to manage sharing. A failed unshare is logged and does not prevent stopping the model.
 
@@ -91,14 +91,22 @@ Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); t
 
 ### Container boundary
 
+Each engine is on its own internal Docker network, isolated from the host
+(`com.docker.network.bridge.gateway_mode_ipv4=isolated`, Docker 28 and later):
+the host has no address on it and no route to it, so no account on the machine
+can reach the engine, whatever it listens on or whether it checks a key of its
+own. Only the model's gateway joins that network; it is the one way in, and it
+requires the key. A model an older version started is moved to its private
+network while it runs, the first time the panel refreshes after the update.
+
 Images are pinned by SHA-256. The gateway runs as the calling user, with no
 Linux capabilities, a read-only root filesystem, a bounded temporary directory
 and external DNS disabled. Docker service discovery still resolves the engine;
 usage records remain writable in their dedicated directory. Existing containers
 receive these restrictions when stopped and started again.
 
-Model engines still have writable container filesystems and outbound network
-access. Digest pins and build attestations establish image identity; they do
+Model engines still have writable container filesystems; the internal network
+leaves them no outbound network access. Digest pins and build attestations establish image identity; they do
 not make untrusted code safe. Engine restrictions need per-engine hardware
 validation before rollout. Disabling gateway DNS does not block outbound IP
 connections.

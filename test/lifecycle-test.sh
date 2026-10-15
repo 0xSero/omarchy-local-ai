@@ -33,7 +33,9 @@ gpus() {
   fi
 }
 remove() { touch "$TMP/removed"; }
-docker() { [[ $1 == image ]] || { touch "$TMP/launched"; return 99; }; }
+docker() {
+  case $1 in image) ;; version) echo 29.0.0 ;; *) touch "$TMP/launched"; return 99 ;; esac
+}
 if (phase_start test 12434 nvidia:0) >"$TMP/output" 2>&1; then exit 1; fi
 grep -q 'nvidia:0 is in use by another program' "$TMP/output"
 [[ ! -f $TMP/launched ]]
@@ -52,6 +54,7 @@ launch_options() { :; }
 docker() {
   case $1 in
     image) return 0 ;;
+    version) echo 29.0.0 ;;
     info) echo '{}' ;;
     run) touch "$TMP/launched"; return 99 ;;
     *) return 0 ;;
@@ -61,3 +64,39 @@ if (phase_start test 12434 nvidia:0) >"$TMP/output" 2>&1; then exit 1; fi
 grep -q 'nvidia:0 is in use by another program' "$TMP/output"
 [[ ! -f $TMP/launched && ! -d $(rundir test) ]]
 echo 'ok - launch reacquires allocation after preparation, refuses a claimed card and cleans transient assets'
+
+# A model an older version started keeps running; its engine moves off the host-reachable bridge, once.
+ours() { return 0; }
+docker() {
+  printf '%s\n' "$*" >>"$TMP/privatize.log"
+  case $1 in
+    version) echo "${DOCKER_VERSION:-29.0.0}" ;;
+    inspect) if [[ ${@: -1} == *-engine && ! -f $TMP/moved ]]; then echo "$(network test) "; else echo "bridge "; fi ;;
+    network) if [[ $2 == inspect ]]; then echo 'true isolated'; elif [[ $2 == disconnect ]]; then touch "$TMP/moved"; fi ;;
+  esac
+}
+rm -f "$STATE/deploy/test/private"
+DOCKER_VERSION=27.5.1 privatize
+[[ ! -f $STATE/deploy/test/private ]] && ! grep -q '^network connect' "$TMP/privatize.log" &&
+  grep -q 'could not move its engine to a private network (Docker 28 or newer is needed' "$LOG"
+[[ -f $STATE/deploy/test/private-failed ]]
+: >"$TMP/privatize.log"
+DOCKER_VERSION=27.5.1 privatize
+! grep -q '^version' "$TMP/privatize.log"
+rm "$STATE/deploy/test/private-failed"
+privatize
+n=$(network test)
+diff <(grep -E '^network (create|connect|disconnect)' "$TMP/privatize.log") - <<LOG
+network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.uid=$(id -u) $n-private
+network connect --alias engine $n-private $n-engine
+network connect $n-private $n-gateway
+network disconnect $n $n-engine
+LOG
+[[ -f $STATE/deploy/test/private ]]
+: >"$TMP/privatize.log"
+privatize
+! grep -q '^network' "$TMP/privatize.log"
+rm "$STATE/deploy/test/private"
+privatize
+[[ -f $STATE/deploy/test/private ]] && ! grep -q '^network' "$TMP/privatize.log"
+echo 'ok - a running engine an older version started moves to its private network once; on an old Docker the log says so once'
