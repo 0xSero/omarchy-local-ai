@@ -4,6 +4,8 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.17.0] - 2026-10-15
+
 ### Security
 - Each engine runs on its own internal Docker network that the host has no address on, shared only with its gateway. Docker routes every bridge address from the host whether or not a port is published, so until now any local account could talk to an engine directly and skip the gateway's key; that mattered for engines with no key of their own (TabbyAPI with `disable_auth`, llama-server without `--api-key`). The gateway joins both networks: the engine's, and the bridge Local AI and the agents reach it on. A model started by an earlier version is moved to its private network while it runs, without a restart, the first time the panel refreshes. This needs Docker 28 or later (Omarchy ships 29); an older Docker refuses to start a model and says why. Engines also lose outbound network access, which they never needed: weights are mounted and Hub downloads are already offline. Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#11207).
 
