@@ -84,7 +84,8 @@ info)
   else echo "{\"nvidia\":{\"path\":\"nvidia-container-runtime\"},\"runc\":{\"path\":\"runc\"}}"; fi ;;
 image) exit 1 ;;
 pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
-network) : ;;
+version) echo "${SHIM_DOCKER_VERSION:-29.0.0}" ;;
+network) if [[ $2 == inspect ]]; then echo "true isolated"; fi ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; if [[ $* == *IPAddress* ]]; then echo 172.30.0.5; elif [[ $* == *RestartCount* ]]; then echo 0; else cat "$c/$n"; fi ;;
 logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || { printf "loading shards\n(EngineCore pid=5) ERROR [core.py:1330] EngineCore failed to start.\n(EngineCore pid=5) ERROR [core.py:1330] ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization\n"
@@ -374,6 +375,13 @@ engine=$(grep -- '--name omarchy-local-ai-.*-engine' "$SHIM/docker.log")
   $engine == *"--shm-size 8g"* && $engine == *"--env A=1"* && $engine != *NVIDIA_VISIBLE_DEVICES* && $engine != *--publish* &&
   $engine == *"$PIN --port 8000" ]] || fail "engine argv" "$engine"
 pass "the engine gets its card, a read-only weights mount and the recipe's options, never a published port or its own card choice"
+net="omarchy-local-ai-$(id -u)-$ID"
+grep -qx -- "network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.uid=$(id -u) $net-private" "$SHIM/docker.log" ||
+  fail "private network" "$(grep '^network' "$SHIM/docker.log")"
+[[ $engine == *"--network $net-private --network-alias engine"* && $engine != *"--network $net "* ]] || fail "engine network" "$engine"
+[[ $(grep -- '--name omarchy-local-ai-.*-gateway' "$SHIM/docker.log") == *"--network $net --network $net-private "* ]] ||
+  fail "gateway networks" "$(grep -- '-gateway' "$SHIM/docker.log")"
+pass "the engine is only on an internal network the host has no address on, shared with its gateway alone"
 gateway=$(grep -- '--name omarchy-local-ai-.*-gateway' "$SHIM/docker.log")
 [[ $gateway == *"--publish 127.0.0.1:12434:12434"* && $gateway == *"--user $(id -u):$(id -g)"* && $gateway == *"gateway.key:/run/gateway.key:ro"* ]] ||
   fail "gateway argv" "$gateway"
@@ -603,6 +611,15 @@ grep -q "image is not pinned by digest" "$TMP/err" || fail "unpinned reason" "$(
 pass "a recipe whose image is not pinned by digest is refused before anything runs"
 
 recipes "$PIN"
+"$CLI" stop "$ID" >/dev/null 2>&1 || true
+: >"$SHIM/docker.log"
+SHIM_DOCKER_VERSION=27.5.1 "$CLI" run "$ID" nvidia:0
+wait_for error
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "Docker 28 or newer is needed to keep the engine private (this is 27.5.1)" ]] &&
+  ! grep -q '^run ' "$SHIM/docker.log" || fail "old Docker" "$(cat "$STATE/deploy/$ID/status.json")"
+pass "a Docker that cannot keep the engine off the host's network is refused before anything runs"
+"$CLI" stop "$ID" >/dev/null 2>&1 || true
+
 jq '.hardware["rtx-4090-24gb"].match = {backend:"amd-vulkan", names:["rx9070xt"], vramGb:16}' "$TMP/plugin/recipes.json" >"$TMP/r2"
 mv "$TMP/r2" "$TMP/plugin/recipes.json"
 shim amd-smi 'case $1 in

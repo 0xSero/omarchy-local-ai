@@ -30,7 +30,10 @@ echo 'ok - an incompatible CPU is not offered the AVX2 recipe'
 echo 'flags : avx2' >"$CPUINFO"
 owned() { :; }
 remove() { :; }
-docker() { printf '%s\n' "$*" >>"$TMP/docker.log"; }
+docker() {
+  printf '%s\n' "$*" >>"$TMP/docker.log"
+  case $1 in version) echo 29.0.0 ;; network) if [[ $2 == inspect ]]; then echo 'true isolated'; fi ;; esac
+}
 phase_start cpu 12434 cpu:0 >"$TMP/start.log"
 engine_args=$(grep '^run .*engine ' "$TMP/docker.log")
 [[ -n $engine_args && $engine_args != *--device* && $engine_args != *--gpus* && $engine_args != *--group-add* && $engine_args != */dev/dri* ]]
