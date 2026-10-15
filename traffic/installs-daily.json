@@ -3,30 +3,54 @@
     "day": "2026-10-10",
     "active": 1,
     "running": 0,
-    "new": 1
+    "new": 1,
+    "started": 0,
+    "failed": 0,
+    "opened": 0
   },
   {
     "day": "2026-10-11",
     "active": 84,
     "running": 5,
-    "new": 84
+    "new": 84,
+    "started": 0,
+    "failed": 0,
+    "opened": 0
   },
   {
     "day": "2026-10-12",
     "active": 80,
     "running": 15,
-    "new": 36
+    "new": 36,
+    "started": 0,
+    "failed": 0,
+    "opened": 0
   },
   {
     "day": "2026-10-13",
     "active": 97,
     "running": 13,
-    "new": 34
+    "new": 34,
+    "started": 0,
+    "failed": 0,
+    "opened": 0
   },
   {
     "day": "2026-10-14",
-    "active": 53,
-    "running": 9,
-    "new": 5
+    "active": 103,
+    "running": 19,
+    "new": 25,
+    "started": 0,
+    "failed": 0,
+    "opened": 0
+  },
+  {
+    "day": "2026-10-15",
+    "active": 68,
+    "running": 13,
+    "new": 12,
+    "started": 8,
+    "failed": 3,
+    "opened": 0
   }
 ]
