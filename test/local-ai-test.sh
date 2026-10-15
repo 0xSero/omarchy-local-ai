@@ -246,6 +246,32 @@ rm -f "$TMP/bin/python3"
 unset MEMINFO; rm -f "$TMP/meminfo"
 pass "a unified-memory card matches by host RAM, not the BIOS carve-out"
 shim amd-smi 'echo "{\"gpu_data\":[]}"'
+
+# An NVIDIA GPU sharing host memory (GB10, RTX Spark) prints [N/A] for its memory: the snapshot still builds, the
+# card is unified even when its kind does not say so, and a 128 GiB machine's 119.5 GiB MemTotal covers 128 GB
+jq '.hardware["dgx-spark-gb10-128gb"] = {match: {backend: "nvidia", name: "NVIDIA GB10",
+    names: ["gb10", "rtxsparkn1x6144coreblackwellrtxgpu"], vramGb: 128}, recipes: .hardware["rx-7600-xt-16gb"].recipes}' \
+  "$TMP/plugin/recipes.json" >"$TMP/r2"
+mv "$TMP/r2" "$TMP/plugin/recipes.json"
+shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
+printf "0, NVIDIA RTX Spark N1X (6144-core Blackwell RTX GPU), [N/A], [N/A], 49\n"'
+export MEMINFO=$TMP/meminfo
+printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((122380 * 1024)) $((100 * 1024 * 1024)) >"$MEMINFO"
+"$CLI" snapshot >"$TMP/snap-spark.json" 2>"$TMP/spark.err" || fail "an [N/A] memory broke the snapshot" "$(cat "$TMP/spark.err")"
+[[ $(jq -r '.gpus[0] | "\(.key) \(.hw) \(.totalMiB) \(.usedMiB) \(.vramGb)"' "$TMP/snap-spark.json") == "nvidia:0 dgx-spark-gb10-128gb 122380 null 120" ]] ||
+  fail "the RTX Spark matches the GB10 kind by host RAM" "$(jq -c .gpus "$TMP/snap-spark.json")"
+shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
+printf "0, NVIDIA RTX Spark N1Y, [N/A], [N/A], 49\n"'
+"$CLI" snapshot >"$TMP/snap-spark.json" || fail "an unknown [N/A] card broke the snapshot"
+[[ $(jq -r '.gpus[0] | "\(.hw)=\(.totalMiB)"' "$TMP/snap-spark.json") == "=122380" ]] ||
+  fail "an unknown unified NVIDIA card shows the host memory" "$(jq -c .gpus "$TMP/snap-spark.json")"
+printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((64 * 1024 * 1024)) $((60 * 1024 * 1024)) >"$MEMINFO"
+shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
+printf "0, NVIDIA GB10, [N/A], [N/A], 49\n"'
+"$CLI" snapshot >"$TMP/snap-spark.json"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-spark.json") == "" ]] || fail "a 64 GB host matched the 128 GB GB10" "$(jq -c .gpus "$TMP/snap-spark.json")"
+unset MEMINFO; rm -f "$TMP/meminfo"
+pass "an NVIDIA GPU that reports no memory of its own is unified and matches by host RAM"
 shim nvidia-smi '[[ $* == *uuid* ]] && { echo "GPU-test-${@: -1}"; exit; }
 printf "0, NVIDIA GeForce RTX 4090, 24564, 300, 41\n1, NVIDIA GeForce GT 710, 2048, 10, 30\n2, NVIDIA GeForce RTX 4090, 24564, 300, 38\n"'
 recipes "$PIN"

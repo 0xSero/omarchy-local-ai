@@ -4,6 +4,9 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+### Fixed
+- An NVIDIA GPU that shares the host's memory (DGX Spark's GB10, the RTX Spark N1X) no longer breaks the panel. nvidia-smi prints `[N/A]` for its memory, which the snapshot could not read, so the panel showed nothing at all. Such a card is now unified: it shows the host's memory and matches its card kind by host RAM, like a unified-memory APU. A unified card's allowance for firmware and kernel reservations is a tenth of its stated memory, at least 8 GiB, since a 128 GiB GB10 or RTX Spark has 119.5 GiB MemTotal and fell 500 MiB short of the flat 8 GiB.
+
 ## [6.17.0] - 2026-10-15
 
 ### Security
