@@ -4,6 +4,21 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.20.0] - 2026-10-16
+
+### Added
+- Intel Arc Pro B70 32 GB: ten new llama.cpp SYCL recipes (registry #299): Gemma 4 12B QAT Q4_0 (256K), Gemma 4 26B A4B UD-Q4_K_XL (256K), Gemma 4 31B QAT Q4_0 (128K, q8_0 KV), Muse Glimmer 30B Q4_K_M (128K), Ornith-1.5-35B-A3B Q4_K_M (256K), Qwen3.5-9B Q4_K_M (256K), Qwen3.6-27B Q4_K_M (256K, q8_0 KV), Qwen3.6-35B-A3B UD-Q4_K_M (256K), Swift-1.5-Qwen3.8-27B Q4_K_M (256K, q8_0 KV) and Welp-35B-A3B (256K). The card goes from 2 recipes to 12.
+- Intel Arc Pro B65 32 GB: Muse Glimmer 30B now runs at 128K (registry #299).
+- Qwen3.8-Flash-Next with its experts offloaded to RAM on RTX 40 and 50-series cards (registry #296), on the new attested image `ghcr.io/sybil-solutions/sglang-exl3-flashnext-multiarch`: RTX 4060 Ti 16 GB (2.05 bpw, 256K), RTX 4070 (3.05 bpw, 128K), RTX 4070 Ti SUPER (3.05 bpw, 256K), RTX 4090 (3.05 bpw, 256K), RTX 5070 (2.05 bpw, 128K) and RTX 5090 (3.05 bpw, 256K). They need 48 to 55 GB of RAM and an NVMe drive, and the panel offers them only on machines that have both.
+- RTX 5090 Laptop GPU 24 GB as a new card (registry #293): Qwen3.5-9B EXL3 8 bpw and Qwen3.8-27B EXL3 4.00 bpw, both at 256K.
+- RTX 5090: Qwen3.8-27B EXL3 5.00 bpw at 256K on TabbyAPI.
+- Gemma 4 26B A4B at 128K on the RTX 4060 Ti 16 GB and RTX 5060 Ti 16 GB, and Qwen3.5-9B EXL3 at 128K on the RTX 5070 Ti, in place of their shorter-context recipes.
+
+### Removed
+- Every recipe that holds less than 128K of KV cache on a card with more than 8 GB is no longer offered: the registry now requires that floor (registry #292). 42 recipes leave (a few replaced by a 128K recipe of the same model, listed above), mostly 32K and 64K TabbyAPI and vLLM ones on RTX 30, 40 and 50-series cards, plus the 64K Qwen3.8-Flash-Next recipes on the RTX 3080 and 3080 Ti, whose 128K ones stay. The RX 6700 XT, RX 6750 XT, RX 6800 XT and RX 7600 XT had only such recipes and no longer show as supported cards. The 32K recipes for the 22 GB RTX 2080 Ti and the RTX 3080 12 GB (registry #289, #290) stay in the registry for the same reason. A running model on a withdrawn recipe keeps Stop, and its download is listed under **No longer offered**.
+
+Recipes are at registry `f601b88f`. The gateway stays at `sha256:9ab834c2` (amd64 only); the multi-arch gateway for #139 waits on a registry trust-policy change (sybil-solutions/local-ai-registry#300).
+
 ## [6.19.0] - 2026-10-16
 
 ### Security
