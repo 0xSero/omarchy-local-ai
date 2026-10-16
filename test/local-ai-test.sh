@@ -179,7 +179,11 @@ static) printf "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon
 metric) printf "{\"gpu_data\":[{\"gpu\":0,\"mem_usage\":{\"used_vram\":{\"value\":210,\"unit\":\"MB\"}},\"temperature\":{\"edge\":{\"value\":41,\"unit\":\"C\"}}},{\"gpu\":1,\"mem_usage\":{\"used_vram\":{\"value\":90,\"unit\":\"MB\"}},\"temperature\":{\"edge\":{\"value\":38,\"unit\":\"C\"}}}]}" ;;
 esac'
 shim nvidia-smi 'exit 9'
-cp "$ROOT/recipes.json" "$TMP/plugin/recipes.json"
+# the vendored recipes no longer list an RX 7600 XT (registry 128K KV floor, local-ai-registry #292): the kind under
+# test is added here from the AMD recipe the vendored file has, matched to the RX 7600 XT 16 GB
+jq '.hardware["rx-7600-xt-16gb"] = {match: {backend: "amd-rocm", name: "AMD Radeon RX 7600 XT", names: ["rx7600xt"], vramGb: 16},
+    recipes: [first(.hardware[] | select(.match.backend == "amd-rocm") | .recipes[0]) | .id = "rx7600xt-test"]}' \
+  "$ROOT/recipes.json" >"$TMP/plugin/recipes.json"
 "$CLI" snapshot >"$TMP/snap-amd.json" || fail "the AMD snapshot"
 [[ $(jq -r '.gpus | map(select(.backend == "amd-rocm") | "\(.key)=\(.hw)=\(.vramGb)=\(.tempC)") | join(" ")' "$TMP/snap-amd.json") == "amd-rocm:0=rx-7600-xt-16gb=16=41 amd-rocm:1==8=38" ]] ||
   fail "RX 7600 XT and RX 7600" "$(jq -c .gpus "$TMP/snap-amd.json")"

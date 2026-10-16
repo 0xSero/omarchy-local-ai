@@ -4,6 +4,14 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.20.0] - 2026-10-16
+
+### Added
+- Qwen3.8-Flash-Next on one Arc Pro B70 at its full 262,144-token context with MTP speculative decoding, in 63 GB of host RAM. The routed experts sit in system RAM and the n-gram (engram) table is read from an NVMe SSD; outputs are exact. It replaces the 128 GB B70 recipe (no MTP): lab 36.1 tok/s and prefill 1,087 tok/s (was 31.6 and 307); recipe kit sweep prefill 1,134-1,152 tok/s from 8K to 64K, decode 41-44 tok/s at one to four users; reference panel top-1 0.9883. Engine image `ghcr.io/sybil-solutions/qwen38-flash-next-b70-offload@sha256:4f654928…`, built and attested by our image workflow.
+
+### Changed
+- No recipe offers less than a 128K KV cache on a card with more than 8 GB of VRAM (registry rule, local-ai-registry #292). Recipes below that floor on bigger cards are no longer offered; cards of 8 GB or less keep theirs.
+
 ## [6.19.0] - 2026-10-16
 
 ### Security
