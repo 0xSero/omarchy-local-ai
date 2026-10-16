@@ -11,10 +11,10 @@ Open pull requests against `dev`. CI runs on both branches; a pull request to `m
 
 ## What needs a release
 
-Code, and every new or changed launch. Between releases a refresh can only withdraw or relabel shipped recipes:
-the panel checks the registry every 12 hours and keeps a recipe from its export only when this release ships a
-recipe with the same id, on the same card kind, that runs exactly the same (image, launch, weights, asset, scratch,
-preparation, cards, minimum driver, served name; `registry` in the backend). New recipes, new or changed launches and
+Code, and every new or changed launch. Between releases a refresh can only withdraw, reorder or relabel shipped
+recipes: the panel checks the registry every 12 hours, and each recipe of its export that this release ships (same id,
+same card kind) becomes the shipped recipe with only checked display fields (name, family, format, sizeGb, aa,
+reported, capability flags) taken from the export; recipes it does not ship are left out (`registry` in the backend). New recipes, new or changed launches and
 a new gateway ship with a release; vendor them with `make sync REGISTRY=<checkout>` and `make check`. The manually dispatched `registry` workflow tells you whether
 the catalog content changed and gives a patch for that sync.
 

@@ -155,13 +155,19 @@ the panel offers on home. Between updates, once the catalog is 12 hours old,
 Local AI checks the latest published registry (at most once an hour) and says so
 only when it changed the list; the catalog lives in your cache
 (`~/.cache/omarchy/local-ai/v4`). A refresh can only withdraw, reorder or relabel
-the recipes the plugin ships: a refreshed recipe is kept only when the plugin's
-own `recipes.json` has a recipe with its id, on the same card kind, whose image,
-launch (entrypoint, arguments, environment and the rest), weights, config file,
-scratch, preparation, card count, minimum driver and served name are exactly the
-same. Anything else is left out until a plugin update ships it. Downloads are
+the recipes the plugin ships: each recipe it lists that the plugin's own
+`recipes.json` has (same id, same card kind) becomes that shipped recipe, and only
+its name, family, format, size, score and capability flags are taken from the
+registry, each when it is short plain text, a finite number or a boolean.
+Everything that decides what runs or how an agent is set up (image, launch,
+weights, context, needs and the rest) is always the shipped recipe's, and a recipe
+the plugin does not ship is left out until a plugin update ships it. Downloads are
 pinned to a registry commit, validated before an atomic replacement, and failures
-keep the previous catalog. A catalog an earlier version refreshed is not read.
+keep the previous catalog. A catalog an earlier version refreshed is not read, and
+one the panel cannot be drawn from is set aside (the log says why) for the
+shipped recipes. A model whose recipe an update withdrew keeps Stop; its download,
+and any folder no recipe here uses, is listed on home under **No longer offered**
+with **Remove**.
 Refreshing does not stop running models or download model weights. Offload
 recipes are offered only when their RAM, disk and storage requirements fit.
 

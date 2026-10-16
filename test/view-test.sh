@@ -56,6 +56,18 @@ test('usage reporting is asked once, on home only: No thanks (first) or Allow, a
   for (const st of ['on','off','env',undefined]) assert.equal(ask(st,'home').length,0,String(st));
   for (const view of ['agents','models','settings','gpus']) assert.equal(ask('unset',view).filter(r=>r.items.length>1).length,0,view);
 });
+test('a recipe no longer offered: no Run again, Dismiss only; its leftovers on home with Remove', () => {
+  const gone={...s.deployments[0],id:'gone',name:'Gone',state:'error',error:'x',offered:false};
+  const st={...s,deployments:[gone],unoffered:{folders:[{folder:'old--gone@aaaaaaaaaaaa',gb:42}],downloads:[{id:'gone2',state:'error'}]}};
+  const home=m.build(st,{view:'home'}).rows;
+  const slot=home.find(r=>r.type==='slot'&&r.label==='Gone'); assert(slot&&!slot.run&&slot.dismiss==='stop|gone'&&slot.hint==='no longer offered');
+  assert(home.some(r=>r.type==='sec'&&r.label==='NO LONGER OFFERED'));
+  assert(home.some(r=>(r.items||[]).some(i=>i.action==='discard|old--gone@aaaaaaaaaaaa')));
+  assert(home.some(r=>(r.items||[]).some(i=>i.action==='download|gone2|off')));
+  const acts=m.build(st,{view:'run',id:'gone'}).rows.find(r=>r.type==='acts').items.map(i=>i.action);
+  assert.deepEqual(acts,['stop|gone']);
+  assert(!m.build(s,{view:'home'}).rows.some(r=>r.label==='NO LONGER OFFERED'));
+});
 test('a card kind with only multi-card models renders instead of breaking the panel', () => {
   const v=m.build({...s,deployments:[],kinds:[{...s.kinds[0],models:[]}]},{view:'home'});
   assert(!v.rows.some(r=>r.type==='error'));

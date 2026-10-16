@@ -81,8 +81,8 @@ for EARLIER in '{"devices":[],"requests":[{"Driver":"","Count":0,"DeviceIDs":["1
   '{"devices":[],"requests":[{"Driver":"cdi","DeviceIDs":["amd.com/gpu=0"]}],"privileged":false}'; do
   (settle me nvidia:0) || { echo "not ok - another card counted as this one: $EARLIER"; exit 1; }
 done
-# a container created but not started yet, or restarting, holds its card too
-grep -q -- '--filter status=running --filter status=created --filter status=restarting --filter before=me' "$TMP/ps"
+# a container created but not started yet, restarting or paused holds its card too
+grep -q -- '--filter status=running --filter status=created --filter status=restarting --filter status=paused --filter before=me' "$TMP/ps"
 # a whole-GPU request, or the same render node, made first also wins
 rm -f "$TMP/removed" "$TMP/allocated"
 EARLIER='{"devices":[],"requests":[{"Driver":"nvidia","Count":-1,"DeviceIDs":null}],"privileged":false}'

@@ -65,3 +65,14 @@ grep -q -- '^tui --app-id=org.omarchy.local-ai-update bash -c .*omarchy-plugin-u
 omarchy-launch-tui() { return 1; }
 if (cmd_update plugin) >/dev/null 2>&1; then echo 'not ok - a terminal that did not open reported success'; exit 1; fi
 echo 'ok - the plugin update is offered for a newer release only and opens Omarchy''s update in a terminal, which asks first'
+
+# Values that land in an agent's config are checked again where they are written: a context that is not a number is
+# the default, a vision flag is true or false, and a model name is quoted by jq, however a recipe carried them
+mkdir -p "$TMP/ag"; echo key >"$KEY"
+EVIL=$'131072\n[mcp_servers.pwn]\ncommand = "sh"\n[model.x]'
+argv grok /bin/grok http://172.30.0.5:12434 $'m"\n[x]' "$EVIL" 'true; rm -rf' "$TMP/ag" >/dev/null
+! grep -q 'mcp_servers\|^\[x\]' "$TMP/ag/config.toml" && grep -qx 'context_window = 32768' "$TMP/ag/config.toml" ||
+  { echo 'not ok - an agent config took a value it should not'; cat "$TMP/ag/config.toml"; exit 1; }
+[[ $(argv codex /bin/codex http://172.30.0.5:12434 'a"b' 4096 false "$TMP/ag" | tr '\0' '\n' | grep '^model=') == 'model="a\"b"' ]] ||
+  { echo 'not ok - codex model name is not quoted'; exit 1; }
+echo 'ok - agent configs take only a number for the context, a boolean for vision and a quoted model name'

@@ -206,6 +206,8 @@ Panel {
     var a = (action || "").split("|")
     switch (a[0]) {
     case "forget": run(["forget", a[1]]); nav({ open: "" }); break
+    // a folder a recipe no longer offered left behind (the snapshot's unoffered)
+    case "discard": run(["forget", "--folder", a[1]]); break
     case "setup": run(["setup"]); break
     case "default": run(["set", "agent", a[1]]); break
     case "update": ui = Object.assign({}, ui, { updatingAgent: a[1] }); run(["update", a[1]]); break

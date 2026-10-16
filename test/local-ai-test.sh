@@ -826,6 +826,46 @@ tail -1 "$SHIM/curl.log" | grep -q -- "-H @/dev/fd/" || fail "card header" "$(ta
 rm -f "$HOME/.cache/huggingface/token"
 pass "the model card fetch reads the Hugging Face token from a pipe, never from curl's argv or a file"
 
+# A refreshed catalog that does not load, or that the panel cannot be drawn from (a needs field of the wrong type), is
+# set aside once, with a line in the log, and the shipped recipes answer: the panel never stops refreshing
+for bad in 'not json' "$(jq -c '.hardware[].recipes[].needs = {host_ram_gb: "64"}' "$TMP/plugin/recipes.json")"; do
+  rm -f "$TMP/catalog.json.bad"; printf '%s\n' "$bad" >"$TMP/catalog.json"; touch -d '1 minute ago' "$TMP/plugin/recipes.json"
+  "$CLI" snapshot >"$TMP/snap-bad.json" || fail "a bad catalog stopped the snapshot" "$(tail -2 "$STATE/log")"
+  jq -e --arg id "$ID" 'any(.kinds[].models[]; .id == $id)' "$TMP/snap-bad.json" >/dev/null && [[ -f $TMP/catalog.json.bad && ! -e $TMP/catalog.json ]] &&
+    grep -q 'the refreshed model list was set aside' "$STATE/log" || fail "a bad catalog was not set aside" "$(tail -2 "$STATE/log")"
+  "$CLI" snapshot >/dev/null
+done
+[[ $(grep -c 'the refreshed model list was set aside' "$STATE/log") == 2 ]] || fail "set aside logged more than once each"
+rm -f "$TMP/catalog.json.bad"
+pass "a refreshed catalog that cannot be read or drawn is set aside once, logged, and the shipped recipes answer"
+
+# An update that stops offering a recipe strands nothing: its running model still stops, a failed one is dismissed and
+# its download removed by what it recorded, and a folder no recipe here uses is listed on home and removed
+MODELS=$HOME/.cache/omarchy/local-ai/models
+gone=$STATE/deploy/gone-model
+mkdir -p "$gone" "$MODELS/old--gone@aaaaaaaaaaaa"; head -c 2048 /dev/zero >"$MODELS/old--gone@aaaaaaaaaaaa/w.bin"
+jq -nc --arg m "$MODELS/old--gone@aaaaaaaaaaaa" '{id: "gone-model", keys: ["nvidia:2"], port: 12440, managedPaths: [$m],
+  recipe: {id: "gone-model", name: "Gone", weights: [], launch: {port: 8000}}}' >"$gone/config.json"
+echo '{"state":"ready","pid":0}' >"$gone/status.json"
+"$CLI" snapshot >"$TMP/snap-gone2.json"
+jq -e '.deployments[] | select(.id == "gone-model") | .offered == false' "$TMP/snap-gone2.json" >/dev/null || fail "not offered" "$(jq -c .deployments "$TMP/snap-gone2.json")"
+"$CLI" forget gone-model 2>"$TMP/err" && fail "forgot a running model's download"
+grep -q 'stop gone-model before removing its download' "$TMP/err" || fail "forget a running unoffered model" "$(cat "$TMP/err")"
+echo '{"state":"error","error":"x","pid":0}' >"$gone/status.json"
+"$CLI" forget gone-model || fail "forget a failed unoffered model"
+[[ ! -e $MODELS/old--gone@aaaaaaaaaaaa ]] || fail "its download is still there"
+"$CLI" stop gone-model && [[ ! -d $gone ]] || fail "stop an unoffered model"
+mkdir -p "$MODELS/old--gone@bbbbbbbbbbbb"; head -c 2048 /dev/zero >"$MODELS/old--gone@bbbbbbbbbbbb/w.bin"
+"$CLI" snapshot >"$TMP/snap-gone3.json"
+[[ $(jq -c '.unoffered.folders' "$TMP/snap-gone3.json") == '[{"folder":"old--gone@bbbbbbbbbbbb","gb":0}]' ]] || fail "unoffered folders" "$(jq -c .unoffered "$TMP/snap-gone3.json")"
+used=$(ls "$MODELS" | grep -m1 '^test--model@') || fail "the running model's folder"
+"$CLI" forget --folder "$used" 2>"$TMP/err" && fail "removed a folder a recipe uses"
+grep -q 'is offered or in use' "$TMP/err" || fail "used folder" "$(cat "$TMP/err")"
+"$CLI" forget --folder ../x 2>/dev/null && fail "a path outside the models folder"
+"$CLI" forget --folder old--gone@bbbbbbbbbbbb && [[ ! -e $MODELS/old--gone@bbbbbbbbbbbb ]] || fail "forget --folder"
+[[ $(jq -c '.unoffered.folders' <("$CLI" snapshot)) == '[]' ]] || fail "removed folder still listed"
+pass "a recipe no longer offered strands nothing: Stop works, its download is removed, and leftover folders are listed and removed"
+
 "$CLI" stop "$ID"
 "$TMP/plugin/bin/omarchy-remove-ai-local"
 [[ ! -d $STATE && -z $(ls "$SHIM/containers") ]] || fail "remove" "$(ls "$SHIM/containers")"

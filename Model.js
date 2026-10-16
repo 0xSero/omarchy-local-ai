@@ -93,8 +93,10 @@ var SUPPORTED = "url|https://local.sybilsolutions.ai/hardware/"
 function stopped(s, ui) {
   return [].concat.apply([], (s.deployments || []).filter(function(d) { return d.state === "error" }).map(function(d) {
     var here = d.keys.every(function(k) { return find(s.gpus || [], "key", k) })
-    var row = { type: "slot", label: d.name, toggle: "pick|lost:" + d.id, open: ui.open === "lost:" + d.id, crashed: true, hint: "stopped",
-      run: here ? { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") } : null, dismiss: "stop|" + d.id }
+    // a recipe this version no longer offers cannot start again: dismiss only, and its download is listed below
+    var row = { type: "slot", label: d.name, toggle: "pick|lost:" + d.id, open: ui.open === "lost:" + d.id, crashed: true,
+      hint: d.offered === false ? "no longer offered" : "stopped",
+      run: here && d.offered !== false ? { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") } : null, dismiss: "stop|" + d.id }
     var rows = [row, { type: "error", label: d.error || "stopped" }]
     if (row.open) rows.push({ type: "links", note: "", items: [{ label: "View logs", action: "log" }, { label: "Details ›", action: "more|" + d.id }] })
     return rows
@@ -144,6 +146,7 @@ function homeView(s, ui) {
   // a model that stopped, to run again or dismiss
   rows = rows.concat(stopped(s, ui))
   rows = rows.concat(pinned(s, ui))
+  rows = rows.concat(unoffered(s))
   rows.push({ type: "sec", label: "THIS MACHINE" })
   rows.push({ type: "field", icon: "gpu", label: "hardware", value: String(s.gpus.length), action: "gpus" })
   if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
@@ -268,6 +271,22 @@ function pinned(s, ui) {
   var top = mine.length ? mine : all.filter(function(c) { return c.rec && c.fits })
   return [{ type: "sec", label: mine.length ? "YOUR MODELS" : "RECOMMENDED" }].concat(top.length ? table(top, ui.wide)
     : [{ type: "links", note: "Nothing fits this machine yet; the models tab says what each one needs.", items: [{ label: "Models ›", action: "models" }] }])
+}
+// What a recipe this version no longer offers left behind (an update withdrew it): each folder with its size and
+// Remove, and each download that will not finish with Remove, so an update never strands gigabytes
+function unoffered(s) {
+  var u = s.unoffered || {}, f = u.folders || [], d = u.downloads || [], rows = []
+  if (!f.length && !d.length) return rows
+  rows.push({ type: "sec", label: "NO LONGER OFFERED" })
+  f.forEach(function(x) {
+    rows.push({ type: "field", icon: "weights", label: x.folder, value: gb(x.gb) })
+    rows.push({ type: "links", items: [{ label: "Remove", action: "discard|" + x.folder }] })
+  })
+  d.forEach(function(x) {
+    rows.push({ type: "field", icon: "down", label: x.id, value: "download stopped" })
+    rows.push({ type: "links", items: [{ label: "Remove", action: "download|" + x.id + "|off" }] })
+  })
+  return rows
 }
 // the models tab: a search line (type anywhere), then the matches, or what you have downloaded, every other model
 // that fits, and those this machine is too small for; each row opens in place to start, download, remove or pin it
@@ -441,7 +460,9 @@ function page(s, ui, m) {
     : (m.downloaded ? "downloaded · ready to start" : "starts with a " + gb(m.sizeGb || 0) + " download") + (m.reported ? " · reported, not yet run by the lab" : "")
   v.rows.push(failed || m.unfit ? { type: "error", label: said } : { type: "links", note: said, items: [] })
   // one action, two when it runs: Open and Stop; none for a model this machine cannot run
-  if (!m.unfit || run) v.rows.push({ type: "acts", items: failed ? [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true }, { label: "Dismiss", action: "stop|" + run.id, danger: true }]
+  if (run && run.offered === false) v.rows.push({ type: "links", note: "no longer offered: once stopped, it cannot start again, and its download is listed on home to remove", items: [] })
+  if (!m.unfit || run) v.rows.push({ type: "acts", items: failed && run.offered === false ? [{ label: "Dismiss", action: "stop|" + run.id, danger: true }]
+    : failed ? [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true }, { label: "Dismiss", action: "stop|" + run.id, danger: true }]
     : run && run.state === "ready" ? [{ label: "Open " + agentName(run.agent) + " ›", action: "open|" + run.id, primary: true }, { label: "Stop", action: stop(run), danger: true }]
     : run ? [{ label: "Stop", action: stop(run), danger: true }]
     : [{ label: "Start ›", action: m.action || "", primary: true }] })
