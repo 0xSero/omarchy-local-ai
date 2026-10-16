@@ -1,6 +1,6 @@
 # Local AI for Omarchy
 
-Run a local model on your own GPU or CPU and open a coding agent on it. Local AI picks a model that was tested on your card (NVIDIA, Intel Arc Pro, AMD) or an x86-64 AVX2 CPU, downloads the weights from a pinned Hugging Face revision and checks them, and serves the model in Docker behind a keyed, OpenAI-compatible gateway on 127.0.0.1. From the bar you open pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it in a folder you choose, without editing their config. The panel has two tabs (home: your activity, what runs, your pinned models; models: every model this machine can run, to search, download, start and pin), a hardware page with each card's memory and temperature, a full-screen view with each model's Hugging Face card, keyboard navigation, and can share a running model on your tailnet.
+Run a local model on your own GPU or CPU and open a coding agent on it. Local AI picks a model that was tested on your card (NVIDIA, Intel Arc Pro, AMD) or an x86-64 AVX2 CPU, downloads the weights from a pinned Hugging Face revision and checks them, and serves the model in Docker behind a keyed, OpenAI-compatible gateway on a Docker network of its own on this machine. From the bar you open pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot or Hermes on it in a folder you choose, without editing their config. The panel has two tabs (home: your activity, what runs, your pinned models; models: every model this machine can run, to search, download, start and pin), a hardware page with each card's memory and temperature, a full-screen view with each model's Hugging Face card, keyboard navigation, and can share a running model on your tailnet.
 
 ![Local AI](preview.png)
 
@@ -23,7 +23,7 @@ Open Local AI in the bar and click **Set up Local AI**. A terminal opens and run
 - `omarchy-setup-security-sudoless-docker`, Omarchy's Sudoless Docker: it explains what that means, asks you to confirm, then asks "Password for *you* to turn on Sudoless Docker for Local AI". This login reaches Docker through the new group at once, so Local AI needs no logout or reboot (Omarchy may still suggest one at its next update).
 - NVIDIA only: `omarchy-pkg-add nvidia-container-toolkit`, asking "Password for *you* to install NVIDIA container support for Local AI"; already installed, it asks nothing. The package describes your GPUs to Docker in `/etc/cdi/nvidia.yaml`, which Docker reads when a model starts, so Docker's configuration is untouched and it is not restarted.
 
-If Local AI 6.0-6.4 was ever set up on this account, it left two polkit files that let any program on the account get root without a password. Local AI stops while they are there: the panel shows a red banner, and starting, sharing and setup refuse. Only root can delete them, so Local AI does not; [docs/legacy-polkit.md](docs/legacy-polkit.md) says what they are and gives the two commands to run in a terminal. The banner clears by itself once they are gone.
+If Local AI 6.0-6.4 was ever set up on this machine, by any account, it left two polkit files for that account that let its programs get root without a password. Local AI stops while any are there: the panel shows a red banner, and starting, sharing and setup refuse. Only root can delete them, so Local AI does not; [docs/legacy-polkit.md](docs/legacy-polkit.md) says what they are and gives the commands to run in a terminal. The banner clears by itself once they are gone.
 
 Setup ends by checking what the panel will show. Sharing a model on your tailnet needs you as Tailscale's operator; Omarchy's Tailscale install sets that, and setup tells you when it is not. After setup, starting, stopping, sharing, refreshing and removing never ask for a password. Sudoless Docker is root-equivalent, as Omarchy's own warning says; turn it off in Setup > Security.
 
@@ -41,8 +41,8 @@ and **85.14 GB disk**, has a 64K context window, and does not require NVMe.
 It supports images, not video. Its memory and private shared-memory limits are
 carried by the v3 catalog; the panel checks host RAM before starting it.
 Update to **6.13.4 or newer** to get this engine repository in the bundled
-catalog. Automatic catalog refreshes intentionally cannot introduce an engine
-image a plugin version has never shipped.
+catalog. Automatic catalog refreshes intentionally cannot add a recipe or change
+what one runs; those come with plugin updates.
 
 ## What it does
 
@@ -116,7 +116,7 @@ connections.
 ### What Local AI sends
 
 Nothing, until you allow it. Home asks once whether to share minimal, anonymous
-usage counts (**Allow** or **No thanks**; either answer is kept, and Settings
+usage counts (**No thanks** or **Allow**; either answer is kept, and Settings
 changes it later). An install from before this question is treated as not having
 answered: off until you allow it. Once allowed, to count how many machines use it,
 Local AI sends one small message each time it checks the registry for new models
@@ -150,16 +150,18 @@ refused message changes nothing.
 
 ### New models, downloads and removal
 
-New models arrive by themselves: once the catalog is 12 hours old, Local AI checks
-the latest published registry (at most once an hour) and says so only when it
-brought new models; the catalog lives in your cache (`~/.cache/omarchy/local-ai/v3`). Downloads are pinned to a registry commit,
-validated before an atomic replacement, and failures keep the previous catalog.
-A refresh brings new recipes, never new code: a recipe is kept only when the
-plugin's own `recipes.json` ships its exact engine image (digest included), and
-its entrypoint, config file and preparation step are absent or the same as a
-shipped recipe's on that image. A recipe whose entrypoint is a shell, or that
-hands a shell or an interpreter's inline code (`python -c`) a script, is left
-out. What is left out arrives with the next plugin update.
+New models, and any change to how a model runs, come with plugin updates, which
+the panel offers on home. Between updates, once the catalog is 12 hours old,
+Local AI checks the latest published registry (at most once an hour) and says so
+only when it changed the list; the catalog lives in your cache
+(`~/.cache/omarchy/local-ai/v4`). A refresh can only withdraw, reorder or relabel
+the recipes the plugin ships: a refreshed recipe is kept only when the plugin's
+own `recipes.json` has a recipe with its id, on the same card kind, whose image,
+launch (entrypoint, arguments, environment and the rest), weights, config file,
+scratch, preparation, card count, minimum driver and served name are exactly the
+same. Anything else is left out until a plugin update ships it. Downloads are
+pinned to a registry commit, validated before an atomic replacement, and failures
+keep the previous catalog. A catalog an earlier version refreshed is not read.
 Refreshing does not stop running models or download model weights. Offload
 recipes are offered only when their RAM, disk and storage requirements fit.
 

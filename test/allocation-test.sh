@@ -28,12 +28,14 @@ docker() {
     version) echo 29.0.0 ;;
     network) if [[ $2 == inspect ]]; then echo 'true false isolated'; fi ;;
     run) if [[ $* == *-engine* ]]; then sleep 1; echo "$1" >>"$TMP/starts"; touch "$TMP/allocated"; fi ;;
-    ps) [[ -z ${EARLIER:-} ]] || echo earlier ;;
+    ps) echo "$*" >>"$TMP/ps"; [[ -z ${EARLIER:-} ]] || echo earlier ;;
     inspect) if [[ ${@: -1} == earlier ]]; then echo "$EARLIER"; else echo "$MINE"; fi ;;
     rm) echo "${@: -1}" >>"$TMP/removed" ;;
   esac
 }
 rundir() { echo "$TMP/run/$1"; }
+# card 0 is GPU-a
+nvidia-smi() { [[ ${*: -1} == 0 ]] && echo GPU-a; }
 (phase_start first 12434 nvidia:0) >"$TMP/first" 2>&1 & first=$!
 (phase_start second 12435 nvidia:0) >"$TMP/second" 2>&1 & second=$!
 rc1=0; wait "$first" || rc1=$?
@@ -65,6 +67,22 @@ for EARLIER in '{"devices":[],"requests":[{"Driver":"cdi","DeviceIDs":["nvidia.c
   (phase_start fifth 12438 nvidia:0) >"$TMP/fifth" 2>&1 || { cat "$TMP/fifth"; exit 1; }
   [[ ! -f $TMP/removed ]]
 done
+# the same card named another way: by index through --gpus, by index as a CDI name; and an id it cannot place
+for EARLIER in '{"devices":[],"requests":[{"Driver":"","Count":0,"DeviceIDs":["0"],"Capabilities":[["gpu"]]}],"privileged":false}' \
+  '{"devices":[],"requests":[{"Driver":"cdi","DeviceIDs":["nvidia.com/gpu=0"]}],"privileged":false}' \
+  '{"devices":[],"requests":[{"Driver":"cdi","DeviceIDs":["nvidia.com/gpu=all"]}],"privileged":false}' \
+  '{"devices":[],"requests":[{"Driver":"nvidia","Count":0,"DeviceIDs":["MIG-1"],"Capabilities":[["gpu"]]}],"privileged":false}' \
+  '{"devices":[{"PathOnHost":"/dev/nvidia0"}],"requests":null,"privileged":false}'; do
+  if (settle me nvidia:0) >/dev/null 2>&1; then echo "not ok - the same card taken first another way was ignored: $EARLIER"; exit 1; fi
+done
+# another card named any of those ways is not this one
+for EARLIER in '{"devices":[],"requests":[{"Driver":"","Count":0,"DeviceIDs":["1"],"Capabilities":[["gpu"]]}],"privileged":false}' \
+  '{"devices":[],"requests":[{"Driver":"cdi","DeviceIDs":["nvidia.com/gpu=1"]}],"privileged":false}' \
+  '{"devices":[],"requests":[{"Driver":"cdi","DeviceIDs":["amd.com/gpu=0"]}],"privileged":false}'; do
+  (settle me nvidia:0) || { echo "not ok - another card counted as this one: $EARLIER"; exit 1; }
+done
+# a container created but not started yet, or restarting, holds its card too
+grep -q -- '--filter status=running --filter status=created --filter status=restarting --filter before=me' "$TMP/ps"
 # a whole-GPU request, or the same render node, made first also wins
 rm -f "$TMP/removed" "$TMP/allocated"
 EARLIER='{"devices":[],"requests":[{"Driver":"nvidia","Count":-1,"DeviceIDs":null}],"privileged":false}'

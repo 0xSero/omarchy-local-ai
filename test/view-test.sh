@@ -47,11 +47,11 @@ test('settings: home links to it; reporting switches off and on, says what it se
   const note=m.build({...s,reporting:'on'},{view:'settings'}).rows.find(r=>r.type==='links').note;
   for (const w of ['anonymous','no user or account ID','random number','never','IP address is not stored','nothing is sent']) assert(note.includes(w), w);
 });
-test('usage reporting is asked once, on home only: Allow or No thanks, and nothing once either is chosen', () => {
+test('usage reporting is asked once, on home only: No thanks (first) or Allow, and nothing once either is chosen', () => {
   const ask=(st,view)=>m.build({...s,reporting:st},{view}).rows.filter(r=>r.type==='links'&&(r.items||[]).some(i=>i.action==='set|ping|on'));
   const rows=ask('unset','home');
   assert.equal(rows.length,1);
-  assert.deepEqual(rows[0].items.map(i=>i.action),['set|ping|on','set|ping|off','settings']);
+  assert.deepEqual(rows[0].items.map(i=>i.action),['set|ping|off','set|ping|on','settings']);
   assert(/Nothing is sent unless you allow it/.test(rows[0].note));
   for (const st of ['on','off','env',undefined]) assert.equal(ask(st,'home').length,0,String(st));
   for (const view of ['agents','models','settings','gpus']) assert.equal(ask('unset',view).filter(r=>r.items.length>1).length,0,view);
@@ -76,7 +76,7 @@ test('a failed model shows its reason without expanding its GPU row', () => {
 });
 test('a shared model offers stop sharing', () => assert(m.build(s,{view:'run',id:'test',details:true}).rows
   .some(r=>(r.items||[]).some(a=>a.action==='share|test|off'))));
-test('no Refresh button anywhere: new models arrive by themselves', () => {
+test('no Refresh button anywhere: the model list is checked by itself', () => {
   for (const [st, view] of [[{gpus:[],kinds:[]},'home'],[s,'home'],[s,'models']])
     assert(!m.build(st,{view}).rows.some(r=>(r.items||[]).some(a=>a.action==='registry')));
 });
@@ -143,7 +143,7 @@ test('the catalog refreshes by itself; it says so only when it brought new model
   vm.createContext(ctx);
   const fn=qml.match(/function finished\([^]*?\n  \}/); vm.runInContext(fn[0],ctx);
   ctx.finished(0,'registry','models up to date · 12345678',''); assert(!ctx.ui.notice); assert.equal(ctx.autoBusy,false);
-  ctx.autoBusy=true; ctx.finished(0,'registry','models up to date · abcdef12',''); assert.equal(ctx.ui.notice,'new models from the registry');
+  ctx.autoBusy=true; ctx.finished(0,'registry','models up to date · abcdef12',''); assert.equal(ctx.ui.notice,'model list updated from the registry');
   ctx.ui={}; ctx.autoBusy=true; ctx.finished(1,'registry','','local-ai: could not check the registry'); assert(!ctx.ui.problem && !ctx.ui.notice);
 });
 test('a model page: name, one line of state, one action (Open and Stop when it runs), the rest under details', () => {

@@ -43,12 +43,18 @@ hf_curl() {
 cache=$HOME_DIR/.cache/huggingface/hub/models--owner--small/snapshots/$rev
 mkdir -p "$cache"; cp "$TMP/wrong" "$cache/config.json"
 SERVE='hello\n' fetch m "$item"
-[[ $(cat "$dest/config.json") == hello && -f $dest/.verified && $(wc -l <"$TMP/downloads") == 1 ]] || { echo 'not ok - a same-size cached file with other content was reused'; exit 1; }
+[[ $(cat "$dest/config.json") == hello && -f $dest/.verified2 && $(wc -l <"$TMP/downloads") == 1 ]] || { echo 'not ok - a same-size cached file with other content was reused'; exit 1; }
 rm -rf "$dest" "$TMP/downloads"; cp "$TMP/right" "$cache/config.json"
 SERVE='' fetch m "$item"
 [[ $(cat "$dest/config.json") == hello && ! -e $TMP/downloads ]] || { echo 'not ok - a matching cached file was not reused'; exit 1; }
 rm -rf "$dest"; cp "$TMP/wrong" "$cache/config.json"
 if (SERVE='jello\n' fetch m "$item") 2>"$TMP/err"; then echo 'not ok - a small file with other content was accepted'; exit 1; fi
-grep -q 'config.json does not match the pinned revision' "$TMP/err" && [[ ! -f $dest/.verified && ! -e $dest/config.json ]] ||
+grep -q 'config.json does not match the pinned revision' "$TMP/err" && [[ ! -f $dest/.verified2 && ! -e $dest/config.json ]] ||
   { echo 'not ok - the refused file'; cat "$TMP/err"; exit 1; }
-echo 'ok - small files are checked by their Git blob SHA-1, downloaded or reused from the Hugging Face cache'
+# a folder an earlier version marked checked (.verified, sizes only for small files) is checked again, once
+rm -rf "$dest" "$TMP/downloads"; mkdir -p "$dest"; cp "$TMP/wrong" "$dest/config.json"; : >"$dest/.verified"
+SERVE='hello\n' fetch m "$item"
+[[ $(cat "$dest/config.json") == hello && -f $dest/.verified2 && $(wc -l <"$TMP/downloads") == 1 ]] || { echo 'not ok - an old .verified folder was trusted'; exit 1; }
+SERVE='' fetch m "$item"
+[[ $(wc -l <"$TMP/downloads") == 1 ]] || { echo 'not ok - a .verified2 folder was checked again'; exit 1; }
+echo 'ok - small files are checked by their Git blob SHA-1, downloaded or reused from the Hugging Face cache; the mark of an earlier version is not trusted'

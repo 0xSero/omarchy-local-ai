@@ -52,22 +52,20 @@ nvidia_ready() {
   nvidia_devices <<<"${info%%|*}" || jq -e 'keys | any(test("nvidia"))' >/dev/null 2>&1 <<<"${info#*|}"
 }
 
-# legacy_polkit_files: the polkit action and rule Local AI 6.0-6.4 wrote for this account. The action ran the backend
-# in this account's own plugin checkout as root, and the rule let it run without a password, so anything running as
-# the account could become root through them. Only root can delete them, so Local AI never does: it stops, and
-# docs/legacy-polkit.md gives the two commands to run.
+# legacy_polkit_files: the polkit actions and rules Local AI 6.0-6.4 wrote, one pair for each account that set it up
+# (sero.local-ai.u<uid>). An action ran the backend in that account's own plugin checkout as root, and its rule let it
+# run without a password, so any program of that account could become root: a pair left by another account is root on
+# this machine all the same. Only root can delete them, so Local AI never does: it stops, and docs/legacy-polkit.md
+# gives the commands to run. The actions folder is readable by every account; rules.d usually is not, and then only
+# the actions are seen, which is enough: a rule without its action reaches nothing.
 legacy_polkit_files() {
-  printf '%s\n' "/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy" "/etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules"
+  compgen -G '/etc/polkit-1/actions/sero.local-ai.u*.policy' || true
+  compgen -G '/etc/polkit-1/rules.d/49-sero.local-ai.u*.rules' || true
 }
-# legacy_polkit: either file is there, as far as this account can see: rules.d is unreadable to most accounts, but the
-# action, which the rule needs to reach the backend at all, is not
-legacy_polkit() {
-  local f
-  while IFS= read -r f; do [[ -e $f ]] && return 0; done < <(legacy_polkit_files)
-  return 1
-}
+# legacy_polkit: any of them is there, as far as this account can see
+legacy_polkit() { [[ -n $(legacy_polkit_files) ]]; }
 LEGACY_POLKIT_DOC=https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md
-LEGACY_POLKIT_REASON="An earlier Local AI (6.0-6.4) left polkit files that let any program on this account get root without a password; remove them first: $LEGACY_POLKIT_DOC"
+LEGACY_POLKIT_REASON="An earlier Local AI (6.0-6.4) left polkit files that let programs on this machine get root without a password; remove them first: $LEGACY_POLKIT_DOC"
 
 # readiness_line <state> [message]
 readiness_line() { printf '%s\t%s\n' "$1" "${2:-}"; }

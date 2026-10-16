@@ -115,10 +115,10 @@ var LEGACY_POLKIT = "https://github.com/sybil-solutions/omarchy-local-ai/blob/ma
 function notReadyView(s, ui) {
   var r = s.readiness, t = READINESS[r.state] || { note: "Local AI is not ready. It checks again by itself." }
   var rows = [activity(s, ui), { type: "sec", label: "SETUP" }, { type: "links", note: t.note, items: [] }]
-  // polkit files 6.0-6.4 left give any program on the account root: a red banner, with no way to dismiss it, until
+  // polkit files 6.0-6.4 left give programs of the account that set it up root: a red banner, with no way to dismiss it, until
   // they are gone; its message carries the same page, so it is not repeated
   if (r.state === "legacy-polkit") rows.unshift({ type: "banner", alert: true, action: "url|" + LEGACY_POLKIT, actionLabel: "How to remove them",
-    text: "An earlier Local AI (6.0\u20136.4) left polkit files that let any program on this account get root without a password. Remove them before using Local AI." })
+    text: "An earlier Local AI (6.0\u20136.4) left polkit files that let programs on this machine get root without a password. Remove them before using Local AI." })
   else if (r.message) rows.push({ type: "links", note: r.message, items: [] })
   if (t.action) rows.push({ type: "acts", items: [{ label: "Set up Local AI", action: t.action, primary: true }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
@@ -277,7 +277,7 @@ function modelsTab(s, ui) {
   if (q) {
     var hit = all.filter(function(c) { return matches(c, q) }).sort(function(a, b) { return (b.fits - a.fits) || a.at - b.at })
     rows.push({ type: "sec", label: "MATCHES" })
-    return rows.concat(hit.length ? table(hit, ui.wide, ui) : [{ type: "links", note: "No model here matches \u201c" + ui.query.trim() + "\u201d. New ones arrive by themselves.", items: [] }])
+    return rows.concat(hit.length ? table(hit, ui.wide, ui) : [{ type: "links", note: "No model here matches \u201c" + ui.query.trim() + "\u201d. New ones arrive with Local AI updates.", items: [] }])
   }
   // the smartest first, by the Artificial Analysis Intelligence Index; models AA does not list after, in registry order
   var byAA = function(a, b) { return ((b.aa != null) - (a.aa != null)) || (b.aa || 0) - (a.aa || 0) || a.at - b.at }
@@ -415,7 +415,7 @@ function soonView(s, ui) {
   })
   if (!names.length) rows.push({ type: "field", icon: "gpu", label: "no supported GPU found", value: "" })
   if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
-  rows.push({ type: "links", note: "Local AI runs only models tested on your hardware. New ones arrive by themselves as they are tested.", items: [] })
+  rows.push({ type: "links", note: "Local AI runs only models tested on your hardware. New ones arrive with Local AI updates as they are tested.", items: [] })
   rows.push({ type: "acts", items: [{ label: "Supported hardware ›", action: SUPPORTED }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
 }
@@ -638,10 +638,11 @@ function settingsView(s, ui) {
 function build(s, ui) {
   s = s || {}
   var v = (ui.view === "settings" ? settingsView(s, ui) : ui.view === "folder" ? folderView(s, ui) : ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
-  // usage reporting is off until you choose: home asks once, and either answer is kept and ends the question
+  // usage reporting is off until you choose: home asks once, and either answer is kept and ends the question; No thanks
+  // comes first, so the first keyboard focus never turns it on
   if (s.reporting === "unset" && (!ui.view || ui.view === "home"))
     v.rows.unshift({ type: "links", note: "Share minimal, anonymous usage counts to help Local AI? Nothing is sent unless you allow it.",
-      items: [{ label: "Allow", action: "set|ping|on" }, { label: "No thanks", action: "set|ping|off" }, { label: "What is sent", action: "settings" }] })
+      items: [{ label: "No thanks", action: "set|ping|off" }, { label: "Allow", action: "set|ping|on" }, { label: "What is sent", action: "settings" }] })
   // a plugin release, on the home page: Omarchy's own update, in a terminal, shows what changes and asks
   if (s.pluginUpdate && (!ui.view || ui.view === "home"))
     v.rows.unshift({ type: "links", note: "A new version of Local AI is out.",

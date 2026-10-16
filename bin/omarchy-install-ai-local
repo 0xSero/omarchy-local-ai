@@ -23,7 +23,7 @@ finish() {
 mkdir -p "$STATE"
 exec 9>"$STATE/setup.lock"
 flock -n 9 || { echo "Local AI setup is already open."; exit 1; }
-# Polkit files Local AI 6.0-6.4 left let any program on this account become root (lib/access.sh). Only root can delete
+# Polkit files Local AI 6.0-6.4 left, for any account, let programs become root (lib/access.sh). Only root can delete
 # them, and Local AI does not: setup stops here, before it changes anything, and says where the two commands are.
 if legacy_polkit; then
   echo "$LEGACY_POLKIT_REASON"

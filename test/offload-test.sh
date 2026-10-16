@@ -36,7 +36,7 @@ timeout() { while [[ $1 == --* ]]; do shift; done; shift; "$@"; }
 mv() { [[ $1 != -T ]] || shift; command mv "$@"; }
 for w in $(jq -r '.weights[].repository|gsub("/";"--")' <<<"$R"); do
   case $w in test--raw) rev=bbbbbbbbbbbb ;; *) rev=cccccccccccc ;; esac
-  mkdir -p "$MODELS/$w@$rev"; echo input >"$MODELS/$w@$rev/checkpoint"; touch "$MODELS/$w@$rev/.verified"
+  mkdir -p "$MODELS/$w@$rev"; echo input >"$MODELS/$w@$rev/checkpoint"; touch "$MODELS/$w@$rev/.verified2"
 done
 docker() {
   jq -nc '$ARGS.positional' --args -- "$@" >>"$TMP/docker.jsonl"
@@ -87,7 +87,7 @@ R_CPU=$(jq '.prepare.gpu=false|.launch.environment.MODE="cpu"' <<<"$R")
 prepare_model test "$R_CPU" --gpus '"device=0"' --device /dev/dri/renderD128
 jq -se 'all(.[]|select(.[0]=="run"); index("--gpus")==null and index("--device")==null and index("NVIDIA_VISIBLE_DEVICES=void")!=null)' "$TMP/docker.jsonl" >/dev/null
 echo 'ok - CPU preparation and verification receive no GPU or device passthrough'
-H=$(jq -nc '{freeRamGb:500,diskFreeGb:1,disk:"nvme",got:{},have:["test--raw@bbbbbbbbbbbb/.verified","test--engram@cccccccccccc/.verified"],prepared:[]}')
+H=$(jq -nc '{freeRamGb:500,diskFreeGb:1,disk:"nvme",got:{},have:["test--raw@bbbbbbbbbbbb/.verified2","test--engram@cccccccccccc/.verified2"],prepared:[]}')
 [[ $(jq -r --argjson h "$H" "$NEEDS unfit(\$h)" <<<"$R") == *'117 GB free disk'* ]]
 H=$(jq --argjson c "$(prepared_contract "$R")" '.prepared=[$c]' <<<"$H")
 [[ $(jq -r --argjson h "$H" "$NEEDS unfit(\$h)" <<<"$R") == "" ]]

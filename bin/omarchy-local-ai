@@ -22,7 +22,10 @@ exec </dev/null
 
 TARGET=$(readlink -f -- "${BASH_SOURCE[0]}")
 PANEL=${TARGET%/bin/*}
-CATALOG=$HOME/.cache/omarchy/local-ai/v3/recipes.json
+# The refreshed catalog's folder is the version of the refresh filter that wrote it (cmd_registry): v4 holds only
+# shipped recipes, unchanged in what they run. A catalog an earlier version refreshed (v3) passed weaker checks and is
+# never read.
+CATALOG=$HOME/.cache/omarchy/local-ai/v4/recipes.json
 RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
@@ -195,23 +198,23 @@ cmd_registry() (
   jq -e '.schemaVersion == "omarchy-local-ai/recipes/3" and (.hardware | type == "object" and length > 0)
     and all(.hardware[]; (.recipes | type == "array" and length > 0))
     and all(.hardware[].recipes[]; .id | test("^[a-z0-9][a-z0-9.-]{0,63}$"))' "$tmp" >/dev/null || die "invalid registry catalog"
-  # A refresh brings new recipes, never new code. Both checks are against this plugin version's own recipes.json, the
-  # file that was reviewed, never an earlier refresh: the gateway must be the one it ships, and a recipe is kept only
-  # when it ships that exact engine image (repository and digest), with the same entrypoint, config asset and
-  # preparation as a recipe it ships on that image, or none. A recipe that hands a shell, or an interpreter's inline
-  # code (python -c), a script of its own is left out too. What is left out waits for a plugin update.
+  # A refresh can only withdraw, reorder or relabel the recipes this plugin version ships; a new recipe, or any change to
+  # what one runs, comes with a plugin release. Both checks are against the plugin's own recipes.json, the reviewed
+  # file, never an earlier refresh: the gateway must be the one it ships, and a refreshed recipe is kept only when a
+  # shipped recipe has its id, under the same card kind, and the same image, launch (entrypoint, arguments,
+  # environment, port, shm, resources), weights (repository, revision, files, layout, mount path, folder), asset,
+  # scratch, preparation, card count, minimum driver and served name (the gateway's), compared as JSON values. Its name, family, format, sizes,
+  # capabilities, serving notes and scores may change. Each card kind keeps the match the plugin ships. Anything else
+  # is left out, not fatal.
   jq -e --slurpfile own "$PANEL/recipes.json" '.gateway.image == $own[0].gateway.image' "$tmp" >/dev/null ||
     die "the registry changed the gateway; update the plugin to get it"
-  r=$(jq --slurpfile own "$PANEL/recipes.json" 'def code: {image, entrypoint: .launch.entrypoint, asset, prepare};
-    [$own[0].hardware[].recipes[] | code] as $shipped
-    | def reviewed: code as $c | any($shipped[]; .image == $c.image)
-        and all("entrypoint", "asset", "prepare"; . as $f | $c[$f] == null or any($shipped[]; .image == $c.image and .[$f] == $c[$f]));
-      # the entrypoint and first argument (what a wrapper entrypoint runs): a shell, or an interpreter with inline code
-      def script: ([.launch.entrypoint // empty] + (.launch.arguments // [])) as $a
-        | any(range(0; [2, ($a | length)] | min); ($a[.] | tostring | sub(".*/"; "")) as $p
-          | ($p | test("^(sh|bash|dash|zsh|ksh|mksh|ash|fish|csh|tcsh|busybox|env)$"))
-            or (($p | test("^(python|perl|node|ruby|lua|php)[0-9.]*$")) and ($a[. + 1] // "" | tostring | test("^-[A-Za-z]*[ce]$"))));
-      .hardware |= (map_values(.recipes |= map(select(reviewed and (script | not))))
+  r=$(jq --slurpfile own "$PANEL/recipes.json" '
+    def runs: {image, launch, weights: [.weights[]? | {repository, revision, files, layout, mountPath, dir}], asset,
+      scratch, prepare, cards, minDriver, servedName};
+    $own[0].hardware as $shipped
+    | .hardware |= (with_entries(select($shipped[.key] != null) | .key as $h
+        | .value = {match: $shipped[$h].match, recipes: [.value.recipes[]? | select(type == "object") | . as $r
+            | select(any($shipped[$h].recipes[]; .id == $r.id and runs == ($r | runs)))]})
       | with_entries(select(.value.recipes | length > 0)))' "$tmp") || die "invalid registry catalog"
   printf '%s\n' "$r" >"$tmp"
   while IFS= read -r r; do
@@ -411,14 +414,14 @@ host() {
   # every drive under the filesystem: nvme when each is a non-rotational NVMe drive, else what the first one is
   [[ $src == /dev/* ]] && disk=$(lsblk -snro TYPE,ROTA,TRAN -- "$src" 2>/dev/null | awk '$1 == "disk" {n++; if ($2 == "0" && $3 == "nvme") v++
     else if (k == "") k = ($2 == "0" ? "ssd" : "hdd")} END {print n && v == n ? "nvme" : k}')
-  for d in "$MODELS"/*/.verified "$MODELS"/*/*/.verified; do have+=("${d#"$MODELS"/}"); done
+  for d in "$MODELS"/*/.verified2 "$MODELS"/*/*/.verified2; do have+=("${d#"$MODELS"/}"); done
   for d in "$MODELS"/*/ "$MODELS"/*/*/; do got+=("${d#"$MODELS"/}" "$(du -sb -- "$d" 2>/dev/null | cut -f1)"); done
   prepared=$(jq -s 'map(select(type == "object"))' "$MODELS"/prepared/*/.complete.json 2>/dev/null) || prepared='[]'
   jq -nc --argjson r "${ram:-0}" --argjson f "${free:-0}" --argjson a "${avail:-0}" --arg d "$disk" --argjson prepared "$prepared" \
     --argjson cpus "$(nproc 2>/dev/null || echo 0)" --arg cpuName "$(awk -F': *' '/^model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null)" \
     'def gb: . * 10 | floor / 10; {ramGb: ($r * 1024 / 1e9 | gb), freeRamGb: ($f * 1024 / 1e9 | gb), diskFreeGb: ($a / 1e9 | gb), disk: $d, cpus: $cpus, cpuName: $cpuName,
-      prepared: $prepared, have: [$ARGS.positional[] | select(endswith("/.verified"))],
-      got: ([$ARGS.positional[] | select(endswith("/.verified") | not)] | [range(0; length; 2) as $i | {(.[$i] | rtrimstr("/")): (.[$i + 1] | tonumber? // 0)}] | add // {})}' \
+      prepared: $prepared, have: [$ARGS.positional[] | select(endswith("/.verified2"))],
+      got: ([$ARGS.positional[] | select(endswith("/.verified2") | not)] | [range(0; length; 2) as $i | {(.[$i] | rtrimstr("/")): (.[$i + 1] | tonumber? // 0)}] | add // {})}' \
     --args ${have[@]+"${have[@]}"} ${got[@]+"${got[@]}"}
 }
 
@@ -432,7 +435,7 @@ NEEDS="$PREP_CONTRACT"'def unfit($h): (.needs // {}) as $n | prepared_contract a
   | ([$w[] | $h.got[.] // 0] | add // 0 | . / 1e9) as $got
   | (.prepare.sizeGb // 0) as $pack
   | (if .prepare == null or (($h.prepared // []) | index($contract)) != null then 0 else $pack end) as $missingPack
-  | ((if ($w | length) > 0 and all($w[]; . as $x | $h.have | index($x + "/.verified") != null) then 0
+  | ((if ($w | length) > 0 and all($w[]; . as $x | $h.have | index($x + "/.verified2") != null) then 0
       else [0, ($n.disk_gb // 0) - $got - $pack] | max end) + $missingPack) as $missingDisk
   | [if ($n.host_ram_gb // 0) > $h.freeRamGb then "needs \($n.host_ram_gb | gb) GB RAM, you have \($h.freeRamGb | floor)" else empty end,
      if $missingDisk > $h.diskFreeGb then "needs \($missingDisk | gb) GB free disk, you have \($h.diskFreeGb | floor)" else empty end,
@@ -486,11 +489,13 @@ good() {
   fi
 }
 
-# fetch <id> <weights-item>: adopt a matching copy from the Hugging Face cache, else download; check every file
+# fetch <id> <weights-item>: adopt a matching copy from the Hugging Face cache, else download; check every file.
+# .verified2 marks a folder checked against every file's hash; an earlier version's .verified checked small files by
+# size only, so such a folder is checked again once (a file that matches stays, nothing is downloaded twice).
 fetch() {
   local id=$1 repo rev files layout d rows total done=0 path sz sha src pid have
   IFS='|' read -r repo rev files layout _ _ d < <(wpaths "$2")
-  [[ ! -f $d/.verified ]] || return 0
+  [[ ! -f $d/.verified2 ]] || return 0
   # one download per weights folder: a second model on the same weights (the same model on another card) waits for
   # the first, then finds them checked; two curls appending to one .part corrupt it
   (umask 022 && mkdir -p "$(dirname "${d%/}")")
@@ -500,7 +505,7 @@ fetch() {
     [[ ! -f $(dir_of "$id")/cancel ]] || exit 0
     sleep 2
   done
-  [[ ! -f $d/.verified ]] || { exec 7>&-; return 0; }
+  [[ ! -f $d/.verified2 ]] || { exec 7>&-; return 0; }
   rows=$(tree "$repo" "$rev" "$files") || die "Hugging Face did not list $repo (rate limit or no network): try again in a minute"
   [[ -n $rows ]] || die "Hugging Face listed no model files; refresh models and try again"
   total=$(awk -F'\t' '{s += $2} END {print s + 0}' <<<"$rows")
@@ -541,7 +546,7 @@ fetch() {
   if [[ $layout == "hub" ]]; then
     (umask 022 && mkdir -p "$d/../../refs" && echo -n "$rev" >"$d/../../refs/main")
   fi
-  (umask 022 && : >"$d/.verified")
+  (umask 022 && : >"$d/.verified2")
   exec 7>&-
 }
 
@@ -581,6 +586,11 @@ private_net() {
     --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" "$(private "$1")" >/dev/null 2>&1 || true
   [[ $(docker network inspect -f '{{.Internal}} {{.EnableIPv6}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}}' "$(private "$1")" 2>/dev/null) == "true false isolated" ]]
 }
+# ipv6_open <id>: the model's private network has IPv6 on. private_net never makes one, but an engine 6.17 or 6.18
+# started on a daemon with IPv6 on by default keeps that network, and so an IPv6 route around the gateway, until the
+# model is started again; the panel says so and nothing shares it meanwhile
+ipv6_open() { [[ $(docker network inspect -f '{{.EnableIPv6}}' "$(private "$1")" 2>/dev/null) == true ]]; }
+IPV6_OPEN="its engine network has IPv6 on, which reaches the engine without the key: run it again to rebuild that network"
 gateway() { printf '%s-gateway' "$(network "$1")"; }
 # gw_addr <id>: the gateway's URL on the model's own Docker network. Only Docker assigns addresses on that bridge and
 # no host interface holds them, so another account can never listen there: every keyed request this plugin makes,
@@ -754,23 +764,36 @@ allocation_lock() {
   flock -w 30 8 || die "another model is starting; try again"
 }
 
-# settle <container> <card>...: the container just started on these cards keeps them only if no running container
-# created before it claims one of them (the same render node, the same NVIDIA device id or CDI name, or every NVIDIA
-# card); otherwise it is removed and the start ends. Two accounts that take a card at the same moment both read that
-# order from Docker, so exactly one start goes on.
+# settle <container> <card>...: the container just started on these cards keeps them only if no container created
+# before it, running or still starting, claims one of them: the same render node or /dev/nvidia<n>, the same NVIDIA
+# card by index or UUID (as --gpus or as a CDI name), every NVIDIA card, or an NVIDIA id it cannot place (a MIG
+# device, say), which counts as every card, as gpus() counts it. Otherwise this one is removed and the start ends.
+# Two accounts that take a card at the same moment both read that order from Docker, so exactly one start goes on.
 settle() {
-  local c=$1 ids mine v f='{"devices":{{json .HostConfig.Devices}},"requests":{{json .HostConfig.DeviceRequests}},"privileged":{{json .HostConfig.Privileged}}}'
+  local c=$1 k u ids mine v cards=() f='{"devices":{{json .HostConfig.Devices}},"requests":{{json .HostConfig.DeviceRequests}},"privileged":{{json .HostConfig.Privileged}}}'
   shift
-  ids=$(docker ps -q --filter status=running --filter "before=$c") || die "could not check Docker GPU allocations; try again"
+  for k in "$@"; do
+    [[ $k == nvidia:* ]] || continue
+    cards+=("${k#*:}" "nvidia.com/gpu=${k#*:}" "/dev/nvidia${k#*:}")
+    u=$(nvidia-smi --query-gpu=uuid --format=csv,noheader -i "${k#*:}" 2>/dev/null) && [[ $u == GPU-* ]] && cards+=("$u" "nvidia.com/gpu=$u")
+  done
+  ids=$(docker ps -q --filter status=running --filter status=created --filter status=restarting --filter "before=$c") ||
+    die "could not check Docker GPU allocations; try again"
   [[ -n $ids ]] || return 0
   mine=$(docker inspect --format "$f" "$c") || die "could not check Docker GPU allocations; try again"
   # shellcheck disable=SC2086
-  v=$(docker inspect --format "$f" $ids | jq -rs --argjson m "$mine" '
-    [$m.devices[]?.PathOnHost | select(startswith("/dev/dri/"))] as $paths | [$m.requests[]?.DeviceIDs[]?] as $ids
-    | ($m.requests // [] | length > 0) as $gpu
-    | ($paths | length > 0 or $gpu) and any(.[]; .privileged == true
-        or any(.devices[]?; .PathOnHost as $p | any($paths[]; . == $p or startswith($p + "/")))
-        or ($gpu and any(.requests[]?; (.DeviceIDs // [] | length) == 0 or any(.DeviceIDs[]; . as $i | $ids | index($i) != null))))') ||
+  v=$(docker inspect --format "$f" $ids | jq -rs --argjson m "$mine" --args '
+    [$m.devices[]?.PathOnHost | select(startswith("/dev/dri/"))] as $paths | $ARGS.positional as $cards
+    | ($cards | length > 0) as $nv
+    | def placed: test("^([0-9]+|GPU-[0-9A-Fa-f-]+)$");
+      def nvidia_id: if startswith("nvidia.com/") then (ltrimstr("nvidia.com/gpu=") | placed) else placed end;
+    ($paths | length > 0 or $nv) and any(.[]; .privileged == true
+      or any(.devices[]?; .PathOnHost as $p | any($paths[]; . == $p or startswith($p + "/")) or ($cards | index($p) != null))
+      or ($nv and any(.requests[]?;
+        if .Driver == "cdi" then any(.DeviceIDs[]?; startswith("nvidia.com/") and (. as $i | ($cards | index($i) != null) or (nvidia_id | not)))
+        elif .Driver == "nvidia" or any(.Capabilities[]?[]?; . == "gpu") then
+          (.DeviceIDs // [] | length) == 0 or any(.DeviceIDs[]; . as $i | ($cards | index($i) != null) or (nvidia_id | not))
+        else false end)))' "${cards[@]}") ||
     die "could not check Docker GPU allocations; try again"
   [[ $v == true ]] || return 0
   docker rm -f "$c" >/dev/null 2>&1 || true
@@ -1560,6 +1583,7 @@ cmd_share() {
   if [[ $on == on ]]; then
     # nothing is shared while any program of this account can become root through 6.0-6.4's polkit files (lib/access.sh)
     ! legacy_polkit || die "$LEGACY_POLKIT_REASON"
+    ! ipv6_open "$1" || die "$IPV6_OPEN"
     t=$(gw_addr "$1") || die "the model's gateway is not running; start the model again"
   fi
   if ! serve "$p" "$on" "$t"; then
@@ -1712,7 +1736,7 @@ adopt() {
 
 # what the widget needs of a recipe
 SUMMARY='def downloaded($h): [.weights[]? | if .layout == "hub" then "" else "\(.repository | gsub("/"; "--"))@\(.revision[:12])\(if (.dir // "") != "" then "/" + .dir else "" end)" end] as $w
-  | ($w | length) > 0 and all($w[]; . as $x | $x != "" and ($h.have | index($x + "/.verified")) != null);
+  | ($w | length) > 0 and all($w[]; . as $x | $x != "" and ($h.have | index($x + "/.verified2")) != null);
 def summary($h): {id, name, family, cards: (.cards // 1), format, engine, sizeGb, ctx: .serving.ctxTokens, caps: .capabilities, reported: (.reported // false), aa,
   needs, weights: [.weights[]? | {repository, revision}], unfit: unfit($h), downloaded: downloaded($h)};'
 
@@ -1766,6 +1790,7 @@ cmd_snapshot() {
       if ((rc == 7 || rc == 52)) || [[ $code == "502" || $code == "503" ]]; then why="the engine stopped"; fi
       # where you send the key yourself (the model's page copies it): the gateway's bridge address, as for the agents
       [[ $rstate != ready ]] || gw=$(gw_addr "$id") || gw=""
+      if [[ $rstate == ready && -z $why ]] && ipv6_open "$id"; then why=$IPV6_OPEN; fi
       ;;
     esac
     deps+=("{\"d\":$obj,\"u\":$(session "$id" "$(date -d "$at" +%s)"),\"why\":\"$why\",\"gw\":\"$gw\"}")
@@ -1825,7 +1850,8 @@ remove)
   phase_purge
   # everything else goes even when one folder cannot: Docker creates a missing mount source as root
   left=()
-  for p in "$MODELS" "${CATALOG%/*}" "$STATE"; do rm -rf -- "$p" 2>/dev/null || left+=("$p"); done
+  # the catalog an earlier version refreshed (v3) goes too
+  for p in "$MODELS" "${CATALOG%/*}" "${CATALOG%/*/*}/v3" "$STATE"; do rm -rf -- "$p" 2>/dev/null || left+=("$p"); done
   ((${#left[@]} == 0)) || die "everything else was removed; these hold files Docker created as root, delete them as root: ${left[*]}"
   ;;
 __worker) worker_run "${@:2}" ;;

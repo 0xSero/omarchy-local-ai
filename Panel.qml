@@ -260,8 +260,8 @@ Panel {
     outdatedAt = Date.now()
     run(["outdated"])
   }
-  // New models arrive by themselves: the catalog is checked against the registry when it is 12 hours old, at most
-  // once an hour; a failed check says nothing and keeps the models there are
+  // The model list is checked against the registry when it is 12 hours old, at most once an hour (a refresh can withdraw
+  // or relabel shipped models; new ones come with a plugin update); a failed check says nothing and keeps the models
   property real autoAt: 0
   property bool autoBusy: false
   function autoRefresh(s) {
@@ -285,10 +285,10 @@ Panel {
       return next()
     }
     if (operation === "registry") {
-      // said only when it brought new models
+      // said only when the registry changed the list
       var was = ((snap.catalog || {}).commit || "").slice(0, 8)
       autoBusy = false
-      if (code === 0 && was && output.indexOf(was) < 0) ui = Object.assign({}, ui, { notice: "new models from the registry" })
+      if (code === 0 && was && output.indexOf(was) < 0) ui = Object.assign({}, ui, { notice: "model list updated from the registry" })
       return next()
     }
     ui = Object.assign({}, ui, { updatingAgent: operation === "update" ? "" : ui.updatingAgent || "" })

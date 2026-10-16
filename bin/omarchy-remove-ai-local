@@ -10,6 +10,6 @@ HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
 
 echo "Removing Local AI's models, containers, engine images and weights..."
 "$HERE/omarchy-local-ai" remove
-# polkit files Local AI 6.0-6.4 left give any program on this account root; only root can delete them
+# polkit files Local AI 6.0-6.4 left, for any account, give programs root; only root can delete them
 ! legacy_polkit || echo "$LEGACY_POLKIT_REASON"
 echo "Done. Sudoless Docker stays on; turn it off in Setup > Security. To remove the plugin itself: omarchy plugin remove sero.local-ai"

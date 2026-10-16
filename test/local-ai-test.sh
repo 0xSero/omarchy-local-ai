@@ -18,7 +18,7 @@ cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null || true
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v4/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
 : >"$OMARCHY_DOCKER_SOCKET"
@@ -83,7 +83,8 @@ info)
 image) exit 1 ;;
 pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 version) echo "${SHIM_DOCKER_VERSION:-29.0.0}" ;;
-network) if [[ $2 == inspect ]]; then echo "${SHIM_NETWORK:-true false isolated}"; fi ;;
+network) if [[ $2 == inspect && $4 == "{{.EnableIPv6}}" ]]; then echo "${SHIM_IPV6:-false}"
+  elif [[ $2 == inspect ]]; then echo "${SHIM_NETWORK:-true false isolated}"; fi ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; if [[ $* == *IPAddress* ]]; then echo 172.30.0.5; elif [[ $* == *RestartCount* ]]; then echo 0; else cat "$c/$n"; fi ;;
 logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || { printf "loading shards\n(EngineCore pid=5) ERROR [core.py:1330] EngineCore failed to start.\n(EngineCore pid=5) ERROR [core.py:1330] ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization\n"
@@ -424,6 +425,12 @@ pass "a gateway that answers without the key would be refused"
 # the key goes only to the gateway's address on the model's Docker network, never to 127.0.0.1:<port>, which another
 # account could take over once the gateway exits; the snapshot poll uses the keyless /health
 "$CLI" snapshot >"$TMP/snap-gw.json"
+# an engine an earlier version started on a network with IPv6 on: the snapshot says to run it again, and it is not shared
+[[ $(SHIM_IPV6=true "$CLI" snapshot | jq -r '.deployments[0] | "\(.state) \(.error)"') == "error its engine network has IPv6 on, which reaches the engine without the key: run it again to rebuild that network" ]] ||
+  fail "IPv6 on an old engine network" "$(SHIM_IPV6=true "$CLI" snapshot | jq -c .deployments)"
+SHIM_IPV6=true "$CLI" share "$(jq -r '.deployments[0].id' "$TMP/snap-gw.json")" 2>"$TMP/err" && fail "shared over an IPv6 network"
+grep -q 'IPv6 on' "$TMP/err" || fail "IPv6 share refusal" "$(cat "$TMP/err")"
+pass "a running model whose engine network has IPv6 on is flagged to run again, and not shared"
 grep -q "127.0.0.1:12434/health" "$SHIM/curl.log" || fail "health poll" "$(tail -3 "$SHIM/curl.log")"
 # and the address the model's page copies for your own clients is that one too
 [[ $(jq -r '.deployments[0].address' "$TMP/snap-gw.json") == "http://172.30.0.5:12434" ]] || fail "address for clients" "$(jq -c .deployments "$TMP/snap-gw.json")"
@@ -757,7 +764,7 @@ mkdir -p "${fresh%/*}" "$TMP/fresh/lib"
 cp "$ROOT/bin/omarchy-local-ai" "$fresh"
 cp "$ROOT/lib/access.sh" "$TMP/fresh/lib/"
 cp "$TMP/plugin/recipes.json" "$TMP/plugin/manifest.json" "$TMP/fresh/"
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v4/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
 [[ $(SHIM_NOGROUP=1 "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup"
 [[ $(SHIM_NOGROUP=1 OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup, socket out of reach"
 [[ $("$fresh" snapshot | jq -r .readiness.state) == ready ]] || fail "setup after setup"
