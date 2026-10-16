@@ -107,12 +107,19 @@ var READINESS = {
   "needs-setup": { note: "Once per machine: Docker access for your account (Omarchy's Sudoless Docker) and, on NVIDIA, the container toolkit. A terminal opens; Omarchy asks for your password.",
     action: "setup" },
   "docker-down": { note: "Docker is not ready. Local AI checks again by itself." },
-  unsupported: { note: "This Omarchy is too old for Local AI. It checks again by itself once Omarchy is updated." }
+  unsupported: { note: "This Omarchy is too old for Local AI. It checks again by itself once Omarchy is updated." },
+  // only root can delete them, so the page that says how is the way out; the banner above says why
+  "legacy-polkit": { note: "Nothing starts until those files are gone. Local AI checks again by itself, and this clears once they are." }
 }
+var LEGACY_POLKIT = "https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md"
 function notReadyView(s, ui) {
   var r = s.readiness, t = READINESS[r.state] || { note: "Local AI is not ready. It checks again by itself." }
   var rows = [activity(s, ui), { type: "sec", label: "SETUP" }, { type: "links", note: t.note, items: [] }]
-  if (r.message) rows.push({ type: "links", note: r.message, items: [] })
+  // polkit files 6.0-6.4 left give any program on the account root: a red banner, with no way to dismiss it, until
+  // they are gone; its message carries the same page, so it is not repeated
+  if (r.state === "legacy-polkit") rows.unshift({ type: "banner", alert: true, action: "url|" + LEGACY_POLKIT, actionLabel: "How to remove them",
+    text: "An earlier Local AI (6.0\u20136.4) left polkit files that let any program on this account get root without a password. Remove them before using Local AI." })
+  else if (r.message) rows.push({ type: "links", note: r.message, items: [] })
   if (t.action) rows.push({ type: "acts", items: [{ label: "Set up Local AI", action: t.action, primary: true }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
 }

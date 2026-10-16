@@ -1,7 +1,6 @@
 #!/bin/bash
 # Setup, with the Omarchy helpers shimmed: Omarchy's Sudoless Docker, then on NVIDIA the container toolkit, each run
-# with a password prompt that names it. Local AI itself runs nothing as root, but for removing the polkit files 6.0-6.4
-# left, with sudo and a prompt that names it: the sudo shim logs every call and runs only that rm.
+# with a password prompt that names it. Local AI itself runs nothing as root: a sudo shim fails the test if called.
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TMP=$(mktemp -d)
@@ -13,9 +12,7 @@ export HOME=$TMP/home SETUP_TEST=$TMP
 # the earlier polkit files live in a test folder
 sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|g" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|g" "$TMP/plugin/lib/access.sh"
 shim() { printf '#!/bin/bash\n%s\n' "$2" >"$1"; chmod +x "$1"; }
-# NO_SUDO: the password is not given
-shim "$TMP/bin/sudo" 'echo "sudo $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"; [[ -z ${NO_SUDO:-} ]] || exit 1
-[[ $1 == rm ]] && exec "$@"; exit 0'
+shim "$TMP/bin/sudo" 'echo "sudo $*" >>"$SETUP_TEST/calls"; exit 1'
 shim "$TMP/bin/omarchy-hw-nvidia" '[[ ${NVIDIA:-1} == 1 ]]'
 shim "$TMP/bin/omarchy-pkg-add" 'echo "pkg $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"; [[ ${FAIL_INSTALL:-0} == 0 ]]'
 shim "$TMP/bin/omarchy-pkg-drop" 'echo "drop $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"'
@@ -74,18 +71,17 @@ FAIL_PREFS=1 setup
 if grep -q 'operator' "$TMP/out"; then exit 1; fi
 echo 'ok - setup names the Tailscale operator step and never changes the operator'
 
-policy=$TMP/etc/sero.local-ai.u$(id -u).policy rules=$TMP/etc/49-sero.local-ai.u$(id -u).rules
-touch "$policy" "$rules"
-if NO_SUDO=1 setup; then exit 1; fi
-[[ -e $policy && -s $error ]] && ! grep -q 'Local AI is ready' "$TMP/out"
+# polkit files 6.0-6.4 left: setup changes nothing, leaves no panel error behind, and says why and where the commands are
+for f in "sero.local-ai.u$(id -u).policy" "49-sero.local-ai.u$(id -u).rules"; do
+  touch "$TMP/etc/$f"
+  if setup; then exit 1; fi
+  [[ ! -s $TMP/calls && ! -e $error && -e $TMP/etc/$f ]]
+  grep -q 'let any program on this account get root without a password; remove them first: https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md' "$TMP/out"
+  rm "$TMP/etc/$f"
+done
 setup
-grep -qxF "sudo rm -f -- $policy $rules | Password for %u to remove the polkit files an earlier Local AI left: " "$TMP/calls"
-grep -q '^sudo systemctl reload polkit | ' "$TMP/calls"
-[[ ! -e $policy && ! -e $rules && ! -e $error ]] && grep -q 'Local AI is ready' "$TMP/out"
-touch "$policy"
-setup
-[[ ! -e $policy ]]
-echo 'ok - polkit files 6.0-6.4 left are removed with sudo, its prompt naming why, and polkit reloaded; declined, setup fails'
+grep -q 'Local AI is ready' "$TMP/out"
+echo 'ok - setup refuses before changing anything while polkit files 6.0-6.4 left are there, and names the page that removes them'
 
 # a stale NVIDIA device list (a card taken out): the toolkit is reinstalled with Omarchy's commands, whose hook writes it
 STALE="/dev/nvidia1 is gone" setup
@@ -95,12 +91,9 @@ grep -q 'drop nvidia-container-toolkit | Password for %u to reinstall NVIDIA con
 setup; ! grep -q '^drop' "$TMP/calls"
 echo 'ok - a stale NVIDIA device list is written again by reinstalling the toolkit with Omarchy commands, and only then'
 if grep -q '^sudo' "$TMP/calls"; then exit 1; fi
-# the only sudo in Local AI's code (comments aside) is that removal
-if grep -vE '^\s*#' "$ROOT/bin/omarchy-install-ai-local" | grep -qE '(^|[^-])\bsudo\b|systemctl|pkexec'; then exit 1; fi
-code() { grep -vE '^\s*#' "$@" | grep -cE '(^|[^-])\bsudo\b' || true; }
-[[ $(code "$ROOT/bin/omarchy-local-ai") == 0 && $(code "$ROOT/lib/access.sh") == 2 &&
-  $(sed -n '/^remove_legacy_polkit() {/,/^}/p' "$ROOT/lib/access.sh" | code) == 2 ]]
-echo 'ok - with no polkit files left, setup runs nothing as root'
+# no file the marketplace scans names sudo, systemctl or pkexec: the commands for the polkit files are in docs/ only
+if grep -rlE '(^|[^-])\bsudo\b|systemctl|pkexec' "$ROOT/bin" "$ROOT/lib" "$ROOT/README.md" "$ROOT"/*.qml "$ROOT"/*.js; then exit 1; fi
+echo 'ok - setup itself runs nothing as root, and no scanned file names a root command'
 
 node - "$ROOT/Model.js" <<'JS'
 const fs = require('fs'), vm = require('vm'), assert = require('assert');

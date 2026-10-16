@@ -60,14 +60,22 @@ check 'a set up machine is ready' ready --
 
 check 'Sudoless Docker off needs setup' needs-setup -- NOT_IN_GROUP=1
 
-# polkit files a 6.0-6.4 setup left give root without a password: setup until they are gone, whatever else is true
-POLKIT_MSG='An earlier Local AI left polkit files that give root without a password: set up Local AI to remove them'
+# polkit files a 6.0-6.4 setup left give any program on the account root: their own state, whatever else is true,
+# until they are gone; the reason points at the page with the commands, since only root can delete them
+POLKIT_MSG='An earlier Local AI (6.0-6.4) left polkit files that let any program on this account get root without a password; remove them first: https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md'
 for f in "sero.local-ai.u$(id -u).policy" "49-sero.local-ai.u$(id -u).rules"; do
   touch "$TMP/etc/$f"
-  check "a leftover $f needs setup" needs-setup "$POLKIT_MSG" --
-  check "and that wins over a Docker that is down" needs-setup "$POLKIT_MSG" -- DOCKER_DOWN=1
+  check "a leftover $f is legacy-polkit" legacy-polkit "$POLKIT_MSG" --
+  check "and that wins over a Docker that is down" legacy-polkit "$POLKIT_MSG" -- DOCKER_DOWN=1
+  check "and over setup not done" legacy-polkit "$POLKIT_MSG" -- NOT_IN_GROUP=1
+  [[ $("$CLI" run no-such-recipe nvidia:0 2>&1 >/dev/null) == "local-ai: $POLKIT_MSG" ]] || fail "a start refuses while $f is there"
   rm "$TMP/etc/$f"
 done
+check 'once they are gone it clears by itself' ready --
+[[ -f $ROOT/docs/legacy-polkit.md ]] || fail 'the page the reason points at'
+grep -qF 'sudo rm -f /etc/polkit-1/actions/sero.local-ai.u$(id -u).policy /etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules && sudo systemctl reload polkit' "$ROOT/docs/legacy-polkit.md" ||
+  fail 'the page gives the commands'
+pass 'a start refuses while they are there, and the page it names has the commands' 
 touch "$TMP/etc/sero.local-ai.u$((UID + 1)).policy"
 check "another account's leftover files are not this account's setup" ready --
 rm "$TMP/etc/sero.local-ai.u$((UID + 1)).policy"
@@ -145,5 +153,13 @@ for (const state of states) {
   assert(buttons.includes('setup') || /again by itself/.test(notes), `${state} is a dead end`);
   assert(!/log out/i.test(notes), `${state} asks for a new login`);
 }
+// polkit files 6.0-6.4 left: a red banner on top that links the page with the commands, and no way to dismiss it
+const v = c.module.exports.build({gpus: [], kinds: [], readiness: {state: 'legacy-polkit', message: 'm'}}, {view: 'home'});
+const b = v.rows[0];
+assert(b.type === 'banner' && b.alert && /left polkit files that let any program on this account get root/.test(b.text), JSON.stringify(b));
+assert.equal(b.action, 'url|https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md');
+assert(!v.rows.some(r => (r.items || []).some(i => i.action === 'setup')), 'setup is offered');
+assert(!JSON.stringify(v.rows).includes('dismiss'));
+console.log('ok - legacy polkit files: a red banner linking how to remove them, no setup button, nothing to dismiss');
 console.log('ok - every readiness state offers Set up Local AI or says it clears by itself');
 JS

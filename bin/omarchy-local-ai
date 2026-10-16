@@ -1558,6 +1558,8 @@ cmd_share() {
   [[ $on == off || $(jq -r .state "${f%/*}/status.json") == ready ]] || die "the model is not ready to share"
   p=$(jq -r .port "$f")
   if [[ $on == on ]]; then
+    # nothing is shared while any program of this account can become root through 6.0-6.4's polkit files (lib/access.sh)
+    ! legacy_polkit || die "$LEGACY_POLKIT_REASON"
     t=$(gw_addr "$1") || die "the model's gateway is not running; start the model again"
   fi
   if ! serve "$p" "$on" "$t"; then

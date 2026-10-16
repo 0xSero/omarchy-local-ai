@@ -18,11 +18,12 @@ Then open Local AI in the bar and click **Set up Local AI** (once per machine; O
 omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable
 ```
 
-Open Local AI in the bar and click **Set up Local AI**. A terminal opens and runs two of Omarchy's own commands; Local AI itself runs nothing as root without asking, and adding or updating the plugin never runs setup.
+Open Local AI in the bar and click **Set up Local AI**. A terminal opens and runs two of Omarchy's own commands; Local AI itself runs nothing as root, and adding or updating the plugin never runs setup.
 
 - `omarchy-setup-security-sudoless-docker`, Omarchy's Sudoless Docker: it explains what that means, asks you to confirm, then asks "Password for *you* to turn on Sudoless Docker for Local AI". This login reaches Docker through the new group at once, so Local AI needs no logout or reboot (Omarchy may still suggest one at its next update).
 - NVIDIA only: `omarchy-pkg-add nvidia-container-toolkit`, asking "Password for *you* to install NVIDIA container support for Local AI"; already installed, it asks nothing. The package describes your GPUs to Docker in `/etc/cdi/nvidia.yaml`, which Docker reads when a model starts, so Docker's configuration is untouched and it is not restarted.
-- Only if Local AI 6.0-6.4 was set up on this account: `sudo rm` of the polkit files it wrote (`/etc/polkit-1/actions/sero.local-ai.u<uid>.policy` and `/etc/polkit-1/rules.d/49-sero.local-ai.u<uid>.rules`), asking "Password for *you* to remove the polkit files an earlier Local AI left", then `sudo systemctl reload polkit`. Those files let anything running as you start the backend in your own plugin folder as root without a password, so the panel asks for setup until they are gone. Remove deletes them the same way.
+
+If Local AI 6.0-6.4 was ever set up on this account, it left two polkit files that let any program on the account get root without a password. Local AI stops while they are there: the panel shows a red banner, and starting, sharing and setup refuse. Only root can delete them, so Local AI does not; [docs/legacy-polkit.md](docs/legacy-polkit.md) says what they are and gives the two commands to run in a terminal. The banner clears by itself once they are gone.
 
 Setup ends by checking what the panel will show. Sharing a model on your tailnet needs you as Tailscale's operator; Omarchy's Tailscale install sets that, and setup tells you when it is not. After setup, starting, stopping, sharing, refreshing and removing never ask for a password. Sudoless Docker is root-equivalent, as Omarchy's own warning says; turn it off in Setup > Security.
 

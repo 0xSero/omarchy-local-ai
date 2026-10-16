@@ -6,10 +6,11 @@
 #
 # readiness prints "<state><TAB><message>"; the state is one of READINESS_STATES:
 #   ready        a model can start
-#   needs-setup  the account or the NVIDIA runtime needs setup, or polkit files Local AI 6.0-6.4 left are still there;
-#                the panel offers Set up Local AI
+#   needs-setup  the account or the NVIDIA runtime needs setup; the panel offers Set up Local AI
 #   docker-down  set up, but Docker does not answer; it clears when Docker does, and the panel keeps checking
 #   unsupported  this Omarchy has no Sudoless Docker helper; it clears when Omarchy is updated
+#   legacy-polkit  polkit files Local AI 6.0-6.4 wrote are still there; the panel links docs/legacy-polkit.md, which
+#                says how to remove them, and it clears once they are gone
 #
 # A login carries the groups it began with, so one that began before setup has the docker group only in /etc/group.
 # docker_group_reexec runs the program again under `newgrp docker`: no root, no password, and the socket never needs a
@@ -17,7 +18,7 @@
 
 # the test that every state has a panel page reads this list
 # shellcheck disable=SC2034
-READINESS_STATES=(ready needs-setup docker-down unsupported)
+READINESS_STATES=(ready needs-setup docker-down unsupported legacy-polkit)
 
 docker_socket() { printf '%s' "${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock}"; }
 
@@ -53,7 +54,8 @@ nvidia_ready() {
 
 # legacy_polkit_files: the polkit action and rule Local AI 6.0-6.4 wrote for this account. The action ran the backend
 # in this account's own plugin checkout as root, and the rule let it run without a password, so anything running as
-# the account could become root through them. Only root can delete them: setup and remove do, with sudo.
+# the account could become root through them. Only root can delete them, so Local AI never does: it stops, and
+# docs/legacy-polkit.md gives the two commands to run.
 legacy_polkit_files() {
   printf '%s\n' "/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy" "/etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules"
 }
@@ -64,16 +66,8 @@ legacy_polkit() {
   while IFS= read -r f; do [[ -e $f ]] && return 0; done < <(legacy_polkit_files)
   return 1
 }
-# remove_legacy_polkit: delete them as 6.5-6.7 did, with sudo and a prompt that says what it is for, and have polkit
-# read its rules again. Nothing happens, and nothing asks, when there are none.
-remove_legacy_polkit() {
-  local files
-  legacy_polkit || return 0
-  mapfile -t files < <(legacy_polkit_files)
-  echo "An earlier Local AI (6.0-6.4) left polkit files that let anything running as you start its backend as root without a password. Removing them."
-  SUDO_PROMPT="Password for %u to remove the polkit files an earlier Local AI left: " sudo rm -f -- "${files[@]}"
-  SUDO_PROMPT="Password for %u to reload polkit after removing them: " sudo systemctl reload polkit 2>/dev/null || true
-}
+LEGACY_POLKIT_DOC=https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md
+LEGACY_POLKIT_REASON="An earlier Local AI (6.0-6.4) left polkit files that let any program on this account get root without a password; remove them first: $LEGACY_POLKIT_DOC"
 
 # readiness_line <state> [message]
 readiness_line() { printf '%s\t%s\n' "$1" "${2:-}"; }
@@ -82,7 +76,8 @@ readiness() {
   local sock info
   sock=$(docker_socket)
   command -v omarchy-setup-security-sudoless-docker >/dev/null || { readiness_line unsupported "This Omarchy has no Sudoless Docker; update Omarchy"; return; }
-  ! legacy_polkit || { readiness_line needs-setup "An earlier Local AI left polkit files that give root without a password: set up Local AI to remove them"; return; }
+  # before anything else: nothing starts on a machine where any program of this account can become root
+  ! legacy_polkit || { readiness_line legacy-polkit "$LEGACY_POLKIT_REASON"; return; }
   docker_access_configured || { readiness_line needs-setup; return; }
   # a setup that did not finish is not done until it does; the panel shows its error beside the button
   [[ ! -s ${STATE:-/nonexistent}/setup-error ]] || { readiness_line needs-setup; return; }
@@ -110,6 +105,7 @@ require_ready() {
   case $state in
   ready) ;;
   needs-setup) die "Local AI is not set up yet: choose Set up Local AI" ;;
+  legacy-polkit) die "$LEGACY_POLKIT_REASON" ;;
   *) die "${msg:-Docker is not ready}" ;;
   esac
 }
