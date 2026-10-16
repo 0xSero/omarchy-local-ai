@@ -4,6 +4,28 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.18.0] - 2026-10-16
+
+### Security
+- Every engine image the plugin offers is now built by our attested image workflow, or published by its upstream project. Each of ours carries a GitHub build attestation that binds its digest to a source commit and a build; check one with `gh attestation verify oci://<image>@<digest> --owner sybil-solutions` (or `--owner 0xSero` for the older namespace). Fifteen recipes ran on three images without that provenance: a hand-built SGLang EXL3 image (13 recipes on the RTX 3090 Ti, 4090, 5070, 5070 Ti, 5090 and RTX PRO 6000), the 4×3090 Qwen3.8-27B image and a contributor's CMP 170HX vLLM image. They are left out until they are lab-proven on attested rebuilds. Every affected card except the CMP 170HX keeps other recipes, and the attested SGLang rebuild already exists (registry #287). Reported by HANCORE-linux (omacom/omarchy-plugin-marketplace#11207).
+
+### Added
+- Qwen3.8-Flash-Next on every RTX 30-series card we could test, with its routed experts offloaded to system RAM. Each recipe passed all six lab gates, at 25 tok/s decode or more and 500 tok/s prefill or more:
+
+  | Card | Quant | Context | Decode tok/s |
+  |---|---|---|---|
+  | RTX 3060 Ti 8 GB | 2.05 bpw | 64K | 25.4 |
+  | RTX 3070 8 GB | 2.05 bpw | 64K | 34.9 |
+  | RTX 3080 10 GB | 2.05 bpw | 128K | 35.1 |
+  | RTX 3080 Ti 12 GB | 3.05 bpw | 128K | 33.2 |
+  | RTX 3090 | 3.05 bpw | 256K | 45.5 |
+  | RTX 3090 Ti | 3.05 bpw | 256K | 43.3 |
+
+  They need 48 GB or more of RAM and an NVMe drive, and the panel offers them only on machines that have both. They run on a new attested image, `ghcr.io/sybil-solutions/sglang-exl3-flashnext` (registry #286). Recipes are at registry `1b978129`.
+
+### Fixed
+- An NVIDIA GPU that shares the host's memory (DGX Spark's GB10, the RTX Spark N1X) no longer breaks the panel. nvidia-smi prints `[N/A]` for its memory, which the snapshot could not read, so the panel showed nothing at all. Such a card is now unified: it shows the host's memory and matches its card kind by host RAM, like a unified-memory APU. A unified card's allowance for firmware and kernel reservations is a tenth of its stated memory, at least 8 GiB, since a 128 GiB GB10 or RTX Spark has 119.5 GiB MemTotal and fell 500 MiB short of the flat 8 GiB.
+
 ## [6.17.0] - 2026-10-15
 
 ### Security
