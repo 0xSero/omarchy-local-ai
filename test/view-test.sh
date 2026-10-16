@@ -40,11 +40,33 @@ test('settings: home links to it; reporting switches off and on, says what it se
   assert(m.build({...s,deployments:[]},{view:'home'}).rows.some(r=>r.action==='settings'));
   const row=(st)=>m.build({...s,reporting:st},{view:'settings'}).rows.find(r=>r.label==='send usage reports');
   assert.equal(row('on').value,'on'); assert.equal(row('on').action,'set|ping|off');
-  assert.equal(row(undefined).action,'set|ping|off');
+  // never chosen, or an older backend that does not say: off until turned on
+  for (const st of ['unset',undefined]) { assert.equal(row(st).value,'off'); assert.equal(row(st).action,'set|ping|on'); }
   assert.equal(row('off').value,'off'); assert.equal(row('off').action,'set|ping|on');
   assert(!row('env').action && /DO_NOT_TRACK/.test(row('env').value));
   const note=m.build({...s,reporting:'on'},{view:'settings'}).rows.find(r=>r.type==='links').note;
   for (const w of ['anonymous','no user or account ID','random number','never','IP address is not stored','nothing is sent']) assert(note.includes(w), w);
+});
+test('usage reporting is asked once, on home only: No thanks (first) or Allow, and nothing once either is chosen', () => {
+  const ask=(st,view)=>m.build({...s,reporting:st},{view}).rows.filter(r=>r.type==='links'&&(r.items||[]).some(i=>i.action==='set|ping|on'));
+  const rows=ask('unset','home');
+  assert.equal(rows.length,1);
+  assert.deepEqual(rows[0].items.map(i=>i.action),['set|ping|off','set|ping|on','settings']);
+  assert(/Nothing is sent unless you allow it/.test(rows[0].note));
+  for (const st of ['on','off','env',undefined]) assert.equal(ask(st,'home').length,0,String(st));
+  for (const view of ['agents','models','settings','gpus']) assert.equal(ask('unset',view).filter(r=>r.items.length>1).length,0,view);
+});
+test('a recipe no longer offered: no Run again, Dismiss only; its leftovers on home with Remove', () => {
+  const gone={...s.deployments[0],id:'gone',name:'Gone',state:'error',error:'x',offered:false};
+  const st={...s,deployments:[gone],unoffered:{folders:[{folder:'old--gone@aaaaaaaaaaaa',gb:42}],downloads:[{id:'gone2',state:'error'}]}};
+  const home=m.build(st,{view:'home'}).rows;
+  const slot=home.find(r=>r.type==='slot'&&r.label==='Gone'); assert(slot&&!slot.run&&slot.dismiss==='stop|gone'&&slot.hint==='no longer offered');
+  assert(home.some(r=>r.type==='sec'&&r.label==='NO LONGER OFFERED'));
+  assert(home.some(r=>(r.items||[]).some(i=>i.action==='discard|old--gone@aaaaaaaaaaaa')));
+  assert(home.some(r=>(r.items||[]).some(i=>i.action==='download|gone2|off')));
+  const acts=m.build(st,{view:'run',id:'gone'}).rows.find(r=>r.type==='acts').items.map(i=>i.action);
+  assert.deepEqual(acts,['stop|gone']);
+  assert(!m.build(s,{view:'home'}).rows.some(r=>r.label==='NO LONGER OFFERED'));
 });
 test('a card kind with only multi-card models renders instead of breaking the panel', () => {
   const v=m.build({...s,deployments:[],kinds:[{...s.kinds[0],models:[]}]},{view:'home'});
@@ -66,7 +88,7 @@ test('a failed model shows its reason without expanding its GPU row', () => {
 });
 test('a shared model offers stop sharing', () => assert(m.build(s,{view:'run',id:'test',details:true}).rows
   .some(r=>(r.items||[]).some(a=>a.action==='share|test|off'))));
-test('no Refresh button anywhere: new models arrive by themselves', () => {
+test('no Refresh button anywhere: the model list is checked by itself', () => {
   for (const [st, view] of [[{gpus:[],kinds:[]},'home'],[s,'home'],[s,'models']])
     assert(!m.build(st,{view}).rows.some(r=>(r.items||[]).some(a=>a.action==='registry')));
 });
@@ -133,7 +155,7 @@ test('the catalog refreshes by itself; it says so only when it brought new model
   vm.createContext(ctx);
   const fn=qml.match(/function finished\([^]*?\n  \}/); vm.runInContext(fn[0],ctx);
   ctx.finished(0,'registry','models up to date · 12345678',''); assert(!ctx.ui.notice); assert.equal(ctx.autoBusy,false);
-  ctx.autoBusy=true; ctx.finished(0,'registry','models up to date · abcdef12',''); assert.equal(ctx.ui.notice,'new models from the registry');
+  ctx.autoBusy=true; ctx.finished(0,'registry','models up to date · abcdef12',''); assert.equal(ctx.ui.notice,'model list updated from the registry');
   ctx.ui={}; ctx.autoBusy=true; ctx.finished(1,'registry','','local-ai: could not check the registry'); assert(!ctx.ui.problem && !ctx.ui.notice);
 });
 test('a model page: name, one line of state, one action (Open and Stop when it runs), the rest under details', () => {

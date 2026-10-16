@@ -16,7 +16,7 @@ cp "$ROOT/bin/omarchy-local-ai" "$TMP/plugin/bin/"
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/manifest.json" "$TMP/plugin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v4/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
 : >"$OMARCHY_DOCKER_SOCKET"
@@ -74,6 +74,8 @@ recipes
 # omarchy's own layout: btrfs on LUKS (/dev/mapper/root) on a partition of an NVMe drive
 NVME_CRYPT='crypt 0 |part 0 nvme|disk 0 nvme'
 host 256 500 "$NVME_CRYPT"
+# this user has answered home's one question about usage reports, so home below is the page that follows it
+"$CLI" set ping off
 "$CLI" snapshot >"$TMP/snap.json"
 # cpus is this machine's own thread count
 [[ $(jq -c '.host | del(.cpus, .cpuName)' "$TMP/snap.json") == '{"ramGb":512,"freeRamGb":256,"diskFreeGb":500,"disk":"nvme","prepared":[]}' ]] &&
@@ -111,7 +113,7 @@ pass "run refuses it with the same reason, before claiming a card"
 host 256 54 "$NVME_CRYPT"
 "$CLI" snapshot >"$TMP/snap.json"
 [[ $(unfit big) == "needs 120 GB free disk, you have 54" ]] || fail "disk short" "$(unfit big)"
-mkdir -p "$MODELS/test--big@000000000000/big" && : >"$MODELS/test--big@000000000000/big/.verified"
+mkdir -p "$MODELS/test--big@000000000000/big" && : >"$MODELS/test--big@000000000000/big/.verified2"
 "$CLI" snapshot >"$TMP/snap.json"
 [[ -z $(unfit big) ]] || fail "downloaded weights" "$(unfit big)"
 rm -rf "$MODELS"

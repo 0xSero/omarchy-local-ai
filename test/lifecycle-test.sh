@@ -6,8 +6,6 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 sed '/^paths "\$HOME"$/,$d' "${BACKEND:-$ROOT/bin/omarchy-local-ai}" >"$TMP/functions"
 source "$TMP/functions"
-ALLOCATION_LOCK=$TMP/docker.pid
-: >"$ALLOCATION_LOCK"
 paths "$TMP/home"
 mkdir -p "$STATE/deploy/test"
 echo '{}' >"$STATE/deploy/test/config.json"
@@ -72,7 +70,7 @@ docker() {
   case $1 in
     version) echo "${DOCKER_VERSION:-29.0.0}" ;;
     inspect) if [[ ${@: -1} == *-engine && ! -f $TMP/moved ]]; then echo "$(network test) "; else echo "bridge "; fi ;;
-    network) if [[ $2 == inspect ]]; then echo 'true isolated'; elif [[ $2 == disconnect ]]; then touch "$TMP/moved"; fi ;;
+    network) if [[ $2 == inspect ]]; then echo 'true false isolated'; elif [[ $2 == disconnect ]]; then touch "$TMP/moved"; fi ;;
   esac
 }
 rm -f "$STATE/deploy/test/private"
@@ -87,7 +85,7 @@ rm "$STATE/deploy/test/private-failed"
 privatize
 n=$(network test)
 diff <(grep -E '^network (create|connect|disconnect)' "$TMP/privatize.log") - <<LOG
-network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.uid=$(id -u) $n-private
+network create --internal --ipv6=false -o com.docker.network.bridge.gateway_mode_ipv4=isolated --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.uid=$(id -u) $n-private
 network connect --alias engine $n-private $n-engine
 network connect $n-private $n-gateway
 network disconnect $n $n-engine

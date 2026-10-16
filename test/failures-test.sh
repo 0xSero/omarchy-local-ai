@@ -68,7 +68,7 @@ echo '{"id":"test","port":12434}' >"$STATE/deploy/test/config.json"
 tree() { :; }
 w='{"repository":"test/model","revision":"0000000000000000000000000000000000000000","layout":"dir","mountPath":"/models"}'
 check 'empty Hub listing is not a verified model' 1 fetch test "$w"
-[[ ! -e $MODELS/test--model@000000000000/.verified ]] || { echo 'not ok - empty download marked verified'; failed=$((failed + 1)); }
+[[ ! -e $MODELS/test--model@000000000000/.verified2 ]] || { echo 'not ok - empty download marked verified'; failed=$((failed + 1)); }
 rm -f "$STATE/deploy/test/cancel"
 # A failure without die() (disk/jq/launcher failures) still needs a useful visible reason.
 recipe() { echo '{"name":"Test","weights":[{}]}'; }

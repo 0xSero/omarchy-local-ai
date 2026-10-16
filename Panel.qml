@@ -206,6 +206,8 @@ Panel {
     var a = (action || "").split("|")
     switch (a[0]) {
     case "forget": run(["forget", a[1]]); nav({ open: "" }); break
+    // a folder a recipe no longer offered left behind (the snapshot's unoffered)
+    case "discard": run(["forget", "--folder", a[1]]); break
     case "setup": run(["setup"]); break
     case "default": run(["set", "agent", a[1]]); break
     case "update": ui = Object.assign({}, ui, { updatingAgent: a[1] }); run(["update", a[1]]); break
@@ -260,8 +262,8 @@ Panel {
     outdatedAt = Date.now()
     run(["outdated"])
   }
-  // New models arrive by themselves: the catalog is checked against the registry when it is 12 hours old, at most
-  // once an hour; a failed check says nothing and keeps the models there are
+  // The model list is checked against the registry when it is 12 hours old, at most once an hour (a refresh can withdraw
+  // or relabel shipped models; new ones come with a plugin update); a failed check says nothing and keeps the models
   property real autoAt: 0
   property bool autoBusy: false
   function autoRefresh(s) {
@@ -285,10 +287,10 @@ Panel {
       return next()
     }
     if (operation === "registry") {
-      // said only when it brought new models
+      // said only when the registry changed the list
       var was = ((snap.catalog || {}).commit || "").slice(0, 8)
       autoBusy = false
-      if (code === 0 && was && output.indexOf(was) < 0) ui = Object.assign({}, ui, { notice: "new models from the registry" })
+      if (code === 0 && was && output.indexOf(was) < 0) ui = Object.assign({}, ui, { notice: "model list updated from the registry" })
       return next()
     }
     ui = Object.assign({}, ui, { updatingAgent: operation === "update" ? "" : ui.updatingAgent || "" })
