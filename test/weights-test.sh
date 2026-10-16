@@ -57,4 +57,9 @@ SERVE='hello\n' fetch m "$item"
 [[ $(cat "$dest/config.json") == hello && -f $dest/.verified2 && $(wc -l <"$TMP/downloads") == 1 ]] || { echo 'not ok - an old .verified folder was trusted'; exit 1; }
 SERVE='' fetch m "$item"
 [[ $(wc -l <"$TMP/downloads") == 1 ]] || { echo 'not ok - a .verified2 folder was checked again'; exit 1; }
+# weights in a dir of their folder lock the whole folder, <repo>@<rev>.lock beside it, which Remove of a folder checks
+printf 'config.json\t6\t%s\n' "$blob" >"$STATE/trees/owner--dirs@$rev.tsv"
+SERVE='hello\n' fetch m "$(jq -nc --arg rev "$rev" '{repository: "owner/dirs", revision: $rev, layout: "dir", mountPath: "/models", dir: "sub", files: ""}')"
+[[ -f $MODELS/owner--dirs@${rev:0:12}.lock && ! -e $MODELS/owner--dirs@${rev:0:12}/sub.lock && -f $MODELS/owner--dirs@${rev:0:12}/sub/.verified2 ]] ||
+  { echo 'not ok - a dir download locked its dir, not its folder'; ls -la "$MODELS" "$MODELS/owner--dirs@${rev:0:12}"; exit 1; }
 echo 'ok - small files are checked by their Git blob SHA-1, downloaded or reused from the Hugging Face cache; the mark of an earlier version is not trusted'

@@ -98,7 +98,7 @@ rm) if [[ ${@: -1} == *-engine ]]; then
       fi
     fi
     rm -f "$c/${@: -1}" ;;
-ps) ls "$c" ;;
+ps) [[ -z ${SHIM_PS_FAIL:-} ]] || exit 1; ls "$c" ;;
 esac'
 shim curl '
 url="" out="" key=""
@@ -827,17 +827,23 @@ rm -f "$HOME/.cache/huggingface/token"
 pass "the model card fetch reads the Hugging Face token from a pipe, never from curl's argv or a file"
 
 # A refreshed catalog that does not load, or that the panel cannot be drawn from (a needs field of the wrong type), is
-# set aside once, with a line in the log, and the shipped recipes answer: the panel never stops refreshing
+# not used for that snapshot: the shipped recipes answer, the log says why once per reason, and the catalog stays for
+# the next refresh to replace; the panel never stops refreshing
 for bad in 'not json' "$(jq -c '.hardware[].recipes[].needs = {host_ram_gb: "64"}' "$TMP/plugin/recipes.json")"; do
-  rm -f "$TMP/catalog.json.bad"; printf '%s\n' "$bad" >"$TMP/catalog.json"; touch -d '1 minute ago' "$TMP/plugin/recipes.json"
+  printf '%s\n' "$bad" >"$TMP/catalog.json"; touch -d '1 minute ago' "$TMP/plugin/recipes.json"
   "$CLI" snapshot >"$TMP/snap-bad.json" || fail "a bad catalog stopped the snapshot" "$(tail -2 "$STATE/log")"
-  jq -e --arg id "$ID" 'any(.kinds[].models[]; .id == $id)' "$TMP/snap-bad.json" >/dev/null && [[ -f $TMP/catalog.json.bad && ! -e $TMP/catalog.json ]] &&
-    grep -q 'the refreshed model list was set aside' "$STATE/log" || fail "a bad catalog was not set aside" "$(tail -2 "$STATE/log")"
   "$CLI" snapshot >/dev/null
+  jq -e --arg id "$ID" 'any(.kinds[].models[]; .id == $id)' "$TMP/snap-bad.json" >/dev/null && [[ -f $TMP/catalog.json && ! -e $TMP/catalog.json.bad ]] ||
+    fail "a bad catalog" "$(tail -2 "$STATE/log")"
 done
-[[ $(grep -c 'the refreshed model list was set aside' "$STATE/log") == 2 ]] || fail "set aside logged more than once each"
-rm -f "$TMP/catalog.json.bad"
-pass "a refreshed catalog that cannot be read or drawn is set aside once, logged, and the shipped recipes answer"
+[[ $(grep -c 'the refreshed model list is not used' "$STATE/log") == 2 ]] || fail "logged once per reason" "$(grep 'not used' "$STATE/log")"
+# a good catalog and a Docker that fails: the snapshot fails as it always has, and the catalog is not touched
+jq -c . "$TMP/plugin/recipes.json" >"$TMP/catalog.json"
+SHIM_PS_FAIL=1 "$CLI" snapshot >/dev/null 2>&1 && fail "a snapshot without Docker's GPU allocations"
+[[ -f $TMP/catalog.json && ! -e $TMP/catalog.json.bad && $(grep -c 'the refreshed model list is not used' "$STATE/log") == 2 ]] ||
+  fail "a failing docker ps touched a good catalog"
+rm -f "$TMP/catalog.json"
+pass "a refreshed catalog that cannot be read or drawn is not used, logged once per reason, and kept; a Docker failure never counts against it"
 
 # An update that stops offering a recipe strands nothing: its running model still stops, a failed one is dismissed and
 # its download removed by what it recorded, and a folder no recipe here uses is listed on home and removed
@@ -852,6 +858,11 @@ jq -e '.deployments[] | select(.id == "gone-model") | .offered == false' "$TMP/s
 "$CLI" forget gone-model 2>"$TMP/err" && fail "forgot a running model's download"
 grep -q 'stop gone-model before removing its download' "$TMP/err" || fail "forget a running unoffered model" "$(cat "$TMP/err")"
 echo '{"state":"error","error":"x","pid":0}' >"$gone/status.json"
+# failed, with its engine still there (a restart policy brings it back): not yet
+echo "1|$(id -u)" >"$SHIM/containers/omarchy-local-ai-gone-model-engine"
+"$CLI" forget gone-model 2>"$TMP/err" && fail "forgot a download its engine still has"
+grep -q 'stop gone-model before removing its download' "$TMP/err" || fail "forget with an engine" "$(cat "$TMP/err")"
+rm "$SHIM/containers/omarchy-local-ai-gone-model-engine"
 "$CLI" forget gone-model || fail "forget a failed unoffered model"
 [[ ! -e $MODELS/old--gone@aaaaaaaaaaaa ]] || fail "its download is still there"
 "$CLI" stop gone-model && [[ ! -d $gone ]] || fail "stop an unoffered model"
@@ -862,6 +873,25 @@ used=$(ls "$MODELS" | grep -m1 '^test--model@') || fail "the running model's fol
 "$CLI" forget --folder "$used" 2>"$TMP/err" && fail "removed a folder a recipe uses"
 grep -q 'is offered or in use' "$TMP/err" || fail "used folder" "$(cat "$TMP/err")"
 "$CLI" forget --folder ../x 2>/dev/null && fail "a path outside the models folder"
+# a download writing it, by the folder's lock or by one inside it (a weights dir an earlier version locked), keeps it
+for lock in "$MODELS/old--gone@bbbbbbbbbbbb.lock" "$MODELS/old--gone@bbbbbbbbbbbb/sub.lock"; do
+  (exec 8>"$lock"; flock 8; exec sleep 30) & holder=$!
+  sleep 0.3
+  "$CLI" forget --folder old--gone@bbbbbbbbbbbb 2>"$TMP/err" && fail "removed a folder that is downloading ($lock)"
+  grep -q 'is still downloading' "$TMP/err" || fail "downloading folder" "$(cat "$TMP/err")"
+  kill "$holder"; wait "$holder" 2>/dev/null || true
+done
+# a model whose weights cannot be told apart (one 6.9 or earlier started, or adopted from 5.x): nothing is listed or removed
+mkdir -p "$STATE/deploy/old-start"; echo '{"id":"old-start","keys":["nvidia:2"],"port":12441}' >"$STATE/deploy/old-start/config.json"
+echo '{"state":"ready","pid":0}' >"$STATE/deploy/old-start/status.json"
+[[ $(jq -c '.unoffered.folders' <("$CLI" snapshot)) == '[]' ]] || fail "listed folders beside a model with no download record"
+"$CLI" forget --folder old--gone@bbbbbbbbbbbb 2>"$TMP/err" && fail "removed a folder beside a model with no download record"
+grep -q 'stop existing models before removing downloads' "$TMP/err" || fail "no record" "$(cat "$TMP/err")"
+rm -rf "$STATE/deploy/old-start"
+# a name this plugin never makes (a tab or a newline in it) is not listed
+mkdir -p "$MODELS/odd"$'\t'"x--y@cccccccccccc" "$MODELS/odd"$'\n'"x--y@dddddddddddd"
+[[ $(jq -c '[.unoffered.folders[].folder]' <("$CLI" snapshot)) == '["old--gone@bbbbbbbbbbbb"]' ]] || fail "odd names listed" "$(jq -c .unoffered <("$CLI" snapshot))"
+rm -rf "$MODELS/odd"*
 "$CLI" forget --folder old--gone@bbbbbbbbbbbb && [[ ! -e $MODELS/old--gone@bbbbbbbbbbbb ]] || fail "forget --folder"
 [[ $(jq -c '.unoffered.folders' <("$CLI" snapshot)) == '[]' ]] || fail "removed folder still listed"
 pass "a recipe no longer offered strands nothing: Stop works, its download is removed, and leftover folders are listed and removed"

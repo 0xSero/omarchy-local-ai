@@ -203,14 +203,16 @@ cmd_registry() (
   # file, never an earlier refresh: the gateway must be the one it ships, and each refreshed recipe that has a shipped
   # recipe of the same id under the same card kind becomes THAT SHIPPED RECIPE, with only these display fields taken
   # from the registry, each when it passes its check (else the shipped value stays): name, family and format (text
-  # of at most 120 characters, no control characters or markup), sizeGb (a finite number, not negative), aa (a finite
-  # number), reported and each capability the shipped recipe has (booleans). Everything else, its image, launch,
-  # weights, serving, needs and the rest, is the shipped recipe's; each card kind keeps its shipped match. A recipe the
-  # plugin does not ship is left out, not fatal; one listed twice counts once.
+  # of at most 120 characters, no control characters, bidi controls, line separators or markup), sizeGb (a finite
+  # number, not negative), aa (a finite number), reported and each capability the shipped recipe has (booleans).
+  # Everything else, its image, launch, weights, serving, needs and the rest, is the shipped recipe's; each card kind
+  # keeps its shipped match. A recipe the plugin does not ship is left out, not fatal; one listed twice counts once.
   jq -e --slurpfile own "$PANEL/recipes.json" '.gateway.image == $own[0].gateway.image' "$tmp" >/dev/null ||
     die "the registry changed the gateway; update the plugin to get it"
   r=$(jq --slurpfile own "$PANEL/recipes.json" '
-    def text: type == "string" and length <= 120 and (explode | all(. >= 32 and . != 127)) and (test("[<>]") | not);
+    # no C0 or C1 controls, no bidirectional overrides, isolates or marks, no line or paragraph separators
+    def text: type == "string" and length <= 120 and (test("[<>]") | not) and (explode | all(. >= 32 and (. < 127 or . > 159)
+      and (. < 8234 or . > 8238) and (. < 8294 or . > 8297) and (. < 8206 or . > 8207) and . != 8232 and . != 8233 and . != 1564));
     def finite: type == "number" and (isinfinite | not) and (isnan | not);
     $own[0].hardware as $shipped
     | .hardware |= (with_entries(select($shipped[.key] != null) | .key as $h
@@ -231,8 +233,13 @@ cmd_registry() (
   done < <(jq -c '.hardware[].recipes[]' "$tmp")
   r=$(jq --arg sha "$sha" --arg at "$(now)" '.registryCommit = $sha | .refreshedAt = $at' "$tmp")
   printf '%s\n' "$r" >"$tmp"
+  # the panel must be drawable from it, as the snapshot draws it, before it replaces the catalog in use
+  jq -e --argjson host "$(host)" "$NEEDS$SUMMARY"'[.hardware | to_entries[] | .value.match.backend as $b
+    | .value.recipes[] | summary($host) | select($b | type == "string")] | length >= 0' "$tmp" >/dev/null ||
+    die "the registry's models could not be shown; existing models are unchanged"
   chmod 644 "$tmp"
   mv -f "$tmp" "$CATALOG"
+  rm -f -- "$STATE/catalog-fallback"
   printf 'models up to date · %.8s\n' "$sha"
 )
 
@@ -502,13 +509,17 @@ good() {
 # .verified2 marks a folder checked against every file's hash; an earlier version's .verified checked small files by
 # size only, so such a folder is checked again once (a file that matches stays, nothing is downloaded twice).
 fetch() {
-  local id=$1 repo rev files layout d rows total done=0 path sz sha src pid have
-  IFS='|' read -r repo rev files layout _ _ d < <(wpaths "$2")
+  local id=$1 repo rev files layout m d lock rows total done=0 path sz sha src pid have
+  IFS='|' read -r repo rev files layout _ m d < <(wpaths "$2")
   [[ ! -f $d/.verified2 ]] || return 0
   # one download per weights folder: a second model on the same weights (the same model on another card) waits for
-  # the first, then finds them checked; two curls appending to one .part corrupt it
-  (umask 022 && mkdir -p "$(dirname "${d%/}")")
-  exec 7>"${d%/}.lock"
+  # the first, then finds them checked; two curls appending to one .part corrupt it. The lock is the whole folder's,
+  # <repo>@<rev>.lock beside it, whatever `dir` inside it a recipe uses: the one forget_folder checks (hub-layout
+  # weights share one cache folder, and lock their own snapshot)
+  lock=${d%/}.lock
+  [[ $layout == hub ]] || lock=${m%/}.lock
+  (umask 022 && mkdir -p "$(dirname "${d%/}")" "$(dirname "$lock")")
+  exec 7>"$lock"
   until flock -n 7; do
     status "$id" download "waiting for the other download of these weights" 0
     [[ ! -f $(dir_of "$id")/cancel ]] || exit 0
@@ -1194,7 +1205,11 @@ cmd_forget() {
   else
     self=$(dir_of "$1")/config.json
     [[ -f $self ]] || die "no recipe $1"
+    # failed is not enough: its engine or gateway may still be there (a restart policy brings it back), so Docker must
+    # answer and have neither
     [[ $(jq -r .state "${self%/*}/status.json" 2>/dev/null) == error ]] || die "stop $1 before removing its download"
+    docker info >/dev/null 2>&1 || die "Docker is not responding; nothing was removed"
+    ! ours "$(engine "$1")" && ! ours "$(gateway "$1")" || die "stop $1 before removing its download"
     while IFS= read -r d; do paths+=("$d"); done < <(jq -r '.managedPaths[]? | strings' "$self")
     ((${#paths[@]} > 0)) || die "$1 recorded no download to remove"
   fi
@@ -1232,17 +1247,34 @@ cmd_forget() {
 # unoffered: model folders (weights, prepared packs) that no recipe offered here and no model here uses, as
 # [{folder, gb}]: what a recipe a later version no longer ships left behind. Hub-layout weights share one cache and
 # are not listed.
+# deployed_paths: every managed path a model here uses, from its managedPaths and its recipe; fails when a model
+# carries neither (one 6.9 or earlier started, or one adopted from 5.x), whose weights cannot be told apart
+deployed_paths() {
+  local c r d
+  for c in "$STATE"/deploy/*/config.json; do
+    jq -e '(.managedPaths | type == "array") or (.recipe | type == "object")' "$c" >/dev/null 2>&1 || return 1
+    jq -r '.managedPaths[]? | strings' "$c"
+    if r=$(jq -ce '.recipe | objects' "$c" 2>/dev/null); then
+      while IFS= read -r d; do printf '%s\n' "$d"; done < <(managed_paths "$r")
+    fi
+  done
+}
+
 unoffered() {
-  local d n r used
+  local d n r used deployed
+  # nothing is listed while a running model's weights cannot be told apart from leftovers
+  deployed=$(deployed_paths) || { echo '[]'; return; }
   used=$({
     jq -r '.hardware[].recipes[].weights[]? | select(.layout != "hub") | "\(.repository | gsub("/"; "--"))@\(.revision[:12])"' "$RECIPES"
     jq -c '.hardware[].recipes[] | select(.prepare != null)' "$RECIPES" | while IFS= read -r r; do d=$(prepared_path "$r"); echo "${d#"$MODELS"/}"; done
-    cat "$STATE"/deploy/*/config.json 2>/dev/null | jq -r --arg m "$MODELS/" '.managedPaths[]? | strings | select(startswith($m))
+    printf '%s\n' "$deployed" | jq -Rr --arg m "$MODELS/" 'select(startswith($m))
       | ltrimstr($m) | split("/") | if .[0] == "prepared" then .[0:2] | join("/") else .[0] end'
   } | sort -u)
   for d in "$MODELS"/*@*/ "$MODELS"/prepared/*/; do
     n=${d%/}
     n=${n#"$MODELS"/}
+    # a name with a tab or a newline is not one this plugin makes, and would break the list: it is left alone
+    [[ $n != *[$'\t\n']* ]] || continue
     ! grep -qxF -- "$n" <<<"$used" || continue
     printf '%s\t%s\n' "$n" "$(du -sb -- "$d" 2>/dev/null | cut -f1)"
   done | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {folder: .[0], gb: ((.[1] | tonumber? // 0) / 1e8 | floor / 10)})'
@@ -1250,15 +1282,21 @@ unoffered() {
 
 # forget_folder <folder>: delete one folder unoffered lists, under the models folder, when no download is writing it
 forget_folder() {
-  local n=$1 t
+  local n=$1 t l fd
   [[ $n =~ ^[A-Za-z0-9_.-]+--[A-Za-z0-9_.-]+@[0-9a-f]{12}$ || $n =~ ^prepared/[0-9a-f]{64}$ ]] && [[ $n != *..* ]] ||
     die "forget --folder <folder>"
   exec 9>"$STATE/claim.lock"
   flock -w 10 9 || die "another model operation is running; try again"
+  deployed_paths >/dev/null || die "stop existing models before removing downloads"
   unoffered | jq -e --arg n "$n" 'any(.[]; .folder == $n)' >/dev/null || die "$n is offered or in use; it is not removed"
   t=$MODELS/$n
+  # the folder's own download lock, and any lock inside it (an earlier version locked the weights' dir in it)
   exec 7>"$t.lock"
   flock -n 7 || die "$n is still downloading"
+  while IFS= read -r -d '' l; do
+    exec {fd}>>"$l"
+    flock -n "$fd" || die "$n is still downloading"
+  done < <(find "$t" -name '*.lock' -type f -print0 2>/dev/null)
   owned "$t"
   rm -rf -- "$t"
   rm -f -- "$t.lock"
@@ -1860,10 +1898,13 @@ cmd_snapshot() {
   { IFS= read -r -d '' sa && IFS= read -r -d '' sf && IFS= read -r -d '' sfs; } < <(jq -j '.agent // "", "\u0000",
     .folder // "", "\u0000", (.folders // [] | tojson), "\u0000"' "$STATE/settings.json" 2>/dev/null) || true
   [[ $(<"$PANEL/manifest.json") =~ \"version\":\ *\"([^\"]+)\" ]] && v=${BASH_REMATCH[1]}
-  # the page, from the recipes in use; a refreshed catalog it cannot be made from is set aside for the shipped recipes
-  # (catalog_aside), so a bad refresh can never leave the panel unable to refresh, or to fetch a good one
+  # the page, from the recipes in use. The GPUs are read before it: a Docker that does not answer fails the snapshot as
+  # it always has (the panel keeps the last one) and never reads as a catalog the page cannot be drawn from. A refreshed
+  # catalog it cannot be drawn from stays where it is, and the shipped recipes answer this call (catalog_fallback), so
+  # the panel never stops refreshing and the next refresh can replace it.
+  local g
   page() {
-  jq -nc --argjson g "$(gpus "$([[ $rstate == ready ]] || echo none)")" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
+  jq -nc --argjson g "$g" --slurpfile deps <(printf '%s\n' "${deps[@]}") \
     --arg rstate "$rstate" --arg rmsg "$rmsg" --argjson tokens "$(tokens)" --slurpfile rec "$RECIPES" \
     --arg setupError "$(cat "$STATE/setup-error" 2>/dev/null || true)" --arg ts "$ts" --arg agent "$(get agent "$sa")" --arg folder "$(get folder "$sf")" --arg version "$v" \
     --arg cdi "$(cdi_stale 2>/dev/null || true)" --argjson downloads "$(downloads)" --argjson unoffered "$(unoffered)" \
@@ -1898,18 +1939,22 @@ cmd_snapshot() {
          groups: [$rec[0].hardware[.[0].hw].recipes[] | select((.cards // 1) > 1) | summary($host)]}],
        deployments: $deps}'
   }
+  g=$(gpus "$([[ $rstate == ready ]] || echo none)") || die "could not check the GPUs; try again"
   page && return 0
   [[ $RECIPES == "$CATALOG" ]] || return 1
-  catalog_aside "the panel could not be drawn from it"
+  catalog_fallback "the panel could not be drawn from it"
+  g=$(gpus "$([[ $rstate == ready ]] || echo none)") || die "could not check the GPUs; try again"
   page
 }
 
-# catalog_aside <why>: stop using the refreshed catalog, once: it is renamed .bad, the log says why, and the recipes
-# this version ships answer until the next refresh brings a good one
-catalog_aside() {
-  mv -f -- "$CATALOG" "$CATALOG.bad" 2>/dev/null || true
-  say "the refreshed model list was set aside ($1); using the one this version ships"
+# catalog_fallback <why>: answer this call from the recipes this version ships instead of the refreshed catalog, which
+# stays where it is (a refresh checks a catalog before installing it, so this is one damaged since, or one a case
+# the check did not foresee breaks); the log says why once per reason, not on every poll
+catalog_fallback() {
   RECIPES=$PANEL/recipes.json
+  [[ $(cat "$STATE/catalog-fallback" 2>/dev/null) != "$1" ]] || return 0
+  printf '%s\n' "$1" >"$STATE/catalog-fallback"
+  say "the refreshed model list is not used ($1); using the one this version ships"
 }
 
 paths "$HOME"
@@ -1918,10 +1963,10 @@ paths "$HOME"
 . "$PANEL/lib/access.sh"
 mkdir -p "$STATE"
 if [[ $RECIPES == "$CATALOG" ]] && ! jq -e '.hardware | type == "object"' "$CATALOG" >/dev/null 2>&1; then
-  catalog_aside "it does not load"
+  catalog_fallback "it does not load"
 fi
 # the verbs that use Docker run under the docker group, whatever groups this login began with
-case ${1:-} in snapshot | run | stop | remove | readiness | download | open | share) docker_group_reexec "$TARGET" "$@" ;; esac
+case ${1:-} in snapshot | run | stop | remove | readiness | download | open | share | forget) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
 setup | registry | forget | snapshot | readiness | run | stop | open | update | outdated | set | dirs | share | pin | download | card) "cmd_$1" "${@:2}" ;;
 # the stale NVIDIA device list, if any, as "<spec>\t<why>" (setup rewrites it)

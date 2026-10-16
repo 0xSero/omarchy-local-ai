@@ -163,9 +163,10 @@ Everything that decides what runs or how an agent is set up (image, launch,
 weights, context, needs and the rest) is always the shipped recipe's, and a recipe
 the plugin does not ship is left out until a plugin update ships it. Downloads are
 pinned to a registry commit, validated before an atomic replacement, and failures
-keep the previous catalog. A catalog an earlier version refreshed is not read, and
-one the panel cannot be drawn from is set aside (the log says why) for the
-shipped recipes. A model whose recipe an update withdrew keeps Stop; its download,
+keep the previous catalog. A catalog an earlier version refreshed is not read; a
+refresh installs a catalog only once the panel can be drawn from it, and a catalog
+that later cannot be read or drawn is skipped for the shipped recipes (the log
+says why) until the next refresh replaces it. A model whose recipe an update withdrew keeps Stop; its download,
 and any folder no recipe here uses, is listed on home under **No longer offered**
 with **Remove**.
 Refreshing does not stop running models or download model weights. Offload
