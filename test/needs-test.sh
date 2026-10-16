@@ -74,6 +74,8 @@ recipes
 # omarchy's own layout: btrfs on LUKS (/dev/mapper/root) on a partition of an NVMe drive
 NVME_CRYPT='crypt 0 |part 0 nvme|disk 0 nvme'
 host 256 500 "$NVME_CRYPT"
+# this user has answered home's one question about usage reports, so home below is the page that follows it
+"$CLI" set ping off
 "$CLI" snapshot >"$TMP/snap.json"
 # cpus is this machine's own thread count
 [[ $(jq -c '.host | del(.cpus, .cpuName)' "$TMP/snap.json") == '{"ramGb":512,"freeRamGb":256,"diskFreeGb":500,"disk":"nvme","prepared":[]}' ]] &&

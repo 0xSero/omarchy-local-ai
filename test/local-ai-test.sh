@@ -18,8 +18,6 @@ cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null || true
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
-sed -i "s|ALLOCATION_LOCK=/run|ALLOCATION_LOCK=$TMP/docker.pid|" "$CLI"
-: >"$TMP/docker.pid"
 sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
@@ -85,7 +83,7 @@ info)
 image) exit 1 ;;
 pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 version) echo "${SHIM_DOCKER_VERSION:-29.0.0}" ;;
-network) if [[ $2 == inspect ]]; then echo "true isolated"; fi ;;
+network) if [[ $2 == inspect ]]; then echo "${SHIM_NETWORK:-true false isolated}"; fi ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; if [[ $* == *IPAddress* ]]; then echo 172.30.0.5; elif [[ $* == *RestartCount* ]]; then echo 0; else cat "$c/$n"; fi ;;
 logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || { printf "loading shards\n(EngineCore pid=5) ERROR [core.py:1330] EngineCore failed to start.\n(EngineCore pid=5) ERROR [core.py:1330] ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization\n"
@@ -148,6 +146,8 @@ export PATH=$TMP/bin:/usr/bin:/bin
 export CDI_DIRS=$TMP/cdi
 cdi() { mkdir -p "$CDI_DIRS"; printf 'devices:\n  - name: "0"\n    containerEdits:\n      deviceNodes:\n        - path: /dev/null\n          major: %s\n          minor: 3\n' "$1" >"$CDI_DIRS/nvidia.yaml"; }
 cdi 1
+# this user has answered home's one question about usage reports, so the pages below are the ones that follow it
+"$CLI" set ping off
 
 recipes "$PIN"
 "$CLI" snapshot >"$TMP/snap.json"
@@ -402,7 +402,7 @@ engine=$(grep -- '--name omarchy-local-ai-.*-engine' "$SHIM/docker.log")
   $engine == *"$PIN --port 8000" ]] || fail "engine argv" "$engine"
 pass "the engine gets its card, a read-only weights mount and the recipe's options, never a published port or its own card choice"
 net="omarchy-local-ai-$(id -u)-$ID"
-grep -qx -- "network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.uid=$(id -u) $net-private" "$SHIM/docker.log" ||
+grep -qx -- "network create --internal --ipv6=false -o com.docker.network.bridge.gateway_mode_ipv4=isolated --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.uid=$(id -u) $net-private" "$SHIM/docker.log" ||
   fail "private network" "$(grep '^network' "$SHIM/docker.log")"
 [[ $engine == *"--network $net-private --network-alias engine"* && $engine != *"--network $net "* ]] || fail "engine network" "$engine"
 [[ $(grep -- '--name omarchy-local-ai-.*-gateway' "$SHIM/docker.log") == *"--network $net --network $net-private "* ]] ||
@@ -423,8 +423,10 @@ grep -qF -- "-fsS --noproxy * --max-time 5 http://127.0.0.1:12434/v1/models" "$S
 pass "a gateway that answers without the key would be refused"
 # the key goes only to the gateway's address on the model's Docker network, never to 127.0.0.1:<port>, which another
 # account could take over once the gateway exits; the snapshot poll uses the keyless /health
-"$CLI" snapshot >/dev/null
+"$CLI" snapshot >"$TMP/snap-gw.json"
 grep -q "127.0.0.1:12434/health" "$SHIM/curl.log" || fail "health poll" "$(tail -3 "$SHIM/curl.log")"
+# and the address the model's page copies for your own clients is that one too
+[[ $(jq -r '.deployments[0].address' "$TMP/snap-gw.json") == "http://172.30.0.5:12434" ]] || fail "address for clients" "$(jq -c .deployments "$TMP/snap-gw.json")"
 ! grep -F "gateway.auth" "$SHIM/curl.log" | grep -q "127\.0\.0\.1" || fail "keyed loopback request" "$(grep -F gateway.auth "$SHIM/curl.log" | grep 127.0.0.1)"
 grep -F "gateway.auth" "$SHIM/curl.log" | grep -q "http://172.30.0.5:12434/v1/chat/completions" || fail "keyed bridge request" "$(grep -F gateway.auth "$SHIM/curl.log")"
 pass "the key is only ever sent to the gateway's bridge address; the poll sends none"
@@ -644,6 +646,14 @@ wait_for error
 [[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "Docker 28 or newer is needed to keep the engine private (this is 27.5.1)" ]] &&
   ! grep -q '^run ' "$SHIM/docker.log" || fail "old Docker" "$(cat "$STATE/deploy/$ID/status.json")"
 pass "a Docker that cannot keep the engine off the host's network is refused before anything runs"
+"$CLI" stop "$ID" >/dev/null 2>&1 || true
+# a private network that came out with IPv6 (a daemon with IPv6 on by default) has a route the IPv4 isolation misses
+: >"$SHIM/docker.log"
+SHIM_NETWORK="true true isolated" "$CLI" run "$ID" nvidia:0
+wait_for error
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "Docker did not make the engine's network private" ]] &&
+  ! grep -q -- "--name omarchy-local-ai-.*-engine" "$SHIM/docker.log" || fail "IPv6 network" "$(cat "$STATE/deploy/$ID/status.json")"
+pass "an engine network with IPv6 on is refused before the engine runs"
 "$CLI" stop "$ID" >/dev/null 2>&1 || true
 
 jq '.hardware["rtx-4090-24gb"].match = {backend:"amd-vulkan", names:["rx9070xt"], vramGb:16}' "$TMP/plugin/recipes.json" >"$TMP/r2"

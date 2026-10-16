@@ -464,8 +464,10 @@ function page(s, ui, m) {
   weights(v.rows, m.weights)
   if (run && !failed) {
     v.rows.push({ type: "sec", label: "REACH" })
-    // addresses stay hidden until clicked, beside a copy
-    v.rows.push({ type: "field", icon: "machine", label: "this machine", value: "http://127.0.0.1:" + run.port, secret: true, action: "copy|http://127.0.0.1:" + run.port })
+    // addresses stay hidden until clicked, beside a copy. On this machine that is the gateway's address on the model's
+    // Docker network, where the key is safe to send: no other account can listen there, while 127.0.0.1:<port> is
+    // anyone's to bind the moment the gateway exits
+    if (run.address) v.rows.push({ type: "field", icon: "machine", label: "this machine", value: run.address, secret: true, action: "copy|" + run.address })
     if (s.tailnet) v.rows.push(run.shared
       ? { type: "field", icon: "tailnet", label: "tailnet", value: run.shared, secret: true, action: "copy|" + run.shared }
       : { type: "field", icon: "tailnet", label: "tailnet", value: "share", action: "share|" + run.id })
@@ -610,17 +612,18 @@ function folderView(s, ui) {
   return { back: true, where: "folder", rows: rows }
 }
 
-// Settings: usage reporting, on unless turned off here or by DO_NOT_TRACK, and exactly what it sends
+// Settings: usage reporting, off until turned on here or with Allow on home (never with DO_NOT_TRACK), and exactly what
+// it sends
 var REPORTING = "Reporting is minimal and anonymous. There is no user or account ID: at most twice a day Local AI sends " +
   "a random number made on this computer, its version, the kinds of graphics card it found, how many models are running, " +
   "and how many models it started, failed to start, opened in an agent or downloaded since the last report. It never " +
-  "sends your prompts, files, folders, model names or agents, and your IP address is not stored. Turned off, nothing " +
-  "is sent and counts not yet sent are deleted."
+  "sends your prompts, files, folders, model names or agents, and your IP address is not stored. Until you turn it on, " +
+  "and once you turn it off, nothing is sent and counts not yet sent are deleted."
 function settingsView(s, ui) {
-  var r = s.reporting || "on", rows = [{ type: "sec", label: "USAGE REPORTING" }]
-  if (r === "env") rows.push({ type: "field", label: "send usage reports", value: "off (DO_NOT_TRACK is set)" })
-  else rows.push({ type: "field", icon: r === "off" ? "" : "check", label: "send usage reports", value: r === "off" ? "off" : "on",
-    action: "set|ping|" + (r === "off" ? "on" : "off") })
+  var on = s.reporting === "on", rows = [{ type: "sec", label: "USAGE REPORTING" }]
+  if (s.reporting === "env") rows.push({ type: "field", label: "send usage reports", value: "off (DO_NOT_TRACK is set)" })
+  else rows.push({ type: "field", icon: on ? "check" : "", label: "send usage reports", value: on ? "on" : "off",
+    action: "set|ping|" + (on ? "off" : "on") })
   rows.push({ type: "links", note: REPORTING, items: [{ label: "See the public totals", action: "url|https://usage.sybilsolutions.ai/" }] })
   return { back: true, where: "settings", rows: rows }
 }
@@ -628,7 +631,11 @@ function settingsView(s, ui) {
 function build(s, ui) {
   s = s || {}
   var v = (ui.view === "settings" ? settingsView(s, ui) : ui.view === "folder" ? folderView(s, ui) : ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
-  // a plugin release, on the home page: Omarchy's own update installs it and reloads the panel
+  // usage reporting is off until you choose: home asks once, and either answer is kept and ends the question
+  if (s.reporting === "unset" && (!ui.view || ui.view === "home"))
+    v.rows.unshift({ type: "links", note: "Share minimal, anonymous usage counts to help Local AI? Nothing is sent unless you allow it.",
+      items: [{ label: "Allow", action: "set|ping|on" }, { label: "No thanks", action: "set|ping|off" }, { label: "What is sent", action: "settings" }] })
+  // a plugin release, on the home page: Omarchy's own update, in a terminal, shows what changes and asks
   if (s.pluginUpdate && (!ui.view || ui.view === "home"))
     v.rows.unshift({ type: "links", note: "A new version of Local AI is out.",
       items: [{ label: ui.updatingAgent === "plugin" ? "Updating…" : "Update Local AI", action: ui.updatingAgent ? "" : "update|plugin" }] })

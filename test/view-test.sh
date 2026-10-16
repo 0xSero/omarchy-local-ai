@@ -40,11 +40,21 @@ test('settings: home links to it; reporting switches off and on, says what it se
   assert(m.build({...s,deployments:[]},{view:'home'}).rows.some(r=>r.action==='settings'));
   const row=(st)=>m.build({...s,reporting:st},{view:'settings'}).rows.find(r=>r.label==='send usage reports');
   assert.equal(row('on').value,'on'); assert.equal(row('on').action,'set|ping|off');
-  assert.equal(row(undefined).action,'set|ping|off');
+  // never chosen, or an older backend that does not say: off until turned on
+  for (const st of ['unset',undefined]) { assert.equal(row(st).value,'off'); assert.equal(row(st).action,'set|ping|on'); }
   assert.equal(row('off').value,'off'); assert.equal(row('off').action,'set|ping|on');
   assert(!row('env').action && /DO_NOT_TRACK/.test(row('env').value));
   const note=m.build({...s,reporting:'on'},{view:'settings'}).rows.find(r=>r.type==='links').note;
   for (const w of ['anonymous','no user or account ID','random number','never','IP address is not stored','nothing is sent']) assert(note.includes(w), w);
+});
+test('usage reporting is asked once, on home only: Allow or No thanks, and nothing once either is chosen', () => {
+  const ask=(st,view)=>m.build({...s,reporting:st},{view}).rows.filter(r=>r.type==='links'&&(r.items||[]).some(i=>i.action==='set|ping|on'));
+  const rows=ask('unset','home');
+  assert.equal(rows.length,1);
+  assert.deepEqual(rows[0].items.map(i=>i.action),['set|ping|on','set|ping|off','settings']);
+  assert(/Nothing is sent unless you allow it/.test(rows[0].note));
+  for (const st of ['on','off','env',undefined]) assert.equal(ask(st,'home').length,0,String(st));
+  for (const view of ['agents','models','settings','gpus']) assert.equal(ask('unset',view).filter(r=>r.items.length>1).length,0,view);
 });
 test('a card kind with only multi-card models renders instead of breaking the panel', () => {
   const v=m.build({...s,deployments:[],kinds:[{...s.kinds[0],models:[]}]},{view:'home'});

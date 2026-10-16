@@ -6,7 +6,8 @@
 #
 # readiness prints "<state><TAB><message>"; the state is one of READINESS_STATES:
 #   ready        a model can start
-#   needs-setup  the account or the NVIDIA runtime needs setup; the panel offers Set up Local AI
+#   needs-setup  the account or the NVIDIA runtime needs setup, or polkit files Local AI 6.0-6.4 left are still there;
+#                the panel offers Set up Local AI
 #   docker-down  set up, but Docker does not answer; it clears when Docker does, and the panel keeps checking
 #   unsupported  this Omarchy has no Sudoless Docker helper; it clears when Omarchy is updated
 #
@@ -50,6 +51,30 @@ nvidia_ready() {
   nvidia_devices <<<"${info%%|*}" || jq -e 'keys | any(test("nvidia"))' >/dev/null 2>&1 <<<"${info#*|}"
 }
 
+# legacy_polkit_files: the polkit action and rule Local AI 6.0-6.4 wrote for this account. The action ran the backend
+# in this account's own plugin checkout as root, and the rule let it run without a password, so anything running as
+# the account could become root through them. Only root can delete them: setup and remove do, with sudo.
+legacy_polkit_files() {
+  printf '%s\n' "/etc/polkit-1/actions/sero.local-ai.u$(id -u).policy" "/etc/polkit-1/rules.d/49-sero.local-ai.u$(id -u).rules"
+}
+# legacy_polkit: either file is there, as far as this account can see: rules.d is unreadable to most accounts, but the
+# action, which the rule needs to reach the backend at all, is not
+legacy_polkit() {
+  local f
+  while IFS= read -r f; do [[ -e $f ]] && return 0; done < <(legacy_polkit_files)
+  return 1
+}
+# remove_legacy_polkit: delete them as 6.5-6.7 did, with sudo and a prompt that says what it is for, and have polkit
+# read its rules again. Nothing happens, and nothing asks, when there are none.
+remove_legacy_polkit() {
+  local files
+  legacy_polkit || return 0
+  mapfile -t files < <(legacy_polkit_files)
+  echo "An earlier Local AI (6.0-6.4) left polkit files that let anything running as you start its backend as root without a password. Removing them."
+  SUDO_PROMPT="Password for %u to remove the polkit files an earlier Local AI left: " sudo rm -f -- "${files[@]}"
+  SUDO_PROMPT="Password for %u to reload polkit after removing them: " sudo systemctl reload polkit 2>/dev/null || true
+}
+
 # readiness_line <state> [message]
 readiness_line() { printf '%s\t%s\n' "$1" "${2:-}"; }
 
@@ -57,6 +82,7 @@ readiness() {
   local sock info
   sock=$(docker_socket)
   command -v omarchy-setup-security-sudoless-docker >/dev/null || { readiness_line unsupported "This Omarchy has no Sudoless Docker; update Omarchy"; return; }
+  ! legacy_polkit || { readiness_line needs-setup "An earlier Local AI left polkit files that give root without a password: set up Local AI to remove them"; return; }
   docker_access_configured || { readiness_line needs-setup; return; }
   # a setup that did not finish is not done until it does; the panel shows its error beside the button
   [[ ! -s ${STATE:-/nonexistent}/setup-error ]] || { readiness_line needs-setup; return; }

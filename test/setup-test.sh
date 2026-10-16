@@ -1,6 +1,7 @@
 #!/bin/bash
 # Setup, with the Omarchy helpers shimmed: Omarchy's Sudoless Docker, then on NVIDIA the container toolkit, each run
-# with a password prompt that names it. Local AI itself runs nothing as root: a sudo shim fails the test if called.
+# with a password prompt that names it. Local AI itself runs nothing as root, but for removing the polkit files 6.0-6.4
+# left, with sudo and a prompt that names it: the sudo shim logs every call and runs only that rm.
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 TMP=$(mktemp -d)
@@ -10,9 +11,11 @@ cp "${INSTALLER:-$ROOT/bin/omarchy-install-ai-local}" "$TMP/plugin/bin/omarchy-i
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 export HOME=$TMP/home SETUP_TEST=$TMP
 # the earlier polkit files live in a test folder
-sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|g" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|g" "$TMP/plugin/bin/omarchy-install-ai-local"
+sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|g" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|g" "$TMP/plugin/lib/access.sh"
 shim() { printf '#!/bin/bash\n%s\n' "$2" >"$1"; chmod +x "$1"; }
-shim "$TMP/bin/sudo" 'echo "sudo $*" >>"$SETUP_TEST/calls"; exit 1'
+# NO_SUDO: the password is not given
+shim "$TMP/bin/sudo" 'echo "sudo $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"; [[ -z ${NO_SUDO:-} ]] || exit 1
+[[ $1 == rm ]] && exec "$@"; exit 0'
 shim "$TMP/bin/omarchy-hw-nvidia" '[[ ${NVIDIA:-1} == 1 ]]'
 shim "$TMP/bin/omarchy-pkg-add" 'echo "pkg $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"; [[ ${FAIL_INSTALL:-0} == 0 ]]'
 shim "$TMP/bin/omarchy-pkg-drop" 'echo "drop $* | $SUDO_PROMPT" >>"$SETUP_TEST/calls"'
@@ -71,10 +74,18 @@ FAIL_PREFS=1 setup
 if grep -q 'operator' "$TMP/out"; then exit 1; fi
 echo 'ok - setup names the Tailscale operator step and never changes the operator'
 
-touch "$TMP/etc/49-sero.local-ai.u$(id -u).rules"
+policy=$TMP/etc/sero.local-ai.u$(id -u).policy rules=$TMP/etc/49-sero.local-ai.u$(id -u).rules
+touch "$policy" "$rules"
+if NO_SUDO=1 setup; then exit 1; fi
+[[ -e $policy && -s $error ]] && ! grep -q 'Local AI is ready' "$TMP/out"
 setup
-grep -q 'Delete them as root' "$TMP/out"
-echo 'ok - leftover polkit files from earlier versions are named'
+grep -qxF "sudo rm -f -- $policy $rules | Password for %u to remove the polkit files an earlier Local AI left: " "$TMP/calls"
+grep -q '^sudo systemctl reload polkit | ' "$TMP/calls"
+[[ ! -e $policy && ! -e $rules && ! -e $error ]] && grep -q 'Local AI is ready' "$TMP/out"
+touch "$policy"
+setup
+[[ ! -e $policy ]]
+echo 'ok - polkit files 6.0-6.4 left are removed with sudo, its prompt naming why, and polkit reloaded; declined, setup fails'
 
 # a stale NVIDIA device list (a card taken out): the toolkit is reinstalled with Omarchy's commands, whose hook writes it
 STALE="/dev/nvidia1 is gone" setup
@@ -84,8 +95,12 @@ grep -q 'drop nvidia-container-toolkit | Password for %u to reinstall NVIDIA con
 setup; ! grep -q '^drop' "$TMP/calls"
 echo 'ok - a stale NVIDIA device list is written again by reinstalling the toolkit with Omarchy commands, and only then'
 if grep -q '^sudo' "$TMP/calls"; then exit 1; fi
-if grep -qE '(^|[^-])\bsudo\b|systemctl|pkexec' "$ROOT/bin/omarchy-install-ai-local"; then exit 1; fi
-echo 'ok - setup itself runs nothing as root'
+# the only sudo in Local AI's code (comments aside) is that removal
+if grep -vE '^\s*#' "$ROOT/bin/omarchy-install-ai-local" | grep -qE '(^|[^-])\bsudo\b|systemctl|pkexec'; then exit 1; fi
+code() { grep -vE '^\s*#' "$@" | grep -cE '(^|[^-])\bsudo\b' || true; }
+[[ $(code "$ROOT/bin/omarchy-local-ai") == 0 && $(code "$ROOT/lib/access.sh") == 2 &&
+  $(sed -n '/^remove_legacy_polkit() {/,/^}/p' "$ROOT/lib/access.sh" | code) == 2 ]]
+echo 'ok - with no polkit files left, setup runs nothing as root'
 
 node - "$ROOT/Model.js" <<'JS'
 const fs = require('fs'), vm = require('vm'), assert = require('assert');

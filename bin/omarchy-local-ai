@@ -8,9 +8,9 @@
 # config.json (which cards, which port, which agent and folder) and status.json (what it is doing now).
 # `snapshot` reads those with the GPUs and the vendored recipes and prints what the widget draws.
 #
-# `run` downloads the weights as you and checks every file against the Hub, then starts the engine on
-# a private network and a keyed gateway on 127.0.0.1, as you: setup puts you in the docker group once
-# (Omarchy's Sudoless Docker), and a login that began before that runs the verbs that use Docker under the group
+# `run` downloads the weights as you and checks every file against the Hub, then starts the engine on a private
+# network and a keyed gateway on the model's own Docker network (gw_addr), as you: setup puts you in the docker group
+# once (Omarchy's Sudoless Docker), and a login that began before that runs the verbs that use Docker under the group
 # (lib/access.sh), so nothing waits for the next login.
 # Nothing here runs as root, so there is no password prompt after setup and none after an update.
 
@@ -27,7 +27,6 @@ RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
 LABEL=io.omarchy.local-ai
-ALLOCATION_LOCK=/run
 SYS=${LOCAL_AI_SYSFS:-/sys}
 AGENTS=(pi claude codex opencode omp crush grok copilot hermes)
 umask 077
@@ -131,8 +130,9 @@ policy() {
     else "ok" end' <<<"$1"
 }
 
-# counted: whether this install is counted at all; off with `set ping off` or DO_NOT_TRACK, and then nothing is kept either
-counted() { [[ ${DO_NOT_TRACK:-0} == 0 && $(jq -r '.ping // "on"' "$STATE/settings.json" 2>/dev/null) != off ]]; }
+# counted: whether this install is counted at all: only once you turn it on (`set ping on`, or Allow on home), never
+# with DO_NOT_TRACK; until then nothing is kept either
+counted() { [[ ${DO_NOT_TRACK:-0} == 0 && $(jq -r '.ping // ""' "$STATE/settings.json" 2>/dev/null) == on ]]; }
 # count <action>: one more started, failed (a start that did not finish), opened (an agent) or downloaded, kept in
 # counts.json until a ping delivers it: totals only, never which model, agent or folder. It never fails its caller.
 count() {
@@ -195,12 +195,23 @@ cmd_registry() (
   jq -e '.schemaVersion == "omarchy-local-ai/recipes/3" and (.hardware | type == "object" and length > 0)
     and all(.hardware[]; (.recipes | type == "array" and length > 0))
     and all(.hardware[].recipes[]; .id | test("^[a-z0-9][a-z0-9.-]{0,63}$"))' "$tmp" >/dev/null || die "invalid registry catalog"
-  # A refresh brings new recipes, never new code: the gateway must be the one this plugin version ships, and a recipe
-  # whose engine image comes from a repository this version's own recipes never use is left out until a plugin update
-  jq -e --slurpfile own "$RECIPES" '.gateway.image == $own[0].gateway.image' "$tmp" >/dev/null ||
+  # A refresh brings new recipes, never new code. Both checks are against this plugin version's own recipes.json, the
+  # file that was reviewed, never an earlier refresh: the gateway must be the one it ships, and a recipe is kept only
+  # when it ships that exact engine image (repository and digest), with the same entrypoint, config asset and
+  # preparation as a recipe it ships on that image, or none. A recipe that hands a shell, or an interpreter's inline
+  # code (python -c), a script of its own is left out too. What is left out waits for a plugin update.
+  jq -e --slurpfile own "$PANEL/recipes.json" '.gateway.image == $own[0].gateway.image' "$tmp" >/dev/null ||
     die "the registry changed the gateway; update the plugin to get it"
-  r=$(jq --slurpfile own "$RECIPES" '([$own[0].hardware[].recipes[].image | sub("@.*$"; "")] | unique) as $known
-    | .hardware |= (map_values(.recipes |= map(select((.image | sub("@.*$"; "")) as $i | any($known[]; . == $i))))
+  r=$(jq --slurpfile own "$PANEL/recipes.json" 'def code: {image, entrypoint: .launch.entrypoint, asset, prepare};
+    [$own[0].hardware[].recipes[] | code] as $shipped
+    | def reviewed: code as $c | any($shipped[]; .image == $c.image)
+        and all("entrypoint", "asset", "prepare"; . as $f | $c[$f] == null or any($shipped[]; .image == $c.image and .[$f] == $c[$f]));
+      # the entrypoint and first argument (what a wrapper entrypoint runs): a shell, or an interpreter with inline code
+      def script: ([.launch.entrypoint // empty] + (.launch.arguments // [])) as $a
+        | any(range(0; [2, ($a | length)] | min); ($a[.] | tostring | sub(".*/"; "")) as $p
+          | ($p | test("^(sh|bash|dash|zsh|ksh|mksh|ash|fish|csh|tcsh|busybox|env)$"))
+            or (($p | test("^(python|perl|node|ruby|lua|php)[0-9.]*$")) and ($a[. + 1] // "" | tostring | test("^-[A-Za-z]*[ce]$"))));
+      .hardware |= (map_values(.recipes |= map(select(reviewed and (script | not))))
       | with_entries(select(.value.recipes | length > 0)))' "$tmp") || die "invalid registry catalog"
   printf '%s\n' "$r" >"$tmp"
   while IFS= read -r r; do
@@ -438,14 +449,16 @@ wpaths() {
     | join("|")' <<<"$1"
 }
 
-# tree <repository> <revision> <file>: path, size and sha256 of each file the recipe needs, as the Hub lists them
+# tree <repository> <revision> <file>: path, size and hash of each file the recipe needs, as the Hub lists them: the
+# SHA-256 of a large (LFS) file, and "git:" and the Git blob SHA-1 of any other. A listing kept by an earlier version
+# (size only for small files, in a file without the .tsv) is not used.
 tree() {
-  local repo=$1 rev=$2 files=$3 f="$STATE/trees/${1//\//--}@$2"
+  local repo=$1 rev=$2 files=$3 f="$STATE/trees/${1//\//--}@$2.tsv"
   mkdir -p "$STATE/trees"
   if [[ ! -s $f ]]; then
     hf_curl -fsSL --max-time 60 --max-filesize 10485760 --retry 6 --retry-delay 10 --proto =https \
       "https://huggingface.co/api/models/$repo/tree/$rev?recursive=1" |
-      jq -r '.[] | select(.type == "file") | [.path, .size, (.lfs.oid // "-")] | @tsv' >"$f.tmp" || {
+      jq -r '.[] | select(.type == "file") | [.path, .size, (.lfs.oid // "git:\(.oid)")] | @tsv' >"$f.tmp" || {
       rm -f "$f.tmp"
       return 1
     }
@@ -462,10 +475,15 @@ tree() {
 
 size() { stat -c %s -- "$1" 2>/dev/null || echo 0; }
 
-# good <file> <size> <sha256|->: the file is complete and, when the Hub gave a hash, matches it
+# good <file> <size> <sha256|git:sha1>: the file is complete and matches the hash the Hub lists for it: a large file's
+# SHA-256, or a small one's Git blob SHA-1, which is of "blob <size>\0" and then the content
 good() {
   [[ -f $1 && $(size "$1") == "$2" ]] || return 1
-  [[ $3 == "-" || $(sha256sum -- "$1" | cut -c1-64) == "$3" ]]
+  if [[ $3 == git:* ]]; then
+    [[ $({ printf 'blob %s\0' "$2"; cat -- "$1"; } | sha1sum | cut -c1-40) == "${3#git:}" ]]
+  else
+    [[ $(sha256sum -- "$1" | cut -c1-64) == "$3" ]]
+  fi
 }
 
 # fetch <id> <weights-item>: adopt a matching copy from the Hugging Face cache, else download; check every file
@@ -555,11 +573,13 @@ docker_private() {
   echo "Docker 28 or newer is needed to keep the engine private (this is ${v:-unknown})"
   return 1
 }
-# private_net <id>: make the model's private network, or keep the one an earlier attempt made
+# private_net <id>: make the model's private network, or keep the one an earlier attempt made. The isolation above is
+# IPv4's, so the network has no IPv6 at all (a daemon that turns IPv6 on by default would give the host a route to it):
+# it must come out internal, IPv4-isolated and without IPv6.
 private_net() {
-  docker network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated \
+  docker network create --internal --ipv6=false -o com.docker.network.bridge.gateway_mode_ipv4=isolated \
     --label "$LABEL=1" --label "$LABEL.uid=$(id -u)" "$(private "$1")" >/dev/null 2>&1 || true
-  [[ $(docker network inspect -f '{{.Internal}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}}' "$(private "$1")" 2>/dev/null) == "true isolated" ]]
+  [[ $(docker network inspect -f '{{.Internal}} {{.EnableIPv6}} {{index .Options "com.docker.network.bridge.gateway_mode_ipv4"}}' "$(private "$1")" 2>/dev/null) == "true false isolated" ]]
 }
 gateway() { printf '%s-gateway' "$(network "$1")"; }
 # gw_addr <id>: the gateway's URL on the model's own Docker network. Only Docker assigns addresses on that bridge and
@@ -627,6 +647,7 @@ prepare_model() (
       --user "$(id -u):$(id -g)" --env HOME=/tmp --env HF_HUB_OFFLINE=1 \
       "${opts[@]}" ${gpu[@]+"${gpu[@]}"} ${visibility[@]+"${visibility[@]}"} --volume "$output:$at:$([[ $mode == args ]] && echo rw || echo ro)" \
       "${raw[@]}" "$(jq -r .image <<<"$r")" "${args[@]}" >/dev/null || return 1
+    ((${#gpu[@]} == 0)) || settle "$(preparer "$id")" ${prepare_keys[@]+"${prepare_keys[@]}"}
     # A running container now reserves its cards. Unrelated cards can start during the long conversion.
     flock -u 8 2>/dev/null || true
     docker logs --follow "$(preparer "$id")" >&2 & logger=$!
@@ -722,12 +743,38 @@ pull() {
     /: (Pull complete|Already exists)$/ && !($1 in done) { done[$1]; printf "downloading the %s: %d of %d layers\n", what, ++d, n; fflush() }'
 }
 
-# Lock the existing root-owned runtime directory read-only: every user sees the same inode,
-# and no user-created temporary file can block another account through its permissions.
+# allocation_lock: one start at a time for this account, on a lock file in its own runtime directory (else its state
+# folder). No other account can open it, so none can hold it and stall every start, as one could a lock on a shared
+# path such as /run. Another account's start does not take this lock: a card both take at the same moment is settled
+# by Docker (settle).
 allocation_lock() {
-  [[ -r $ALLOCATION_LOCK ]] || die "The system runtime directory is unavailable"
-  exec 8<"$ALLOCATION_LOCK"
+  local d=${XDG_RUNTIME_DIR:-}
+  [[ -n $d && -d $d && -O $d ]] || d=$STATE
+  exec 8>>"$d/omarchy-local-ai.allocation.lock"
   flock -w 30 8 || die "another model is starting; try again"
+}
+
+# settle <container> <card>...: the container just started on these cards keeps them only if no running container
+# created before it claims one of them (the same render node, the same NVIDIA device id or CDI name, or every NVIDIA
+# card); otherwise it is removed and the start ends. Two accounts that take a card at the same moment both read that
+# order from Docker, so exactly one start goes on.
+settle() {
+  local c=$1 ids mine v f='{"devices":{{json .HostConfig.Devices}},"requests":{{json .HostConfig.DeviceRequests}},"privileged":{{json .HostConfig.Privileged}}}'
+  shift
+  ids=$(docker ps -q --filter status=running --filter "before=$c") || die "could not check Docker GPU allocations; try again"
+  [[ -n $ids ]] || return 0
+  mine=$(docker inspect --format "$f" "$c") || die "could not check Docker GPU allocations; try again"
+  # shellcheck disable=SC2086
+  v=$(docker inspect --format "$f" $ids | jq -rs --argjson m "$mine" '
+    [$m.devices[]?.PathOnHost | select(startswith("/dev/dri/"))] as $paths | [$m.requests[]?.DeviceIDs[]?] as $ids
+    | ($m.requests // [] | length > 0) as $gpu
+    | ($paths | length > 0 or $gpu) and any(.[]; .privileged == true
+        or any(.devices[]?; .PathOnHost as $p | any($paths[]; . == $p or startswith($p + "/")))
+        or ($gpu and any(.requests[]?; (.DeviceIDs // [] | length) == 0 or any(.DeviceIDs[]; . as $i | $ids | index($i) != null))))') ||
+    die "could not check Docker GPU allocations; try again"
+  [[ $v == true ]] || return 0
+  docker rm -f "$c" >/dev/null 2>&1 || true
+  die "$* is in use by another program"
 }
 
 cards_free() {
@@ -848,8 +895,12 @@ phase_start() (
     remove "$id"
     die "the engine did not start"
   fi
+  [[ $backend == cpu ]] || settle "$(engine "$id")" "$@"
 
   [[ ! -e $(dir_of "$id")/cancel ]] || die "start cancelled"
+  # The key goes only to the gateway's bridge address (gw_addr). The port published on 127.0.0.1 carries no key: the
+  # panel's keyless /health poll uses it, the check below that it refuses a request without the key, and it is the
+  # port number a tailnet share and `ss` reserve.
   if ! docker run -d --name "$(gateway "$id")" --restart unless-stopped --security-opt no-new-privileges \
     --cap-drop ALL --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --dns 127.0.0.1 \
     --network "$(network "$id")" --network "$(private "$id")" --user "$(id -u):$(id -g)" --publish "127.0.0.1:$port:12434" \
@@ -1318,14 +1369,23 @@ plugin_latest() {
   git -C "$PANEL" merge-base --is-ancestor "$remote" HEAD 2>/dev/null && return 0
   jq -nc --arg h "$head" --arg l "$remote" '{head: $h, latest: $l}'
 }
-# Omarchy's own update does the work and reloads the panel; it already shows what changes when run in a terminal.
+# Omarchy's own update does the work, in a terminal and without --yes: it shows what changes, asks before it installs,
+# and reloads the panel. The panel sees the result on its next poll (the offer ends once this checkout has the
+# release). The terminal is released like an agent's (open), so the panel's time limit never ends it.
 update_plugin() {
-  local id
+  local id launcher
   id=$(jq -er .id "$PANEL/manifest.json") || die "this plugin has no manifest id"
-  say "updating the plugin"
-  timeout 300 omarchy-plugin-update "$id" --yes >>"$LOG" 2>&1 || die "could not update Local AI; see the Local AI log"
-  say "updated the plugin"
-  printf 'Updated Local AI.\n'
+  say "opening the plugin update"
+  omarchy-launch-tui --app-id=org.omarchy.local-ai-update bash -c \
+    'omarchy-plugin-update "$1" || echo "Local AI was not updated."; read -r -p "Press Enter to close. " _' local-ai "$id" \
+    </dev/null >/dev/null 2>&1 &
+  launcher=$!
+  sleep 0.3
+  if ! kill -0 "$launcher" 2>/dev/null; then
+    wait "$launcher" || die "could not open the update terminal; try again"
+  fi
+  disown "$launcher" 2>/dev/null || true
+  printf 'The update is open in a terminal: it shows what changes and asks before it installs.\n'
 }
 
 # outdated: which installed agents have a newer version from mise, the manager update uses, kept in outdated.json for
@@ -1666,7 +1726,7 @@ downloads() {
 }
 
 cmd_snapshot() {
-  local deps=() d id port at st pid sat boot obj why rc code ts="" sa="" sf="" sfs="" v="" a rstate="" rmsg=""
+  local deps=() d id port at st pid sat boot obj why rc code gw ts="" sa="" sf="" sfs="" v="" a rstate="" rmsg=""
   mkdir -p "$STATE/deploy"
   adopt
   # whether a model can start, and if not what the panel offers (lib/access.sh); Docker is asked only when it can answer
@@ -1687,7 +1747,7 @@ cmd_snapshot() {
         (. + ($st | {state, detail, percent, error})
           + {shared: (if $ts != "" and (.shared // false) then "https://\($ts):\(.port)" else "" end)} | tojson)' "$d/config.json" 2>/dev/null) ||
       continue
-    why=""
+    why="" gw=""
     case $st in
     download | starting | stopping)
       if (($(date -d "$sat" +%s 2>/dev/null || echo 0) < boot)); then
@@ -1702,9 +1762,11 @@ cmd_snapshot() {
       rc=0
       code=$(curl -s --noproxy '*' -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/health") || rc=$?
       if ((rc == 7 || rc == 52)) || [[ $code == "502" || $code == "503" ]]; then why="the engine stopped"; fi
+      # where you send the key yourself (the model's page copies it): the gateway's bridge address, as for the agents
+      [[ $rstate != ready ]] || gw=$(gw_addr "$id") || gw=""
       ;;
     esac
-    deps+=("{\"d\":$obj,\"u\":$(session "$id" "$(date -d "$at" +%s)"),\"why\":\"$why\"}")
+    deps+=("{\"d\":$obj,\"u\":$(session "$id" "$(date -d "$at" +%s)"),\"why\":\"$why\",\"gw\":\"$gw\"}")
   done
   { IFS= read -r -d '' sa && IFS= read -r -d '' sf && IFS= read -r -d '' sfs; } < <(jq -j '.agent // "", "\u0000",
     .folder // "", "\u0000", (.folders // [] | tojson), "\u0000"' "$STATE/settings.json" 2>/dev/null) || true
@@ -1715,13 +1777,13 @@ cmd_snapshot() {
     --arg cdi "$(cdi_stale 2>/dev/null || true)" --argjson downloads "$(downloads)" \
     --argjson outdated "$(jq -c '{at, updates, plugin}' "$STATE/outdated.json" 2>/dev/null || echo '{"at":"","updates":{}}')" \
     --arg head "$(git -C "$PANEL" rev-parse HEAD 2>/dev/null || true)" \
-    --arg reporting "$(if [[ ${DO_NOT_TRACK:-0} != 0 ]]; then echo env; else jq -r '.ping // "on"' "$STATE/settings.json" 2>/dev/null || echo on; fi)" \
+    --arg reporting "$(if [[ ${DO_NOT_TRACK:-0} != 0 ]]; then echo env; else jq -r '.ping // "unset"' "$STATE/settings.json" 2>/dev/null || echo unset; fi)" \
     --argjson folders "${sfs:-[]}" --argjson pins "$(jq -c '.pins // [] | map(strings)' "$STATE/settings.json" 2>/dev/null || echo '[]')" \
     --arg agents "$(for a in "${AGENTS[@]}"; do bin "$a" >/dev/null && echo "$a"; done)" --argjson host "$(host)" "$NEEDS$SUMMARY"'
     ($agents | split("\n") | map(select(length > 0))) as $agents
     # a running model with its session, in error when its worker or engine is gone; a second copy of a recipe runs
     # as <recipe>--2: its recipe is the one before the last "--", and its name when recipes.json no longer has it
-    | ([$deps[] | .d + {session: .u} + (if .why != "" then {state: "error", error: .why} else {} end)
+    | ([$deps[] | .d + {session: .u, address: .gw} + (if .why != "" then {state: "error", error: .why} else {} end)
       | (.id | if test("--") then .[:rindex("--")] else . end) as $rid
       | {name: $rid} + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy

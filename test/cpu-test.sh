@@ -6,8 +6,6 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 sed '/^paths "\$HOME"$/,$d' "${BACKEND:-$ROOT/bin/omarchy-local-ai}" >"$TMP/functions"
 source "$TMP/functions"
-ALLOCATION_LOCK=$TMP/docker.pid
-: >"$ALLOCATION_LOCK"
 paths "$TMP/home"
 mkdir -p "$STATE"
 RECIPES=$TMP/recipes.json
@@ -32,7 +30,7 @@ owned() { :; }
 remove() { :; }
 docker() {
   printf '%s\n' "$*" >>"$TMP/docker.log"
-  case $1 in version) echo 29.0.0 ;; network) if [[ $2 == inspect ]]; then echo 'true isolated'; fi ;; esac
+  case $1 in version) echo 29.0.0 ;; network) if [[ $2 == inspect ]]; then echo 'true false isolated'; fi ;; esac
 }
 phase_start cpu 12434 cpu:0 >"$TMP/start.log"
 engine_args=$(grep '^run .*engine ' "$TMP/docker.log")

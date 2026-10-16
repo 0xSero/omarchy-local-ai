@@ -17,6 +17,9 @@ STATE=$HOME/.local/state/omarchy/local-ai
 mkdir -p "$HOME" "$SHIM" "$TMP/bin" "$TMP/plugin/bin" "$TMP/plugin/lib"
 cp "$ROOT/bin/omarchy-local-ai" "$TMP/plugin/bin/"
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
+# the polkit files Local AI 6.0-6.4 wrote live in a test folder
+mkdir -p "$TMP/etc"
+sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|g" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|g" "$TMP/plugin/lib/access.sh"
 cp "$ROOT/manifest.json" "$ROOT/recipes.json" "$TMP/plugin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
 NODE=$(command -v node || true) # before PATH narrows to the shims
@@ -56,6 +59,18 @@ check 'a set up machine is ready' ready --
 [[ $(newgrp_calls) == 0 ]] || fail 'ready needs no group' "$(cat "$SHIM/newgrp.log")"
 
 check 'Sudoless Docker off needs setup' needs-setup -- NOT_IN_GROUP=1
+
+# polkit files a 6.0-6.4 setup left give root without a password: setup until they are gone, whatever else is true
+POLKIT_MSG='An earlier Local AI left polkit files that give root without a password: set up Local AI to remove them'
+for f in "sero.local-ai.u$(id -u).policy" "49-sero.local-ai.u$(id -u).rules"; do
+  touch "$TMP/etc/$f"
+  check "a leftover $f needs setup" needs-setup "$POLKIT_MSG" --
+  check "and that wins over a Docker that is down" needs-setup "$POLKIT_MSG" -- DOCKER_DOWN=1
+  rm "$TMP/etc/$f"
+done
+touch "$TMP/etc/sero.local-ai.u$((UID + 1)).policy"
+check "another account's leftover files are not this account's setup" ready --
+rm "$TMP/etc/sero.local-ai.u$((UID + 1)).policy"
 # a PATH with no Omarchy in it: on a real Omarchy the helper is installed system-wide, so removing the shim is not enough
 mkdir "$TMP/bare"
 ln -s "$(command -v readlink)" "$(command -v mkdir)" "$TMP/bare/"

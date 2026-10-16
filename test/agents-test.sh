@@ -57,9 +57,11 @@ REMOTE=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 [[ -z $(plugin_latest) ]] || { echo 'not ok - the current release was offered'; exit 1; }
 rm -rf "$PANEL/.git"; CONTAINS=1 REMOTE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 [[ -z $(plugin_latest) ]] || { echo 'not ok - a copy Omarchy cannot update was offered an update'; exit 1; }
-omarchy-plugin-update() { printf 'plugin-update %s\n' "$*" >>"$UPDATE_ARGS"; }
-cmd_update plugin >/dev/null
-grep -qx -- 'plugin-update sero.local-ai --yes' "$UPDATE_ARGS"
-omarchy-plugin-update() { return 1; }
-if (cmd_update plugin) >/dev/null 2>&1; then echo 'not ok - a failed plugin update reported success'; exit 1; fi
-echo 'ok - the plugin update is offered for a newer release only and runs Omarchy''s update'
+# the update opens in a terminal, where Omarchy's own update shows the change and asks: never --yes
+omarchy-launch-tui() { printf 'tui %s\n' "$*" >>"$UPDATE_ARGS"; }
+[[ $(cmd_update plugin) == *'open in a terminal'* ]]
+grep -q -- '^tui --app-id=org.omarchy.local-ai-update bash -c .*omarchy-plugin-update "$1".* local-ai sero.local-ai$' "$UPDATE_ARGS"
+! grep -q -- '--yes' "$UPDATE_ARGS"
+omarchy-launch-tui() { return 1; }
+if (cmd_update plugin) >/dev/null 2>&1; then echo 'not ok - a terminal that did not open reported success'; exit 1; fi
+echo 'ok - the plugin update is offered for a newer release only and opens Omarchy''s update in a terminal, which asks first'

@@ -26,7 +26,8 @@ flock -n 9 || { echo "Local AI setup is already open."; exit 1; }
 trap finish EXIT
 rm -f "$ERROR"
 
-# Local AI changes nothing as root itself. It runs two of Omarchy's commands, and names the password each may ask for.
+# Local AI runs nothing as root without asking: Omarchy's own commands, and sudo only to delete the polkit files an
+# earlier version left (below), each with a password prompt that names what it is for.
 echo "Local AI setup: Docker access for your account (Omarchy's Sudoless Docker) and, on NVIDIA, the container toolkit."
 
 # Local AI starts its containers as you: Omarchy's Sudoless Docker explains what that means and asks first. This login
@@ -53,6 +54,10 @@ if omarchy-hw-nvidia && stale=$("$HERE/omarchy-local-ai" cdi) && [[ -n $stale ]]
     SUDO_PROMPT="Password for %u to reinstall NVIDIA container support for Local AI: " omarchy-pkg-add nvidia-container-toolkit
 fi
 
+# Local AI 6.0-6.4 wrote polkit files for this account that gave root without a password (lib/access.sh): readiness
+# asks for setup until they are gone, and setup removes them with sudo, asking first, as 6.5-6.7 did
+remove_legacy_polkit
+
 # the verdict the panel will show, asked the way a start asks it (under the docker group)
 IFS=$'\t' read -r state msg < <("$HERE/omarchy-local-ai" readiness) || true
 case $state in
@@ -66,12 +71,5 @@ if command -v tailscale >/dev/null &&
   operator=$(timeout 10 tailscale debug prefs 2>/dev/null | jq -er '.OperatorUser // ""') && [[ $operator != "$USER" ]]; then
   echo "To share a model on your tailnet, Tailscale's operator must be $USER (it is '${operator:-nobody}')."
   echo "Omarchy sets this when it installs Tailscale; otherwise run as root: tailscale set --operator=$USER"
-fi
-
-# Local AI 6.0-6.4 wrote polkit files for this account. Only root can delete them, so setup names them.
-if [[ -e /etc/polkit-1/actions/sero.local-ai.u$UID.policy || -e /etc/polkit-1/rules.d/49-sero.local-ai.u$UID.rules ]]; then
-  echo "An earlier Local AI left polkit files for your account. Delete them as root:"
-  echo "  /etc/polkit-1/actions/sero.local-ai.u$UID.policy"
-  echo "  /etc/polkit-1/rules.d/49-sero.local-ai.u$UID.rules"
 fi
 echo "Local AI is ready. Return to the panel to choose a model."

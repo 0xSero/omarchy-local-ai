@@ -137,10 +137,14 @@ test('the registry line on the models tab is a small banner', () => {
   assert.equal(tab({...s, catalog: {commit: 'a9f394a7658d', at: ''}}).pop().text, 'models from the registry at a9f394a7');
 });
 test('a running model page hides its address until clicked; full screen shows its model card', () => {
-  const st = {...s, deployments: [{id: 'lfm.cpu', name: 'LFM2.5-2.6B', keys: ['cpu:0'], state: 'ready', agent: 'pi', port: 12434, session: {all: {decode: 40}}}]};
+  const st = {...s, deployments: [{id: 'lfm.cpu', name: 'LFM2.5-2.6B', keys: ['cpu:0'], state: 'ready', agent: 'pi', port: 12434, address: 'http://172.30.0.5:12434', session: {all: {decode: 40}}}]};
   const p = m.build(st, {view: 'run', id: 'lfm.cpu', details: true});
   assert.equal(p.rows[0].note, 'running · 40 tok/s');
-  const f = p.rows.find(x => x.icon === 'machine'); assert(f.secret); assert.equal(f.action, 'copy|http://127.0.0.1:12434');
+  // the address to send the key to is the gateway's on the model's Docker network, never 127.0.0.1:<port>
+  const f = p.rows.find(x => x.icon === 'machine'); assert(f.secret); assert.equal(f.action, 'copy|http://172.30.0.5:12434');
+  assert(!JSON.stringify(p.rows).includes('127.0.0.1'));
+  const none = m.build({...st, deployments: [{...st.deployments[0], address: ''}]}, {view: 'run', id: 'lfm.cpu', details: true});
+  assert(!none.rows.some(x => x.icon === 'machine'));
   const w = m.build(st, {view: 'run', id: 'lfm.cpu', wide: true, cards: {'lfm.cpu': '---\nlicense: x\n---\n# LFM\n![x](https://a/b.png)<img src=x><style>.a{b:c}</style><!-- n -->Hi'}});
   assert.equal(w.cardFor, 'lfm.cpu');
   assert.equal(w.rows.find(x => x.type === 'card').text, '# LFM\nHi');

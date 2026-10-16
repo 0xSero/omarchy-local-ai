@@ -18,20 +18,21 @@ Then open Local AI in the bar and click **Set up Local AI** (once per machine; O
 omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable
 ```
 
-Open Local AI in the bar and click **Set up Local AI**. A terminal opens and runs two of Omarchy's own commands; Local AI itself runs nothing as root, and adding or updating the plugin never runs setup.
+Open Local AI in the bar and click **Set up Local AI**. A terminal opens and runs two of Omarchy's own commands; Local AI itself runs nothing as root without asking, and adding or updating the plugin never runs setup.
 
 - `omarchy-setup-security-sudoless-docker`, Omarchy's Sudoless Docker: it explains what that means, asks you to confirm, then asks "Password for *you* to turn on Sudoless Docker for Local AI". This login reaches Docker through the new group at once, so Local AI needs no logout or reboot (Omarchy may still suggest one at its next update).
 - NVIDIA only: `omarchy-pkg-add nvidia-container-toolkit`, asking "Password for *you* to install NVIDIA container support for Local AI"; already installed, it asks nothing. The package describes your GPUs to Docker in `/etc/cdi/nvidia.yaml`, which Docker reads when a model starts, so Docker's configuration is untouched and it is not restarted.
+- Only if Local AI 6.0-6.4 was set up on this account: `sudo rm` of the polkit files it wrote (`/etc/polkit-1/actions/sero.local-ai.u<uid>.policy` and `/etc/polkit-1/rules.d/49-sero.local-ai.u<uid>.rules`), asking "Password for *you* to remove the polkit files an earlier Local AI left", then `sudo systemctl reload polkit`. Those files let anything running as you start the backend in your own plugin folder as root without a password, so the panel asks for setup until they are gone. Remove deletes them the same way.
 
 Setup ends by checking what the panel will show. Sharing a model on your tailnet needs you as Tailscale's operator; Omarchy's Tailscale install sets that, and setup tells you when it is not. After setup, starting, stopping, sharing, refreshing and removing never ask for a password. Sudoless Docker is root-equivalent, as Omarchy's own warning says; turn it off in Setup > Security.
 
 ## Requirements
 
 - Omarchy with the Quattro shell and its bar. Local AI calls Omarchy's own commands: `omarchy-setup-security-sudoless-docker`, `omarchy-pkg-add`, `omarchy-hw-nvidia`, `omarchy-launch-tui`, `omarchy-launch-browser`, `omarchy-notification-send` and `omarchy-cmd-present`.
-- Docker, `jq`, `curl`, `flock` and `sha256sum`.
+- Docker, `jq`, `curl`, `flock`, `sha256sum` and `sha1sum`.
 - A supported GPU (below), or an x86-64 CPU with AVX2 and enough RAM for its recipe. NVIDIA needs the driver and `nvidia-smi`; setup adds the container toolkit. Docker 28 or later (Omarchy ships 29). AMD needs ROCm's `amd-smi`.
 - Optional: Tailscale, to share a model; a Hugging Face token in `~/.cache/huggingface/token`, used for downloads when it exists.
-- Network access to `huggingface.co` (weights), `ghcr.io/sybil-solutions`, historical `ghcr.io/0xsero` pins, and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (the automatic catalog check), `huggingface.co` again for model cards in full screen, and `usage.sybilsolutions.ai` (the install count, below).
+- Network access to `huggingface.co` (weights), `ghcr.io/sybil-solutions`, historical `ghcr.io/0xsero` pins, and `ghcr.io/ggml-org` (the engine and gateway images, pinned by digest), and `api.github.com` and `raw.githubusercontent.com` (the automatic catalog check), `huggingface.co` again for model cards in full screen, and `usage.sybilsolutions.ai` (the install count, below, only once you allow it).
 
 Qwen3.8-Flash-Next on one **Intel Arc Pro B70 32 GB** can keep its routed experts
 and complete n-gram table in host RAM. This recipe needs **128 GB available RAM**
@@ -40,14 +41,14 @@ It supports images, not video. Its memory and private shared-memory limits are
 carried by the v3 catalog; the panel checks host RAM before starting it.
 Update to **6.13.4 or newer** to get this engine repository in the bundled
 catalog. Automatic catalog refreshes intentionally cannot introduce an engine
-repository an older plugin version has never shipped.
+image a plugin version has never shipped.
 
 ## What it does
 
 - **Validated models per card, or one across several.** `recipes.json` holds, for each supported hardware kind, every recipe accepted on that exact card or across 2 or 4 of them in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry): download, load, a correctness check and speed at several context lengths. EXL3 weights on SGLang or vLLM come first and are recommended. The models tab lists every model this machine can run, on whichever of its cards it lands, as one searchable table; home shows the ones you pinned (running or downloading one pins it). A machine with no tested model says so and links the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
 - **What the machine needs.** A recipe that keeps experts in system RAM or reads from disk while it serves (Qwen3.8-Flash-Next on a 3090 or a B70) says how much free RAM and disk it needs and whether the models folder must be on NVMe; it is offered only on a machine that has them; the others are listed as too big, saying what is missing. A recipe may also name the CPU threads its engine pins work to.
-- **Weights** are downloaded as you, from the pinned revision, and every file's size is checked against Hugging Face, and the SHA-256 of every large (LFS) file, before it is used. A matching copy in your Hugging Face cache is reused.
-- **Containers.** The engine runs on its own internal Docker network that the host has no address on, shared only with its gateway, with no published port and `no-new-privileges`. A keyed gateway runs as you on `127.0.0.1`, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
+- **Weights** are downloaded as you, from the pinned revision, and every file is checked against the hash Hugging Face lists for it before it is used: the SHA-256 of a large (LFS) file, the Git blob SHA-1 of a small one (configs, tokenizers, chat templates, model code). A copy in your Hugging Face cache is reused only when it passes the same check.
+- **Containers.** The engine runs on its own internal Docker network that the host has no address on, shared only with its gateway, with no published port and `no-new-privileges`. A keyed gateway runs as you on the model's own Docker network, speaks the OpenAI, Anthropic and Responses APIs, and logs one line per answer; the tokens, speeds, charts and the activity grid on Home come from that log, summed once per new line rather than on every refresh.
 - **Agents.** pi, Claude Code, Codex, OpenCode, omp, Crush, Grok, Copilot and Hermes open in a terminal, in the folder you pick, pointed at the gateway. Nothing in their own config is touched. A model's details list the agents once, the chosen one checked; on the agents page the chosen one is the default for new models. **Update to <version>** appears when mise or npm has a newer version of the agent. Click the folder row to browse folders inside the panel (click into a folder, or up, then **Use this folder**; recent folders are listed too). **Open** launches the chosen agent from home or the model's page. Agent choices on a running model do not change the default; the last folder picked remains the folder default. Updates use mise when it manages that agent, the native updater for standalone omp, Hermes, Claude Code and OpenCode, or npm for an existing npm installation. Existing sessions keep running.
 - **Share** a running model on your tailnet with `tailscale serve` (tailnet only, still keyed). **Stop sharing** on its page removes that share. Tailscale must be running and logged in. Setup preserves another account’s operator; ask that account to manage sharing. A failed unshare is logged and does not prevent stopping the model.
 
@@ -65,14 +66,14 @@ bin/omarchy-local-ai stop <recipe>
 bin/omarchy-local-ai open <recipe>            # the chosen agent on it, in a terminal
 bin/omarchy-local-ai update <agent>           # update the installed harness
 bin/omarchy-local-ai set agent|folder <value> [recipe]
-bin/omarchy-local-ai set ping on|off           # whether this install is counted
+bin/omarchy-local-ai set ping on|off           # whether this install is counted (off until you turn it on)
 bin/omarchy-local-ai share <recipe> [off]
 bin/omarchy-local-ai log
 ```
 
 CPU recipes use system RAM and start without GPU devices. Recipes that offload GPU work into RAM or NVMe remain hardware-specific and list their requirements.
 
-Each running model answers on `http://127.0.0.1:<port>/v1` (ports from 12434); the key is in `~/.local/state/omarchy/local-ai/gateway.key`. Local AI itself, and the agents it opens, send the key only to the gateway's address on the model's private Docker network, which no other account on the machine can take over.
+Each running model's gateway answers at its address on the model's own Docker network, `http://<address>:12434/v1`: the model's page shows it under **this machine**, hidden until clicked, with a copy. The key is in `~/.local/state/omarchy/local-ai/gateway.key`. Send it there and nowhere else, as Local AI itself and the agents it opens do: only Docker assigns addresses on that bridge and no host interface holds them, so no other account on the machine can listen there, while `127.0.0.1:<port>` is free for any account to bind the moment the gateway stops. The gateway's port on `127.0.0.1` (from 12434) carries no key: Local AI only checks there that the gateway is up and that it refuses a request without the key.
 
 ## Remove
 
@@ -113,8 +114,12 @@ connections.
 
 ### What Local AI sends
 
-To count how many machines use it, Local AI sends one small message each time it
-checks the registry for new models (every 12 hours while the bar runs) to
+Nothing, until you allow it. Home asks once whether to share minimal, anonymous
+usage counts (**Allow** or **No thanks**; either answer is kept, and Settings
+changes it later). An install from before this question is treated as not having
+answered: off until you allow it. Once allowed, to count how many machines use it,
+Local AI sends one small message each time it checks the registry for new models
+(every 12 hours while the bar runs) to
 `https://usage.sybilsolutions.ai/v1/local-ai/ping`:
 
 ```json
@@ -122,7 +127,7 @@ checks the registry for new models (every 12 hours while the bar runs) to
  "actions": {"started": 2, "failed": 0, "opened": 1, "downloaded": 1}}
 ```
 
-`id` is a random number made on first run and kept in
+`id` is a random number made on the first message and kept in
 `~/.local/state/omarchy/local-ai/install-id`; it is not derived from the machine
 or you, and Remove deletes it. `hw` lists the card kinds Local AI has recipes for
 that it found, `running` how many models run, `launched` whether a model has ever
@@ -136,10 +141,11 @@ Its code, the D1 migrations and the deploy config are in [`usage/`](usage) (the
 worker `local-ai-usage` and its `usage.sybilsolutions.ai` route); the public
 totals are the same worker's `GET /v1/local-ai/stats`.
 
-Turn it off in the panel under **Settings** (send usage reports), with
-`omarchy-local-ai set ping off`, or `DO_NOT_TRACK=1` in the
-bar's environment. Turning it off also deletes the actions not yet sent, and
-nothing is counted while it is off. A failed or refused message changes nothing.
+Turn it on or off in the panel under **Settings** (send usage reports), or with
+`omarchy-local-ai set ping on|off`; `DO_NOT_TRACK=1` in the bar's environment
+keeps it off whatever the setting. Turning it off also deletes the actions not
+yet sent, and nothing is counted while it is off or not yet allowed. A failed or
+refused message changes nothing.
 
 ### New models, downloads and removal
 
@@ -147,6 +153,12 @@ New models arrive by themselves: once the catalog is 12 hours old, Local AI chec
 the latest published registry (at most once an hour) and says so only when it
 brought new models; the catalog lives in your cache (`~/.cache/omarchy/local-ai/v3`). Downloads are pinned to a registry commit,
 validated before an atomic replacement, and failures keep the previous catalog.
+A refresh brings new recipes, never new code: a recipe is kept only when the
+plugin's own `recipes.json` ships its exact engine image (digest included), and
+its entrypoint, config file and preparation step are absent or the same as a
+shipped recipe's on that image. A recipe whose entrypoint is a shell, or that
+hands a shell or an interpreter's inline code (`python -c`) a script, is left
+out. What is left out arrives with the next plugin update.
 Refreshing does not stop running models or download model weights. Offload
 recipes are offered only when their RAM, disk and storage requirements fit.
 

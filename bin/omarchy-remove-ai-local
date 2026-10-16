@@ -5,7 +5,11 @@
 set -e
 
 HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+# shellcheck source=../lib/access.sh
+. "$HERE/../lib/access.sh"
 
 echo "Removing Local AI's models, containers, engine images and weights..."
 "$HERE/omarchy-local-ai" remove
+# polkit files Local AI 6.0-6.4 left, which gave root without a password; sudo asks first, and only when they are there
+remove_legacy_polkit
 echo "Done. Sudoless Docker stays on; turn it off in Setup > Security. To remove the plugin itself: omarchy plugin remove sero.local-ai"
