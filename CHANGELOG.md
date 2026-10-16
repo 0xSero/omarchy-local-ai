@@ -4,6 +4,13 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.21.1] - 2026-10-16
+
+### Fixed
+- The gateway now runs on arm64 machines (DGX Spark, GB10 and other aarch64 boxes), so they can start a model (#139). It moves to the multi-arch image `ghcr.io/sybil-solutions/gateway@sha256:110e8b11…` (org-v6: linux/amd64 + linux/arm64). Its amd64 image is the same one 6.21.0 runs (`sha256:78efe3eb…`), so x86 machines see no change. Both platform images and the index carry build attestations from our image workflows (registry #300).
+
+Recipes are at registry `3962e89a`. A 6.21.0 panel refreshing from this registry says the gateway changed and asks for this update; its recipes stay as shipped until then.
+
 ## [6.21.0] - 2026-10-16
 
 ### Changed
