@@ -4,6 +4,11 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.21.0] - 2026-10-16
+
+### Changed
+- Qwen3.8-Flash-Next on the Arc Pro B70 now runs with MTP speculative decoding at its full 262,144-token context in 63 GB of host RAM (was 128 GB, no MTP) (registry #301). Routed experts sit in system RAM and the n-gram (engram) table is read from an NVMe SSD; outputs are exact. Lab 36.1 tok/s and prefill 1,087 tok/s (was 31.6 and 307); recipe kit sweep prefill 1,134-1,152 tok/s from 8K to 64K, decode 41-44 tok/s at one to four users; reference panel top-1 0.9883. Engine image `ghcr.io/sybil-solutions/qwen38-flash-next-b70-offload@sha256:4f654928…`, built and attested by our image workflow.
+
 ## [6.20.0] - 2026-10-16
 
 ### Added
