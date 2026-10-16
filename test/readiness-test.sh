@@ -17,6 +17,9 @@ STATE=$HOME/.local/state/omarchy/local-ai
 mkdir -p "$HOME" "$SHIM" "$TMP/bin" "$TMP/plugin/bin" "$TMP/plugin/lib"
 cp "$ROOT/bin/omarchy-local-ai" "$TMP/plugin/bin/"
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
+# the polkit files Local AI 6.0-6.4 wrote live in a test folder
+mkdir -p "$TMP/etc" "$TMP/rules"
+sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|g" -e "s|/etc/polkit-1/rules.d/|$TMP/rules/|g" "$TMP/plugin/lib/access.sh"
 cp "$ROOT/manifest.json" "$ROOT/recipes.json" "$TMP/plugin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
 NODE=$(command -v node || true) # before PATH narrows to the shims
@@ -56,6 +59,29 @@ check 'a set up machine is ready' ready --
 [[ $(newgrp_calls) == 0 ]] || fail 'ready needs no group' "$(cat "$SHIM/newgrp.log")"
 
 check 'Sudoless Docker off needs setup' needs-setup -- NOT_IN_GROUP=1
+
+# polkit files a 6.0-6.4 setup left, by this account or another, give root: their own state, whatever else is true,
+# until they are gone; the reason points at the page with the commands, since only root can delete them
+POLKIT_MSG='An earlier Local AI (6.0-6.4) left polkit files that let programs on this machine get root without a password; remove them first: https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md'
+for f in "etc/sero.local-ai.u$(id -u).policy" "rules/49-sero.local-ai.u$(id -u).rules" "etc/sero.local-ai.u$((UID + 1)).policy" "rules/49-sero.local-ai.u$((UID + 1)).rules"; do
+  touch "$TMP/$f"
+  check "a leftover $f is legacy-polkit" legacy-polkit "$POLKIT_MSG" --
+  check "and that wins over a Docker that is down" legacy-polkit "$POLKIT_MSG" -- DOCKER_DOWN=1
+  check "and over setup not done" legacy-polkit "$POLKIT_MSG" -- NOT_IN_GROUP=1
+  [[ $("$CLI" run no-such-recipe nvidia:0 2>&1 >/dev/null) == "local-ai: $POLKIT_MSG" ]] || fail "a start refuses while $f is there"
+  rm "$TMP/$f"
+done
+check 'once they are gone it clears by itself' ready --
+# a rules.d this account cannot read hides its rules, and nothing fails; the actions, readable by all, still show
+touch "$TMP/rules/49-sero.local-ai.u$((UID + 1)).rules"; chmod 000 "$TMP/rules"
+check 'an unreadable rules.d is not an error' ready --
+touch "$TMP/etc/sero.local-ai.u$((UID + 1)).policy"
+check 'and an action beside it is still seen' legacy-polkit "$POLKIT_MSG" --
+chmod 755 "$TMP/rules"; rm -f "$TMP/rules/"* "$TMP/etc/"*
+[[ -f $ROOT/docs/legacy-polkit.md ]] || fail 'the page the reason points at'
+grep -qF "sudo sh -c 'rm -f /etc/polkit-1/actions/sero.local-ai.u*.policy /etc/polkit-1/rules.d/49-sero.local-ai.u*.rules' && sudo systemctl reload polkit" "$ROOT/docs/legacy-polkit.md" ||
+  fail 'the page gives the commands'
+pass 'a start refuses while any account'"'"'s files are there, and the page it names has the commands'
 # a PATH with no Omarchy in it: on a real Omarchy the helper is installed system-wide, so removing the shim is not enough
 mkdir "$TMP/bare"
 ln -s "$(command -v readlink)" "$(command -v mkdir)" "$TMP/bare/"
@@ -130,5 +156,13 @@ for (const state of states) {
   assert(buttons.includes('setup') || /again by itself/.test(notes), `${state} is a dead end`);
   assert(!/log out/i.test(notes), `${state} asks for a new login`);
 }
+// polkit files 6.0-6.4 left: a red banner on top that links the page with the commands, and no way to dismiss it
+const v = c.module.exports.build({gpus: [], kinds: [], readiness: {state: 'legacy-polkit', message: 'm'}}, {view: 'home'});
+const b = v.rows[0];
+assert(b.type === 'banner' && b.alert && /left polkit files that let programs on this machine get root/.test(b.text), JSON.stringify(b));
+assert.equal(b.action, 'url|https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md');
+assert(!v.rows.some(r => (r.items || []).some(i => i.action === 'setup')), 'setup is offered');
+assert(!JSON.stringify(v.rows).includes('dismiss'));
+console.log('ok - legacy polkit files: a red banner linking how to remove them, no setup button, nothing to dismiss');
 console.log('ok - every readiness state offers Set up Local AI or says it clears by itself');
 JS

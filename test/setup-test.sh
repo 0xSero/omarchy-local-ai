@@ -10,7 +10,7 @@ cp "${INSTALLER:-$ROOT/bin/omarchy-install-ai-local}" "$TMP/plugin/bin/omarchy-i
 cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 export HOME=$TMP/home SETUP_TEST=$TMP
 # the earlier polkit files live in a test folder
-sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|g" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|g" "$TMP/plugin/bin/omarchy-install-ai-local"
+sed -i -e "s|/etc/polkit-1/actions/|$TMP/etc/|g" -e "s|/etc/polkit-1/rules.d/|$TMP/etc/|g" "$TMP/plugin/lib/access.sh"
 shim() { printf '#!/bin/bash\n%s\n' "$2" >"$1"; chmod +x "$1"; }
 shim "$TMP/bin/sudo" 'echo "sudo $*" >>"$SETUP_TEST/calls"; exit 1'
 shim "$TMP/bin/omarchy-hw-nvidia" '[[ ${NVIDIA:-1} == 1 ]]'
@@ -71,10 +71,17 @@ FAIL_PREFS=1 setup
 if grep -q 'operator' "$TMP/out"; then exit 1; fi
 echo 'ok - setup names the Tailscale operator step and never changes the operator'
 
-touch "$TMP/etc/49-sero.local-ai.u$(id -u).rules"
+# polkit files 6.0-6.4 left: setup changes nothing, leaves no panel error behind, and says why and where the commands are
+for f in "sero.local-ai.u$(id -u).policy" "49-sero.local-ai.u$(id -u).rules"; do
+  touch "$TMP/etc/$f"
+  if setup; then exit 1; fi
+  [[ ! -s $TMP/calls && ! -e $error && -e $TMP/etc/$f ]]
+  grep -q 'let programs on this machine get root without a password; remove them first: https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md' "$TMP/out"
+  rm "$TMP/etc/$f"
+done
 setup
-grep -q 'Delete them as root' "$TMP/out"
-echo 'ok - leftover polkit files from earlier versions are named'
+grep -q 'Local AI is ready' "$TMP/out"
+echo 'ok - setup refuses before changing anything while polkit files 6.0-6.4 left are there, and names the page that removes them'
 
 # a stale NVIDIA device list (a card taken out): the toolkit is reinstalled with Omarchy's commands, whose hook writes it
 STALE="/dev/nvidia1 is gone" setup
@@ -84,8 +91,9 @@ grep -q 'drop nvidia-container-toolkit | Password for %u to reinstall NVIDIA con
 setup; ! grep -q '^drop' "$TMP/calls"
 echo 'ok - a stale NVIDIA device list is written again by reinstalling the toolkit with Omarchy commands, and only then'
 if grep -q '^sudo' "$TMP/calls"; then exit 1; fi
-if grep -qE '(^|[^-])\bsudo\b|systemctl|pkexec' "$ROOT/bin/omarchy-install-ai-local"; then exit 1; fi
-echo 'ok - setup itself runs nothing as root'
+# no file the marketplace scans names sudo, systemctl or pkexec: the commands for the polkit files are in docs/ only
+if grep -rlE '(^|[^-])\bsudo\b|systemctl|pkexec' "$ROOT/bin" "$ROOT/lib" "$ROOT/README.md" "$ROOT"/*.qml "$ROOT"/*.js; then exit 1; fi
+echo 'ok - setup itself runs nothing as root, and no scanned file names a root command'
 
 node - "$ROOT/Model.js" <<'JS'
 const fs = require('fs'), vm = require('vm'), assert = require('assert');

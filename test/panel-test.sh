@@ -76,7 +76,7 @@ ShellRoot {
   Timer {
     id: capture; interval:150
     onTriggered: {
-      if(runner.modes[runner.at]==="refreshed" && (ld.item.ui.notice!=="new models from the registry" || ld.item.autoBusy)){
+      if(runner.modes[runner.at]==="refreshed" && (ld.item.ui.notice!=="model list updated from the registry" || ld.item.autoBusy)){
         console.log("FAIL registry completion was not shown");runner.failed=true
       }
       var content=runner.find(ld.item,"local-ai-content")

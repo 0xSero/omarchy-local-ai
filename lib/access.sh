@@ -9,6 +9,8 @@
 #   needs-setup  the account or the NVIDIA runtime needs setup; the panel offers Set up Local AI
 #   docker-down  set up, but Docker does not answer; it clears when Docker does, and the panel keeps checking
 #   unsupported  this Omarchy has no Sudoless Docker helper; it clears when Omarchy is updated
+#   legacy-polkit  polkit files Local AI 6.0-6.4 wrote are still there; the panel links docs/legacy-polkit.md, which
+#                says how to remove them, and it clears once they are gone
 #
 # A login carries the groups it began with, so one that began before setup has the docker group only in /etc/group.
 # docker_group_reexec runs the program again under `newgrp docker`: no root, no password, and the socket never needs a
@@ -16,7 +18,7 @@
 
 # the test that every state has a panel page reads this list
 # shellcheck disable=SC2034
-READINESS_STATES=(ready needs-setup docker-down unsupported)
+READINESS_STATES=(ready needs-setup docker-down unsupported legacy-polkit)
 
 docker_socket() { printf '%s' "${OMARCHY_DOCKER_SOCKET:-/var/run/docker.sock}"; }
 
@@ -50,6 +52,21 @@ nvidia_ready() {
   nvidia_devices <<<"${info%%|*}" || jq -e 'keys | any(test("nvidia"))' >/dev/null 2>&1 <<<"${info#*|}"
 }
 
+# legacy_polkit_files: the polkit actions and rules Local AI 6.0-6.4 wrote, one pair for each account that set it up
+# (sero.local-ai.u<uid>). An action ran the backend in that account's own plugin checkout as root, and its rule let it
+# run without a password, so any program of that account could become root: a pair left by another account is root on
+# this machine all the same. Only root can delete them, so Local AI never does: it stops, and docs/legacy-polkit.md
+# gives the commands to run. The actions folder is readable by every account; rules.d usually is not, and then only
+# the actions are seen, which is enough: a rule without its action reaches nothing.
+legacy_polkit_files() {
+  compgen -G '/etc/polkit-1/actions/sero.local-ai.u*.policy' || true
+  compgen -G '/etc/polkit-1/rules.d/49-sero.local-ai.u*.rules' || true
+}
+# legacy_polkit: any of them is there, as far as this account can see
+legacy_polkit() { [[ -n $(legacy_polkit_files) ]]; }
+LEGACY_POLKIT_DOC=https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md
+LEGACY_POLKIT_REASON="An earlier Local AI (6.0-6.4) left polkit files that let programs on this machine get root without a password; remove them first: $LEGACY_POLKIT_DOC"
+
 # readiness_line <state> [message]
 readiness_line() { printf '%s\t%s\n' "$1" "${2:-}"; }
 
@@ -57,6 +74,8 @@ readiness() {
   local sock info
   sock=$(docker_socket)
   command -v omarchy-setup-security-sudoless-docker >/dev/null || { readiness_line unsupported "This Omarchy has no Sudoless Docker; update Omarchy"; return; }
+  # before anything else: nothing starts on a machine where any program of this account can become root
+  ! legacy_polkit || { readiness_line legacy-polkit "$LEGACY_POLKIT_REASON"; return; }
   docker_access_configured || { readiness_line needs-setup; return; }
   # a setup that did not finish is not done until it does; the panel shows its error beside the button
   [[ ! -s ${STATE:-/nonexistent}/setup-error ]] || { readiness_line needs-setup; return; }
@@ -84,6 +103,7 @@ require_ready() {
   case $state in
   ready) ;;
   needs-setup) die "Local AI is not set up yet: choose Set up Local AI" ;;
+  legacy-polkit) die "$LEGACY_POLKIT_REASON" ;;
   *) die "${msg:-Docker is not ready}" ;;
   esac
 }

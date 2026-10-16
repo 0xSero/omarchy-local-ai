@@ -11,10 +11,11 @@ Open pull requests against `dev`. CI runs on both branches; a pull request to `m
 
 ## What needs a release
 
-Code. Recipes do not: the panel checks the registry every 12 hours and takes its published export, as long as the
-gateway image and every engine image repository are ones this release already knows (`registry` in the backend).
-A registry change that brings a new engine repository or a new gateway needs a release; vendor it with
-`make sync REGISTRY=<checkout>` and `make check`. The manually dispatched `registry` workflow tells you whether
+Code, and every new or changed launch. Between releases a refresh can only withdraw, reorder or relabel shipped
+recipes: the panel checks the registry every 12 hours, and each recipe of its export that this release ships (same id,
+same card kind) becomes the shipped recipe with only checked display fields (name, family, format, sizeGb, aa,
+reported, capability flags) taken from the export; recipes it does not ship are left out (`registry` in the backend). New recipes, new or changed launches and
+a new gateway ship with a release; vendor them with `make sync REGISTRY=<checkout>` and `make check`. The manually dispatched `registry` workflow tells you whether
 the catalog content changed and gives a patch for that sync.
 
 ## Cutting one

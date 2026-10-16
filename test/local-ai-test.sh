@@ -18,9 +18,7 @@ cp "$ROOT/lib/access.sh" "$TMP/plugin/lib/"
 cp "$ROOT/bin/omarchy-local-ai" "$ROOT/manifest.json" "$TMP/plugin/" 2>/dev/null || true
 mv "$TMP/plugin/omarchy-local-ai" "$TMP/plugin/bin/"
 CLI=$TMP/plugin/bin/omarchy-local-ai
-sed -i "s|ALLOCATION_LOCK=/run|ALLOCATION_LOCK=$TMP/docker.pid|" "$CLI"
-: >"$TMP/docker.pid"
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v4/recipes.json|CATALOG=$TMP/catalog.json|" "$CLI"
 # the daemon's socket, reachable unless a case says otherwise
 export OMARCHY_DOCKER_SOCKET=$TMP/docker.sock
 : >"$OMARCHY_DOCKER_SOCKET"
@@ -85,7 +83,8 @@ info)
 image) exit 1 ;;
 pull) printf "latest: Pulling from x\nl1: Pulling fs layer\nl2: Pulling fs layer\nl2: Already exists\nl1: Download complete\nl1: Pull complete\n" ;;
 version) echo "${SHIM_DOCKER_VERSION:-29.0.0}" ;;
-network) if [[ $2 == inspect ]]; then echo "true isolated"; fi ;;
+network) if [[ $2 == inspect && $4 == "{{.EnableIPv6}}" ]]; then echo "${SHIM_IPV6:-false}"
+  elif [[ $2 == inspect ]]; then echo "${SHIM_NETWORK:-true false isolated}"; fi ;;
 run) n=""; for ((i = 1; i <= $#; i++)); do [[ ${!i} == --name ]] && { j=$((i + 1)); n=${!j}; }; done; echo "1|$(id -u)" >"$c/$n" ;;
 inspect) if [[ $* == *HostConfig.Devices* ]]; then echo "{\"devices\":[],\"requests\":null}"; exit 0; fi; n=${@: -1}; [[ -f $c/$n ]] || exit 1; if [[ $* == *IPAddress* ]]; then echo 172.30.0.5; elif [[ $* == *RestartCount* ]]; then echo 0; else cat "$c/$n"; fi ;;
 logs) [[ -z ${SHIM_ENGINE_LOG:-} ]] || { printf "loading shards\n(EngineCore pid=5) ERROR [core.py:1330] EngineCore failed to start.\n(EngineCore pid=5) ERROR [core.py:1330] ValueError: Free memory on device xpu:0 (30.16/31.89 GiB) on startup is less than desired GPU memory utilization\n"
@@ -99,7 +98,7 @@ rm) if [[ ${@: -1} == *-engine ]]; then
       fi
     fi
     rm -f "$c/${@: -1}" ;;
-ps) ls "$c" ;;
+ps) [[ -z ${SHIM_PS_FAIL:-} ]] || exit 1; ls "$c" ;;
 esac'
 shim curl '
 url="" out="" key=""
@@ -148,6 +147,8 @@ export PATH=$TMP/bin:/usr/bin:/bin
 export CDI_DIRS=$TMP/cdi
 cdi() { mkdir -p "$CDI_DIRS"; printf 'devices:\n  - name: "0"\n    containerEdits:\n      deviceNodes:\n        - path: /dev/null\n          major: %s\n          minor: 3\n' "$1" >"$CDI_DIRS/nvidia.yaml"; }
 cdi 1
+# this user has answered home's one question about usage reports, so the pages below are the ones that follow it
+"$CLI" set ping off
 
 recipes "$PIN"
 "$CLI" snapshot >"$TMP/snap.json"
@@ -402,7 +403,7 @@ engine=$(grep -- '--name omarchy-local-ai-.*-engine' "$SHIM/docker.log")
   $engine == *"$PIN --port 8000" ]] || fail "engine argv" "$engine"
 pass "the engine gets its card, a read-only weights mount and the recipe's options, never a published port or its own card choice"
 net="omarchy-local-ai-$(id -u)-$ID"
-grep -qx -- "network create --internal -o com.docker.network.bridge.gateway_mode_ipv4=isolated --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.uid=$(id -u) $net-private" "$SHIM/docker.log" ||
+grep -qx -- "network create --internal --ipv6=false -o com.docker.network.bridge.gateway_mode_ipv4=isolated --label io.omarchy.local-ai=1 --label io.omarchy.local-ai.uid=$(id -u) $net-private" "$SHIM/docker.log" ||
   fail "private network" "$(grep '^network' "$SHIM/docker.log")"
 [[ $engine == *"--network $net-private --network-alias engine"* && $engine != *"--network $net "* ]] || fail "engine network" "$engine"
 [[ $(grep -- '--name omarchy-local-ai-.*-gateway' "$SHIM/docker.log") == *"--network $net --network $net-private "* ]] ||
@@ -423,8 +424,16 @@ grep -qF -- "-fsS --noproxy * --max-time 5 http://127.0.0.1:12434/v1/models" "$S
 pass "a gateway that answers without the key would be refused"
 # the key goes only to the gateway's address on the model's Docker network, never to 127.0.0.1:<port>, which another
 # account could take over once the gateway exits; the snapshot poll uses the keyless /health
-"$CLI" snapshot >/dev/null
+"$CLI" snapshot >"$TMP/snap-gw.json"
+# an engine an earlier version started on a network with IPv6 on: the snapshot says to run it again, and it is not shared
+[[ $(SHIM_IPV6=true "$CLI" snapshot | jq -r '.deployments[0] | "\(.state) \(.error)"') == "error its engine network has IPv6 on, which reaches the engine without the key: run it again to rebuild that network" ]] ||
+  fail "IPv6 on an old engine network" "$(SHIM_IPV6=true "$CLI" snapshot | jq -c .deployments)"
+SHIM_IPV6=true "$CLI" share "$(jq -r '.deployments[0].id' "$TMP/snap-gw.json")" 2>"$TMP/err" && fail "shared over an IPv6 network"
+grep -q 'IPv6 on' "$TMP/err" || fail "IPv6 share refusal" "$(cat "$TMP/err")"
+pass "a running model whose engine network has IPv6 on is flagged to run again, and not shared"
 grep -q "127.0.0.1:12434/health" "$SHIM/curl.log" || fail "health poll" "$(tail -3 "$SHIM/curl.log")"
+# and the address the model's page copies for your own clients is that one too
+[[ $(jq -r '.deployments[0].address' "$TMP/snap-gw.json") == "http://172.30.0.5:12434" ]] || fail "address for clients" "$(jq -c .deployments "$TMP/snap-gw.json")"
 ! grep -F "gateway.auth" "$SHIM/curl.log" | grep -q "127\.0\.0\.1" || fail "keyed loopback request" "$(grep -F gateway.auth "$SHIM/curl.log" | grep 127.0.0.1)"
 grep -F "gateway.auth" "$SHIM/curl.log" | grep -q "http://172.30.0.5:12434/v1/chat/completions" || fail "keyed bridge request" "$(grep -F gateway.auth "$SHIM/curl.log")"
 pass "the key is only ever sent to the gateway's bridge address; the poll sends none"
@@ -645,6 +654,14 @@ wait_for error
   ! grep -q '^run ' "$SHIM/docker.log" || fail "old Docker" "$(cat "$STATE/deploy/$ID/status.json")"
 pass "a Docker that cannot keep the engine off the host's network is refused before anything runs"
 "$CLI" stop "$ID" >/dev/null 2>&1 || true
+# a private network that came out with IPv6 (a daemon with IPv6 on by default) has a route the IPv4 isolation misses
+: >"$SHIM/docker.log"
+SHIM_NETWORK="true true isolated" "$CLI" run "$ID" nvidia:0
+wait_for error
+[[ $(jq -r .error "$STATE/deploy/$ID/status.json") == "Docker did not make the engine's network private" ]] &&
+  ! grep -q -- "--name omarchy-local-ai-.*-engine" "$SHIM/docker.log" || fail "IPv6 network" "$(cat "$STATE/deploy/$ID/status.json")"
+pass "an engine network with IPv6 on is refused before the engine runs"
+"$CLI" stop "$ID" >/dev/null 2>&1 || true
 
 jq '.hardware["rtx-4090-24gb"].match = {backend:"amd-vulkan", names:["rx9070xt"], vramGb:16}' "$TMP/plugin/recipes.json" >"$TMP/r2"
 mv "$TMP/r2" "$TMP/plugin/recipes.json"
@@ -747,7 +764,7 @@ mkdir -p "${fresh%/*}" "$TMP/fresh/lib"
 cp "$ROOT/bin/omarchy-local-ai" "$fresh"
 cp "$ROOT/lib/access.sh" "$TMP/fresh/lib/"
 cp "$TMP/plugin/recipes.json" "$TMP/plugin/manifest.json" "$TMP/fresh/"
-sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v3/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
+sed -i "s|CATALOG=\$HOME/.cache/omarchy/local-ai/v4/recipes.json|CATALOG=$TMP/catalog.json|" "$fresh"
 [[ $(SHIM_NOGROUP=1 "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup"
 [[ $(SHIM_NOGROUP=1 OMARCHY_DOCKER_SOCKET=$TMP/no-socket "$fresh" snapshot | jq -r .readiness.state) == needs-setup ]] || fail "setup before setup, socket out of reach"
 [[ $("$fresh" snapshot | jq -r .readiness.state) == ready ]] || fail "setup after setup"
@@ -808,6 +825,76 @@ tail -1 "$SHIM/curl.log" | grep -q -- "-H @/dev/fd/" || fail "card header" "$(ta
 ! grep -rqs "$hf" "$STATE" || fail "hf token on disk" "$(grep -rls "$hf" "$STATE")"
 rm -f "$HOME/.cache/huggingface/token"
 pass "the model card fetch reads the Hugging Face token from a pipe, never from curl's argv or a file"
+
+# A refreshed catalog that does not load, or that the panel cannot be drawn from (a needs field of the wrong type), is
+# not used for that snapshot: the shipped recipes answer, the log says why once per reason, and the catalog stays for
+# the next refresh to replace; the panel never stops refreshing
+for bad in 'not json' "$(jq -c '.hardware[].recipes[].needs = {host_ram_gb: "64"}' "$TMP/plugin/recipes.json")"; do
+  printf '%s\n' "$bad" >"$TMP/catalog.json"; touch -d '1 minute ago' "$TMP/plugin/recipes.json"
+  "$CLI" snapshot >"$TMP/snap-bad.json" || fail "a bad catalog stopped the snapshot" "$(tail -2 "$STATE/log")"
+  "$CLI" snapshot >/dev/null
+  jq -e --arg id "$ID" 'any(.kinds[].models[]; .id == $id)' "$TMP/snap-bad.json" >/dev/null && [[ -f $TMP/catalog.json && ! -e $TMP/catalog.json.bad ]] ||
+    fail "a bad catalog" "$(tail -2 "$STATE/log")"
+done
+[[ $(grep -c 'the refreshed model list is not used' "$STATE/log") == 2 ]] || fail "logged once per reason" "$(grep 'not used' "$STATE/log")"
+# a good catalog and a Docker that fails: the snapshot fails as it always has, and the catalog is not touched
+jq -c . "$TMP/plugin/recipes.json" >"$TMP/catalog.json"
+SHIM_PS_FAIL=1 "$CLI" snapshot >/dev/null 2>&1 && fail "a snapshot without Docker's GPU allocations"
+[[ -f $TMP/catalog.json && ! -e $TMP/catalog.json.bad && $(grep -c 'the refreshed model list is not used' "$STATE/log") == 2 ]] ||
+  fail "a failing docker ps touched a good catalog"
+rm -f "$TMP/catalog.json"
+pass "a refreshed catalog that cannot be read or drawn is not used, logged once per reason, and kept; a Docker failure never counts against it"
+
+# An update that stops offering a recipe strands nothing: its running model still stops, a failed one is dismissed and
+# its download removed by what it recorded, and a folder no recipe here uses is listed on home and removed
+MODELS=$HOME/.cache/omarchy/local-ai/models
+gone=$STATE/deploy/gone-model
+mkdir -p "$gone" "$MODELS/old--gone@aaaaaaaaaaaa"; head -c 2048 /dev/zero >"$MODELS/old--gone@aaaaaaaaaaaa/w.bin"
+jq -nc --arg m "$MODELS/old--gone@aaaaaaaaaaaa" '{id: "gone-model", keys: ["nvidia:2"], port: 12440, managedPaths: [$m],
+  recipe: {id: "gone-model", name: "Gone", weights: [], launch: {port: 8000}}}' >"$gone/config.json"
+echo '{"state":"ready","pid":0}' >"$gone/status.json"
+"$CLI" snapshot >"$TMP/snap-gone2.json"
+jq -e '.deployments[] | select(.id == "gone-model") | .offered == false' "$TMP/snap-gone2.json" >/dev/null || fail "not offered" "$(jq -c .deployments "$TMP/snap-gone2.json")"
+"$CLI" forget gone-model 2>"$TMP/err" && fail "forgot a running model's download"
+grep -q 'stop gone-model before removing its download' "$TMP/err" || fail "forget a running unoffered model" "$(cat "$TMP/err")"
+echo '{"state":"error","error":"x","pid":0}' >"$gone/status.json"
+# failed, with its engine still there (a restart policy brings it back): not yet
+echo "1|$(id -u)" >"$SHIM/containers/omarchy-local-ai-gone-model-engine"
+"$CLI" forget gone-model 2>"$TMP/err" && fail "forgot a download its engine still has"
+grep -q 'stop gone-model before removing its download' "$TMP/err" || fail "forget with an engine" "$(cat "$TMP/err")"
+rm "$SHIM/containers/omarchy-local-ai-gone-model-engine"
+"$CLI" forget gone-model || fail "forget a failed unoffered model"
+[[ ! -e $MODELS/old--gone@aaaaaaaaaaaa ]] || fail "its download is still there"
+"$CLI" stop gone-model && [[ ! -d $gone ]] || fail "stop an unoffered model"
+mkdir -p "$MODELS/old--gone@bbbbbbbbbbbb"; head -c 2048 /dev/zero >"$MODELS/old--gone@bbbbbbbbbbbb/w.bin"
+"$CLI" snapshot >"$TMP/snap-gone3.json"
+[[ $(jq -c '.unoffered.folders' "$TMP/snap-gone3.json") == '[{"folder":"old--gone@bbbbbbbbbbbb","gb":0}]' ]] || fail "unoffered folders" "$(jq -c .unoffered "$TMP/snap-gone3.json")"
+used=$(ls "$MODELS" | grep -m1 '^test--model@') || fail "the running model's folder"
+"$CLI" forget --folder "$used" 2>"$TMP/err" && fail "removed a folder a recipe uses"
+grep -q 'is offered or in use' "$TMP/err" || fail "used folder" "$(cat "$TMP/err")"
+"$CLI" forget --folder ../x 2>/dev/null && fail "a path outside the models folder"
+# a download writing it, by the folder's lock or by one inside it (a weights dir an earlier version locked), keeps it
+for lock in "$MODELS/old--gone@bbbbbbbbbbbb.lock" "$MODELS/old--gone@bbbbbbbbbbbb/sub.lock"; do
+  (exec 8>"$lock"; flock 8; exec sleep 30) & holder=$!
+  sleep 0.3
+  "$CLI" forget --folder old--gone@bbbbbbbbbbbb 2>"$TMP/err" && fail "removed a folder that is downloading ($lock)"
+  grep -q 'is still downloading' "$TMP/err" || fail "downloading folder" "$(cat "$TMP/err")"
+  kill "$holder"; wait "$holder" 2>/dev/null || true
+done
+# a model whose weights cannot be told apart (one 6.9 or earlier started, or adopted from 5.x): nothing is listed or removed
+mkdir -p "$STATE/deploy/old-start"; echo '{"id":"old-start","keys":["nvidia:2"],"port":12441}' >"$STATE/deploy/old-start/config.json"
+echo '{"state":"ready","pid":0}' >"$STATE/deploy/old-start/status.json"
+[[ $(jq -c '.unoffered.folders' <("$CLI" snapshot)) == '[]' ]] || fail "listed folders beside a model with no download record"
+"$CLI" forget --folder old--gone@bbbbbbbbbbbb 2>"$TMP/err" && fail "removed a folder beside a model with no download record"
+grep -q 'stop existing models before removing downloads' "$TMP/err" || fail "no record" "$(cat "$TMP/err")"
+rm -rf "$STATE/deploy/old-start"
+# a name this plugin never makes (a tab or a newline in it) is not listed
+mkdir -p "$MODELS/odd"$'\t'"x--y@cccccccccccc" "$MODELS/odd"$'\n'"x--y@dddddddddddd"
+[[ $(jq -c '[.unoffered.folders[].folder]' <("$CLI" snapshot)) == '["old--gone@bbbbbbbbbbbb"]' ]] || fail "odd names listed" "$(jq -c .unoffered <("$CLI" snapshot))"
+rm -rf "$MODELS/odd"*
+"$CLI" forget --folder old--gone@bbbbbbbbbbbb && [[ ! -e $MODELS/old--gone@bbbbbbbbbbbb ]] || fail "forget --folder"
+[[ $(jq -c '.unoffered.folders' <("$CLI" snapshot)) == '[]' ]] || fail "removed folder still listed"
+pass "a recipe no longer offered strands nothing: Stop works, its download is removed, and leftover folders are listed and removed"
 
 "$CLI" stop "$ID"
 "$TMP/plugin/bin/omarchy-remove-ai-local"

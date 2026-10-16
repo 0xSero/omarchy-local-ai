@@ -93,8 +93,10 @@ var SUPPORTED = "url|https://local.sybilsolutions.ai/hardware/"
 function stopped(s, ui) {
   return [].concat.apply([], (s.deployments || []).filter(function(d) { return d.state === "error" }).map(function(d) {
     var here = d.keys.every(function(k) { return find(s.gpus || [], "key", k) })
-    var row = { type: "slot", label: d.name, toggle: "pick|lost:" + d.id, open: ui.open === "lost:" + d.id, crashed: true, hint: "stopped",
-      run: here ? { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") } : null, dismiss: "stop|" + d.id }
+    // a recipe this version no longer offers cannot start again: dismiss only, and its download is listed below
+    var row = { type: "slot", label: d.name, toggle: "pick|lost:" + d.id, open: ui.open === "lost:" + d.id, crashed: true,
+      hint: d.offered === false ? "no longer offered" : "stopped",
+      run: here && d.offered !== false ? { label: "run again ›", action: "again|" + d.id + "|" + d.keys.join(",") } : null, dismiss: "stop|" + d.id }
     var rows = [row, { type: "error", label: d.error || "stopped" }]
     if (row.open) rows.push({ type: "links", note: "", items: [{ label: "View logs", action: "log" }, { label: "Details ›", action: "more|" + d.id }] })
     return rows
@@ -107,12 +109,19 @@ var READINESS = {
   "needs-setup": { note: "Once per machine: Docker access for your account (Omarchy's Sudoless Docker) and, on NVIDIA, the container toolkit. A terminal opens; Omarchy asks for your password.",
     action: "setup" },
   "docker-down": { note: "Docker is not ready. Local AI checks again by itself." },
-  unsupported: { note: "This Omarchy is too old for Local AI. It checks again by itself once Omarchy is updated." }
+  unsupported: { note: "This Omarchy is too old for Local AI. It checks again by itself once Omarchy is updated." },
+  // only root can delete them, so the page that says how is the way out; the banner above says why
+  "legacy-polkit": { note: "Nothing starts until those files are gone. Local AI checks again by itself, and this clears once they are." }
 }
+var LEGACY_POLKIT = "https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md"
 function notReadyView(s, ui) {
   var r = s.readiness, t = READINESS[r.state] || { note: "Local AI is not ready. It checks again by itself." }
   var rows = [activity(s, ui), { type: "sec", label: "SETUP" }, { type: "links", note: t.note, items: [] }]
-  if (r.message) rows.push({ type: "links", note: r.message, items: [] })
+  // polkit files 6.0-6.4 left give programs of the account that set it up root: a red banner, with no way to dismiss it, until
+  // they are gone; its message carries the same page, so it is not repeated
+  if (r.state === "legacy-polkit") rows.unshift({ type: "banner", alert: true, action: "url|" + LEGACY_POLKIT, actionLabel: "How to remove them",
+    text: "An earlier Local AI (6.0\u20136.4) left polkit files that let programs on this machine get root without a password. Remove them before using Local AI." })
+  else if (r.message) rows.push({ type: "links", note: r.message, items: [] })
   if (t.action) rows.push({ type: "acts", items: [{ label: "Set up Local AI", action: t.action, primary: true }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
 }
@@ -137,6 +146,7 @@ function homeView(s, ui) {
   // a model that stopped, to run again or dismiss
   rows = rows.concat(stopped(s, ui))
   rows = rows.concat(pinned(s, ui))
+  rows = rows.concat(unoffered(s))
   rows.push({ type: "sec", label: "THIS MACHINE" })
   rows.push({ type: "field", icon: "gpu", label: "hardware", value: String(s.gpus.length), action: "gpus" })
   if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
@@ -262,6 +272,22 @@ function pinned(s, ui) {
   return [{ type: "sec", label: mine.length ? "YOUR MODELS" : "RECOMMENDED" }].concat(top.length ? table(top, ui.wide)
     : [{ type: "links", note: "Nothing fits this machine yet; the models tab says what each one needs.", items: [{ label: "Models ›", action: "models" }] }])
 }
+// What a recipe this version no longer offers left behind (an update withdrew it): each folder with its size and
+// Remove, and each download that will not finish with Remove, so an update never strands gigabytes
+function unoffered(s) {
+  var u = s.unoffered || {}, f = u.folders || [], d = u.downloads || [], rows = []
+  if (!f.length && !d.length) return rows
+  rows.push({ type: "sec", label: "NO LONGER OFFERED" })
+  f.forEach(function(x) {
+    rows.push({ type: "field", icon: "weights", label: x.folder, value: gb(x.gb) })
+    rows.push({ type: "links", items: [{ label: "Remove", action: "discard|" + x.folder }] })
+  })
+  d.forEach(function(x) {
+    rows.push({ type: "field", icon: "down", label: x.id, value: "download stopped" })
+    rows.push({ type: "links", items: [{ label: "Remove", action: "download|" + x.id + "|off" }] })
+  })
+  return rows
+}
 // the models tab: a search line (type anywhere), then the matches, or what you have downloaded, every other model
 // that fits, and those this machine is too small for; each row opens in place to start, download, remove or pin it
 function modelsTab(s, ui) {
@@ -270,7 +296,7 @@ function modelsTab(s, ui) {
   if (q) {
     var hit = all.filter(function(c) { return matches(c, q) }).sort(function(a, b) { return (b.fits - a.fits) || a.at - b.at })
     rows.push({ type: "sec", label: "MATCHES" })
-    return rows.concat(hit.length ? table(hit, ui.wide, ui) : [{ type: "links", note: "No model here matches \u201c" + ui.query.trim() + "\u201d. New ones arrive by themselves.", items: [] }])
+    return rows.concat(hit.length ? table(hit, ui.wide, ui) : [{ type: "links", note: "No model here matches \u201c" + ui.query.trim() + "\u201d. New ones arrive with Local AI updates.", items: [] }])
   }
   // the smartest first, by the Artificial Analysis Intelligence Index; models AA does not list after, in registry order
   var byAA = function(a, b) { return ((b.aa != null) - (a.aa != null)) || (b.aa || 0) - (a.aa || 0) || a.at - b.at }
@@ -408,7 +434,7 @@ function soonView(s, ui) {
   })
   if (!names.length) rows.push({ type: "field", icon: "gpu", label: "no supported GPU found", value: "" })
   if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
-  rows.push({ type: "links", note: "Local AI runs only models tested on your hardware. New ones arrive by themselves as they are tested.", items: [] })
+  rows.push({ type: "links", note: "Local AI runs only models tested on your hardware. New ones arrive with Local AI updates as they are tested.", items: [] })
   rows.push({ type: "acts", items: [{ label: "Supported hardware ›", action: SUPPORTED }] })
   return { title: "LOCAL AI", version: s.version, rows: rows }
 }
@@ -434,7 +460,9 @@ function page(s, ui, m) {
     : (m.downloaded ? "downloaded · ready to start" : "starts with a " + gb(m.sizeGb || 0) + " download") + (m.reported ? " · reported, not yet run by the lab" : "")
   v.rows.push(failed || m.unfit ? { type: "error", label: said } : { type: "links", note: said, items: [] })
   // one action, two when it runs: Open and Stop; none for a model this machine cannot run
-  if (!m.unfit || run) v.rows.push({ type: "acts", items: failed ? [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true }, { label: "Dismiss", action: "stop|" + run.id, danger: true }]
+  if (run && run.offered === false) v.rows.push({ type: "links", note: "no longer offered: once stopped, it cannot start again, and its download is listed on home to remove", items: [] })
+  if (!m.unfit || run) v.rows.push({ type: "acts", items: failed && run.offered === false ? [{ label: "Dismiss", action: "stop|" + run.id, danger: true }]
+    : failed ? [{ label: "Run again ›", action: "again|" + run.id + "|" + run.keys.join(","), primary: true }, { label: "Dismiss", action: "stop|" + run.id, danger: true }]
     : run && run.state === "ready" ? [{ label: "Open " + agentName(run.agent) + " ›", action: "open|" + run.id, primary: true }, { label: "Stop", action: stop(run), danger: true }]
     : run ? [{ label: "Stop", action: stop(run), danger: true }]
     : [{ label: "Start ›", action: m.action || "", primary: true }] })
@@ -464,8 +492,10 @@ function page(s, ui, m) {
   weights(v.rows, m.weights)
   if (run && !failed) {
     v.rows.push({ type: "sec", label: "REACH" })
-    // addresses stay hidden until clicked, beside a copy
-    v.rows.push({ type: "field", icon: "machine", label: "this machine", value: "http://127.0.0.1:" + run.port, secret: true, action: "copy|http://127.0.0.1:" + run.port })
+    // addresses stay hidden until clicked, beside a copy. On this machine that is the gateway's address on the model's
+    // Docker network, where the key is safe to send: no other account can listen there, while 127.0.0.1:<port> is
+    // anyone's to bind the moment the gateway exits
+    if (run.address) v.rows.push({ type: "field", icon: "machine", label: "this machine", value: run.address, secret: true, action: "copy|" + run.address })
     if (s.tailnet) v.rows.push(run.shared
       ? { type: "field", icon: "tailnet", label: "tailnet", value: run.shared, secret: true, action: "copy|" + run.shared }
       : { type: "field", icon: "tailnet", label: "tailnet", value: "share", action: "share|" + run.id })
@@ -610,17 +640,18 @@ function folderView(s, ui) {
   return { back: true, where: "folder", rows: rows }
 }
 
-// Settings: usage reporting, on unless turned off here or by DO_NOT_TRACK, and exactly what it sends
+// Settings: usage reporting, off until turned on here or with Allow on home (never with DO_NOT_TRACK), and exactly what
+// it sends
 var REPORTING = "Reporting is minimal and anonymous. There is no user or account ID: at most twice a day Local AI sends " +
   "a random number made on this computer, its version, the kinds of graphics card it found, how many models are running, " +
   "and how many models it started, failed to start, opened in an agent or downloaded since the last report. It never " +
-  "sends your prompts, files, folders, model names or agents, and your IP address is not stored. Turned off, nothing " +
-  "is sent and counts not yet sent are deleted."
+  "sends your prompts, files, folders, model names or agents, and your IP address is not stored. Until you turn it on, " +
+  "and once you turn it off, nothing is sent and counts not yet sent are deleted."
 function settingsView(s, ui) {
-  var r = s.reporting || "on", rows = [{ type: "sec", label: "USAGE REPORTING" }]
-  if (r === "env") rows.push({ type: "field", label: "send usage reports", value: "off (DO_NOT_TRACK is set)" })
-  else rows.push({ type: "field", icon: r === "off" ? "" : "check", label: "send usage reports", value: r === "off" ? "off" : "on",
-    action: "set|ping|" + (r === "off" ? "on" : "off") })
+  var on = s.reporting === "on", rows = [{ type: "sec", label: "USAGE REPORTING" }]
+  if (s.reporting === "env") rows.push({ type: "field", label: "send usage reports", value: "off (DO_NOT_TRACK is set)" })
+  else rows.push({ type: "field", icon: on ? "check" : "", label: "send usage reports", value: on ? "on" : "off",
+    action: "set|ping|" + (on ? "off" : "on") })
   rows.push({ type: "links", note: REPORTING, items: [{ label: "See the public totals", action: "url|https://usage.sybilsolutions.ai/" }] })
   return { back: true, where: "settings", rows: rows }
 }
@@ -628,7 +659,12 @@ function settingsView(s, ui) {
 function build(s, ui) {
   s = s || {}
   var v = (ui.view === "settings" ? settingsView(s, ui) : ui.view === "folder" ? folderView(s, ui) : ui.view === "agents" ? agentsView(s, ui) : ui.view === "run" ? runView(s, ui.id, ui) : ui.view === "kind" ? kindView(s, ui.id, ui) : ui.view === "gpus" ? gpusView(s, ui) : ui.view === "group" ? groupView(s, ui.id, Number(ui.key), ui) : null) || homeView(s, ui)
-  // a plugin release, on the home page: Omarchy's own update installs it and reloads the panel
+  // usage reporting is off until you choose: home asks once, and either answer is kept and ends the question; No thanks
+  // comes first, so the first keyboard focus never turns it on
+  if (s.reporting === "unset" && (!ui.view || ui.view === "home"))
+    v.rows.unshift({ type: "links", note: "Share minimal, anonymous usage counts to help Local AI? Nothing is sent unless you allow it.",
+      items: [{ label: "No thanks", action: "set|ping|off" }, { label: "Allow", action: "set|ping|on" }, { label: "What is sent", action: "settings" }] })
+  // a plugin release, on the home page: Omarchy's own update, in a terminal, shows what changes and asks
   if (s.pluginUpdate && (!ui.view || ui.view === "home"))
     v.rows.unshift({ type: "links", note: "A new version of Local AI is out.",
       items: [{ label: ui.updatingAgent === "plugin" ? "Updating…" : "Update Local AI", action: ui.updatingAgent ? "" : "update|plugin" }] })

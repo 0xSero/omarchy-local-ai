@@ -23,6 +23,13 @@ finish() {
 mkdir -p "$STATE"
 exec 9>"$STATE/setup.lock"
 flock -n 9 || { echo "Local AI setup is already open."; exit 1; }
+# Polkit files Local AI 6.0-6.4 left, for any account, let programs become root (lib/access.sh). Only root can delete
+# them, and Local AI does not: setup stops here, before it changes anything, and says where the two commands are.
+if legacy_polkit; then
+  echo "$LEGACY_POLKIT_REASON"
+  [[ ! -t 0 ]] || read -r -p "Press Enter to close. " _ || true
+  exit 1
+fi
 trap finish EXIT
 rm -f "$ERROR"
 
@@ -66,12 +73,5 @@ if command -v tailscale >/dev/null &&
   operator=$(timeout 10 tailscale debug prefs 2>/dev/null | jq -er '.OperatorUser // ""') && [[ $operator != "$USER" ]]; then
   echo "To share a model on your tailnet, Tailscale's operator must be $USER (it is '${operator:-nobody}')."
   echo "Omarchy sets this when it installs Tailscale; otherwise run as root: tailscale set --operator=$USER"
-fi
-
-# Local AI 6.0-6.4 wrote polkit files for this account. Only root can delete them, so setup names them.
-if [[ -e /etc/polkit-1/actions/sero.local-ai.u$UID.policy || -e /etc/polkit-1/rules.d/49-sero.local-ai.u$UID.rules ]]; then
-  echo "An earlier Local AI left polkit files for your account. Delete them as root:"
-  echo "  /etc/polkit-1/actions/sero.local-ai.u$UID.policy"
-  echo "  /etc/polkit-1/rules.d/49-sero.local-ai.u$UID.rules"
 fi
 echo "Local AI is ready. Return to the panel to choose a model."
