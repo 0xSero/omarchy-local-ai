@@ -569,6 +569,12 @@ for agent in pi claude codex opencode omp crush grok copilot hermes; do
   ! grep -q "$key" "$SHIM/jq.log" || fail "agent key leaked to jq argv" "$(cat "$SHIM/jq.log")"
 done
 pass "every supported agent opens without exposing the gateway key in terminal or helper arguments"
+"$CLI" set agent opencode "$ID"
+: >"$SHIM/tui.log"
+"$CLI" open "$ID"
+grep -q 'OPENCODE_CONFIG_CONTENT=.*"model":"omarchy-local/' "$SHIM/tui.log" || fail "opencode config model" "$(cat "$SHIM/tui.log")"
+! grep -q -- '--model' "$SHIM/tui.log" || fail "opencode got a --model flag (#157)" "$(cat "$SHIM/tui.log")"
+pass "OpenCode takes its model from the config, with no --model flag that some builds reject"
 # the key is still where each agent can read it: the config file only this user reads
 [[ $(jq -r '.providers["omarchy-local"].apiKey' "$STATE/agents/pi/models.json") == "$key" ]] ||
   fail "pi key in config" "$(jq -c '.providers["omarchy-local"]' "$STATE/agents/pi/models.json" 2>/dev/null)"
