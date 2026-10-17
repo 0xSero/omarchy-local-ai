@@ -1561,13 +1561,14 @@ argv() {
       -c "model_provider=local" -c "model=$(jq -nc --arg v "$m" '$v')" -c "model_context_window=$ctx"
     ;;
   opencode)
+    # the model comes from the config's `model`, not a --model flag: some OpenCode builds reject the flag (#157)
     keyed OMARCHY_LOCAL_AI_KEY
     printf '%s\0' env "OPENCODE_CONFIG_CONTENT=$(jq -nc --arg u "$ep/v1" --arg m "$m" --argjson ctx "$ctx" --argjson in "$input" '
       {"$schema": "https://opencode.ai/config.json", model: ("omarchy-local/" + $m), small_model: ("omarchy-local/" + $m),
        provider: {"omarchy-local": {npm: "@ai-sdk/openai-compatible", name: "Omarchy Local",
          options: {baseURL: $u, apiKey: "{env:OMARCHY_LOCAL_AI_KEY}"},
          models: {($m): {name: $m, limit: {context: $ctx, output: 8192}, modalities: {input: $in, output: ["text"]}}}}}}')" \
-      "$b" --model "omarchy-local/$m"
+      "$b"
     ;;
   pi | omp)
     # --rawfile, not --arg: jq reads the key itself, so only its path is in argv. A key passed as an

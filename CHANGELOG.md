@@ -8,6 +8,9 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 - Nemotron 3.5 Bolt 74B-A9B (NVIDIA, released 2026-10-15) on the Arc Pro B70 (registry #309): NVIDIA's 24 GB GGUF and its image projector fully on the card with llama.cpp's own SYCL image, 262,144 context, images. Lab 26.3 tok/s, recipe kit prefill 707-736 tok/s from 8K to 64K and decode 26 tok/s.
 - Qwen3.8-Flash-Next on the Arc Pro B70 for hosts with less RAM, with its routed experts on an NVMe SSD (registry #306, #308): 12 GB of host RAM (a 16 GB machine; 0.5 GB RAM tier), 25 GB (8 GB RAM tier) or 54 GB (36 GB RAM tier), next to the 63 GB experts-in-RAM recipe. A pick that is in neither VRAM nor RAM is read from NVMe while the kernel waits, so outputs stay exact (reference panel top-1 0.9887 / 0.9877). Both at 262,144 context with MTP and vision: recipe kit decode 33-38 tok/s at one to four users, prefill 896-1,076 tok/s from 8K to 64K. They pack a 45.8-46.8 GB expert store on first start (the 12 GB recipe uses image `@sha256:78bbcccc…`, which also keeps the MTP layer's experts on NVMe). Engine image `ghcr.io/sybil-solutions/qwen38-flash-next-b70-offload@sha256:e9104c18…`, built and attested by our image workflow.
 
+### Fixed
+- OpenCode opens again on builds that reject a `--model` flag ("Unrecognized flag: --model", #157). The plugin now sets the model only through the OpenCode config it already passes (`model` and `small_model`), which every build reads.
+
 ## [6.22.0] - 2026-10-17
 
 ### Added
