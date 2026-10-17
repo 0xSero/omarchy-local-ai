@@ -4,6 +4,19 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.22.0] - 2026-10-17
+
+### Added
+- Qwen3.8-Flash-Next with its experts offloaded to RAM on five more cards (registry #305), on the same attested image as 6.20.0 (`ghcr.io/sybil-solutions/sglang-exl3-flashnext-multiarch`). Each passed all six lab gates on a rented card:
+  - RTX 5070 Ti 16 GB: 3.05 bpw, 256K, 44.1 tok/s decode, 3,338 tok/s prefill.
+  - RTX 4080 16 GB: 2.05 bpw, 256K, 60.5 / 1,414 tok/s.
+  - RTX 5080 16 GB: 2.05 bpw, 256K, 43.1 / 1,490 tok/s.
+  - RTX 5060 Ti 16 GB: 2.05 bpw, 256K, 39.3 / 801 tok/s.
+  - RTX 5060 Ti 8 GB: 2.05 bpw, 128K, 17.1 / 719 tok/s, with a 0.5 GB expert cache on the card.
+  They need about 48 GB of RAM and an NVMe drive, and the panel offers them only on machines that have both.
+
+Recipes are at registry `b395198e`.
+
 ## [6.21.1] - 2026-10-16
 
 ### Fixed
