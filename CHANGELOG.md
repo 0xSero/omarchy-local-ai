@@ -4,6 +4,11 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.23.3] - 2026-10-18
+
+### Changed
+- Updating Local AI no longer asks first. The terminal lists what is new as a short bullet list (each changelog entry cut to its headline, at most eight, then a count; no headings, dates or links) and updates straight away through Omarchy's own update, so validation and rollback are unchanged.
+
 ## [6.23.2] - 2026-10-18
 
 ### Changed

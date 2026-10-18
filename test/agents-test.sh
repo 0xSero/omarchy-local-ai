@@ -59,12 +59,12 @@ rm -rf "$PANEL/.git"; CONTAINS=1 REMOTE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 [[ -z $(plugin_latest) ]] || { echo 'not ok - a copy Omarchy cannot update was offered an update'; exit 1; }
 # the update opens in a terminal that runs this script's own update step
 omarchy-launch-tui() { printf 'tui %s\n' "$*" >>"$UPDATE_ARGS"; }
-[[ $(cmd_update plugin) == *'open in a terminal'* ]]
+[[ $(cmd_update plugin) == *'Updating in a terminal'* ]]
 grep -qx -- "tui --app-id=org.omarchy.local-ai-update $TARGET __update sero.local-ai" "$UPDATE_ARGS"
 omarchy-launch-tui() { return 1; }
 if (cmd_update plugin) >/dev/null 2>&1; then echo 'not ok - a terminal that did not open reported success'; exit 1; fi
-# that step shows the version and the release notes, not Omarchy's diff, asks, and only then runs Omarchy's update
-# with --yes (its validation and rollback stay); a no leaves the plugin alone
+# that step lists what is new as headline bullets, not Omarchy's diff, then runs Omarchy's update with --yes at once
+# (its validation and rollback stay)
 printf '{"id":"sero.local-ai","version":"1.0.0"}\n' >"$PANEL/manifest.json"
 NOTES=$'# Changelog\n\n## [Unreleased]\n\n## [1.1.0] - 2026-10-18\n\n### Added\n- A new card (registry #1). Long detail that stays out.\n\n## [1.0.0] - 2026-10-01\n\n### Added\n- The old entry.\n'
 git() {
@@ -74,19 +74,16 @@ git() {
     show) [[ $4 == FETCH_HEAD:manifest.json ]] && echo '{"version":"1.1.0"}' || printf '%s' "$NOTES" ;;
   esac
 }
-omarchy-cmd-present() { [[ $1 == gum ]]; }
+omarchy-cmd-present() { return 1; }
 sleep() { :; }; clear() { :; }
 : >"$UPDATE_ARGS"
 omarchy-plugin-update() { printf 'opu %s\n' "$*" >>"$UPDATE_ARGS"; }
-gum() { return 0; }
 OUT=$(update_run sero.local-ai)
-[[ $OUT == *'Local AI 1.0.0 → 1.1.0'* && $OUT == *'A new card (registry #1)'* && $OUT == *'now 1.1.0'* ]] || { echo "not ok - update summary: $OUT"; exit 1; }
-[[ $OUT != *'stays out'* && $OUT != *'old entry'* ]] || { echo "not ok - update summary showed too much: $OUT"; exit 1; }
-grep -qx 'opu sero.local-ai --yes' "$UPDATE_ARGS" || { echo 'not ok - the confirmed update did not run'; exit 1; }
-: >"$UPDATE_ARGS"; gum() { return 1; }
-[[ $(update_run sero.local-ai) == *'Not updated.'* && ! -s $UPDATE_ARGS ]] || { echo 'not ok - a declined update ran'; exit 1; }
-unset -f sleep clear gum omarchy-plugin-update
-echo 'ok - the plugin update is offered for a newer release only, shows the version and notes, and asks before Omarchy updates it'
+[[ $OUT == *'Local AI 1.0.0 → 1.1.0'* && $OUT == *'  • A new card'$'\n'* && $OUT == *'now 1.1.0'* ]] || { echo "not ok - update summary: $OUT"; exit 1; }
+[[ $OUT != *'stays out'* && $OUT != *'registry #1'* && $OUT != *'old entry'* && $OUT != *'Added'* && $OUT != *'http'* ]] || { echo "not ok - update summary showed too much: $OUT"; exit 1; }
+grep -qx 'opu sero.local-ai --yes' "$UPDATE_ARGS" || { echo 'not ok - the update did not run'; exit 1; }
+unset -f sleep clear omarchy-plugin-update
+echo 'ok - the plugin update is offered for a newer release only, lists what is new and updates through Omarchy without asking'
 
 # Values that land in an agent's config are checked again where they are written: a context that is not a number is
 # the default, a vision flag is true or false, and a model name is quoted by jq, however a recipe carried them
