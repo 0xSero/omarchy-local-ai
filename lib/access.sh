@@ -64,7 +64,7 @@ legacy_polkit_files() {
 }
 # legacy_polkit: any of them is there, as far as this account can see
 legacy_polkit() { [[ -n $(legacy_polkit_files) ]]; }
-LEGACY_POLKIT_DOC=https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md
+LEGACY_POLKIT_DOC=https://github.com/0xSero/omarchy-local-ai/blob/main/docs/legacy-polkit.md
 LEGACY_POLKIT_REASON="An earlier Local AI (6.0-6.4) left polkit files that let programs on this machine get root without a password; remove them first: $LEGACY_POLKIT_DOC"
 
 # readiness_line <state> [message]

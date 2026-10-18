@@ -9,7 +9,7 @@ directory updates the same worker:
 cd usage && npx wrangler@4 deploy
 ```
 
-Counts installs of the [Local AI](https://github.com/sybil-solutions/omarchy-local-ai) Omarchy plugin. A Cloudflare Worker with one D1 table, at `https://usage.sybilsolutions.ai`.
+Counts installs of the [Local AI](https://github.com/0xSero/omarchy-local-ai) Omarchy plugin. A Cloudflare Worker with one D1 table, at `https://usage.sybilsolutions.ai`.
 
 ## What an install sends
 
