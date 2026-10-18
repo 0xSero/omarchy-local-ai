@@ -113,7 +113,7 @@ var READINESS = {
   // only root can delete them, so the page that says how is the way out; the banner above says why
   "legacy-polkit": { note: "Nothing starts until those files are gone. Local AI checks again by itself, and this clears once they are." }
 }
-var LEGACY_POLKIT = "https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md"
+var LEGACY_POLKIT = "https://github.com/0xSero/omarchy-local-ai/blob/main/docs/legacy-polkit.md"
 function notReadyView(s, ui) {
   var r = s.readiness, t = READINESS[r.state] || { note: "Local AI is not ready. It checks again by itself." }
   var rows = [activity(s, ui), { type: "sec", label: "SETUP" }, { type: "links", note: t.note, items: [] }]

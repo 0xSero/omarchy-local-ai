@@ -59,7 +59,7 @@ td a { text-decoration: underline; text-decoration-color: var(--faint); }
 </head>
 <body>
 <header class="nav"><a class="word" href="https://local.sybilsolutions.ai/">Sybil AI</a>
-  <nav><a href="https://local.sybilsolutions.ai/models/">Models</a><a href="https://local.sybilsolutions.ai/hardware/">Hardware</a><a href="https://github.com/sybil-solutions/omarchy-local-ai">Plugin</a></nav></header>
+  <nav><a href="https://local.sybilsolutions.ai/models/">Models</a><a href="https://local.sybilsolutions.ai/hardware/">Hardware</a><a href="https://github.com/0xSero/omarchy-local-ai">Plugin</a></nav></header>
 <main>
   <h1>Dashboard</h1>
   <p class="sub">Local AI at a glance: what is open, what bounties owe, and who runs it. Live.</p>
@@ -110,13 +110,13 @@ td a { text-decoration: underline; text-decoration-color: var(--faint); }
   </section>
 
   <section><span class="label">How it is counted</span>
-    <p class="sub" style="margin:0">Every 12 hours the plugin sends a random install id, its version, the cards it found, how many models run, whether a model has ever answered on it, and since its last check-in how many models it started, how many starts failed, how many agents it opened and how many models it downloaded. Totals only: never which model, agent or folder. Actions wait on the machine until a check-in arrives, so none are lost or sent twice. No address or user agent is stored. "Ran a model, ever" counts installs where a model has answered (6.15.0 and later, including models run before updating) or one was running at a check-in. Turn it off with <code>omarchy-local-ai set ping off</code>. Counting began with 6.13.0 on 10 Oct 2026, so older installs that have not updated are not here. GitHub numbers are recorded daily by the plugin's <a href="https://github.com/sybil-solutions/omarchy-local-ai/tree/stats/traffic" style="text-decoration:underline">traffic workflow</a>.</p>
+    <p class="sub" style="margin:0">Every 12 hours the plugin sends a random install id, its version, the cards it found, how many models run, whether a model has ever answered on it, and since its last check-in how many models it started, how many starts failed, how many agents it opened and how many models it downloaded. Totals only: never which model, agent or folder. Actions wait on the machine until a check-in arrives, so none are lost or sent twice. No address or user agent is stored. "Ran a model, ever" counts installs where a model has answered (6.15.0 and later, including models run before updating) or one was running at a check-in. Turn it off with <code>omarchy-local-ai set ping off</code>. Counting began with 6.13.0 on 10 Oct 2026, so older installs that have not updated are not here. GitHub numbers are recorded daily by the plugin's <a href="https://github.com/0xSero/omarchy-local-ai/tree/stats/traffic" style="text-decoration:underline">traffic workflow</a>.</p>
   </section>
 </main>
-<footer class="foot"><span id="updated">Loading…</span><a href="/v1/local-ai/stats">JSON</a><a href="https://raw.githubusercontent.com/sybil-solutions/local-ai-registry/ops/ops.json">Work JSON</a><a href="https://github.com/sybil-solutions/omarchy-local-ai/tree/main/usage">Source</a></footer>
+<footer class="foot"><span id="updated">Loading…</span><a href="/v1/local-ai/stats">JSON</a><a href="https://raw.githubusercontent.com/sybil-solutions/local-ai-registry/ops/ops.json">Work JSON</a><a href="https://github.com/0xSero/omarchy-local-ai/tree/main/usage">Source</a></footer>
 
 <script>
-const RAW = "https://raw.githubusercontent.com/sybil-solutions/omarchy-local-ai/stats/traffic/";
+const RAW = "https://raw.githubusercontent.com/0xSero/omarchy-local-ai/stats/traffic/";
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => (n ?? 0).toLocaleString("en-US");
 const short = (d) => new Date(d + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -207,7 +207,7 @@ Promise.all([get(RAW + "summary.json"), get(RAW + "stars-daily.json"), get(RAW +
 const OPS = "https://raw.githubusercontent.com/sybil-solutions/local-ai-registry/ops/ops.json";
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => "&#" + c.charCodeAt(0) + ";");
 const gh = (repo, n, kind = "issues") => `<a href="https://github.com/${repo}/${kind}/${n}">#${n}</a>`;
-const REG = "sybil-solutions/local-ai-registry", PLG = "sybil-solutions/omarchy-local-ai", MKT = "omacom/omarchy-plugin-marketplace";
+const REG = "sybil-solutions/local-ai-registry", PLG = "0xSero/omarchy-local-ai", MKT = "omacom/omarchy-plugin-marketplace";
 const tone = (c) => (c === "passing" || c === "merged" ? "ok" : c === "failing" ? "bad" : "mute");
 get(OPS).then((o) => {
   const b = o.bounty, mon = new Date(b.month + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });

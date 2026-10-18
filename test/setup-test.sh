@@ -76,7 +76,7 @@ for f in "sero.local-ai.u$(id -u).policy" "49-sero.local-ai.u$(id -u).rules"; do
   touch "$TMP/etc/$f"
   if setup; then exit 1; fi
   [[ ! -s $TMP/calls && ! -e $error && -e $TMP/etc/$f ]]
-  grep -q 'let programs on this machine get root without a password; remove them first: https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md' "$TMP/out"
+  grep -q 'let programs on this machine get root without a password; remove them first: https://github.com/0xSero/omarchy-local-ai/blob/main/docs/legacy-polkit.md' "$TMP/out"
   rm "$TMP/etc/$f"
 done
 setup

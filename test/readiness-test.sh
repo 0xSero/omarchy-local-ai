@@ -62,7 +62,7 @@ check 'Sudoless Docker off needs setup' needs-setup -- NOT_IN_GROUP=1
 
 # polkit files a 6.0-6.4 setup left, by this account or another, give root: their own state, whatever else is true,
 # until they are gone; the reason points at the page with the commands, since only root can delete them
-POLKIT_MSG='An earlier Local AI (6.0-6.4) left polkit files that let programs on this machine get root without a password; remove them first: https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md'
+POLKIT_MSG='An earlier Local AI (6.0-6.4) left polkit files that let programs on this machine get root without a password; remove them first: https://github.com/0xSero/omarchy-local-ai/blob/main/docs/legacy-polkit.md'
 for f in "etc/sero.local-ai.u$(id -u).policy" "rules/49-sero.local-ai.u$(id -u).rules" "etc/sero.local-ai.u$((UID + 1)).policy" "rules/49-sero.local-ai.u$((UID + 1)).rules"; do
   touch "$TMP/$f"
   check "a leftover $f is legacy-polkit" legacy-polkit "$POLKIT_MSG" --
@@ -160,7 +160,7 @@ for (const state of states) {
 const v = c.module.exports.build({gpus: [], kinds: [], readiness: {state: 'legacy-polkit', message: 'm'}}, {view: 'home'});
 const b = v.rows[0];
 assert(b.type === 'banner' && b.alert && /left polkit files that let programs on this machine get root/.test(b.text), JSON.stringify(b));
-assert.equal(b.action, 'url|https://github.com/sybil-solutions/omarchy-local-ai/blob/main/docs/legacy-polkit.md');
+assert.equal(b.action, 'url|https://github.com/0xSero/omarchy-local-ai/blob/main/docs/legacy-polkit.md');
 assert(!v.rows.some(r => (r.items || []).some(i => i.action === 'setup')), 'setup is offered');
 assert(!JSON.stringify(v.rows).includes('dismiss'));
 console.log('ok - legacy polkit files: a red banner linking how to remove them, no setup button, nothing to dismiss');
