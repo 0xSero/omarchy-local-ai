@@ -79,6 +79,12 @@ CLAIMS='{"devices":[],"requests":[{"Driver":"nvidia","Count":0,"DeviceIDs":["GPU
 check 'unresolved NVIDIA UUIDs conservatively reserve NVIDIA cards' reserved '["nvidia:0","nvidia:1"]'
 CLAIMS='{"devices":[],"requests":null,"privileged":true}'
 check 'privileged containers reserve every exposed GPU' reserved '["nvidia:0","nvidia:1","intel-xpu:0","intel-xpu:1"]'
+named() {
+  cmd_snapshot >"$TMP/snapshot"
+  jq -e '[.gpus[] | select(.backend == "nvidia") | .heldBy] == [["ollama"], ["ollama"]] and ([.gpus[] | select(.backend == "intel-xpu") | .heldBy] == [[], []])' "$TMP/snapshot" >/dev/null
+}
+CLAIMS='{"name":"/ollama","devices":[],"requests":[{"Driver":"nvidia","Count":-1,"DeviceIDs":null,"Capabilities":[["gpu"]]}],"privileged":false}'
+check 'the container holding a card is named on it, without its leading slash' named
 CLAIMS='{"devices":[],"requests":null}'
 check 'a container without GPUs leaves all cards free' reserved '[]'
 EMPTY=1 check 'an empty daemon leaves all cards free' reserved '[]'

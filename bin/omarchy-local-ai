@@ -397,9 +397,9 @@ gpus() {
   if [[ ${1:-} != none ]] && docker_reachable; then
     ids=$(docker ps -q) || die "could not check Docker GPU allocations; try again"
     if [[ -n $ids ]]; then
-      # Read only allocation fields, never container environments or credentials.
+      # Read only container names and allocation fields, never container environments or credentials.
       # shellcheck disable=SC2086
-      claims=$(docker inspect --format '{"devices":{{json .HostConfig.Devices}},"requests":{{json .HostConfig.DeviceRequests}},"privileged":{{json .HostConfig.Privileged}}}' $ids | jq -s '.') ||
+      claims=$(docker inspect --format '{"name":{{json .Name}},"devices":{{json .HostConfig.Devices}},"requests":{{json .HostConfig.DeviceRequests}},"privileged":{{json .HostConfig.Privileged}}}' $ids | jq -s '.') ||
         die "could not check Docker GPU allocations; try again"
     fi
   fi
@@ -409,13 +409,16 @@ gpus() {
     | def node: $links[.] // .;
     (gpus($nv; $xe; $am) + $cpu | match($rec[0]; $ram)) | map(. as $g
       | (if .backend == "cpu" then "" elif .backend == "nvidia" then "/dev/nvidia" + (.index | tostring) else .node | node end) as $node
-      | . + {held: (.backend != "cpu" and any($claims[];
+      # the containers that claim it, by name, so the panel can say what has it
+      | . + {heldBy: (if .backend == "cpu" then [] else [$claims[] | select(
           .privileged == true
           or any(.devices[]?; (.PathOnHost | node) as $p | $node == $p or ($node | startswith($p + "/")))
           or ($g.backend == "nvidia" and any(.requests[]?;
             (.Driver == "nvidia" or any(.Capabilities[]?; index("gpu") != null))
             and ((.DeviceIDs // [] | length) == 0 or any(.DeviceIDs[];
-              . == ($g.index | tostring) or (test("^[0-9]+$") | not)))))))})'
+              . == ($g.index | tostring) or (test("^[0-9]+$") | not))))))
+          | .name // "" | ltrimstr("/")] end)}
+      | .held = (.heldBy | length > 0))'
 }
 
 # host: what a recipe that offloads weights to the machine needs of it besides the card (its `needs`): available RAM,

@@ -4,6 +4,12 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.24.0] - 2026-10-18
+
+### Changed
+- Home lists every GPU and says what has it: free, running one of your models, or taken by something else, named where it can be (the Docker container that claims it, or another program and the memory it uses). A taken card shows in the alert colour, and each line opens the hardware page.
+- The hardware page, a card's page and the models list say the same thing in place of "in use": "taken by ollama", "running Qwen3.8-27B", "RTX 3090 taken by another program · 9.3 GB".
+
 ## [6.23.3] - 2026-10-18
 
 ### Changed
