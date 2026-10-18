@@ -4,6 +4,11 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.23.2] - 2026-10-18
+
+### Changed
+- Updating Local AI from the panel shows the new version and its release notes, then asks. Before, the terminal printed Omarchy's full diff of the release, thousands of recipe lines, before the question. Omarchy's own update still installs it, so validation, rollback and the panel reload are unchanged. This takes effect from the update after this one: the update to 6.23.2 still runs the old terminal.
+
 ## [6.23.1] - 2026-10-18
 
 ### Added
