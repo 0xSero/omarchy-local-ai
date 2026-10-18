@@ -865,7 +865,7 @@ Panel {
                 width: Math.min(implicitWidth, parent.width - fieldLabel.x - fieldLabel.width - root.gutter - Style.space(16))
                 elide: Text.ElideMiddle
                 text: r.secret ? (root.copied ? "copied" : "copy") : r.value + (r.drop ? "  " + root.glyph("down") : r.action ? " ›" : "")
-                color: r.warn ? root.alertTone : r.open ? root.ink : root.valueTone
+                color: r.warn ? root.alertTone : r.open || r.strong ? root.ink : root.valueTone
               }
               Label {
                 id: secretValue

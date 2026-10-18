@@ -148,7 +148,14 @@ function homeView(s, ui) {
   rows = rows.concat(pinned(s, ui))
   rows = rows.concat(unoffered(s))
   rows.push({ type: "sec", label: "THIS MACHINE" })
-  rows.push({ type: "field", icon: "gpu", label: "hardware", value: String(s.gpus.length), action: "gpus" })
+  // every GPU and what has it, so a taken one is plain before Start is pressed: free, running a model of ours, or taken
+  // by something else (in the alert colour); each opens the hardware page
+  var cards = s.gpus.filter(function(g) { return g.backend !== "cpu" })
+  cards.forEach(function(g) {
+    var h = holder(s, g)
+    rows.push({ type: "field", logo: vendor(g), label: g.name, value: h ? h.text : "free", warn: !!h && !h.ours, strong: !!h && h.ours, action: "gpus" })
+  })
+  if (!cards.length) rows.push({ type: "field", icon: "gpu", label: "hardware", value: String(s.gpus.length), action: "gpus" })
   if (s.host && s.host.ramGb) rows.push({ type: "field", icon: "memory", label: "RAM", value: Math.floor(s.host.freeRamGb) + " / " + Math.floor(s.host.ramGb) + " GB free" })
   rows.push({ type: "field", icon: "agent", label: "Agents", value: String((s.agents || []).length), action: "agents" })
   rows.push({ type: "field", icon: "settings", label: "Settings", value: "", action: "settings" })
@@ -173,6 +180,13 @@ function brief(f) { return fmt(f).split(",")[0] }
 // Every model this machine can run, whatever card it lands on: one entry per recipe of each kind of hardware here,
 // on one card or across a group of them (when the machine has that many). Each says where it runs, whether it runs
 // now, whether it fits the machine (RAM, disk, NVMe), whether its cards are free, and whether it is pinned.
+// what has the cards of a kind that are not free, for a model that cannot start: "RTX 3090 taken by ollama"
+function takenBy(s, kd) {
+  return kd.keys.filter(function(k) { return kd.free.indexOf(k) < 0 }).map(function(k) {
+    var g = find(s.gpus || [], "key", k), h = g && holder(s, g)
+    return h ? short(g.name) + " " + h.text : ""
+  }).filter(Boolean).slice(0, 2).join(", ")
+}
 function catalog(s) {
   var out = [], pins = s.pins || []
   // two recipes that would read the same (a model, its format, its card) are told apart by what differs: the
@@ -189,7 +203,7 @@ function catalog(s) {
       out.push({ id: r.id, name: r.name, family: r.family, format: r.format, engine: r.engine || "", ctx: r.ctx, size: r.sizeGb, needs: r.needs || {}, hw: hw, n: n, d: d || null,
         fits: fits(r) && !short_, unfit: short_ ? "needs " + n + " × " + hw + ", this machine has " + kd.keys.length : r.unfit || "",
         downloaded: !!r.downloaded, dl: find(s.downloads || [], "id", r.id), reported: !!r.reported, aa: r.aa != null ? r.aa : null,
-        free: kd.free.length >= n, pin: pins.indexOf(r.id), rec: !!rec[r.id], at: at * 1000 + i,
+        free: kd.free.length >= n, pin: pins.indexOf(r.id), rec: !!rec[r.id], at: at * 1000 + i, takenBy: kd.free.length >= n ? "" : takenBy(s, kd),
         on: (n > 1 ? n + "× " : "") + short(hw),
         run: kd.free.length >= n && !short_ ? "run|" + r.id + "|" + kd.free.slice(0, n).join(",") : "",
         action: d ? "more|" + d.id : short_ ? "" : n > 1 ? "group|" + kd.hw + "|" + n + "|" + r.id : "kind|" + kd.hw + "|" + (kd.free[0] || kd.keys[0]) + "|" + r.id })
@@ -242,7 +256,7 @@ function state(c) {
   if (c.d) return c.d.state === "ready" ? "running on " + c.on : c.d.state === "error" ? "stopped: " + (c.d.error || "the engine stopped") : (c.d.detail || c.d.state)
   if (c.dl) return c.dl.state === "error" ? "download failed: " + (c.dl.error || "try again") : "downloading · " + (c.dl.detail || "") + (c.dl.percent > 0 ? " · " + c.dl.percent + "%" : "")
   if (!c.fits) return c.unfit
-  return (c.downloaded ? "downloaded" : "not downloaded · " + (c.size ? gb(c.size) : "")) + (c.free ? "" : " · its card is in use")
+  return (c.downloaded ? "downloaded" : "not downloaded · " + (c.size ? gb(c.size) : "")) + (c.free ? "" : " · " + (c.takenBy || "its GPU is taken"))
     + (c.reported ? " · reported by its publisher, not yet run by the lab" : "")
 }
 // a model's row opened on the models tab: its state, then Start or Open and Stop, Download, Cancel or Remove, Pin
@@ -398,16 +412,15 @@ function gpusView(s, ui) {
   if (cards.length) rows.push({ type: "sec", label: cards.length === 1 ? "GPU" : "GPUS" })
   // a card is one line (maker, name, temperature, what it is doing); opened, its memory and where it leads
   cards.forEach(function(g) {
-    var d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0], kd = find(s.kinds || [], "hw", g.hw)
-    var held = !d && ((kd && kd.taken.indexOf(g.key) >= 0) || g.held)
-    var status = d ? (d.state === "ready" ? "running " : d.state === "error" ? "stopped: " : d.state + " ") + d.name
-      : held ? "in use by another program" : kd ? "free" : "no tested model yet"
+    var h = holder(s, g), d = h && h.d, kd = find(s.kinds || [], "hw", g.hw)
+    var status = h ? h.text : kd ? "free" : "no tested model yet"
     var open = ui.open === "hw:" + g.key || ui.wide
-    rows.push({ type: "field", logo: vendor(g), label: g.name, value: (g.display ? "display  " : "") + (g.tempC != null ? g.tempC + "°  " : "") + (d ? (d.state === "ready" ? "running" : d.state) : held ? "in use" : kd ? "free" : "–"),
-      warn: held, drop: !ui.wide, open: open, action: ui.wide ? "" : "pick|hw:" + g.key })
+    rows.push({ type: "field", logo: vendor(g), label: g.name, value: (g.display ? "display  " : "") + (g.tempC != null ? g.tempC + "°  " : "") + status,
+      warn: !!h && !h.ours, strong: !!h && h.ours, drop: !ui.wide, open: open, action: ui.wide ? "" : "pick|hw:" + g.key })
     if (open) {
       var mem = gpuRow(g)
       mem.status = status
+      mem.warn = !!h && !h.ours
       rows.push(mem)
       rows.push({ type: "links", items: [d ? { label: "Open " + d.name + " ›", action: "more|" + d.id } : kd ? { label: "Models for it ›", action: "find|" + short(g.name) } : { label: "Supported hardware ›", action: SUPPORTED }] })
     }
@@ -546,7 +559,7 @@ function kindView(s, hw, ui) {
   if (!pick) return null
   var key = kd.keys.indexOf(ui.key) >= 0 ? ui.key : kd.free[0], free = kd.free.indexOf(key) >= 0, g = key && find(s.gpus, "key", key)
   return page(s, ui, Object.assign({}, pick, { models: models, action: free ? "run|" + pick.id + "|" + key : "",
-    cards: g ? [Object.assign(gpuRow(g), { status: kd.taken.indexOf(key) >= 0 ? "in use by another program" : g.busy ? "running a model" : "" })] : [] }))
+    cards: g ? [Object.assign(gpuRow(g), { status: (holder(s, g) || {}).text || "", warn: !!holder(s, g) && !holder(s, g).ours })] : [] }))
 }
 
 // a group of free cards of a kind: the models validated for that many cards, on the cards it would run on
@@ -562,6 +575,20 @@ function groupView(s, hw, n, ui) {
 
 // the maker of a card, for its logo
 function vendor(g) { return ({ nvidia: "nvidia", "intel-xpu": "intel", "amd-rocm": "amd" })[g.backend] || "" }
+// what has a card, in a few words, or null when it is free: a model of ours on it ("running Qwen3.8-27B"), a container
+// that claims it ("taken by ollama"), or a program using its memory ("taken by another program · 9.3 GB"); ours is
+// not a warning, someone else's is
+function holder(s, g) {
+  var d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0]
+  if (d) return { ours: true, d: d, text: (d.state === "ready" ? "running " : d.state === "error" ? "stopped: " : d.state + " ") + d.name }
+  var by = (g.heldBy || []).filter(Boolean)
+  if (by.length) return { text: "taken by " + by.slice(0, 2).join(", ") + (by.length > 2 ? " +" + (by.length - 2) : "") }
+  if (g.held) return { text: "taken by another container" }
+  if ((g.usedMiB || 0) > 2048) return { text: "taken by another program · " + gb(g.usedMiB / 1024) }
+  // a card the backend counts as taken for a reason it cannot name
+  if ((s.kinds || []).some(function(kd) { return (kd.taken || []).indexOf(g.key) >= 0 })) return { text: "taken by another program" }
+  return null
+}
 function gpuRow(g) {
   if (g.backend === "cpu") return { type: "gpu", cpu: true, name: g.name, bar: false, mem: g.ramGb + " GB RAM", temp: "" }
   var used = g.usedMiB != null ? g.usedMiB / 1024 : null
