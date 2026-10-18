@@ -7,7 +7,7 @@ Run a local model on your own GPU or CPU and open a coding agent on it. Local AI
 ## Start
 
 ```bash
-omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable
+omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 ```
 
 Then open Local AI in the bar and click **Set up Local AI** (once per machine; Omarchy asks for your password), pick a model on the models tab (or just type its name) and **Start** it, and open a coding agent on it. [Install](#install) says what setup does, [Requirements](#requirements) what it needs, and [Remove](#remove) how to take it all back out.
@@ -15,7 +15,7 @@ Then open Local AI in the bar and click **Set up Local AI** (once per machine; O
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/sybil-solutions/omarchy-local-ai --enable
+omarchy plugin add https://github.com/0xSero/omarchy-local-ai --enable
 ```
 
 Open Local AI in the bar and click **Set up Local AI**. A terminal opens and runs two of Omarchy's own commands; Local AI itself runs nothing as root, and adding or updating the plugin never runs setup.

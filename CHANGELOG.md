@@ -4,6 +4,14 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+## [6.23.1] - 2026-10-18
+
+### Added
+- Qwen3.8-27B on the Radeon RX 7900 XT 20 GB in Docker (registry #313): llama.cpp's Vulkan image, 131,072 context, MTP. Lab 54.9 tok/s.
+
+### Changed
+- The repository is back at `0xSero/omarchy-local-ai`, the path the Omarchy marketplace lists. The install command, links and usage page name it; the old `sybil-solutions` URL still redirects, so existing installs update as before.
+
 ## [6.23.0] - 2026-10-17
 
 ### Added
