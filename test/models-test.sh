@@ -150,14 +150,14 @@ test('a running model page hides its address until clicked; full screen shows it
   assert.equal(w.rows.find(x => x.type === 'card').text, '# LFM\nHi');
   assert(!m.build(st, {view: 'run', id: 'lfm.cpu'}).rows.some(x => x.type === 'card'));
 });
-test('hardware: the machine in figures, then a line a card (maker, temperature, what it does) opening to its memory', () => {
+test('hardware: the machine in figures, then a line a card (maker, temperature, what has it) opening to its memory', () => {
   const st = {...s, host: {freeRamGb: 40, ramGb: 64, cpus: 48, cpuName: 'AMD EPYC 7413 24-Core Processor', diskFreeGb: 781, disk: 'nvme'},
     deployments: [{id: 'q27.b70', name: 'Qwen3.8-27B', keys: ['intel-xpu:0'], state: 'ready', agent: 'pi', session: {}}]};
   const r = m.build(st, {view: 'gpus'}).rows;
   assert.deepEqual(r[1].cells.map(c => c.v + c.u + ' ' + c.k), ['3 GPUs', '1/72GB VRAM used', '1 running', '40/64GB RAM free', '48 CPU threads', '781GB NVMe free']);
   const cards = r.filter(x => x.type === 'field' && x.logo);
   assert.deepEqual(cards.map(c => [c.logo, c.label, c.value, !!c.warn, c.action]), [['nvidia', 'RTX 3090', '40°  free', false, 'pick|hw:nvidia:0'],
-    ['intel', 'Arc Pro B70', '40°  running', false, 'pick|hw:intel-xpu:0'], ['intel', 'Arc Pro B70', '40°  in use', true, 'pick|hw:intel-xpu:1']]);
+    ['intel', 'Arc Pro B70', '40°  running Qwen3.8-27B', false, 'pick|hw:intel-xpu:0'], ['intel', 'Arc Pro B70', '40°  taken by another program', true, 'pick|hw:intel-xpu:1']]);
   assert(!r.some(x => x.type === 'gpu'));
   const open = m.build(st, {view: 'gpus', open: 'hw:intel-xpu:0'}).rows;
   assert.equal(open.find(x => x.type === 'gpu').status, 'running Qwen3.8-27B');

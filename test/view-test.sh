@@ -105,11 +105,26 @@ test('failed and malformed polls retain the last snapshot, show a problem, and r
 });
 test('a held Intel card with unknown VRAM has no run action', () => {
   const held={...s,gpus:[{...gpu,usedMiB:null}],deployments:[],kinds:[{...s.kinds[0],free:[],taken:[gpu.key]}]};
-  assert(m.build(held,{view:'gpus'}).rows.some(r=>r.warn&&/in use$/.test(r.value)));
+  assert(m.build(held,{view:'gpus'}).rows.some(r=>r.warn&&/taken by another program$/.test(r.value)));
   const rows=m.build(held,{view:'kind',id:'test',key:gpu.key,details:true}).rows;
-  assert(rows.some(r=>r.status==='in use by another program'));
-  assert.equal(rows.find(r=>r.type==='links').note,'its Test GPU is in use by another program');
+  assert(rows.some(r=>r.status==='taken by another program'&&r.warn));
+  assert.equal(rows.find(r=>r.type==='links').note,'its Test GPU is taken by another program');
   assert(!rows.some(r=>(r.items||[]).some(a=>a.action.startsWith('run|'))));
+});
+test('home lists every GPU and says plainly what has it', () => {
+  const g2={...gpu,key:gpu.key+'b',held:true,heldBy:['ollama']}, g3={...gpu,key:gpu.key+'c',usedMiB:9523}, g4={...gpu,key:gpu.key+'d'};
+  const snap={...s,gpus:[gpu,g2,g3,g4],deployments:[{...s.deployments[0],keys:[gpu.key],state:'ready'}],
+    kinds:[{...s.kinds[0],keys:[gpu.key,g2.key,g3.key,g4.key],free:[g4.key],taken:[g2.key,g3.key]}]};
+  const rows=m.build(snap,{}).rows.filter(r=>r.type==='field'&&r.action==='gpus');
+  assert.equal(rows.length,4);
+  assert.equal(rows[0].value,'running '+s.deployments[0].name); assert(rows[0].strong&&!rows[0].warn);
+  assert.equal(rows[1].value,'taken by ollama'); assert(rows[1].warn);
+  assert.equal(rows[2].value,'taken by another program · 9.3 GB'); assert(rows[2].warn);
+  assert.equal(rows[3].value,'free'); assert(!rows[3].warn&&!rows[3].strong);
+  // a model that cannot start names what has its cards
+  const busy={...snap,kinds:[{...snap.kinds[0],free:[]}]};
+  const c=m.catalog(busy).find(x=>!x.free);
+  assert(c&&/taken by ollama/.test(c.takenBy),c&&c.takenBy);
 });
 test('stopped model details offer recovery without live reach or uptime', () => {
   const rows=m.build({...s,deployments:[{...s.deployments[0],state:'error',error:'the engine stopped'}]}, {view:'run',id:'test',details:true}).rows;
