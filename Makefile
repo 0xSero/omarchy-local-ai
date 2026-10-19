@@ -3,13 +3,14 @@
 #             (REGISTRY=<checkout>, at its origin/main), written one card kind per line
 # sync-check: fail when the vendored copy has fallen behind that export
 # check:      test, plus the recipes.json sanity and currency checks
+# docs:       write the supported-hardware table into README.md from recipes.json
 # bundle:     the release archive: what an install contains, nothing else
 REGISTRY ?= ../local-ai-registry
 REGISTRY_REF ?= origin/main
 REGISTRY_EXPORT = $(REGISTRY)/plugin/v3/recipes.json
 SHELL := /bin/bash
 
-.PHONY: test sync sync-check check bundle
+.PHONY: test sync sync-check check bundle docs
 
 BUNDLE = dist/omarchy-local-ai-$(shell jq -r .version manifest.json).tar.gz
 RUNTIME = manifest.json recipes.json LICENSE Panel.qml FullScreen.qml Model.js Logos.js agents hf.svg bin/omarchy-local-ai bin/omarchy-install-ai-local bin/omarchy-remove-ai-local lib/access.sh
@@ -29,6 +30,7 @@ PROVENANCE = del(.registryCommit, .generatedAt)
 sync:
 	@test -d "$(REGISTRY)" || { echo "sync: set REGISTRY=<registry checkout>" >&2; exit 2; }
 	@$(published) > recipes.json
+	@$(MAKE) --no-print-directory docs
 	@jq -r '"recipes.json: \(.hardware|length) card kinds, registry \(.registryCommit[:12])"' recipes.json
 
 sync-check:
@@ -47,6 +49,11 @@ check: test
 	  && echo "recipes.json: ok" || { echo "recipes.json: not a clean schema-3 export" >&2; exit 1; }
 	@if [ -f "$(REGISTRY_EXPORT)" ]; then $(MAKE) --no-print-directory sync-check; \
 	 else echo "recipes.json: registry not checked out at $(REGISTRY); the currency check was skipped"; fi
+
+docs:
+	@T=$$(mktemp); trap 'rm -f "$$T"' EXIT; bash scripts/cards.sh > "$$T"; \
+	awk -v t="$$T" '/^<!-- cards:/{print; while ((getline l < t) > 0) print l; skip=1; next} /^<!-- \/cards -->/{skip=0} !skip' README.md > README.md.new && mv README.md.new README.md
+	@echo "README.md: supported-hardware table written from recipes.json"
 
 bundle:
 	mkdir -p dist
