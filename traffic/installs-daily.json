@@ -73,11 +73,20 @@
   },
   {
     "day": "2026-10-18",
-    "active": 61,
-    "running": 6,
-    "new": 3,
-    "started": 1,
+    "active": 90,
+    "running": 12,
+    "new": 8,
+    "started": 10,
+    "failed": 1,
+    "opened": 9
+  },
+  {
+    "day": "2026-10-19",
+    "active": 50,
+    "running": 4,
+    "new": 0,
+    "started": 0,
     "failed": 0,
-    "opened": 1
+    "opened": 0
   }
 ]
