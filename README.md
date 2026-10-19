@@ -19,22 +19,21 @@ Then:
 2. On the **models** tab, pick a model and click **Start**. The first start downloads the weights, which can take a while.
 3. When it is ready, click **Open** to start your coding agent on it.
 
-Updates show up on the home tab as **Update Local AI**.
+Updates show up on the home tab as **Update Local AI**. Something went wrong? See [troubleshooting](docs/troubleshooting.md).
 
 ## Supported hardware
 
 Every model listed was downloaded, loaded, checked for correct answers and timed on that exact card. A machine with
 no tested model says so in the panel.
 
+<!-- cards: generated from recipes.json by `make docs` -->
 | Maker | Cards |
 |---|---|
-| NVIDIA GeForce | GTX 1080 Ti; RTX 3060, 3060 Ti, 3070, 3070 Ti, 3080, 3080 Ti, 3090, 3090 Ti; RTX 4060, 4060 Ti, 4070, 4070 Super, 4070 Ti, 4070 Ti Super, 4080, 4080 Super, 4090; RTX 5060, 5060 Ti, 5070, 5070 Ti, 5080, 5090 |
-| NVIDIA laptop | RTX 3070, 4060, 5070 Ti, 5080, 5090 |
-| NVIDIA workstation | RTX A6000; RTX 2000, 4000 and 6000 Ada; RTX Pro 4000, 4500 and 6000 Blackwell |
-| NVIDIA unified memory | DGX Spark (GB10), RTX Spark (N1X) |
-| Intel | Arc Pro B70, Arc Pro B65, Arc B390 |
-| AMD | Radeon RX 7900 XT, RX 9070 XT, Instinct MI300X |
-| CPU only | Any x86-64 CPU with AVX2, running a small model in system RAM |
+| NVIDIA | DGX Spark (GB10) 128 GB unified, GTX 1080 Ti 11 GB, RTX 2000 Ada 16 GB, RTX 3060 12 GB, RTX 3060 Ti 8 GB, RTX 3070 8 GB, RTX 3070 Laptop 8 GB, RTX 3070 Ti 8 GB, RTX 3080 10 GB, RTX 3080 Ti 12 GB, RTX 3090 24 GB, RTX 3090 Ti 24 GB, RTX 4000 Ada 20 GB, RTX 4060 8 GB, RTX 4060 Laptop 8 GB, RTX 4060 Ti 8 GB, RTX 4060 Ti 16 GB, RTX 4070 12 GB, RTX 4070 SUPER 12 GB, RTX 4070 Ti 12 GB, RTX 4070 Ti SUPER 16 GB, RTX 4080 16 GB, RTX 4080 SUPER 16 GB, RTX 4090 24 GB, RTX 5060 8 GB, RTX 5060 Ti 8 GB, RTX 5060 Ti 16 GB, RTX 5070 12 GB, RTX 5070 Ti 16 GB, RTX 5070 Ti Laptop 12 GB, RTX 5080 16 GB, RTX 5080 Laptop 16 GB, RTX 5090 32 GB, RTX 5090 Laptop 24 GB, RTX 6000 Ada 48 GB, RTX A6000 48 GB, RTX PRO 4000 Blackwell 24 GB, RTX PRO 4500 Blackwell 32 GB, RTX PRO 6000 Blackwell 96 GB, RTX Spark N1X 128 GB unified |
+| Intel | Arc B390 64 GB unified, Arc Pro B65 32 GB, Arc Pro B70 32 GB |
+| AMD | Instinct MI300X 192 GB, Radeon RX 7900 XT 20 GB, Radeon RX 9070 XT 16 GB |
+| CPU | any x86-64 CPU with AVX2, Apple M1 8 GB |
+<!-- /cards -->
 
 The full list of models per card is in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
 Your card isn't there? The registry pays for new recipes ([bounties](https://github.com/sybil-solutions/local-ai-registry/issues?q=is%3Aissue+is%3Aopen+label%3Abounty)).
@@ -90,6 +89,7 @@ omarchy plugin remove sero.local-ai
 
 ## More
 
+- [docs/troubleshooting.md](docs/troubleshooting.md): an error message and what to do about it.
 - [docs/security.md](docs/security.md): what setup changes, how models are isolated, and the gateway key.
 - [docs/catalog.md](docs/catalog.md): how new models arrive, downloads, and removal.
 - [docs/privacy.md](docs/privacy.md): the usage counts, field by field.
