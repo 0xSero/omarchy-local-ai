@@ -45,6 +45,25 @@ r='{"name":"Qwen3.5-9B","sizeGb":6.47,"cards":1}'
   bad "weights larger than the free memory: $(card_room "$g" nvidia:0 "$r")"
 echo 'ok - a start is refused only when the weights do not fit in the free memory, and says how much is free'
 
+# a program whose name carries its command line: the panel shows the program, not the flags
+APPS="${DESKTOP}GPU-aaaa-3070, 2150, /opt/brave-browser/brave --type=gpu-process --gpu-preferences=AAAA, 412\n"
+g=$(gpus none)
+[[ $(jq -r '.[0].others[0].name' <<<"$g") == "brave" ]] ||
+  bad "a program with flags in its name: '$(jq -r '.[0].others[0].name' <<<"$g")'"
+echo 'ok - a program is named by its binary, not by the whole command line'
+
+# a flag can hold a "/": a path, or base64. The binary is the first word, so the name is cut at the first space
+# first; cutting at the last "/" first would name the tail of the flag
+APPS="${DESKTOP}GPU-aaaa-3070, 2150, /opt/brave-browser/brave --type=gpu-process --user-data-dir=/home/u/.config/brave, 412\n"
+g=$(gpus none)
+[[ $(jq -r '.[0].others[0].name' <<<"$g") == "brave" ]] ||
+  bad "a program with a path in its flags: '$(jq -r '.[0].others[0].name' <<<"$g")'"
+APPS="${DESKTOP}GPU-aaaa-3070, 2150, /opt/brave-browser/brave --type=gpu-process --gpu-preferences=AAA/BB+CC==, 412\n"
+g=$(gpus none)
+[[ $(jq -r '.[0].others[0].name' <<<"$g") == "brave" ]] ||
+  bad "a program with base64 in its flags: '$(jq -r '.[0].others[0].name' <<<"$g")'"
+echo 'ok - a flag with a "/" in it does not take the name of the program'
+
 APPS="${DESKTOP}GPU-aaaa-3070, 3100, /usr/bin/ollama, 5300\nGPU-bbbb-other, 3200, /usr/bin/python3, 9000\n"
 USED=7900 FREE=0
 g=$(gpus none)
