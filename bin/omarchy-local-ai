@@ -1697,24 +1697,33 @@ argv() {
     ;;
   workbuddy)
     # WorkBuddy has no OpenAI-compatible env vars: its agent CLI (codebuddy) reads its model catalogue from
-    # $WORKBUDDY_CONFIG_DIR/models.json, which it re-reads live ("Loaded custom models config from user"),
-    # and picks the model with CODEBUDDY_MODEL. The entry carries the gateway's chat/completions URL and the key
-    # as its apiKey, sent as a Bearer token, so the key never appears in argv and stays in a file only this user reads.
+    # models.json, which it re-reads live ("Loaded custom models config from user"), and picks the model with
+    # CODEBUDDY_MODEL. The entry carries the gateway's chat/completions URL and the key as its apiKey, sent as a
+    # Bearer token, so the key never appears in argv.
     # The file is an object, not a list: a list leaves availableModels undefined, and the provider then keeps the
-    # model out of availableModels, where the app's own filter drops it and it never shows up in the model picker.
+    # model out of availableModels, where WorkBuddy's own filter drops it and it never shows up in the model picker.
     # The app prefixes the id with "custom-local:" itself (productFeatures.CustomModelIdPrefix), and keeps the
     # id as an alias, so the prefixed id is what selects the model.
-    mkdir -p "$ag"
-    jq -nc --arg id "omarchy-local-$m" --arg name "$m · local" --arg url "$ep/v1/chat/completions" \
+    # The catalogue goes in WorkBuddy's own directory: $WORKBUDDY_CONFIG_DIR also holds its settings.json, its MCP
+    # configuration and its approval state, and pointing it elsewhere would start the app without them. That file
+    # is the user's own (0600) and the app re-reads it, so the entry is there before the app needs it.
+    wb_models="$HOME_DIR/.workbuddy-ai/models.json"
+    mkdir -p "$HOME_DIR/.workbuddy-ai"
+    [[ -f $wb_models ]] || printf '{}\n' >"$wb_models"
+    jq --arg id "omarchy-local-$m" --arg name "$m · local" --arg url "$ep/v1/chat/completions" \
       --rawfile k "$KEY" --argjson ctx "$ctx" --argjson vis "$vis" '
-      {models: [{id: $id, name: $name, url: $url, apiKey: ($k | rtrimstr("\n")),
-        maxInputTokens: $ctx, maxOutputTokens: 8192,
-        supportsToolCall: true, supportsImages: $vis, supportsReasoning: true,
-        reasoning: {defaultEffort: "medium", supportedEfforts: ["low", "medium", "high"], canDisableThinking: true}}],
-       availableModels: [$id]}' >"$ag/models.json"
-    chmod 600 "$ag/models.json"
-    printf '%s\0' env "WORKBUDDY_CONFIG_DIR=$ag" "CODEBUDDY_CONFIG_DIR=$ag" "CODEBUDDY_MODEL=custom-local:omarchy-local-$m" \
-      "CODEBUDDY_DISABLE_BUILTIN_MODELS=1" "$b"
+      (if type == "array" then {models: .} else . end)
+      | .models = ((.models // []) | map(select(.id != $id and .id != ("custom-local:" + $id))))
+      | .models += [{
+          id: $id, name: $name, url: $url, apiKey: ($k | rtrimstr("\n")),
+          maxInputTokens: $ctx, maxOutputTokens: 8192,
+          supportsToolCall: true, supportsImages: $vis, supportsReasoning: true,
+          reasoning: {defaultEffort: "medium", supportedEfforts: ["low", "medium", "high"], canDisableThinking: true}
+        }]
+      | .availableModels = (((.availableModels // []) | map(select(. != $id and . != ("custom-local:" + $id)))) + [$id])
+    ' "$wb_models" >"$wb_models.$$" && mv -f "$wb_models.$$" "$wb_models"
+    chmod 600 "$wb_models"
+    printf '%s\0' env "CODEBUDDY_MODEL=custom-local:omarchy-local-$m" "CODEBUDDY_DISABLE_BUILTIN_MODELS=1" "$b"
     ;;
   *)
     keyed OPENAI_API_KEY
