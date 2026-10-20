@@ -35,6 +35,36 @@ shared weights in use by another managed model are protected. The recipe stays
 available to download again. Files in your separate Hugging Face cache are kept,
 so hard-linked files there may continue to occupy disk space.
 
+## Your own recipes
+
+To change how a model runs on your machine, or to add a model, put recipes in
+`~/.config/omarchy/local-ai/recipes.local.json`. Plugin updates and catalog
+refreshes never touch this file, and Local AI reads it each time, on top of the
+recipes it ships. It has the shape of the plugin's `recipes.json`, card kinds only:
+
+```json
+{
+  "hardware": {
+    "rtx-3060-12gb": {
+      "recipes": [
+        { "id": "a-shipped-recipe-id", "launch": { "arguments": ["-c", "65536"] } },
+        { "id": "my-model.rtx-3060-12gb", "name": "My Model", "image": "ghcr.io/ggml-org/llama.cpp@sha256:..." }
+      ]
+    }
+  }
+}
+```
+
+1. Use a card kind's key from the plugin's `recipes.json`, such as `rtx-3060-12gb`.
+2. Give a recipe the id of one the plugin ships to change only the fields you list.
+   An object is merged key by key. A list, such as `launch.arguments`, replaces the shipped one whole.
+3. Give a recipe a new id to add a model. It is listed after the shipped ones and needs every field a shipped recipe has.
+4. A card kind the plugin does not ship needs its own `match`.
+
+Your recipes are checked like shipped ones before they start: the image must be pinned by digest, and
+no other Docker flags are allowed. If the file does not load, Local AI uses only its own recipes, and the
+log (`omarchy-local-ai log`) says why. Removing Local AI keeps this file.
+
 The equivalent commands are `omarchy-local-ai registry`, `download <recipe> [off]`,
 `pin <recipe> [off]` and `forget <recipe>` (or the plugin's `bin/omarchy-local-ai`).
 
