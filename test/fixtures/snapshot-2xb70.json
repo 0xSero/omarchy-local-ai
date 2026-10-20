@@ -1,0 +1,799 @@
+{
+"version": "6.24.0",
+"setupError": "",
+"readiness": {
+"state": "ready",
+"message": ""
+},
+"host": {
+"ramGb": 540.6,
+"freeRamGb": 145.1,
+"diskFreeGb": 695.8,
+"disk": "nvme",
+"cpus": 48,
+"cpuName": "AMD EPYC 7443P 24-Core Processor",
+"prepared": []
+},
+"week": 18385587,
+"total": 18394317,
+"life": {
+"requests": 251,
+"since": "Oct 13",
+"last": 1792166486,
+"start": 1780869600,
+"today": 134,
+"days": [
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+8730,
+18302736,
+0,
+82851,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0,
+0
+]
+},
+"defaults": {
+"agent": "pi",
+"folder": "/home/user/Work"
+},
+"reporting": "unset",
+"agents": [
+"pi",
+"claude",
+"codex",
+"opencode",
+"omp",
+"crush",
+"grok",
+"copilot",
+"hermes"
+],
+"folders": [],
+"pins": [
+"qwen38flashnext-exl3-mtp-ram80-256k-arcb70-sglang-tp1"
+],
+"tailnet": "machine.example.ts.net",
+"downloads": [],
+"updates": {
+"pi": {
+"current": "1.2.0",
+"latest": "1.3.0"
+},
+"claude": {
+"current": "2.1.296",
+"latest": "2.1.303"
+},
+"codex": {
+"current": "0.162.1",
+"latest": "0.163.0"
+},
+"omp": {
+"current": "18.10.3",
+"latest": "18.12.2"
+}
+},
+"updatesAt": "2026-10-19T23:34:12Z",
+"unoffered": {
+"folders": [
+{
+"folder": "ConwayResearch--Underdog-Saluki-27B-1.0@1336c0b5d74d",
+"gb": 7.8
+}
+],
+"downloads": []
+},
+"pluginUpdate": false,
+"catalog": {
+"commit": "02b59b6fe0627775f6c95d530c06d9239dcfb659",
+"at": "2026-10-19T20:49:46Z"
+},
+"gpus": [
+{
+"backend": "intel-xpu",
+"index": 0,
+"product": "Intel Arc Pro B70",
+"totalMiB": 32768,
+"usedMiB": null,
+"tempC": 47,
+"node": "/dev/dri/renderD129",
+"display": false,
+"key": "intel-xpu:0",
+"hw": "intel-arc-pro-b70-32gb",
+"vramGb": 32,
+"name": "Arc Pro B70",
+"heldBy": [],
+"held": false,
+"busy": false
+},
+{
+"backend": "intel-xpu",
+"index": 1,
+"product": "Intel Arc Pro B70",
+"totalMiB": 32768,
+"usedMiB": null,
+"tempC": 39,
+"node": "/dev/dri/renderD128",
+"display": false,
+"key": "intel-xpu:1",
+"hw": "intel-arc-pro-b70-32gb",
+"vramGb": 32,
+"name": "Arc Pro B70",
+"heldBy": [
+"dsreal"
+],
+"held": true,
+"busy": false
+},
+{
+"backend": "cpu",
+"index": 0,
+"product": "x86-64 AVX2 CPU",
+"totalMiB": 0,
+"usedMiB": null,
+"tempC": null,
+"ramGb": 540,
+"key": "cpu:0",
+"hw": "x86-64-avx2-cpu",
+"vramGb": 0,
+"name": "x86-64 AVX2 CPU",
+"heldBy": [],
+"held": false,
+"busy": false
+}
+],
+"kinds": [
+{
+"hw": "intel-arc-pro-b70-32gb",
+"keys": [
+"intel-xpu:0",
+"intel-xpu:1"
+],
+"free": [
+"intel-xpu:0"
+],
+"taken": [
+"intel-xpu:1"
+],
+"models": [
+{
+"id": "qwen38-27b-exl3-4bpw-arcb70-vllm-exl3xpu-tp1",
+"name": "Qwen3.8-27B",
+"family": "qwen",
+"cards": 1,
+"format": "EXL3 \u00b7 4 bpw",
+"engine": "vllm",
+"sizeGb": 15.73,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": true,
+"vision": true
+},
+"reported": false,
+"aa": 27.6,
+"needs": null,
+"weights": [
+{
+"repository": "turboderp/Qwen3.8-27B-exl3",
+"revision": "113cf7ab958054860e43fb7f3063b1af19171095"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "qwen38flashnext-exl3-mtp-ram80-256k-arcb70-sglang-tp1",
+"name": "Qwen3.8-Flash-Next",
+"family": "qwen",
+"cards": 1,
+"format": "EXL3 \u00b7 3.05 bpw \u00b7 MTP (experts in RAM, n-gram table on NVMe)",
+"engine": "sglang",
+"sizeGb": 85.14,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"vision": true
+},
+"reported": false,
+"aa": 39.8,
+"needs": {
+"host_ram_gb": 63,
+"disk_gb": 85.14,
+"fast_storage": "nvme"
+},
+"weights": [
+{
+"repository": "turboderp/Qwen3.8-Flash-Next-exl3",
+"revision": "69e33439ae950f17bcbe95c98f117d80f759ab6d"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "welp-35b-a3b-256k-arcprob70-llamacpp-sycl",
+"name": "Welp-35B-A3B",
+"family": "qwen",
+"cards": 1,
+"format": "GGUF \u00b7 mixed K-quants",
+"engine": "llama.cpp",
+"sizeGb": 13.21,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": null,
+"needs": null,
+"weights": [
+{
+"repository": "quaedra/Welp-35B-A3B-GGUF",
+"revision": "3e4a3adbda8df07d2889978170d9955c2e59fb7a"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "qwen38flashnext-exl3-mtp-nvme58-256k-arcb70-sglang-tp1",
+"name": "Qwen3.8-Flash-Next",
+"family": "qwen",
+"cards": 1,
+"format": "EXL3 \u00b7 3.05 bpw \u00b7 MTP (experts on NVMe, 36 GB RAM tier)",
+"engine": "sglang",
+"sizeGb": 85.14,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"vision": true
+},
+"reported": false,
+"aa": 39.8,
+"needs": {
+"host_ram_gb": 54,
+"disk_gb": 131.0,
+"fast_storage": "nvme"
+},
+"weights": [
+{
+"repository": "turboderp/Qwen3.8-Flash-Next-exl3",
+"revision": "69e33439ae950f17bcbe95c98f117d80f759ab6d"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "qwen38flashnext-exl3-mtp-nvme12-256k-arcb70-sglang-tp1",
+"name": "Qwen3.8-Flash-Next",
+"family": "qwen",
+"cards": 1,
+"format": "EXL3 \u00b7 3.05 bpw \u00b7 MTP (experts on NVMe, 0.5 GB RAM tier)",
+"engine": "sglang",
+"sizeGb": 85.14,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"vision": true
+},
+"reported": false,
+"aa": 39.8,
+"needs": {
+"host_ram_gb": 12,
+"disk_gb": 132.0,
+"fast_storage": "nvme"
+},
+"weights": [
+{
+"repository": "turboderp/Qwen3.8-Flash-Next-exl3",
+"revision": "69e33439ae950f17bcbe95c98f117d80f759ab6d"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "qwen38flashnext-exl3-mtp-nvme28-256k-arcb70-sglang-tp1",
+"name": "Qwen3.8-Flash-Next",
+"family": "qwen",
+"cards": 1,
+"format": "EXL3 \u00b7 3.05 bpw \u00b7 MTP (experts on NVMe, 8 GB RAM tier)",
+"engine": "sglang",
+"sizeGb": 85.14,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"vision": true
+},
+"reported": false,
+"aa": 39.8,
+"needs": {
+"host_ram_gb": 25,
+"disk_gb": 131.0,
+"fast_storage": "nvme"
+},
+"weights": [
+{
+"repository": "turboderp/Qwen3.8-Flash-Next-exl3",
+"revision": "69e33439ae950f17bcbe95c98f117d80f759ab6d"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "swift15-qwen38-27b-q4km-256k-kvq80-arcprob70-llamacpp-sycl",
+"name": "Swift-1.5-Qwen3.8-27B",
+"family": "qwen",
+"cards": 1,
+"format": "GGUF \u00b7 Q4_K_M",
+"engine": "llama.cpp",
+"sizeGb": 17.44,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": null,
+"needs": null,
+"weights": [
+{
+"repository": "ukisai/Swift-1.5-Qwen3.8-27B-GGUF",
+"revision": "14bfe4b42be4a925d98816db830155f476c605e7"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "qwen36-27b-q4km-256k-kvq80-arcprob70-llamacpp-sycl",
+"name": "Qwen3.6-27B",
+"family": "qwen",
+"cards": 1,
+"format": "GGUF \u00b7 Q4_K_M",
+"engine": "llama.cpp",
+"sizeGb": 17.11,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": 21.4,
+"needs": null,
+"weights": [
+{
+"repository": "unsloth/Qwen3.6-27B-MTP-GGUF",
+"revision": "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "qwen36-35b-a3b-ud-q4km-256k-arcprob70-llamacpp-sycl",
+"name": "Qwen3.6-35B-A3B",
+"family": "qwen",
+"cards": 1,
+"format": "GGUF \u00b7 UD-Q4_K_M",
+"engine": "llama.cpp",
+"sizeGb": 22.13,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": 18.2,
+"needs": null,
+"weights": [
+{
+"repository": "unsloth/Qwen3.6-35B-A3B-GGUF",
+"revision": "a483e9e6cbd595906af30beda3187c2663a1118c"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "qwen35-9b-q4km-256k-arcprob70-llamacpp-sycl",
+"name": "Qwen3.5-9B",
+"family": "qwen",
+"cards": 1,
+"format": "GGUF \u00b7 Q4_K_M",
+"engine": "llama.cpp",
+"sizeGb": 5.68,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": 11.2,
+"needs": null,
+"weights": [
+{
+"repository": "unsloth/Qwen3.5-9B-GGUF",
+"revision": "3885219b6810b007914f3a7950a8d1b469d598a5"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "gemma4-12b-qat-q40-256k-arcprob70-llamacpp-sycl",
+"name": "Gemma 4 12B",
+"family": "gemma",
+"cards": 1,
+"format": "GGUF \u00b7 QAT Q4_0",
+"engine": "llama.cpp",
+"sizeGb": 6.98,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": 14.2,
+"needs": null,
+"weights": [
+{
+"repository": "google/gemma-4-12B-it-qat-q4_0-gguf",
+"revision": "29d097773436b69ff9feafd636ab4cf873786537"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "gemma4-26b-a4b-ud-q4kxl-256k-arcprob70-llamacpp-sycl",
+"name": "Gemma 4 26B A4B",
+"family": "gemma",
+"cards": 1,
+"format": "GGUF \u00b7 UD-Q4_K_XL",
+"engine": "llama.cpp",
+"sizeGb": 17.01,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": 16.7,
+"needs": null,
+"weights": [
+{
+"repository": "unsloth/gemma-4-26B-A4B-it-GGUF",
+"revision": "c099eb48e663fd284577b04978a94ffccb261841"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "gemma4-31b-qat-q40-128k-kvq80-arcprob70-llamacpp-sycl",
+"name": "Gemma 4 31B",
+"family": "gemma",
+"cards": 1,
+"format": "GGUF \u00b7 QAT Q4_0",
+"engine": "llama.cpp",
+"sizeGb": 17.65,
+"ctx": 131072,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": 14.7,
+"needs": null,
+"weights": [
+{
+"repository": "lmstudio-community/gemma-4-31B-it-QAT-GGUF",
+"revision": "12e5eae7a583b0a8bac91919fa99ae1fb27e6de4"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "nemotron35-bolt-74b-a9b-24gb-256k-arcprob70-llamacpp-sycl",
+"name": "Nemotron 3.5 Bolt 74B-A9B",
+"family": "nemotron",
+"cards": 1,
+"format": "GGUF \u00b7 NVIDIA 24 GB (IQ2_XXS / NVFP4 / Q8_0)",
+"engine": "llama.cpp",
+"sizeGb": 23.75,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": true
+},
+"reported": false,
+"aa": null,
+"needs": null,
+"weights": [
+{
+"repository": "nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-24GB-GGUF",
+"revision": "e0fecb69cb3e5e4c5e8a056fa2aec98c78e91246"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "muse-glimmer-30b-q4km-128k-arcprob70-llamacpp-sycl",
+"name": "Muse Glimmer 30B",
+"family": "muse",
+"cards": 1,
+"format": "GGUF \u00b7 Q4_K_M",
+"engine": "llama.cpp",
+"sizeGb": 16.76,
+"ctx": 131072,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": 17.5,
+"needs": null,
+"weights": [
+{
+"repository": "lmstudio-community/Muse-Glimmer-30B-GGUF",
+"revision": "c34cb7372a72fd3bec29e3a21e6c8e04e337d5ae"
+}
+],
+"unfit": "",
+"downloaded": false
+},
+{
+"id": "ornith15-35b-a3b-q4km-256k-arcprob70-llamacpp-sycl",
+"name": "Ornith-1.5-35B-A3B",
+"family": "ornith",
+"cards": 1,
+"format": "GGUF \u00b7 Q4_K_M",
+"engine": "llama.cpp",
+"sizeGb": 21.71,
+"ctx": 262144,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"video": false,
+"vision": false
+},
+"reported": false,
+"aa": null,
+"needs": null,
+"weights": [
+{
+"repository": "ornith-ai/Ornith-1.5-35B-A3B-GGUF",
+"revision": "12393612fd4f730ff5aadc23e9b8f9648aa49ceb"
+}
+],
+"unfit": "",
+"downloaded": false
+}
+],
+"groups": []
+},
+{
+"hw": "x86-64-avx2-cpu",
+"keys": [
+"cpu:0"
+],
+"free": [
+"cpu:0"
+],
+"taken": [],
+"models": [
+{
+"id": "lfm25-26b-qad-q4-cpu",
+"name": "LFM2.5-2.6B",
+"family": "lfm",
+"cards": 1,
+"format": "GGUF QAD-Q4_0",
+"engine": "llama.cpp",
+"sizeGb": 1.6,
+"ctx": 8192,
+"caps": {
+"chat": true,
+"reasoning": true,
+"tools": true,
+"vision": false
+},
+"reported": false,
+"aa": 8.4,
+"needs": {
+"host_ram_gb": 4,
+"disk_gb": 1.7
+},
+"weights": [
+{
+"repository": "LiquidAI/LFM2.5-2.6B-GGUF",
+"revision": "84022ce711b28455e8c4fc364ce68c00cf995875"
+}
+],
+"unfit": "",
+"downloaded": false
+}
+],
+"groups": []
+}
+],
+"deployments": []
+}
