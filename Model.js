@@ -576,15 +576,18 @@ function groupView(s, hw, n, ui) {
 // the maker of a card, for its logo
 function vendor(g) { return ({ nvidia: "nvidia", "intel-xpu": "intel", "amd-rocm": "amd" })[g.backend] || "" }
 // what has a card, in a few words, or null when it is free: a model of ours on it ("running Qwen3.8-27B"), a container
-// that claims it ("taken by ollama"), or a program using its memory ("taken by another program · 9.3 GB"); ours is
-// not a warning, someone else's is
+// that claims it ("taken by ollama"), or programs holding more than 2 GB of it ("taken by ollama · 5.2 GB"; the
+// backend's othersMiB leaves out the desktop's framebuffer and compositor); ours is not a warning, someone else's is
 function holder(s, g) {
   var d = (s.deployments || []).filter(function(x) { return x.keys.indexOf(g.key) >= 0 })[0]
   if (d) return { ours: true, d: d, text: (d.state === "ready" ? "running " : d.state === "error" ? "stopped: " : d.state + " ") + d.name }
   var by = (g.heldBy || []).filter(Boolean)
   if (by.length) return { text: "taken by " + by.slice(0, 2).join(", ") + (by.length > 2 ? " +" + (by.length - 2) : "") }
   if (g.held) return { text: "taken by another container" }
-  if ((g.usedMiB || 0) > 2048) return { text: "taken by another program · " + gb(g.usedMiB / 1024) }
+  if ((g.othersMiB || 0) > 2048) {
+    var names = (g.others || []).map(function(o) { return o.name }).filter(function(n, i, a) { return n && a.indexOf(n) === i })
+    return { text: "taken by " + (names.length ? names.slice(0, 2).join(", ") : "another program") + " · " + gb(g.othersMiB / 1024) }
+  }
   // a card the backend counts as taken for a reason it cannot name
   if ((s.kinds || []).some(function(kd) { return (kd.taken || []).indexOf(g.key) >= 0 })) return { text: "taken by another program" }
   return null
