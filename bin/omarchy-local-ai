@@ -274,12 +274,21 @@ cdi_stale() {
   done
 }
 
-# nvidia: index, name, memory and temperature per card, as nvidia-smi prints them
+# nvidia: index, name, memory, temperature, UUID and free memory per card, as nvidia-smi prints them
 nvidia() {
   local out
-  out=$(timeout 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>/dev/null) || true
+  out=$(timeout 10 nvidia-smi --query-gpu=index,name,memory.total,memory.used,temperature.gpu,uuid,memory.free --format=csv,noheader,nounits 2>/dev/null) || true
   # nvidia-utils without a driver has nvidia-smi print why it failed on stdout: only CSV rows are cards
   grep -E '^[0-9]+, ' <<<"$out" || true
+}
+
+# nvidia_apps: every program with a context on an NVIDIA card, as "<card UUID>, <pid>, <process>, <MiB>". The card's
+# memory.used also counts what nobody owns (the display's framebuffer) and the desktop's own compositor, so what
+# another program holds is the sum of these, not the card's total.
+nvidia_apps() {
+  local out
+  out=$(timeout 10 nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null) || true
+  grep -E '^GPU-' <<<"$out" || true
 }
 
 # Intel GPUs the recipes know, by PCI id (Arc Pro B70, Arc Pro B65, Arc B390). The xe driver gives users its temperature but not its memory use. A card with
@@ -366,7 +375,7 @@ cpu() {
 # memory of its own to report: nvidia-smi prints [N/A], and the card is unified.
 MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | split(", ") | {backend: "nvidia", index: (.[0] | tonumber),
       product: .[1], totalMiB: (.[2] | tonumber? // 0), usedMiB: (.[3] | tonumber? // null), tempC: (.[4] | tonumber? // null),
-      unified: ((.[2] | tonumber? // null) == null)}))
+      uuid: (.[5] // ""), freeMiB: (.[6] | tonumber? // null), unified: ((.[2] | tonumber? // null) == null)}))
     + ($xe | split("\n") | map(select(length > 0) | split("\t")) | to_entries | map({backend: "intel-xpu", index: .key,
       product: (.value[3] // "Intel Arc Pro B70"), totalMiB: (.value[4] // "32768" | tonumber), usedMiB: null,
       tempC: (.value[0] | tonumber? // null), node: .value[1], display: ((.value[2] // "") == "1")}))
@@ -404,7 +413,7 @@ gpus() {
     fi
   fi
   jq -nc --arg nv "$(nvidia)" --arg xe "$(intel)" --argjson am "$(amd)" --argjson cpu "$(cpu)" --argjson ram "$(awk '/^MemTotal:/ {print int($2 / 1024)}' "${MEMINFO:-/proc/meminfo}")" --slurpfile rec "$RECIPES" --argjson claims "$claims" \
-    --arg links "$(for p in /dev/dri/by-path/*-render; do printf '%s\t%s\n' "$p" "$(readlink -f "$p")"; done)" "$MATCH"'
+    --arg apps "$(nvidia_apps)" --arg links "$(for p in /dev/dri/by-path/*-render; do printf '%s\t%s\n' "$p" "$(readlink -f "$p")"; done)" "$MATCH"'
     ($links | split("\n") | map(select(length > 0) | split("\t") | {key: .[0], value: .[1]}) | from_entries) as $links
     | def node: $links[.] // .;
     (gpus($nv; $xe; $am) + $cpu | match($rec[0]; $ram)) | map(. as $g
@@ -418,7 +427,16 @@ gpus() {
             and ((.DeviceIDs // [] | length) == 0 or any(.DeviceIDs[];
               . == ($g.index | tostring) or (test("^[0-9]+$") | not))))))
           | .name // "" | ltrimstr("/")] end)}
-      | .held = (.heldBy | length > 0))'
+      | .held = (.heldBy | length > 0)
+      # the programs outside Docker that hold its memory, biggest first: on NVIDIA the compute apps on this card (by
+      # UUID), so the framebuffer of a desktop is not mistaken for another program; amd-smi reports only the total
+      # memory of the card, which stands in for them
+      | . + (if .backend == "nvidia" and $g.uuid != "" then
+          ([$apps | split("\n")[] | select(length > 0) | split(", ") | select(.[0] == $g.uuid)
+            | {name: (.[2:-1] | join(", ") | split("/") | last), mib: (.[-1] | tonumber? // 0)}] | sort_by(-.mib)) as $o
+          | {others: $o, othersMiB: ($o | map(.mib) | add // 0)}
+        elif .backend == "cpu" or .backend == "intel-xpu" then {others: [], othersMiB: null}
+        else {others: [], othersMiB: .usedMiB} end))'
 }
 
 # host: what a recipe that offloads weights to the machine needs of it besides the card (its `needs`): available RAM,
@@ -824,12 +842,32 @@ settle() {
   die "$* is in use by another program"
 }
 
+# card_taken <gpus> <key>: what has the card, or nothing when it is free: a container that claims it, or programs that
+# hold more than 2 GB of it ("ollama (5.2 GB)"); the framebuffer of a desktop and its compositor do not count
+card_taken() {
+  jq -r --arg k "$2" 'first(.[] | select(.key == $k)) // {} | if .held then "another program"
+    elif (.othersMiB // 0) > 2048 then
+      ([.others // [] | map(select(.name != "")) | group_by(.name)[] | {name: .[0].name, mib: (map(.mib) | add)}]
+        | sort_by(-.mib) | map(.name) | .[:2] | join(", ")) as $n
+        | (if $n == "" then "another program" else $n end) + " (" + ((.othersMiB / 1024 * 10 | round) / 10 | tostring) + " GB)"
+    else empty end' <<<"$1"
+}
+
+# card_room <gpus> <key> <recipe>: why the card has no room for the weights of the recipe, or nothing when they fit in
+# its free memory (unknown free memory never refuses)
+card_room() {
+  jq -r --arg k "$2" --argjson r "$3" 'first(.[] | select(.key == $k)) // {}
+    | ((($r.sizeGb // 0) * 1024 / ($r.cards // 1)) | floor) as $need
+    | select(.freeMiB != null and .freeMiB < $need)
+    | "\($r.name // "this model") needs \(($need / 1024 * 10 | round) / 10) GB on \($k); \((.freeMiB / 1024 * 10 | round) / 10) GB is free"' <<<"$1"
+}
+
 cards_free() {
-  local g k
+  local g k w
   g=$(gpus)
   for k in "$@"; do
-    jq -e --arg k "$k" 'any(.[]; .key == $k and (.held or (.usedMiB // 0) > 2048))' <<<"$g" >/dev/null &&
-      die "$k is in use by another program"
+    w=$(card_taken "$g" "$k")
+    [[ -z $w ]] || die "$k is in use by $w"
   done
   return 0
 }
@@ -1107,7 +1145,7 @@ worker_run() {
 cmd_run() {
   valid_id "${1:-}" && [[ -n ${2:-} ]] || die "run <recipe> <gpu>[,<gpu>...]"
   require_ready
-  local id=${1%--*} keys=() k r d g port busy n=1
+  local id=${1%--*} keys=() k r d g port busy v n=1
   IFS=, read -ra keys <<<"$2"
   r=$(recipe "$id") || die "no recipe $id"
   [[ $(policy "$r") == "ok" ]] || die "recipe refused: $(policy "$r")"
@@ -1129,8 +1167,10 @@ cmd_run() {
     grep -qxF -- "$k" <<<"$busy" && die "$k is in use"
     jq -e --arg k "$k" --arg h "$(jq -r .hw <<<"$r")" 'any(.[]; .key == $k and .hw == $h)' <<<"$g" >/dev/null ||
       die "$(jq -r .name <<<"$r") is not validated for $k"
-    jq -e --arg k "$k" 'any(.[]; .key == $k and (.held or (.usedMiB // 0) > 2048))' <<<"$g" >/dev/null &&
-      die "$k is in use by another program"
+    v=$(card_taken "$g" "$k")
+    [[ -z $v ]] || die "$k is in use by $v"
+    v=$(card_room "$g" "$k" "$r")
+    [[ -z $v ]] || die "$v"
   done
   while [[ -f $(dir_of "$id")/config.json ]]; do
     n=$((n + 1))
@@ -1965,7 +2005,7 @@ cmd_snapshot() {
       | {name: $rid, offered: any($rec[0].hardware[].recipes[]; .id == $rid)}
         + ([$rec[0].hardware[].recipes[] | select(.id == $rid)][0] // {} | summary($host) | del(.id, .unfit) | with_entries(select(.value != null))) + .]) as $deps
     | ([$deps[].keys[]]) as $busy
-    | ([$g[] | select((.held or (.usedMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
+    | ([$g[] | select((.held or (.othersMiB // 0) > 2048) and (.key as $k | $busy | index($k) == null)) | .key]) as $taken
     | {version: $version, setupError: $setupError, readiness: {state: $rstate, message: $rmsg}, host: ($host | del(.have, .got)), week: $tokens.week, total: $tokens.total, life: $tokens.life, defaults: {agent: $agent, folder: $folder}, reporting: $reporting, agents: $agents, folders: $folders, pins: $pins, tailnet: $ts,
        cdi: (if $cdi == "" then null else ($cdi | split("\t") | {spec: .[0], why: .[1]}) end),
        downloads: $downloads, updates: $outdated.updates, updatesAt: $outdated.at,
