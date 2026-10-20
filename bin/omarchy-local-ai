@@ -31,7 +31,7 @@ RECIPES=$PANEL/recipes.json
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
 LABEL=io.omarchy.local-ai
 SYS=${LOCAL_AI_SYSFS:-/sys}
-AGENTS=(pi claude codex opencode omp crush grok copilot hermes)
+AGENTS=(pi claude codex opencode omp crush grok copilot hermes workbuddy)
 umask 077
 
 paths() {
@@ -1694,6 +1694,36 @@ argv() {
     # is what lets it send OPENAI_API_KEY there (and no other key)
     keyed OPENAI_API_KEY
     printf '%s\0' env "CUSTOM_BASE_URL=$ep/v1" "OPENAI_BASE_URL=$ep/v1" "$b" chat --provider custom --model "$m"
+    ;;
+  workbuddy)
+    # WorkBuddy has no OpenAI-compatible env vars: its agent CLI (codebuddy) reads its model catalogue from
+    # models.json, which it re-reads live ("Loaded custom models config from user"), and picks the model with
+    # CODEBUDDY_MODEL. The entry carries the gateway's chat/completions URL and the key as its apiKey, sent as a
+    # Bearer token, so the key never appears in argv.
+    # The file is an object, not a list: a list leaves availableModels undefined, and the provider then keeps the
+    # model out of availableModels, where WorkBuddy's own filter drops it and it never shows up in the model picker.
+    # The app prefixes the id with "custom-local:" itself (productFeatures.CustomModelIdPrefix), and keeps the
+    # id as an alias, so the prefixed id is what selects the model.
+    # The catalogue goes in WorkBuddy's own directory: $WORKBUDDY_CONFIG_DIR also holds its settings.json, its MCP
+    # configuration and its approval state, and pointing it elsewhere would start the app without them. That file
+    # is the user's own (0600) and the app re-reads it, so the entry is there before the app needs it.
+    wb_models="$HOME_DIR/.workbuddy-ai/models.json"
+    mkdir -p "$HOME_DIR/.workbuddy-ai"
+    [[ -f $wb_models ]] || printf '{}\n' >"$wb_models"
+    jq --arg id "omarchy-local-$m" --arg name "$m · local" --arg url "$ep/v1/chat/completions" \
+      --rawfile k "$KEY" --argjson ctx "$ctx" --argjson vis "$vis" '
+      (if type == "array" then {models: .} else . end)
+      | .models = ((.models // []) | map(select(.id != $id and .id != ("custom-local:" + $id))))
+      | .models += [{
+          id: $id, name: $name, url: $url, apiKey: ($k | rtrimstr("\n")),
+          maxInputTokens: $ctx, maxOutputTokens: 8192,
+          supportsToolCall: true, supportsImages: $vis, supportsReasoning: true,
+          reasoning: {defaultEffort: "medium", supportedEfforts: ["low", "medium", "high"], canDisableThinking: true}
+        }]
+      | .availableModels = (((.availableModels // []) | map(select(. != $id and . != ("custom-local:" + $id)))) + [$id])
+    ' "$wb_models" >"$wb_models.$$" && mv -f "$wb_models.$$" "$wb_models"
+    chmod 600 "$wb_models"
+    printf '%s\0' env "CODEBUDDY_MODEL=custom-local:omarchy-local-$m" "CODEBUDDY_DISABLE_BUILTIN_MODELS=1" "$b"
     ;;
   *)
     keyed OPENAI_API_KEY
