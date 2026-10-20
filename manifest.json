@@ -10,7 +10,7 @@
     "bar-widget"
   ],
   "entryPoints": {
-    "barWidget": "Panel.qml"
+    "barWidget": "Panel8.qml"
   },
   "barWidget": {
     "displayName": "Local AI",
