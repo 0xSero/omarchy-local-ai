@@ -391,7 +391,9 @@ MATCH='def gpus($nv; $xe; $am): ($nv | split("\n") | map(select(length > 0) | sp
         and (if (.value.match.unifiedMemory // false) or $x.unified
           then ($ram + (if $x.backend == "amd-rocm" then $x.totalMiB else 0 end)
             + ([8192, .value.match.vramGb * 1024 / 10] | max)) >= .value.match.vramGb * 1024
-          else (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024 end)) | .key][0] // "") as $hw
+          else (((.value.match.vramGb * 1024) - $x.totalMiB) | fabs) <= 1024 end))]
+      # the largest card that fits: a 128 GB Strix Halo also covers the memory of the 64 GB card (sort_by keeps file order on ties)
+      | sort_by(-.value.match.vramGb) | .[0].key // "") as $hw
     | ($x.unified or ($hw != "" and ($r.hardware[$hw].match.unifiedMemory // false))) as $uni
     | $x + {key: ($x.backend + ":" + ($x.index | tostring)), hw: $hw,
         totalMiB: (if $uni then $ram else $x.totalMiB end), usedMiB: (if $uni then null else $x.usedMiB end),

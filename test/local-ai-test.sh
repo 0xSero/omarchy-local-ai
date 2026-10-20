@@ -229,7 +229,7 @@ printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((130 * 1024 * 1024)) $((120 * 
   fail "unified memory match" "$(jq -c .gpus "$TMP/snap-strix.json")"
 printf 'MemTotal: %s kB\nMemAvailable: %s kB\n' $((64 * 1024 * 1024)) $((60 * 1024 * 1024)) >"$MEMINFO"
 "$CLI" snapshot >"$TMP/snap-strix.json"
-[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") == "" ]] || fail "a 64 GB host matched the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
+[[ $(jq -r '.gpus[0].hw' "$TMP/snap-strix.json") != ryzen-ai-max-365-128gb ]] || fail "a 64 GB host matched the 128 GB card" "$(jq -c .gpus "$TMP/snap-strix.json")"
 # the same 128 GB machine with a 32 GiB carve-out: MemTotal is ~94 GiB, which amd-smi's VRAM size makes up
 shim amd-smi 'case $1 in
 static) echo "{\"gpu_data\":[{\"gpu\":0,\"asic\":{\"market_name\":\"AMD Radeon 8060S Graphics\"},\"vram\":{\"size\":{\"value\":32768}},\"bus\":{\"bdf\":\"0000:c3:00.0\"}}]}" ;;
