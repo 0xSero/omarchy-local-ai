@@ -433,7 +433,9 @@ gpus() {
       # memory of the card, which stands in for them
       | . + (if .backend == "nvidia" and $g.uuid != "" then
           ([$apps | split("\n")[] | select(length > 0) | split(", ") | select(.[0] == $g.uuid)
-            | {name: (.[2:-1] | join(", ") | split("/") | last), mib: (.[-1] | tonumber? // 0)}] | sort_by(-.mib)) as $o
+            # the program, not its whole command line: for a browser that is hundreds of characters of flags,
+            # and the panel shows this name
+            | {name: (.[2:-1] | join(", ") | split("/") | last | split(" ")[0]), mib: (.[-1] | tonumber? // 0)}] | sort_by(-.mib)) as $o
           | {others: $o, othersMiB: ($o | map(.mib) | add // 0)}
         elif .backend == "cpu" or .backend == "intel-xpu" then {others: [], othersMiB: null}
         else {others: [], othersMiB: .usedMiB} end))'

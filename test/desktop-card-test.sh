@@ -45,6 +45,13 @@ r='{"name":"Qwen3.5-9B","sizeGb":6.47,"cards":1}'
   bad "weights larger than the free memory: $(card_room "$g" nvidia:0 "$r")"
 echo 'ok - a start is refused only when the weights do not fit in the free memory, and says how much is free'
 
+# a program whose name carries its command line: the panel shows the program, not the flags
+APPS="${DESKTOP}GPU-aaaa-3070, 2150, /opt/brave-browser/brave --type=gpu-process --gpu-preferences=AAAA, 412\n"
+g=$(gpus none)
+[[ $(jq -r '.[0].others[0].name' <<<"$g") == "brave" ]] ||
+  bad "a program with flags in its name: '$(jq -r '.[0].others[0].name' <<<"$g")'"
+echo 'ok - a program is named by its binary, not by the whole command line'
+
 APPS="${DESKTOP}GPU-aaaa-3070, 3100, /usr/bin/ollama, 5300\nGPU-bbbb-other, 3200, /usr/bin/python3, 9000\n"
 USED=7900 FREE=0
 g=$(gpus none)
