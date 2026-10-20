@@ -4,6 +4,10 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+### Added
+- Your own recipes, in `~/.config/omarchy/local-ai/recipes.local.json`, outlast plugin updates and catalog refreshes. A recipe with a shipped id changes only the fields it lists; a new id adds a model. They are checked like shipped recipes before they start, and a file that does not load is skipped and logged (see [Your own recipes](docs/catalog.md#your-own-recipes)).
+- A recipe can set `launch.resources.sysNice`, which adds only `CAP_SYS_NICE` to its engine, for llama.cpp's `--prio` and `--cpu-strict`.
+
 ## [6.24.0] - 2026-10-18
 
 ### Changed

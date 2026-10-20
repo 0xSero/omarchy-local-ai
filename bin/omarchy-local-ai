@@ -29,6 +29,9 @@ CATALOG=$HOME/.cache/omarchy/local-ai/v4/recipes.json
 RECIPES=$PANEL/recipes.json
 # a refreshed catalog wins until the plugin is updated: an update brings recipes newer than any earlier refresh
 [[ ! $CATALOG -nt $RECIPES ]] || RECIPES=$CATALOG
+# this machine's own recipes, laid over whichever of those is in use (local_recipes): an update or a refresh never
+# changes this file
+LOCAL_RECIPES=$HOME/.config/omarchy/local-ai/recipes.local.json
 LABEL=io.omarchy.local-ai
 SYS=${LOCAL_AI_SYSFS:-/sys}
 AGENTS=(pi claude codex opencode omp crush grok copilot hermes)
@@ -104,7 +107,7 @@ policy() {
     def abs: test("^/[A-Za-z0-9_./-]+$") and (contains("..") | not);
     def strings: type == "array" and length > 0 and all(.[]; type == "string" and (contains("\u0000") | not));
     def resources:
-      type == "object" and (keys - ["memoryBytes", "memorySwapBytes", "memlockUnlimited", "ipcLock"] | length == 0)
+      type == "object" and (keys - ["memoryBytes", "memorySwapBytes", "memlockUnlimited", "ipcLock", "sysNice"] | length == 0)
       and all(to_entries[]; if (.key == "memoryBytes" or .key == "memorySwapBytes") then
         (.value | type == "number" and . == floor and . > 0 and . <= 9007199254740991) else (.value | type == "boolean") end)
       and (if has("memorySwapBytes") then has("memoryBytes") and .memorySwapBytes >= .memoryBytes else true end);
@@ -664,6 +667,7 @@ launch_options() {
     o("--memory"; .launch.resources.memoryBytes), o("--memory-swap"; .launch.resources.memorySwapBytes),
     (if .launch.resources.memlockUnlimited then o("--ulimit"; "memlock=-1:-1") else "" end),
     (if .launch.resources.ipcLock then o("--cap-add"; "IPC_LOCK") else "" end),
+    (if .launch.resources.sysNice then o("--cap-add"; "SYS_NICE") else "" end),
     (.launch.environment | to_entries[]? | select(.key != "NVIDIA_VISIBLE_DEVICES") | o("--env"; "\(.key)=\(.value)")),
     o("--env"; if any(.weights[]?; .layout == "hub") then "HF_HUB_OFFLINE=1" else null end)' <<<"$1"
 }
@@ -2025,6 +2029,11 @@ cmd_snapshot() {
   }
   g=$(gpus "$([[ $rstate == ready ]] || echo none)") || die "could not check the GPUs; try again"
   page && return 0
+  if [[ $RECIPES != "${BASE:-$RECIPES}" ]]; then
+    local_recipes_skip "the panel could not be drawn with them"
+    g=$(gpus "$([[ $rstate == ready ]] || echo none)") || die "could not check the GPUs; try again"
+    page && return 0
+  fi
   [[ $RECIPES == "$CATALOG" ]] || return 1
   catalog_fallback "the panel could not be drawn from it"
   g=$(gpus "$([[ $rstate == ready ]] || echo none)") || die "could not check the GPUs; try again"
@@ -2041,6 +2050,53 @@ catalog_fallback() {
   say "the refreshed model list is not used ($1); using the one this version ships"
 }
 
+# local_recipes: lay this machine's own recipes (LOCAL_RECIPES, recipes.json's shape: {"hardware": {<kind>: {"recipes":
+# [...]}}}) over the recipes in use, so they outlast plugin updates and refreshes. A recipe whose id the card kind
+# already has is merged over it (objects key by key; arrays and other values replaced), any other is added after the
+# kind's own, and a card kind the recipes do not have is taken whole, with its match. Nothing is trusted more for being
+# local: each recipe is checked by policy before it runs, like a shipped one. The merge is cached by the digest of both
+# files; a file that does not load is skipped and the recipes in use answer (the log says why once per reason).
+local_recipes() {
+  local dir=${CATALOG%/*/*}/local d tmp
+  BASE=$RECIPES
+  [[ -f $LOCAL_RECIPES ]] || return 0
+  d=$(cat -- "$RECIPES" "$LOCAL_RECIPES" | sha256sum) || { local_recipes_skip "it cannot be read"; return 0; }
+  d=${d%% *}
+  if [[ ! -f $dir/$d.json ]]; then
+    mkdir -p "$dir"
+    tmp=$(mktemp "$dir/.recipes.XXXXXX")
+    if ! jq --slurpfile own "$LOCAL_RECIPES" '
+      $own[0] as $l
+      | if ($l | type) != "object" or ($l.hardware | type) != "object"
+          or any($l.hardware[]; (.recipes | type) != "array" or any(.recipes[]; type != "object"
+            or (.id | type == "string" and test("^[a-z0-9][a-z0-9.-]{0,63}$") | not)))
+        then error("invalid") else . end
+      | reduce ($l.hardware | to_entries[]) as $k (.;
+          if .hardware[$k.key] == null then
+            if ($k.value.match | type) == "object" then .hardware[$k.key] = $k.value else error("no match") end
+          else reduce $k.value.recipes[] as $r (.; .hardware[$k.key].recipes |=
+            if any(.[]; .id == $r.id) then map(if .id == $r.id then . * $r else . end) else . + [$r] end) end)
+    ' "$RECIPES" >"$tmp" 2>/dev/null; then
+      rm -f -- "$tmp"
+      local_recipes_skip "it does not load"
+      return 0
+    fi
+    mv -f -- "$tmp" "$dir/$d.json"
+    rm -f -- "$STATE/local-recipes-skipped"
+    # a merge of files since changed; one a call still reading is minutes newer
+    find "$dir" -maxdepth 1 -name '*.json' ! -name "$d.json" -mmin +5 -delete 2>/dev/null || true
+  fi
+  RECIPES=$dir/$d.json
+}
+
+# local_recipes_skip <why>: answer without this machine's own recipes; the log says why once per reason
+local_recipes_skip() {
+  RECIPES=$BASE
+  [[ $(cat "$STATE/local-recipes-skipped" 2>/dev/null) != "$1" ]] || return 0
+  printf '%s\n' "$1" >"$STATE/local-recipes-skipped"
+  say "your own recipes in $LOCAL_RECIPES are not used ($1)"
+}
+
 paths "$HOME"
 # Access is loaded here: the tests load every definition above this line and stub readiness.
 # shellcheck source=../lib/access.sh
@@ -2049,6 +2105,7 @@ mkdir -p "$STATE"
 if [[ $RECIPES == "$CATALOG" ]] && ! jq -e '.hardware | type == "object"' "$CATALOG" >/dev/null 2>&1; then
   catalog_fallback "it does not load"
 fi
+local_recipes
 # the verbs that use Docker run under the docker group, whatever groups this login began with
 case ${1:-} in snapshot | run | stop | remove | readiness | download | open | share | forget) docker_group_reexec "$TARGET" "$@" ;; esac
 case ${1:-} in
@@ -2064,7 +2121,7 @@ remove)
   # everything else goes even when one folder cannot: Docker creates a missing mount source as root
   left=()
   # the catalog an earlier version refreshed (v3) goes too
-  for p in "$MODELS" "${CATALOG%/*}" "${CATALOG%/*/*}/v3" "$STATE"; do rm -rf -- "$p" 2>/dev/null || left+=("$p"); done
+  for p in "$MODELS" "${CATALOG%/*}" "${CATALOG%/*/*}/v3" "${CATALOG%/*/*}/local" "$STATE"; do rm -rf -- "$p" 2>/dev/null || left+=("$p"); done
   ((${#left[@]} == 0)) || die "everything else was removed; these hold files Docker created as root, delete them as root: ${left[*]}"
   ;;
 __worker) worker_run "${@:2}" ;;

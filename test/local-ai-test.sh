@@ -156,6 +156,23 @@ recipes "$PIN"
   fail "snapshot" "$(jq -c . "$TMP/snap.json")"
 pass "the snapshot matches the card to its kind and its one recipe, and lists a card with no recipe"
 
+# This machine's own recipes, in ~/.config/omarchy/local-ai: one renames the shipped recipe, one is added after it.
+# A file that does not load leaves the snapshot as the shipped recipes draw it, and the log says why once.
+OWN=$HOME/.config/omarchy/local-ai/recipes.local.json
+mkdir -p "${OWN%/*}"
+jq '.hardware["rtx-4090-24gb"].recipes[0] | {hardware: {"rtx-4090-24gb": {recipes: [{id, name: "Own Name"},
+  (.id = "own-model-rtx4090" | .name = "Own Model")]}}}' "$TMP/plugin/recipes.json" >"$OWN"
+"$CLI" snapshot >"$TMP/snap-own.json"
+[[ $(jq -r '[.kinds[0].models[] | "\(.id)=\(.name)"] | join(" ")' "$TMP/snap-own.json") == "$ID=Own Name own-model-rtx4090=Own Model" ]] ||
+  fail "own recipes" "$(jq -c '.kinds[0].models' "$TMP/snap-own.json")"
+echo '{"hardware": ' >"$OWN"
+"$CLI" snapshot >"$TMP/snap-own.json" || fail "a broken recipes.local.json broke the snapshot"
+"$CLI" snapshot >"$TMP/snap-own.json"
+[[ $(jq -r '[.kinds[0].models[].id] | join(" ")' "$TMP/snap-own.json") == "$ID" ]] || fail "a broken recipes.local.json was read"
+[[ $(grep -c 'recipes.local.json are not used (it does not load)' "$STATE/log") == 1 ]] || fail "the skip was not logged once" "$(cat "$STATE/log")"
+rm -f -- "$OWN"
+pass "this machine's own recipes are laid over the shipped ones, and a file that does not load is skipped"
+
 # A probe that answers with something other than its own format is no cards, never a snapshot the panel
 # cannot read: nvidia-utils without a driver prints its failure on stdout, and amd-smi prints an import
 # error when its python module is out of reach (the AMD probe already reads that as no cards, held here
