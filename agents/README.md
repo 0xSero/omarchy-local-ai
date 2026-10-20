@@ -6,5 +6,6 @@ Agent marks from their upstream projects:
 - OpenCode: anomalyco/opencode, packages/console/app/src/asset/brand/opencode-logo-dark-square.svg (MIT).
 - Crush: charmbracelet/crush, internal/ui/notification/crush-icon-solo.png (FSL-1.1-MIT; upstream identification artwork).
 - GitHub Copilot: simple-icons/simple-icons, icons/githubcopilot.svg (CC0).
+- WorkBuddy: the WorkBuddy AI mark from the app's own resources (Tencent trademark, used nominatively to identify the tool it opens).
 
 pi and Grok use their text marks. All names and marks identify the respective tools.

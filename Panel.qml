@@ -1060,7 +1060,7 @@ Panel {
                   Image {
                     id: agentLogo
                     anchors.fill: parent
-                    source: ["claude", "codex", "omp", "opencode", "hermes", "copilot", "crush"].indexOf(r.agent) >= 0 ? Qt.resolvedUrl("agents/" + r.agent + (r.agent === "crush" ? ".png" : ".svg")) : ""
+                    source: ["claude", "codex", "omp", "opencode", "hermes", "copilot", "crush", "workbuddy"].indexOf(r.agent) >= 0 ? Qt.resolvedUrl("agents/" + r.agent + (r.agent === "crush" || r.agent === "workbuddy" ? ".png" : ".svg")) : ""
                     fillMode: Image.PreserveAspectFit
                     layer.enabled: true
                     layer.effect: MultiEffect { colorization: 1; colorizationColor: root.ink }
