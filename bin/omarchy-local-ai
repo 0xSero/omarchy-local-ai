@@ -434,8 +434,10 @@ gpus() {
       | . + (if .backend == "nvidia" and $g.uuid != "" then
           ([$apps | split("\n")[] | select(length > 0) | split(", ") | select(.[0] == $g.uuid)
             # the program, not its whole command line: for a browser that is hundreds of characters of flags,
-            # and the panel shows this name
-            | {name: (.[2:-1] | join(", ") | split("/") | last | split(" ")[0]), mib: (.[-1] | tonumber? // 0)}] | sort_by(-.mib)) as $o
+            # and the panel shows this name. The binary is the first word, so the name is cut at the first space
+            # first: a flag can hold a "/" (a path, or base64), and cutting at the last "/" first would name the
+            # tail of that flag instead of the program
+            | {name: (.[2:-1] | join(", ") | split(" ")[0] | split("/") | last), mib: (.[-1] | tonumber? // 0)}] | sort_by(-.mib)) as $o
           | {others: $o, othersMiB: ($o | map(.mib) | add // 0)}
         elif .backend == "cpu" or .backend == "intel-xpu" then {others: [], othersMiB: null}
         else {others: [], othersMiB: .usedMiB} end))'
