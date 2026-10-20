@@ -110,7 +110,7 @@ s={'version':'6.5.4','gpus':[g],'kinds':[{'hw':'test','keys':[g['key']],'free':[
 PY
 mkdir -p "$TMP/runtime" "$TMP/output" "$TMP/home"
 chmod 700 "$TMP/runtime"
-if ! env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u DBUS_SESSION_BUS_ADDRESS \
+if ! env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u DBUS_SESSION_BUS_ADDRESS -u QT_QPA_PLATFORMTHEME \
   QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software XDG_RUNTIME_DIR="$TMP/runtime" HOME="$TMP/home" \
   OUT="$TMP/output" timeout --kill-after=2 20 quickshell -p "$TMP" >"$TMP/log" 2>&1; then
   cat "$TMP/log"
