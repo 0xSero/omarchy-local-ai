@@ -584,7 +584,10 @@ function holder(s, g) {
   var by = (g.heldBy || []).filter(Boolean)
   if (by.length) return { text: "taken by " + by.slice(0, 2).join(", ") + (by.length > 2 ? " +" + (by.length - 2) : "") }
   if (g.held) return { text: "taken by another container" }
-  if ((g.usedMiB || 0) > 2048) return { text: "taken by another program · " + gb(g.usedMiB / 1024) }
+  if ((g.usedByMiB || 0) > 2048) {
+    var u = (g.usedBy || []).filter(Boolean)
+    return { text: (u.length ? "taken by " + u.slice(0, 2).join(", ") + (u.length > 2 ? " +" + (u.length - 2) : "") + " · " : "taken by another program · ") + gb(g.usedByMiB / 1024) }
+  }
   // a card the backend counts as taken for a reason it cannot name
   if ((s.kinds || []).some(function(kd) { return (kd.taken || []).indexOf(g.key) >= 0 })) return { text: "taken by another program" }
   return null
