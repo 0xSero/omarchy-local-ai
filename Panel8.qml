@@ -29,6 +29,14 @@ Panel {
 
   property var snap: ({})
   property var ui: ({ page: "connect" })
+  // connect is shown until Continue is pressed once on this machine; a marker in the state folder remembers it, so a
+  // reload of the shell or the plugin comes back on main
+  FileView {
+    id: seen
+    path: Quickshell.env("HOME") + "/.local/state/omarchy/local-ai/connected"
+    printErrors: false
+    onLoaded: if (root.ui.page === "connect") root.ui = Object.assign({}, root.ui, { page: "main" })
+  }
   property var queue: []
   property bool again: false
   property bool full: false
@@ -64,7 +72,7 @@ Panel {
   function activate(action) {
     var a = (action || "").split("|")
     switch (a[0]) {
-    case "page": if (a[1] === "main" && ui.page === "connect") tick = 0; nav({ page: a[1] }); break
+    case "page": if (ui.page === "connect" && a[1] !== "connect") { tick = 0; seen.setText("1\n") } nav({ page: a[1] }); break
     case "model": nav({ page: "model", id: a[1], keys: a[2] || "" }); break
     case "node": {
       var closed = Object.assign({}, ui.closed || {}), open = closed[a[1]] === undefined ? a[2] !== "1" : !closed[a[1]]
@@ -90,6 +98,8 @@ Panel {
   }
   // the same actions from a script: qs ipc call <ipcTarget>.ui act "page|tree"
   IpcHandler {
+    // one instance per bar; only the one that manages the panel's IPC answers
+    enabled: root.manageIpc !== false
     target: root.ipcTarget + ".ui"
     function act(action: string): void { if (!root.opened && !root.full) root.open(); root.activate(action) }
     function page(): string { return root.ui.page + (root.full ? " full" : "") }

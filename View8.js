@@ -300,15 +300,15 @@ function mainPage(s, ui) {
     var gs = gpusOf(s, d.keys)
     var started = Date.parse(d.startedAt || ""), up = isNaN(started) || !ui.now ? "" : " · up " + dur((ui.now - started) / 1000)
     p.cards.push({ rows: [{ type: "title", text: d.name, sub: b.on + (b.tag ? " · vision" : "") + up, strip: b.strip }] })
-    // the session's tokens over time, from the gateway's log: each step of the line as a share of the largest step
-    var steps = []
-    for (var i = 1; i < line.length; i++) steps.push(Math.max(0, line[i] - line[i - 1]))
+    // the session's tokens over time, from the gateway's log: its running total at even steps since it started;
+    // a total that has not moved yet is said, not drawn
     var cols = narrow ? 34 : 60
-    steps = steps.slice(-cols)
-    var top = Math.max.apply(null, steps.concat([1]))
+    var pts = line.slice(-cols), top = Math.max.apply(null, pts.concat([1]))
+    var moved = pts.some(function(v) { return v !== pts[0] })
     p.cards.push({ rows: [
       { type: "label", text: "tokens this session", right: k(all.tokens || (line.length ? line[line.length - 1] : 0)) },
-      steps.length > 1 ? { type: "bars", values: steps.map(function(v) { return v / top }), height: narrow ? 56 : 120 } : { type: "note", text: "no answers yet" }] })
+      moved ? { type: "bars", values: pts.map(function(v) { return v / top }), height: narrow ? 56 : 120 }
+        : { type: "note", text: all.tokens ? k(all.tokens) + " tokens so far; the chart fills in as the session goes on" : "no answers yet" }] })
     var mem = gs.every(function(g) { return g.usedMiB != null }) ? Math.round(gs.reduce(function(a, g) { return a + g.usedMiB / 1024 }, 0)) + " / " : ""
     p.cards.push({ rows: [{ type: "figs", cells: [
       { k: "decode avg", v: all.decode != null ? all.decode + " tok/s" : "–" },
