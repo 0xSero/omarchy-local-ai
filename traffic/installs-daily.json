@@ -91,10 +91,19 @@
   },
   {
     "day": "2026-10-20",
-    "active": 50,
+    "active": 85,
+    "running": 10,
+    "new": 2,
+    "started": 8,
+    "failed": 0,
+    "opened": 4
+  },
+  {
+    "day": "2026-10-21",
+    "active": 51,
     "running": 4,
-    "new": 1,
-    "started": 6,
+    "new": 0,
+    "started": 0,
     "failed": 0,
     "opened": 0
   }

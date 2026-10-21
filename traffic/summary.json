@@ -1,49 +1,47 @@
 {
-  "updated": "2026-10-20",
+  "updated": "2026-10-21",
   "installs": {
-    "installs": 243,
-    "today": 50,
+    "installs": 244,
+    "today": 51,
     "week": {
       "versions": {
-        "6.13.0": 42,
+        "6.13.0": 41,
         "6.17.0": 40,
-        "6.13.3": 19,
-        "6.14.0": 13,
+        "6.13.3": 17,
+        "6.14.0": 10,
+        "6.24.0": 10,
         "6.18.0": 9,
-        "6.13.2": 8,
-        "6.13.7": 7,
-        "6.23.0": 6,
-        "6.16.0": 5,
-        "6.23.1": 5,
-        "6.24.0": 5,
-        "6.13.8": 4,
-        "6.15.0": 4,
-        "6.19.0": 3,
+        "6.13.7": 6,
+        "6.13.2": 6,
+        "6.16.0": 4,
+        "6.23.1": 4,
+        "6.23.0": 4,
+        "6.15.0": 2,
         "6.22.0": 2,
+        "6.19.0": 2,
         "0.0.1": 1,
         "6.13.1": 1,
         "6.23.3": 1,
         "6.13.6": 1
       },
       "hardware": {
-        "x86-64-avx2-cpu": 168,
-        "rtx-3060-12gb": 9,
-        "rtx-4060-laptop-8gb": 6,
-        "rtx-4090-24gb": 6,
-        "rtx-5070-ti-16gb": 5,
-        "none": 5,
+        "x86-64-avx2-cpu": 154,
+        "rtx-3060-12gb": 8,
+        "rtx-4090-24gb": 7,
         "rtx-3090-24gb": 5,
+        "rtx-4060-laptop-8gb": 5,
+        "none": 4,
         "rx-9070-xt-16gb": 4,
-        "rtx-5090-32gb": 3,
-        "rtx-4060-8gb": 3,
         "rtx-4070-12gb": 3,
         "rtx-5080-16gb": 3,
         "rtx-3070-8gb": 3,
-        "rtx-5070-ti-laptop-12gb": 2,
-        "rtx-5070-12gb": 2,
+        "rtx-5070-ti-16gb": 3,
+        "rtx-5090-32gb": 2,
         "rtx-4080-16gb": 2,
         "rtx-4070-super-12gb": 2,
+        "rtx-4060-8gb": 2,
         "rtx-5060-ti-16gb": 2,
+        "rtx-5070-12gb": 1,
         "rtx-4080-super-16gb": 1,
         "rtx-5060-8gb": 1,
         "intel-arc-pro-b70-32gb": 1,
@@ -53,71 +51,72 @@
         "radeon-860m-4gb": 1,
         "intel-arc-b580-12gb": 1,
         "bc250-8gb": 1,
-        "rtx-4060-ti-16gb": 1,
-        "radeon-8060s-64gb": 1,
         "rtx-3080-10gb": 1,
+        "radeon-8060s-64gb": 1,
         "ryzen-ai-max-365-128gb": 1,
-        "rtx-4060-ti-8gb": 1,
         "apple-m1-8gb": 1,
         "rtx-pro-4500-blackwell-32gb": 1,
+        "rtx-5070-ti-laptop-12gb": 1,
         "radeon-8060s-strix-halo": 1,
+        "rtx-4060-ti-16gb": 1,
         "radeon-890m-48gb": 1,
         "rtx-3090-ti-24gb": 1,
+        "rtx-4060-ti-8gb": 1,
         "rtx2080ti-22gb": 1,
         "rtx3080-12gb": 1
       }
     },
-    "month": 243,
+    "month": 244,
     "monthRunning": 44,
-    "launched": 60,
-    "monthUsed": 57,
-    "monthStarted": 83,
+    "launched": 62,
+    "monthUsed": 59,
+    "monthStarted": 85,
     "monthFailed": 15,
-    "monthOpened": 43,
+    "monthOpened": 47,
     "monthDownloaded": 15
   },
   "marketplace": {
-    "views": 8945,
+    "views": 9030,
     "copies": 0,
     "hearts": 89
   },
   "repo": {
-    "stars": 148,
-    "forks": 27,
+    "stars": 149,
+    "forks": 29,
     "watchers": 0,
-    "open_issues": 1,
-    "size_kb": 39222
+    "open_issues": 4,
+    "size_kb": 39055
   },
   "clones": {
-    "days": 51,
+    "days": 52,
     "first": "2026-08-29",
-    "last": "2026-10-18",
-    "total": 7082,
+    "last": "2026-10-19",
+    "total": 7229,
     "peak_day": "2026-09-24",
     "peak": 569,
-    "daily_uniques_sum": 2974,
+    "daily_uniques_sum": 3043,
     "uniques_14d": 1043
   },
   "views": {
-    "days": 51,
+    "days": 52,
     "first": "2026-08-29",
-    "last": "2026-10-18",
-    "total": 3090,
+    "last": "2026-10-19",
+    "total": 3133,
     "peak_day": "2026-09-24",
     "peak": 354,
-    "daily_uniques_sum": 1687,
-    "uniques_14d": 428
+    "daily_uniques_sum": 1708,
+    "uniques_14d": 406
   },
   "stars": {
-    "days": 31,
+    "days": 32,
     "first": "2026-09-20",
-    "last": "2026-10-20",
+    "last": "2026-10-21",
     "first_count": 24,
-    "last_count": 148,
-    "gained": 124
+    "last_count": 149,
+    "gained": 125
   },
   "downloads": {
-    "total": 47,
+    "total": 48,
     "release_count": 91,
     "latest": "v6.24.0",
     "by_release": [
@@ -581,11 +580,11 @@
         "tag": "v6.8.4",
         "name": "v6.8.4",
         "published": "2026-10-02T20:56:40Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.8.4.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -1196,20 +1195,20 @@
     ]
   },
   "interactions": {
-    "day": "2026-10-20",
-    "stars": 148,
-    "forks": 27,
+    "day": "2026-10-21",
+    "stars": 149,
+    "forks": 29,
     "watchers": 0,
     "issues": {
       "open": 1,
-      "closed": 10,
-      "total": 11
+      "closed": 12,
+      "total": 13
     },
     "pull_requests": {
-      "open": 0,
-      "merged": 130,
-      "closed": 5,
-      "total": 135
+      "open": 3,
+      "merged": 135,
+      "closed": 6,
+      "total": 144
     },
     "discussions": 0,
     "default_branch": "main",
@@ -1218,23 +1217,18 @@
   "referrers": [
     {
       "referrer": "github.com",
-      "count": 109,
-      "uniques": 86
+      "count": 106,
+      "uniques": 82
     },
     {
       "referrer": "Google",
-      "count": 46,
-      "uniques": 40
+      "count": 40,
+      "uniques": 37
     },
     {
       "referrer": "DuckDuckGo",
-      "count": 19,
-      "uniques": 6
-    },
-    {
-      "referrer": "local.sybilsolutions.ai",
-      "count": 11,
-      "uniques": 9
+      "count": 29,
+      "uniques": 8
     },
     {
       "referrer": "search.brave.com",
@@ -1242,14 +1236,19 @@
       "uniques": 8
     },
     {
-      "referrer": "Bing",
-      "count": 3,
-      "uniques": 3
+      "referrer": "local.sybilsolutions.ai",
+      "count": 9,
+      "uniques": 8
     },
     {
       "referrer": "usage.sybilsolutions.ai",
       "count": 3,
       "uniques": 3
+    },
+    {
+      "referrer": "Bing",
+      "count": 2,
+      "uniques": 2
     },
     {
       "referrer": "l.meta.ai",
@@ -1266,14 +1265,14 @@
     {
       "path": "/sybil-solutions/omarchy-local-ai",
       "title": "Overview",
-      "count": 400,
-      "uniques": 288
+      "count": 403,
+      "uniques": 291
     },
     {
       "path": "/0xSero/omarchy-local-ai",
       "title": "Overview",
-      "count": 104,
-      "uniques": 85
+      "count": 79,
+      "uniques": 61
     },
     {
       "path": "/sybil-solutions/omarchy-local-ai/issues",
@@ -1294,28 +1293,28 @@
       "uniques": 14
     },
     {
-      "path": "/0xSero/omarchy-local-ai/pulls",
-      "title": "/pulls",
-      "count": 19,
-      "uniques": 3
-    },
-    {
       "path": "/sybil-solutions/omarchy-local-ai/blob/main/preview.png",
       "title": "/blob/main/preview.png",
       "count": 14,
       "uniques": 13
     },
     {
-      "path": "/0xSero/omarchy-local-ai/issues",
-      "title": "/issues",
-      "count": 14,
-      "uniques": 7
-    },
-    {
       "path": "/sybil-solutions/omarchy-local-ai/releases",
       "title": "/releases",
       "count": 11,
       "uniques": 7
+    },
+    {
+      "path": "/0xSero/omarchy-local-ai/pulls",
+      "title": "/pulls",
+      "count": 11,
+      "uniques": 2
+    },
+    {
+      "path": "/0xSero/omarchy-local-ai/issues",
+      "title": "/issues",
+      "count": 9,
+      "uniques": 6
     },
     {
       "path": "/sybil-solutions/omarchy-local-ai/pull/62",
