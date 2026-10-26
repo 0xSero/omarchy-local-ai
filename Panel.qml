@@ -3,6 +3,7 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 import "Logos.js" as Logos
@@ -18,12 +19,12 @@ Panel {
 
   // the URL keeps a "%", "#" or "?" in the plugin's path encoded
   readonly property string cli: decodeURIComponent(String(Qt.resolvedUrl("bin/omarchy-local-ai")).replace(/^file:\/\//, ""))
-  readonly property color theme: bar ? bar.foreground : Color.foreground
+  readonly property color theme: bar ? bar.foreground : Commons.Color.foreground
   // the dots sit on the bar, which may be transparent: they take the bar's own foreground, as Omarchy's buttons do
   readonly property color dotTone: bar && bar.barForeground !== undefined ? bar.barForeground : theme
-  readonly property color bg: Color.popups.background
+  readonly property color bg: Commons.Color.popups.background
   readonly property color surface: Util.alpha(theme, 0.06)
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property string mono: bar ? bar.fontFamily : Style.font.family
   // Nerd Font glyphs for the icon names Model.js uses
   readonly property var glyphs: ({ gpu: 0xf08ae, memory: 0xf035b, temp: 0xf050f, context: 0xf09aa, weights: 0xf01a7, vision: 0xf06d0,
