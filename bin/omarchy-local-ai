@@ -773,6 +773,16 @@ resets() {
   done
 }
 
+# small_bar <node>: the CPU reaches only part of this card's memory (Resizable BAR off: a 256 MiB window into it);
+# prints how much, "256 of 16368 MiB". amdgpu reports both sizes, and on an APU both are the same; a card that does not
+# report both has the whole of it in reach.
+small_bar() {
+  local d=$SYS/class/drm/${1##*/}/device vis total
+  vis=$(cat "$d/mem_info_vis_vram_total" 2>/dev/null) && total=$(cat "$d/mem_info_vram_total" 2>/dev/null) || return 1
+  [[ $vis =~ ^[0-9]+$ && $total =~ ^[0-9]+$ ]] && ((vis > 0 && vis < total)) || return 1
+  echo "$((vis >> 20)) of $((total >> 20)) MiB"
+}
+
 # rundir <id>: what the start writes for the engine (the config asset, its GPUs' by-path links). The engine restarts
 # with the machine, so this is in the user's state, never /run or XDG_RUNTIME_DIR: a mount source gone after a reboot
 # or a logout comes back as an empty directory and the engine crash-loops
@@ -881,7 +891,7 @@ cards_free() {
 # phase_start <id> <port> <key>: re-read the recipe here, check every path, build both containers
 phase_start() (
   valid_id "$1" && [[ $2 =~ ^[0-9]+$ && $2 -ge 12434 && $2 -lt 12450 ]] || die "invalid request"
-  local id=$1 port=$2 r g backend run a=() devices=() k v w
+  local id=$1 port=$2 r g backend run a=() devices=() narrow=() vulkan k m v w
   shift 2
   r=$(jq -ce '.recipe // empty' "$(dir_of "$id")/config.json" 2>/dev/null || recipe "$id") || die "no recipe $id"
   v=$(policy "$r")
@@ -939,6 +949,12 @@ phase_start() (
     [[ $backend == "amd-rocm" ]] && devices+=(--device /dev/kfd \
       --group-add "$(getent group video | cut -d: -f3)" \
       --group-add "$(getent group render | cut -d: -f3)")
+    # llama.cpp's Vulkan image runs on AMD card kinds of either backend (the RX 7900 XT's is amd-rocm); its ROCm
+    # image has no Vulkan backend, so the variables below do nothing there
+    vulkan=0
+    if [[ ($backend == "amd-rocm" || $backend == "amd-vulkan") && $(jq -r .engine <<<"$r") == "llama.cpp" ]]; then
+      vulkan=1
+    fi
     # oneCCL opens every by-path link it finds, so the engine sees only its own cards'
     for k in "$@"; do
       v=$(readlink -f "$(jq -r --arg k "$k" '.[] | select(.key == $k) | .node' <<<"$g")")
@@ -947,8 +963,19 @@ phase_start() (
         [[ $(readlink -f "$w") == "$v" ]] && ln -s "../${v##*/}" "$run/by-path/${w##*/}"
       done
       devices+=(--device "$v")
+      if ((vulkan)) && m=$(small_bar "$v"); then narrow+=("$k ($m)"); fi
     done
     devices+=(--volume "$run/by-path:/dev/dri/by-path:ro")
+    # llama.cpp's Vulkan backend asks for card memory the CPU can also map first. With Resizable BAR off that is a
+    # 256 MiB window the desktop already uses part of, and the driver puts what does not fit in it in system RAM:
+    # on an RX 7800 XT 344 MiB of a 27B model's buffers sat there, and at a larger batch prefill ran 1.75x slower
+    # (ggml-org/llama.cpp#27097: decode 2.7x slower on an RX 7900 XTX). So the engine asks for plain card memory,
+    # which takes that much more of it, and puts a buffer the card has no room for in system RAM instead of failing
+    # the start. With Resizable BAR on the setting costs about 2% of decode, so only these cards get it.
+    if ((${#narrow[@]} > 0)); then
+      say "$id: the CPU reaches only part of the memory of ${narrow[*]}, so llama.cpp's Vulkan backend keeps its buffers in card memory. Turning Resizable BAR on in the firmware settings is the real fix"
+      devices+=(--env GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1 --env GGML_VK_ALLOW_SYSMEM_FALLBACK=1)
+    fi
     # Intel's runtime lets the copy engine read ordinary host memory in place while the weights load. On a B70 with
     # less RAM than the checkpoint that range is unmapped mid-transfer (xe: "Fault response: Unsuccessful -ENOENT",
     # copy engine reset) and vLLM waits on the lost copy. Staging through the runtime's own buffers is not enough:
