@@ -4,6 +4,9 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+### Fixed
+- A llama.cpp model on Vulkan no longer keeps part of its buffers in system RAM on an AMD card with Resizable BAR off. Without it the CPU reaches only a 256 MiB window into the card, llama.cpp asks for that memory first, and the driver put what did not fit in system RAM: on an RX 7800 XT, 344 MiB of Swift-1.5-Qwen3.8-27B's buffers at 131,072 context, and at a larger batch prefill ran 1.75× slower (ggml-org/llama.cpp#27097 measured decode 2.7× slower on an RX 7900 XTX). When the card reports less memory in the CPU's reach than it has (`mem_info_vis_vram_total` below `mem_info_vram_total`), a llama.cpp engine starts with `GGML_VK_DISABLE_HOST_VISIBLE_VIDMEM=1`, and with `GGML_VK_ALLOW_SYSMEM_FALLBACK=1` so a buffer the card has no room for goes to system RAM instead of failing the start. The model then needs as much more card memory as had spilled. The log names the card and says to turn Resizable BAR on in the firmware settings. Other engines, and cards with Resizable BAR on, start as before: there the setting would cost about 2% of decode speed.
+
 ## [6.24.0] - 2026-10-18
 
 ### Changed
