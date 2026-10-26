@@ -117,7 +117,7 @@ if ! env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u DBUS_SE
   exit 1
 fi
 if grep -Eq 'FAIL|ReferenceError|TypeError|Unable to assign|Binding loop' "$TMP/log" ||
-  [[ $(grep -c 'PASS rendered' "$TMP/log") != 8 ]] || ! grep -q 'PASS model name and fit do not overlap' "$TMP/log"; then
+  [[ $(grep -c 'PASS rendered' "$TMP/log") != 9 ]] || ! grep -q 'PASS model name and fit do not overlap' "$TMP/log"; then
   cat "$TMP/log"
   exit 1
 fi
