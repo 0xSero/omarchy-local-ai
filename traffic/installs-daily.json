@@ -199,11 +199,20 @@
   },
   {
     "day": "2026-11-01",
-    "active": 43,
+    "active": 99,
+    "running": 24,
+    "new": 7,
+    "started": 23,
+    "failed": 4,
+    "opened": 32
+  },
+  {
+    "day": "2026-11-02",
+    "active": 42,
     "running": 10,
     "new": 1,
-    "started": 11,
+    "started": 1,
     "failed": 0,
-    "opened": 12
+    "opened": 1
   }
 ]
