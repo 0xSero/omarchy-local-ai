@@ -1774,6 +1774,12 @@ summary() {
             | [$rs[] | select(.completion > 8 and .ms > 0) | rate] as $dec
             | [$rs[] | select(.prompt > 64 and .ttft_ms > 0 and .ttft_ms < .ms) | .prompt / (.ttft_ms / 1000)] as $pre
             | [$rs[] | select(.ttft_ms < .ms)] as $tt
+            # cache share: once the engine has reported a cached count, every later prompt counts toward it (SGLang
+            # sends no count on a miss); an engine that never reports one (llama.cpp, TabbyAPI) shows no share at all
+            | (if ($o.cached.n // 0) > 0 then 0 else ([$rs | to_entries[] | select((.value.cached | type) == "number") | .key] | first // ($rs | length)) end) as $c0
+            | [$rs[] | select((.prompt // 0) > 0 and ((.cached | type) == "number"))] as $ca
+            | [$rs[$c0:][] | select((.prompt // 0) > 0)] as $cp
+            | [$rs[] | select((.reasoning | type) == "number")] as $re
             | {lines: $n} + ($o | del(.lines)) + {requests: (($o.requests // 0) + ($rs | length)), total: (($o.total // 0) + ([$rs[].v] | add // 0)),
                 hours: (($o.hours // {}) | bump($rs | group_by(.t / 3600 | floor); .t / 3600 | floor; map(.v) | add)),
                 first: ([$o.first, ($rs | map(.t) | min)] | map(select(. != null)) | min),
@@ -1781,7 +1787,10 @@ summary() {
                 decode: {n: (($o.decode.n // 0) + ($dec | length)), sum: (($o.decode.sum // 0) + ($dec | add // 0))},
                 prefill: {n: (($o.prefill.n // 0) + ($pre | length)), sum: (($o.prefill.sum // 0) + ($pre | add // 0))},
                 ttftn: (($o.ttftn // 0) + ($tt | length)),
-                ttft: (($o.ttft // {}) | bump($tt | group_by(.ttft_ms / 50 | floor); .ttft_ms / 50 | floor; length))}' \
+                ttft: (($o.ttft // {}) | bump($tt | group_by(.ttft_ms / 50 | floor); .ttft_ms / 50 | floor; length)),
+                cached: {n: (($o.cached.n // 0) + ($ca | length)), sum: (($o.cached.sum // 0) + ([$ca[].cached] | add // 0)),
+                         prompt: (($o.cached.prompt // 0) + ([$cp[].prompt] | add // 0))},
+                reasoning: {n: (($o.reasoning.n // 0) + ($re | length)), sum: (($o.reasoning.sum // 0) + ([$re[].reasoning] | add // 0))}}' \
           >"$s.$$" 2>/dev/null && mv -f "$s.$$" "$s"; then :
         else rm -f "$s.$$"; break; fi
         seen=$((seen + take))
@@ -1824,6 +1833,8 @@ session() {
     | (.ttftn // 0) as $tn
     | {tokens: ([$h[] | select(.t + 3600 > $s) | .v] | add // 0), week: ([$h[] | select(.t >= $d0) | .v] | add // 0),
        all: {since: ($from | strflocaltime("%b %-d")), last: $last, tokens: (.total // 0), decode: avg(.decode), prefill: avg(.prefill),
+         cached: (if (.cached.n // 0) > 0 and (.cached.prompt // 0) > 0 then .cached.sum / .cached.prompt else null end),
+         reasoning: avg(.reasoning),
          ttft: (if $tn > 0 then [.ttft | to_entries[] | {b: (.key | tonumber), c: .value}] | sort_by(.b)
            | reduce .[] as $x ({s: 0, m: null}; (if .m == null and .s + $x.c > $tn / 2 then .m = $x.b * 50 + 25 else . end) | .s += $x.c) | .m
            else null end),

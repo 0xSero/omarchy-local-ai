@@ -490,13 +490,19 @@ function page(s, ui, m) {
   // full screen opens with them shown
   if (!ui.wide) v.rows.push({ type: "field", label: "details", value: "", drop: true, open: !!ui.details, action: "details" })
   if (!ui.details && !ui.wide) return v
-  if (run && !failed) v.rows.push({ type: "grid", cells: [
-    { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
-    { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
-    { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
-    { v: k(u.tokens), u: "", k: "session" },
-    { v: k(u.week), u: "", k: "week" },
-    { v: isNaN(Date.parse(run.startedAt)) ? "–" : dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }] })
+  if (run && !failed) {
+    var cells = [
+      { v: all.decode != null ? String(all.decode) : "–", u: "tok/s", k: "decode avg" },
+      { v: all.prefill != null ? k(all.prefill) : "–", u: "tok/s", k: "prefill avg" },
+      { v: all.ttft != null ? (all.ttft / 1000).toFixed(1) : "–", u: "s", k: "first token" },
+      { v: k(u.tokens), u: "", k: "session" },
+      { v: k(u.week), u: "", k: "week" },
+      { v: isNaN(Date.parse(run.startedAt)) ? "–" : dur((Date.now() - Date.parse(run.startedAt)) / 1000), u: "", k: "up" }]
+    // only when the engine reported the counts: an older gateway or one whose engine sends none has no share
+    if (all.cached != null) cells.push({ v: Math.round(all.cached * 100) + "%", u: "", k: "from cache" })
+    if (all.reasoning != null) cells.push({ v: String(all.reasoning), u: "tok", k: "reasoning avg" })
+    v.rows.push({ type: "grid", cells: cells })
+  }
   needsTable(v.rows, m)
   v.rows.push({ type: "sec", label: m.cards.some(function(g) { return g.cpu }) ? "CPU" : "GPUS" })
   m.cards.forEach(function(g) { v.rows.push(g) })
