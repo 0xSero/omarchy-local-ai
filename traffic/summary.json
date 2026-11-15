@@ -1,115 +1,114 @@
 {
-  "updated": "2026-11-14",
+  "updated": "2026-11-15",
   "installs": {
-    "installs": 347,
-    "today": 54,
+    "installs": 352,
+    "today": 49,
     "week": {
       "versions": {
-        "6.24.0": 101,
-        "6.13.0": 24,
+        "6.24.0": 104,
+        "6.13.0": 25,
         "6.13.3": 11,
         "6.17.0": 5,
         "6.13.2": 3,
         "6.13.7": 3,
         "6.23.1": 2,
-        "0.0.1": 1,
         "6.23.0": 1,
         "6.15.0": 1,
         "6.13.6": 1,
         "6.19.0": 1
       },
       "hardware": {
-        "x86-64-avx2-cpu": 147,
+        "x86-64-avx2-cpu": 150,
         "rtx-4060-laptop-8gb": 8,
         "rtx-3090-24gb": 8,
         "rtx-3060-12gb": 7,
         "none": 5,
-        "rtx-4090-24gb": 4,
         "rtx-5070-ti-16gb": 4,
         "rx-9070-xt-16gb": 4,
         "rtx-3060-ti-8gb": 4,
         "rtx-5080-16gb": 3,
+        "rtx-4090-24gb": 3,
         "rtx-5060-ti-16gb": 3,
-        "rtx-3070-8gb": 2,
         "rtx-3080-10gb": 2,
         "rtx-3080-ti-12gb": 2,
+        "rtx-5070-12gb": 2,
         "rtx-4060-ti-8gb": 2,
+        "rx-7900-xtx-24gb": 2,
         "rtx-4070-super-12gb": 1,
         "rtx-pro-500-blackwell": 1,
-        "radeon-8060s-64gb": 1,
-        "rtx-pro-4500-blackwell-32gb": 1,
+        "rtx-3070-8gb": 1,
         "strix-halo-vulkan-32gb": 1,
-        "radeon-8060s-strix-halo": 1,
         "rtx2060withmaxqdesign": 1,
         "rtx-5060-8gb": 1,
+        "radeon-8060s-64gb": 1,
         "ryzen-ai-max-365-128gb": 1,
-        "radeon-890m-48gb": 1,
-        "rx-7900-xtx-24gb": 1,
+        "rtx-4080-super-16gb": 1,
         "rtx-5090-32gb": 1,
         "apple-m1-8gb": 1,
+        "rtx-pro-4500-blackwell-32gb": 1,
         "rtx-4070-12gb": 1,
-        "rtx-5070-12gb": 1,
+        "radeon-8060s-strix-halo": 1,
         "rtx-4060-ti-16gb": 1,
         "rx-6800-xt-16gb": 1,
         "gtx-1060-6gb": 1,
-        "rtx-4080-super-16gb": 1,
+        "radeon-890m-48gb": 1,
         "rtx-5080-laptop-16gb": 1,
         "rtx-a2000-laptop-8gb": 1,
         "rtx-4080-16gb": 1,
         "rtx-4060-8gb": 1
       }
     },
-    "month": 255,
+    "month": 247,
     "monthRunning": 85,
-    "launched": 147,
-    "monthUsed": 122,
-    "monthStarted": 398,
-    "monthFailed": 58,
-    "monthOpened": 425,
-    "monthDownloaded": 48
+    "launched": 151,
+    "monthUsed": 119,
+    "monthStarted": 399,
+    "monthFailed": 48,
+    "monthOpened": 421,
+    "monthDownloaded": 46
   },
   "marketplace": {
-    "views": 10452,
+    "views": 10493,
     "copies": 0,
     "hearts": 98
   },
   "repo": {
-    "stars": 172,
+    "stars": 173,
     "forks": 33,
     "watchers": 0,
     "open_issues": 11,
-    "size_kb": 39570
+    "size_kb": 39575
   },
   "clones": {
-    "days": 76,
+    "days": 77,
     "first": "2026-08-29",
-    "last": "2026-11-12",
-    "total": 8551,
+    "last": "2026-11-13",
+    "total": 8591,
     "peak_day": "2026-09-24",
     "peak": 569,
-    "daily_uniques_sum": 3934,
-    "uniques_14d": 441
+    "daily_uniques_sum": 3965,
+    "uniques_14d": 451
   },
   "views": {
-    "days": 76,
+    "days": 77,
     "first": "2026-08-29",
-    "last": "2026-11-12",
-    "total": 3989,
+    "last": "2026-11-13",
+    "total": 4029,
     "peak_day": "2026-09-24",
     "peak": 354,
-    "daily_uniques_sum": 2326,
-    "uniques_14d": 354
+    "daily_uniques_sum": 2357,
+    "uniques_14d": 365
   },
   "stars": {
-    "days": 56,
+    "days": 57,
     "first": "2026-09-20",
-    "last": "2026-11-14",
+    "last": "2026-11-15",
     "first_count": 24,
-    "last_count": 172,
-    "gained": 148
+    "last_count": 173,
+    "gained": 149
   },
   "downloads": {
-    "total": 56,
+    "total": 144,
     "release_count": 91,
     "latest": "v6.24.0",
     "by_release": [
@@ -117,11 +116,11 @@
         "tag": "v6.24.0",
         "name": "v6.24.0",
         "published": "2026-10-18T20:48:10Z",
-        "downloads": 4,
+        "downloads": 5,
         "assets": [
           {
             "name": "omarchy-local-ai-6.24.0.tar.gz",
-            "downloads": 4
+            "downloads": 5
           }
         ]
       },
@@ -129,11 +128,11 @@
         "tag": "v6.23.3",
         "name": "v6.23.3",
         "published": "2026-10-18T20:04:54Z",
-        "downloads": 2,
+        "downloads": 3,
         "assets": [
           {
             "name": "omarchy-local-ai-6.23.3.tar.gz",
-            "downloads": 2
+            "downloads": 3
           }
         ]
       },
@@ -141,11 +140,11 @@
         "tag": "v6.23.2",
         "name": "v6.23.2",
         "published": "2026-10-18T19:37:38Z",
-        "downloads": 2,
+        "downloads": 3,
         "assets": [
           {
             "name": "omarchy-local-ai-6.23.2.tar.gz",
-            "downloads": 2
+            "downloads": 3
           }
         ]
       },
@@ -153,11 +152,11 @@
         "tag": "v6.23.1",
         "name": "v6.23.1",
         "published": "2026-10-18T08:31:35Z",
-        "downloads": 4,
+        "downloads": 5,
         "assets": [
           {
             "name": "omarchy-local-ai-6.23.1.tar.gz",
-            "downloads": 4
+            "downloads": 5
           }
         ]
       },
@@ -165,11 +164,11 @@
         "tag": "v6.23.0",
         "name": "v6.23.0",
         "published": "2026-10-17T11:48:01Z",
-        "downloads": 3,
+        "downloads": 5,
         "assets": [
           {
             "name": "omarchy-local-ai-6.23.0.tar.gz",
-            "downloads": 3
+            "downloads": 5
           }
         ]
       },
@@ -177,11 +176,11 @@
         "tag": "v6.22.0",
         "name": "v6.22.0",
         "published": "2026-10-17T00:17:26Z",
-        "downloads": 2,
+        "downloads": 3,
         "assets": [
           {
             "name": "omarchy-local-ai-6.22.0.tar.gz",
-            "downloads": 2
+            "downloads": 3
           }
         ]
       },
@@ -189,11 +188,11 @@
         "tag": "v6.21.1",
         "name": "v6.21.1",
         "published": "2026-10-16T23:20:28Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.21.1.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -201,11 +200,11 @@
         "tag": "v6.21.0",
         "name": "v6.21.0",
         "published": "2026-10-16T22:09:46Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.21.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -213,11 +212,11 @@
         "tag": "v6.20.0",
         "name": "v6.20.0",
         "published": "2026-10-16T21:53:36Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.20.0.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -225,11 +224,11 @@
         "tag": "v6.19.0",
         "name": "v6.19.0",
         "published": "2026-10-16T17:21:13Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.19.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -237,11 +236,11 @@
         "tag": "v6.18.0",
         "name": "v6.18.0",
         "published": "2026-10-16T12:46:04Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.18.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -249,11 +248,11 @@
         "tag": "v6.17.0",
         "name": "v6.17.0",
         "published": "2026-10-15T02:51:09Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.17.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -261,11 +260,11 @@
         "tag": "v6.16.0",
         "name": "v6.16.0",
         "published": "2026-10-14T23:33:00Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.16.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -273,11 +272,11 @@
         "tag": "v6.15.0",
         "name": "v6.15.0",
         "published": "2026-10-14T20:51:15Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.15.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -285,11 +284,11 @@
         "tag": "v6.14.0",
         "name": "v6.14.0",
         "published": "2026-10-14T11:33:04Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.14.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -297,11 +296,11 @@
         "tag": "v6.13.8",
         "name": "v6.13.8",
         "published": "2026-10-14T08:50:53Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.8.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -309,11 +308,11 @@
         "tag": "v6.13.7",
         "name": "v6.13.7",
         "published": "2026-10-13T23:03:21Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.7.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -321,11 +320,11 @@
         "tag": "v6.13.6",
         "name": "v6.13.6",
         "published": "2026-10-13T21:52:35Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.6.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -333,11 +332,11 @@
         "tag": "v6.13.5",
         "name": "v6.13.5",
         "published": "2026-10-13T21:43:48Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.5.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -345,11 +344,11 @@
         "tag": "v6.13.4",
         "name": "v6.13.4",
         "published": "2026-10-13T21:36:03Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.4.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -357,11 +356,11 @@
         "tag": "v6.13.3",
         "name": "v6.13.3",
         "published": "2026-10-12T13:37:58Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.3.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -369,11 +368,11 @@
         "tag": "v6.13.2",
         "name": "v6.13.2",
         "published": "2026-10-11T23:08:14Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.2.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -381,11 +380,11 @@
         "tag": "v6.13.1",
         "name": "v6.13.1",
         "published": "2026-10-11T22:11:12Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.1.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -393,11 +392,11 @@
         "tag": "v6.13.0",
         "name": "v6.13.0",
         "published": "2026-10-10T23:16:45Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.13.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -405,11 +404,11 @@
         "tag": "v6.12.7",
         "name": "v6.12.7",
         "published": "2026-10-09T11:33:42Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.12.7.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -417,11 +416,11 @@
         "tag": "v6.12.6",
         "name": "v6.12.6",
         "published": "2026-10-09T09:01:37Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.12.6.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -429,11 +428,11 @@
         "tag": "v6.12.5",
         "name": "v6.12.5",
         "published": "2026-10-08T20:26:08Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.12.5.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -441,11 +440,11 @@
         "tag": "v6.12.4",
         "name": "v6.12.4",
         "published": "2026-10-08T20:21:02Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.12.4.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -453,11 +452,11 @@
         "tag": "v6.12.3",
         "name": "v6.12.3",
         "published": "2026-10-08T15:18:16Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.12.3.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -465,11 +464,11 @@
         "tag": "v6.12.2",
         "name": "v6.12.2",
         "published": "2026-10-08T08:47:28Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.12.2.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -477,11 +476,11 @@
         "tag": "v6.12.1",
         "name": "v6.12.1",
         "published": "2026-10-07T22:00:01Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.12.1.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -489,11 +488,11 @@
         "tag": "v6.12.0",
         "name": "v6.12.0",
         "published": "2026-10-07T21:17:47Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.12.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -501,11 +500,11 @@
         "tag": "v6.11.1",
         "name": "v6.11.1",
         "published": "2026-10-07T16:10:41Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.11.1.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -513,11 +512,11 @@
         "tag": "v6.11.0",
         "name": "v6.11.0",
         "published": "2026-10-07T15:46:35Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.11.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -525,11 +524,11 @@
         "tag": "v6.10.1",
         "name": "v6.10.1",
         "published": "2026-10-07T13:23:40Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.10.1.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -537,11 +536,11 @@
         "tag": "v6.10.0",
         "name": "v6.10.0",
         "published": "2026-10-07T12:29:55Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.10.0.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -549,11 +548,11 @@
         "tag": "v6.9.1",
         "name": "v6.9.1",
         "published": "2026-10-07T10:58:28Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.9.1.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -561,11 +560,11 @@
         "tag": "v6.9.0",
         "name": "v6.9.0",
         "published": "2026-10-03T11:14:59Z",
-        "downloads": 4,
+        "downloads": 5,
         "assets": [
           {
             "name": "omarchy-local-ai-6.9.0.tar.gz",
-            "downloads": 4
+            "downloads": 5
           }
         ]
       },
@@ -573,11 +572,11 @@
         "tag": "v6.8.4",
         "name": "v6.8.4",
         "published": "2026-10-02T20:56:40Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.8.4.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -585,11 +584,11 @@
         "tag": "v6.8.3",
         "name": "v6.8.3",
         "published": "2026-09-30T18:04:44Z",
-        "downloads": 2,
+        "downloads": 3,
         "assets": [
           {
             "name": "omarchy-local-ai-6.8.3.tar.gz",
-            "downloads": 2
+            "downloads": 3
           }
         ]
       },
@@ -597,11 +596,11 @@
         "tag": "v6.8.2",
         "name": "v6.8.2",
         "published": "2026-09-30T16:27:58Z",
-        "downloads": 2,
+        "downloads": 3,
         "assets": [
           {
             "name": "omarchy-local-ai-6.8.2.tar.gz",
-            "downloads": 2
+            "downloads": 3
           }
         ]
       },
@@ -609,11 +608,11 @@
         "tag": "v6.8.1",
         "name": "v6.8.1",
         "published": "2026-09-30T16:22:27Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.8.1.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -621,11 +620,11 @@
         "tag": "v6.8.0",
         "name": "v6.8.0",
         "published": "2026-09-30T13:43:13Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.8.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -640,11 +639,11 @@
         "tag": "v6.6.1",
         "name": "v6.6.1",
         "published": "2026-09-30T10:07:18Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.6.1.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -652,11 +651,11 @@
         "tag": "v6.6.0",
         "name": "v6.6.0",
         "published": "2026-09-29T19:49:42Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.6.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -664,11 +663,11 @@
         "tag": "v6.5.4",
         "name": "v6.5.4",
         "published": "2026-09-29T19:01:22Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.5.4.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -676,11 +675,11 @@
         "tag": "v6.5.3",
         "name": "v6.5.3",
         "published": "2026-09-29T17:18:25Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.5.3.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -688,11 +687,11 @@
         "tag": "v6.5.2",
         "name": "v6.5.2",
         "published": "2026-09-29T17:10:24Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.5.2.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -700,11 +699,11 @@
         "tag": "v6.5.1",
         "name": "v6.5.1",
         "published": "2026-09-29T16:59:19Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.5.1.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -712,11 +711,11 @@
         "tag": "v6.5.0",
         "name": "v6.5.0",
         "published": "2026-09-29T16:48:51Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.5.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -724,11 +723,11 @@
         "tag": "v6.4.0",
         "name": "v6.4.0",
         "published": "2026-09-29T16:36:46Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.4.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -736,11 +735,11 @@
         "tag": "v6.3.2",
         "name": "v6.3.2",
         "published": "2026-09-29T16:30:15Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.3.2.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -748,11 +747,11 @@
         "tag": "v6.3.1",
         "name": "v6.3.1",
         "published": "2026-09-29T16:18:54Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.3.1.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -760,11 +759,11 @@
         "tag": "v6.3.0",
         "name": "v6.3.0",
         "published": "2026-09-29T15:35:06Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.3.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -772,11 +771,11 @@
         "tag": "v6.2.2",
         "name": "v6.2.2",
         "published": "2026-09-29T14:22:35Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.2.2.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -784,11 +783,11 @@
         "tag": "v6.2.1",
         "name": "v6.2.1",
         "published": "2026-09-29T14:17:17Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.2.1.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -796,11 +795,11 @@
         "tag": "v6.2.0",
         "name": "v6.2.0",
         "published": "2026-09-29T13:25:52Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.2.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -808,11 +807,11 @@
         "tag": "v6.1.8",
         "name": "v6.1.8",
         "published": "2026-09-27T10:21:33Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.8.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -820,11 +819,11 @@
         "tag": "v6.1.7",
         "name": "v6.1.7",
         "published": "2026-09-26T08:11:24Z",
-        "downloads": 2,
+        "downloads": 3,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.7.tar.gz",
-            "downloads": 2
+            "downloads": 3
           }
         ]
       },
@@ -832,11 +831,11 @@
         "tag": "v6.1.6",
         "name": "v6.1.6",
         "published": "2026-09-25T11:59:16Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.6.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -844,11 +843,11 @@
         "tag": "v6.1.5",
         "name": "v6.1.5",
         "published": "2026-09-25T11:46:19Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.5.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -856,11 +855,11 @@
         "tag": "v6.1.4",
         "name": "v6.1.4",
         "published": "2026-09-24T23:35:07Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.4.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -868,11 +867,11 @@
         "tag": "v6.1.3",
         "name": "v6.1.3",
         "published": "2026-09-24T16:42:16Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.3.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -880,11 +879,11 @@
         "tag": "v6.1.2",
         "name": "v6.1.2",
         "published": "2026-09-24T16:29:32Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.2.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -892,11 +891,11 @@
         "tag": "v6.1.1",
         "name": "v6.1.1",
         "published": "2026-09-24T15:59:30Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.1.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -904,11 +903,11 @@
         "tag": "v6.1.0",
         "name": "v6.1.0",
         "published": "2026-09-24T15:52:33Z",
-        "downloads": 2,
+        "downloads": 3,
         "assets": [
           {
             "name": "omarchy-local-ai-6.1.0.tar.gz",
-            "downloads": 2
+            "downloads": 3
           }
         ]
       },
@@ -916,11 +915,11 @@
         "tag": "v6.0.3",
         "name": "v6.0.3",
         "published": "2026-09-24T10:42:46Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.0.3.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -928,11 +927,11 @@
         "tag": "v6.0.2",
         "name": "v6.0.2",
         "published": "2026-09-24T08:02:57Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.0.2.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -940,11 +939,11 @@
         "tag": "v6.0.1",
         "name": "v6.0.1",
         "published": "2026-09-23T23:49:55Z",
-        "downloads": 3,
+        "downloads": 4,
         "assets": [
           {
             "name": "omarchy-local-ai-6.0.1.tar.gz",
-            "downloads": 3
+            "downloads": 4
           }
         ]
       },
@@ -952,11 +951,11 @@
         "tag": "v6.0.0",
         "name": "v6.0.0",
         "published": "2026-09-23T22:45:50Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-6.0.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -964,11 +963,11 @@
         "tag": "v5.4.0",
         "name": "v5.4.0",
         "published": "2026-09-22T11:39:32Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.4.0.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -976,11 +975,11 @@
         "tag": "v5.3.7",
         "name": "v5.3.7",
         "published": "2026-09-21T21:49:11Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.3.7.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -988,11 +987,11 @@
         "tag": "v5.3.6",
         "name": "v5.3.6",
         "published": "2026-09-21T16:15:33Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.3.6.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1000,11 +999,11 @@
         "tag": "v5.3.5",
         "name": "v5.3.5",
         "published": "2026-09-21T15:32:36Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.3.5.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1012,11 +1011,11 @@
         "tag": "v5.3.4",
         "name": "v5.3.4",
         "published": "2026-09-21T15:29:48Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-5.3.4.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -1024,11 +1023,11 @@
         "tag": "v5.3.3",
         "name": "v5.3.3",
         "published": "2026-09-21T14:44:00Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.3.3.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1036,11 +1035,11 @@
         "tag": "v5.3.2",
         "name": "v5.3.2",
         "published": "2026-09-21T13:56:49Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.3.2.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1048,11 +1047,11 @@
         "tag": "v5.3.1",
         "name": "v5.3.1",
         "published": "2026-09-21T13:37:48Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.3.1.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1060,11 +1059,11 @@
         "tag": "v5.3.0",
         "name": "v5.3.0",
         "published": "2026-09-21T13:04:33Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.3.0.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1072,11 +1071,11 @@
         "tag": "v5.2.0",
         "name": "v5.2.0",
         "published": "2026-09-21T12:12:52Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-5.2.0.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -1084,11 +1083,11 @@
         "tag": "v5.0.7",
         "name": "v5.0.7",
         "published": "2026-09-17T11:11:13Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-5.0.7.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -1096,11 +1095,11 @@
         "tag": "v5.0.6",
         "name": "v5.0.6",
         "published": "2026-09-17T02:39:12Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.0.6.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1108,11 +1107,11 @@
         "tag": "v5.0.5",
         "name": "v5.0.5",
         "published": "2026-09-17T00:29:42Z",
-        "downloads": 2,
+        "downloads": 3,
         "assets": [
           {
             "name": "omarchy-local-ai-5.0.5.tar.gz",
-            "downloads": 2
+            "downloads": 3
           }
         ]
       },
@@ -1120,11 +1119,11 @@
         "tag": "v5.0.4",
         "name": "v5.0.4",
         "published": "2026-09-17T00:21:04Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.0.4.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1132,11 +1131,11 @@
         "tag": "v5.0.3",
         "name": "v5.0.3",
         "published": "2026-09-16T22:03:41Z",
-        "downloads": 1,
+        "downloads": 2,
         "assets": [
           {
             "name": "omarchy-local-ai-5.0.3.tar.gz",
-            "downloads": 1
+            "downloads": 2
           }
         ]
       },
@@ -1144,11 +1143,11 @@
         "tag": "v5.0.2",
         "name": "v5.0.2",
         "published": "2026-09-16T22:02:02Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-5.0.2.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -1156,11 +1155,11 @@
         "tag": "v5.0.1",
         "name": "v5.0.1",
         "published": "2026-09-16T14:48:38Z",
-        "downloads": 0,
+        "downloads": 1,
         "assets": [
           {
             "name": "omarchy-local-ai-5.0.1.tar.gz",
-            "downloads": 0
+            "downloads": 1
           }
         ]
       },
@@ -1188,8 +1187,8 @@
     ]
   },
   "interactions": {
-    "day": "2026-11-14",
-    "stars": 172,
+    "day": "2026-11-15",
+    "stars": 173,
     "forks": 33,
     "watchers": 0,
     "issues": {
@@ -1210,33 +1209,33 @@
   "referrers": [
     {
       "referrer": "Google",
-      "count": 130,
-      "uniques": 103
+      "count": 138,
+      "uniques": 111
     },
     {
       "referrer": "github.com",
-      "count": 60,
-      "uniques": 45
+      "count": 61,
+      "uniques": 47
     },
     {
       "referrer": "search.brave.com",
-      "count": 20,
-      "uniques": 19
+      "count": 19,
+      "uniques": 18
     },
     {
       "referrer": "DuckDuckGo",
-      "count": 17,
-      "uniques": 13
+      "count": 16,
+      "uniques": 12
     },
     {
       "referrer": "t.co",
-      "count": 9,
-      "uniques": 8
+      "count": 11,
+      "uniques": 10
     },
     {
       "referrer": "Bing",
-      "count": 7,
-      "uniques": 6
+      "count": 8,
+      "uniques": 7
     },
     {
       "referrer": "local.sybilsolutions.ai",
@@ -1258,14 +1257,14 @@
     {
       "path": "/0xSero/omarchy-local-ai",
       "title": "Overview",
-      "count": 483,
-      "uniques": 349
+      "count": 490,
+      "uniques": 363
     },
     {
       "path": "/0xSero/omarchy-local-ai/issues",
       "title": "/issues",
-      "count": 27,
-      "uniques": 16
+      "count": 25,
+      "uniques": 15
     },
     {
       "path": "/0xSero/omarchy-local-ai/pulls",
@@ -1304,14 +1303,14 @@
       "uniques": 3
     },
     {
-      "path": "/0xSero/omarchy-local-ai/commits/main",
-      "title": "/commits/main",
-      "count": 3,
-      "uniques": 1
-    },
-    {
       "path": "/0xSero/omarchy-local-ai/blob/main/agents/opencode.svg",
       "title": "/blob/main/agents/opencode.svg",
+      "count": 2,
+      "uniques": 2
+    },
+    {
+      "path": "/0xSero/omarchy-local-ai/blob/main/recipes.json",
+      "title": "/blob/main/recipes.json",
       "count": 2,
       "uniques": 2
     }
