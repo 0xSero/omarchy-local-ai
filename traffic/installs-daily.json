@@ -334,10 +334,19 @@
   },
   {
     "day": "2026-11-16",
-    "active": 49,
-    "running": 9,
+    "active": 124,
+    "running": 27,
+    "new": 4,
+    "started": 17,
+    "failed": 2,
+    "opened": 16
+  },
+  {
+    "day": "2026-11-17",
+    "active": 45,
+    "running": 10,
     "new": 0,
-    "started": 1,
+    "started": 0,
     "failed": 0,
     "opened": 1
   }
