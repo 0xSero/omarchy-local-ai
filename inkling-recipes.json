@@ -1,0 +1,78 @@
+{
+  "ryzen-ai-max-365-128gb": {
+    "match": {
+      "backend": "amd-rocm",
+      "name": "AMD Radeon 8050S",
+      "names": [
+        "8050sgraphics",
+        "8060sgraphics"
+      ],
+      "unifiedMemory": true,
+      "vramGb": 120
+    },
+    "recipes": [
+      {
+        "cards": 1,
+        "local": true,
+        "id": "inkling2-mini-strix-halo",
+        "name": "Inkling 2 Mini",
+        "family": "inkling",
+        "format": "GGUF IQ4_NL + Q8 vision",
+        "engine": "llama.cpp",
+        "servedName": "/models/Inkling-2-Mini-IQ4_NL.gguf",
+        "sizeGb": 17.98,
+        "image": "ghcr.io/hjanuschka/inkling2-mini-gguf@sha256:998237219dedcdef285fa28e72b245af899a7dcf0c103bb732b9d06743a82bb3",
+        "weights": [
+          {
+            "repository": "ggml-org/Inkling-2-Mini-GGUF",
+            "revision": "db61c5b492a6a034d986328d28274af0a439aa6c",
+            "dir": "",
+            "files": "Inkling-2-Mini-IQ4_NL.gguf,mmproj-Inkling-2-Mini-Q8_0.gguf",
+            "layout": "dir",
+            "mountPath": "/models",
+            "sizeGb": 17.98
+          }
+        ],
+        "launch": {
+          "entrypoint": null,
+          "arguments": [
+            "-m",
+            "/models/Inkling-2-Mini-IQ4_NL.gguf",
+            "--mmproj",
+            "/models/mmproj-Inkling-2-Mini-Q8_0.gguf",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8080",
+            "--ctx-size",
+            "262144",
+            "--n-gpu-layers",
+            "999",
+            "--flash-attn",
+            "on",
+            "--jinja",
+            "--parallel",
+            "1",
+            "--cache-type-k",
+            "q8_0",
+            "--cache-type-v",
+            "q8_0",
+            "--metrics"
+          ],
+          "environment": {},
+          "port": 8080,
+          "shm": ""
+        },
+        "serving": {
+          "ctxTokens": 262144
+        },
+        "capabilities": {
+          "chat": true,
+          "reasoning": true,
+          "tools": true,
+          "vision": true
+        }
+      }
+    ]
+  }
+}

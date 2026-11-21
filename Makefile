@@ -22,7 +22,7 @@ export_ = if git -C "$(REGISTRY)" rev-parse --verify --quiet "$(REGISTRY_REF)" >
 commit = $$(git -C "$(REGISTRY)" rev-parse "$(REGISTRY_REF)" 2>/dev/null || git -C "$(REGISTRY)" rev-parse HEAD)
 # the registry lists each kind's recipes best first: the bundle keeps every one, one card first, in that order, so the
 # first is a card's recommended model and the rest are listed on the models tab (a group: one model across several cards)
-published = $(export_) | jq -r --arg c "$(commit)" '.hardware |= map_values(.recipes |= sort_by(.cards // 1)) | .registryCommit = $$c \
+published = $(export_) | jq -r --arg c "$(commit)" --slurpfile inkling inkling-recipes.json '.hardware += $$inkling[0] | .hardware |= map_values(.recipes |= sort_by(.cards // 1)) | .registryCommit = $$c \
   | (del(.hardware) | tojson | .[:-1]) + ",\"hardware\":{\n" + ([.hardware | to_entries[] | "\(.key | tojson):\(.value | tojson)"] | join(",\n")) + "\n}}"'
 PROVENANCE = del(.registryCommit, .generatedAt)
 
