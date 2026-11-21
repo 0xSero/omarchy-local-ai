@@ -370,8 +370,17 @@
   },
   {
     "day": "2026-11-20",
-    "active": 46,
-    "running": 13,
+    "active": 131,
+    "running": 24,
+    "new": 3,
+    "started": 5,
+    "failed": 0,
+    "opened": 5
+  },
+  {
+    "day": "2026-11-21",
+    "active": 43,
+    "running": 7,
     "new": 0,
     "started": 0,
     "failed": 0,
