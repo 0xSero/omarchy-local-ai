@@ -206,7 +206,8 @@ cmd_registry() (
   # of at most 120 characters, no control characters, bidi controls, line separators or markup), sizeGb (a finite
   # number, not negative), aa (a finite number), reported and each capability the shipped recipe has (booleans).
   # Everything else, its image, launch, weights, serving, needs and the rest, is the shipped recipe's; each card kind
-  # keeps its shipped match. A recipe the plugin does not ship is left out, not fatal; one listed twice counts once.
+  # keeps its shipped match. Locally shipped recipes remain available when absent from the registry. A recipe the
+  # plugin does not ship is left out, not fatal; one listed twice counts once.
   jq -e --slurpfile own "$PANEL/recipes.json" '.gateway.image == $own[0].gateway.image' "$tmp" >/dev/null ||
     die "the registry changed the gateway; update the plugin to get it"
   r=$(jq --slurpfile own "$PANEL/recipes.json" '
@@ -226,7 +227,11 @@ cmd_registry() (
                 .capabilities |= with_entries(.key as $k | if ($r.capabilities[$k] | type == "boolean") then .value = $r.capabilities[$k] else . end)
               else . end]
           | reduce .[] as $x ([]; if any(.[]; .id == $x.id) then . else . + [$x] end))})
-      | with_entries(select(.value.recipes | length > 0)))' "$tmp") || die "invalid registry catalog"
+      | with_entries(select(.value.recipes | length > 0))
+      | reduce ($shipped | to_entries[] | .key as $h | .value.recipes[] | select(.local == true) | {hw: $h, recipe: .}) as $local (.;
+          .[$local.hw] //= {match: $shipped[$local.hw].match, recipes: []}
+          | if any(.[$local.hw].recipes[]; .id == $local.recipe.id) then .
+            else .[$local.hw].recipes += [$local.recipe] end))' "$tmp") || die "invalid registry catalog"
   printf '%s\n' "$r" >"$tmp"
   while IFS= read -r r; do
     [[ $(policy "$r" "$tmp") == "ok" ]] || die "registry recipe refused: $(policy "$r" "$tmp")"

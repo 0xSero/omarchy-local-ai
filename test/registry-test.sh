@@ -34,6 +34,11 @@ curl() {
 echo "ok - registry refresh reports the published revision"
 jq -e '.registryCommit == "0000000000000000000000000000000000000001" and (.hardware|length > 0)' "$CATALOG" >/dev/null
 kept=$(jq '[.hardware[].recipes[]] | length' "$CATALOG")
+MODE=edit EDIT='del(.hardware["ryzen-ai-max-365-128gb"])' cmd_registry >/dev/null
+jq -e --slurpfile own "$SOURCE" '.hardware["ryzen-ai-max-365-128gb"] == $own[0].hardware["ryzen-ai-max-365-128gb"]' "$CATALOG" >/dev/null ||
+  { echo 'not ok - refresh dropped the locally shipped Inkling recipe'; exit 1; }
+echo 'ok - registry refresh retains the locally shipped Inkling recipe'
+MODE=ok cmd_registry >/dev/null
 
 # The install count: one ping per refresh, a random id, the version, the card kinds with recipes, the running models
 jq -e --arg v "$(jq -r .version "$ROOT/manifest.json")" 'keys == ["actions", "hw", "id", "launched", "running", "version"]
