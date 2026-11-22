@@ -35,6 +35,8 @@ no tested model says so in the panel.
 | CPU | any x86-64 CPU with AVX2, Apple M1 8 GB |
 <!-- /cards -->
 
+Snapdragon X (Adreno X1) is served by this plugin, not by the registry table above. See [docs/snapdragon.md](docs/snapdragon.md).
+
 The full list of models per card is in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
 Your card isn't there? The registry pays for new recipes ([bounties](https://github.com/sybil-solutions/local-ai-registry/issues?q=is%3Aissue+is%3Aopen+label%3Abounty)).
 
@@ -94,6 +96,7 @@ omarchy plugin remove sero.local-ai
 - [docs/catalog.md](docs/catalog.md): how new models arrive, downloads, and removal.
 - [docs/privacy.md](docs/privacy.md): the usage counts, field by field.
 - [docs/legacy-polkit.md](docs/legacy-polkit.md): the red banner about files left by Local AI 6.0-6.4.
+- [docs/snapdragon.md](docs/snapdragon.md): Snapdragon X Adreno X1, Mesa Turnip, and the one model it serves.
 - [docs/design.md](docs/design.md): how the plugin works inside, for contributors.
 - [docs/releases.md](docs/releases.md): branches and releases.
 

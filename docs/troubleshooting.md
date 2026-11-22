@@ -36,6 +36,9 @@ To add your card, see the registry's [recipe bounties](https://github.com/sybil-
 ### An AMD card is not found
 Local AI finds AMD cards through ROCm's `amd-smi`. Install ROCm, then reopen the panel.
 
+### A Snapdragon Adreno GPU is not found
+Run `omarchy-local-ai gpu`. The X1 Plus display node is `msm_dpu` and has no PCI vendor file; the GPU is the platform device `qcom,adreno-<chipid>`. If no render node is listed, install `linux-firmware-qcom` and check `dmesg` for msm or adreno. Details are in [snapdragon.md](snapdragon.md).
+
 ### A model is listed under "too big for this machine"
 Its row says what is missing: GPU memory, free RAM, free disk under `~/.cache/omarchy/local-ai/models`, an NVMe
 drive, or more cards. Free that up, or pick another model.
@@ -53,6 +56,12 @@ too tight for your card.
 
 ### "the engine keeps crashing" or "the engine printed nothing for 15 minutes"
 Open the log and look at the last lines before the error. Most often it is memory (above). Otherwise report it.
+
+### "the engine answered but its log never showed the Adreno GPU in use. Run omarchy-local-ai gpu"
+The Vulkan engine started, but its log never named an Adreno device with layers offloaded. Run `omarchy-local-ai gpu`. `ggml_vulkan: No devices found` means the container did not see the GPU. A software device such as llvmpipe is refused. See [snapdragon.md](snapdragon.md).
+
+### "the Adreno GPU ran this model, but the reply was not coherent (Turnip can miscompile quantized Vulkan shaders)."
+The GPU was used and the counting check failed. Turnip can miscompile quantized Vulkan shaders. The log has the reply. Report it with the card and the Mesa version.
 
 ### "the GPU driver reset the card while the model loaded"
 The driver crashed, not Local AI. Reboot, then try again. If it repeats, report it with the kernel lines from the log.
