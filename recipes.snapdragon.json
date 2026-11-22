@@ -1,0 +1,113 @@
+{
+  "hardware": {
+    "snapdragon-x-16gb": {
+      "match": {
+        "backend": "adreno-vulkan",
+        "name": "Qualcomm Adreno X1",
+        "names": [
+          "qualcommadrenox185",
+          "qualcommadrenox145",
+          "qualcommadrenox1",
+          "qualcommadreno",
+          "adrenox185",
+          "adrenox145",
+          "adrenox1",
+          "adreno"
+        ],
+        "unifiedMemory": true,
+        "vramGb": 16
+      },
+      "recipes": [
+        {
+          "id": "lfm25-26b-qad-q4-adreno-16gb",
+          "name": "LFM2.5-2.6B",
+          "family": "lfm",
+          "format": "GGUF QAD-Q4_0",
+          "engine": "llama.cpp",
+          "servedName": "LFM2.5-2.6B-GGUF",
+          "sizeGb": 1.6,
+          "cards": 1,
+          "image": "ghcr.io/ggml-org/llama.cpp:server-vulkan@sha256:15fd15e1f1d2ab2daf4b0b88f5849d95764c155237f36e8f5d36b32a4cec1be9",
+          "minDriver": "",
+          "reported": true,
+          "weights": [
+            {
+              "sizeGb": 1.6,
+              "layout": "dir",
+              "mountPath": "/models",
+              "dir": "",
+              "files": "LFM2.5-2.6B-QAD-Q4_0.gguf",
+              "repository": "LiquidAI/LFM2.5-2.6B-GGUF",
+              "revision": "84022ce711b28455e8c4fc364ce68c00cf995875"
+            }
+          ],
+          "asset": null,
+          "scratch": null,
+          "launch": {
+            "entrypoint": "/app/llama-server",
+            "arguments": [
+              "-m",
+              "/models/LFM2.5-2.6B-QAD-Q4_0.gguf",
+              "--alias",
+              "LFM2.5-2.6B-GGUF",
+              "--host",
+              "0.0.0.0",
+              "--port",
+              "8080",
+              "--ctx-size",
+              "8192",
+              "--parallel",
+              "1",
+              "--n-gpu-layers",
+              "999",
+              "--device",
+              "Vulkan0",
+              "--flash-attn",
+              "off",
+              "--cache-type-k",
+              "f16",
+              "--cache-type-v",
+              "f16",
+              "--no-mmproj",
+              "--jinja",
+              "--reasoning-format",
+              "deepseek",
+              "--threads",
+              "4",
+              "--threads-batch",
+              "4",
+              "--batch-size",
+              "512",
+              "--ubatch-size",
+              "128",
+              "-lv",
+              "4",
+              "--metrics"
+            ],
+            "environment": {
+              "GGML_VK_VISIBLE_DEVICES": "0",
+              "GGML_VK_DISABLE_INTEGER_DOT_PRODUCT": "1",
+              "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/freedreno_icd.json:/usr/share/vulkan/icd.d/freedreno_icd.aarch64.json"
+            },
+            "port": 8080,
+            "shm": "2g"
+          },
+          "serving": {
+            "ctxTokens": 8192,
+            "kvTokens": 8192
+          },
+          "capabilities": {
+            "chat": true,
+            "reasoning": true,
+            "tools": true,
+            "vision": false
+          },
+          "needs": {
+            "host_ram_gb": 4,
+            "disk_gb": 1.7
+          }
+        }
+      ]
+    }
+  }
+}

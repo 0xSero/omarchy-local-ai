@@ -4,6 +4,9 @@ Versions follow semver and live in `manifest.json`. Every release is a tag `vX.Y
 
 ## [Unreleased]
 
+### Added
+- Snapdragon X Adreno (X1-85 and X1-45, including the X1 Plus `msm_dpu` display node) with one Vulkan recipe, `lfm25-26b-qad-q4-adreno-16gb`. Flash attention is off, the KV cache is f16, and integer-dot shaders are disabled. The engine log must show the Adreno device and an offload (`-lv 4`). The recipe is in `recipes.snapdragon.json` so a registry refresh cannot drop it.
+
 ## [6.24.0] - 2026-10-18
 
 ### Changed

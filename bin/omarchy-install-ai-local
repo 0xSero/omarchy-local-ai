@@ -51,6 +51,39 @@ if omarchy-hw-nvidia; then
     omarchy-pkg-add nvidia-container-toolkit
 fi
 
+# Snapdragon X (Adreno X1): the engine image brings Mesa, but the host still needs Turnip so
+# vulkaninfo can show the GPU, and the kernel needs the Adreno firmware before /dev/dri exists.
+if [[ $(uname -m) == aarch64 ]] && {
+  "$HERE/omarchy-local-ai" gpu 2>/dev/null | grep -q adreno-vulkan ||
+  grep -qiE 'snapdragon|qualcomm' /sys/class/dmi/id/product_name /sys/class/dmi/id/sys_vendor /proc/cpuinfo 2>/dev/null
+}; then
+  echo "Adreno GPU: installing Mesa Turnip (vulkan-freedreno) and vulkaninfo."
+  if ! SUDO_PROMPT="Password for %u to install Adreno Vulkan support for Local AI: " \
+    omarchy-pkg-add vulkan-freedreno vulkan-tools; then
+    echo "Adreno Vulkan packages were not installed. The GPU can still be listed; vulkaninfo will not run until they are."
+  fi
+  fw=0
+  for f in \
+    /usr/lib/firmware/qcom/gen70500_sqe.fw /usr/lib/firmware/qcom/gen70500_sqe.fw.zst \
+    /lib/firmware/qcom/gen70500_sqe.fw /lib/firmware/qcom/gen70500_sqe.fw.zst \
+    /usr/lib/firmware/qcom/gen71500_sqe.fw /usr/lib/firmware/qcom/gen71500_sqe.fw.zst \
+    /lib/firmware/qcom/gen71500_sqe.fw /lib/firmware/qcom/gen71500_sqe.fw.zst \
+    /usr/lib/firmware/qcom/x1p42100/gen71500_zap.mbn /usr/lib/firmware/qcom/x1p42100/gen71500_zap.mbn.zst \
+    /lib/firmware/qcom/x1p42100/gen71500_zap.mbn /lib/firmware/qcom/x1p42100/gen71500_zap.mbn.zst
+  do
+    [[ -e $f ]] && fw=1
+  done
+  if ((fw == 0)); then
+    echo "Adreno GPU firmware was not found. Installing linux-firmware-qcom."
+    SUDO_PROMPT="Password for %u to install Adreno GPU firmware for Local AI: " \
+      omarchy-pkg-add linux-firmware-qcom ||
+      echo "Install linux-firmware-qcom, then check dmesg for msm/adreno. Without the ZAP firmware the GPU node never appears."
+  fi
+  if compgen -G '/dev/dri/renderD*' >/dev/null && ! id -nG | grep -qw render; then
+    echo "Add this account to the render group so vulkaninfo can open the GPU. As root: usermod -aG render,video $USER"
+  fi
+fi
+
 # A card taken out or put in, or a driver update, leaves the toolkit's device list behind, and Docker then refuses
 # every start through it. The toolkit's package hook writes the list on install, so reinstalling it, with Omarchy's own
 # commands, writes it again; Local AI still runs nothing as root.
