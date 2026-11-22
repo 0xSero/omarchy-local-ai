@@ -13,7 +13,7 @@ SHELL := /bin/bash
 .PHONY: test sync sync-check check bundle docs
 
 BUNDLE = dist/omarchy-local-ai-$(shell jq -r .version manifest.json).tar.gz
-RUNTIME = manifest.json recipes.json LICENSE Panel.qml FullScreen.qml Model.js Logos.js agents hf.svg bin/omarchy-local-ai bin/omarchy-install-ai-local bin/omarchy-remove-ai-local lib/access.sh
+RUNTIME = manifest.json recipes.json recipes.snapdragon.json LICENSE Panel.qml FullScreen.qml Model.js Logos.js agents hf.svg bin/omarchy-local-ai bin/omarchy-install-ai-local bin/omarchy-remove-ai-local lib/access.sh docker/adreno/Dockerfile
 
 test:
 	bash test/all
