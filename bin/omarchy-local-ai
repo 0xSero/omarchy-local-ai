@@ -291,9 +291,10 @@ nvidia_apps() {
   grep -E '^GPU-' <<<"$out" || true
 }
 
-# Intel GPUs the recipes know, by PCI id (Arc Pro B70, Arc Pro B65, Arc B390). The xe driver gives users its temperature but not its memory use. A card with
+# Intel GPUs the recipes know, by PCI id (Arc Pro B70, Arc Pro B65, Arc B390, Arc 130V/140V). The xe driver gives users its temperature but not its memory use. A card with
 # a connected monitor drives the desktop, whose compositor and browsers hold part of its memory, so it is offered last.
 # The Arc B390 is a Panther Lake iGPU: its memory is host RAM, so it reports none (its card is unifiedMemory).
+# Lunar Lake's Arc 130V and 140V iGPUs share one PCI id and host RAM the same way; only Core Ultra 5 parts have the 130V.
 intel() {
   local a d t f c s product mib rows=()
   while read -r a d; do
@@ -301,6 +302,8 @@ intel() {
       e223) product="Intel Arc Pro B70" mib=32768 ;;
       e222) product="Intel Arc Pro B65" mib=32768 ;;
       b080) product="Intel Arc B390" mib=0 ;;
+      64a0) product="Intel Arc 140V" mib=0
+        grep -q '^model name.*Ultra 5 ' "${CPUINFO:-/proc/cpuinfo}" && product="Intel Arc 130V" ;;
       *) continue ;;
     esac
     [[ -e /dev/dri/by-path/pci-$a-render ]] || continue
