@@ -35,7 +35,7 @@ no tested model says so in the panel.
 | CPU | any x86-64 CPU with AVX2, Apple M1 8 GB |
 <!-- /cards -->
 
-The full list of models per card is in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
+The full list of models per card is in [local-ai-registry](https://github.com/sybil-solutions/local-ai-registry/blob/main/data/supported/README.md).
 Your card isn't there? The registry pays for new recipes ([bounties](https://github.com/sybil-solutions/local-ai-registry/issues?q=is%3Aissue+is%3Aopen+label%3Abounty)).
 
 ## Requirements
