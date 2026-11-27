@@ -30,7 +30,7 @@ remove them. The banner clears by itself.
 ## Finding a model
 
 ### "no tested model yet"
-No recipe was accepted on your card yet. Check the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/supported/README.md).
+No recipe was accepted on your card yet. Check the [supported list](https://github.com/sybil-solutions/local-ai-registry/blob/main/data/supported/README.md).
 To add your card, see the registry's [recipe bounties](https://github.com/sybil-solutions/local-ai-registry/issues?q=is%3Aissue+is%3Aopen+label%3Abounty).
 
 ### An AMD card is not found
