@@ -433,10 +433,19 @@
   },
   {
     "day": "2026-11-27",
-    "active": 45,
-    "running": 7,
-    "new": 1,
-    "started": 1,
+    "active": 115,
+    "running": 16,
+    "new": 2,
+    "started": 7,
+    "failed": 0,
+    "opened": 3
+  },
+  {
+    "day": "2026-11-28",
+    "active": 48,
+    "running": 6,
+    "new": 0,
+    "started": 0,
     "failed": 0,
     "opened": 0
   }
